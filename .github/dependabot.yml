@@ -1,0 +1,27 @@
+version: 2
+updates:
+  # Update GitHub actions in workflows
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'daily'
+      time: '07:00'
+      timezone: 'Africa/Nairobi'
+    groups:
+      minor-and-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # Update JS dependencies
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'daily'
+      time: '07:00'
+      timezone: 'Africa/Nairobi'
+    groups:
+      minor-and-patch:
+        update-types:
+          - 'minor'
+          - 'patch'
