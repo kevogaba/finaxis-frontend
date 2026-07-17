@@ -1,0 +1,55 @@
+@layer theme, base, mui, components, utilities;
+@import 'tailwindcss';
+
+/*
+ * Bridge MUI's CSS theme variables (cssVarPrefix: "finaxis") into Tailwind's
+ * token space, so layout-only utility classes (bg-background, text-primary, …)
+ * stay in sync with the Finaxis theme instead of duplicating raw color values.
+ */
+@theme inline {
+  --color-background: var(--finaxis-palette-background-default);
+  --color-foreground: var(--finaxis-palette-text-primary);
+  --color-primary: var(--finaxis-palette-primary-main);
+  --color-secondary: var(--finaxis-palette-secondary-main);
+  --color-divider: var(--finaxis-palette-divider);
+  --font-sans: var(--font-finaxis);
+}
+
+@layer base {
+  html {
+    height: 100%;
+    font-variant-numeric: tabular-nums;
+  }
+
+  body {
+    min-height: 100%;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .finaxis-brand-backdrop {
+    background-image:
+      radial-gradient(circle at 15% 20%, rgb(29 78 216 / 25%), transparent 45%),
+      radial-gradient(circle at 85% 80%, rgb(15 118 110 / 22%), transparent 50%),
+      linear-gradient(rgb(248 250 252 / 4%) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(248 250 252 / 4%) 1px, transparent 1px);
+    background-size:
+      100% 100%,
+      100% 100%,
+      40px 40px,
+      40px 40px;
+  }
+}
