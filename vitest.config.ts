@@ -10,7 +10,14 @@ export default defineConfig({
     globals: true,
     css: true,
     include: ['**/*.{test,spec}.{ts,tsx}'],
-    exclude: ['node_modules/**', '.next/**', 'e2e/**', 'playwright-report/**', 'test-results/**'],
+    exclude: [
+      'node_modules/**',
+      '.next/**',
+      'e2e/**',
+      'playwright-report/**',
+      'test-results/**',
+      '.claude/worktrees/**',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
