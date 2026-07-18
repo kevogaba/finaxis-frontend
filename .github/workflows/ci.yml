@@ -44,7 +44,9 @@ jobs:
         run: pnpm test:coverage
 
       - name: Build
-        run: pnpm build
+        run: |
+          echo "KEYCLOAK_ISSUER=http://localhost:8080/realms/finaxis" >> .env.local
+          pnpm build
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium

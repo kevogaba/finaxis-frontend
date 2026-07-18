@@ -36,3 +36,20 @@ This version has breaking changes — APIs, conventions, and file structure may 
   violations.
 - Update `README.md` (and this file) when the architecture changes — e.g. swapping the mock auth
   module for a real identity provider, or changing the MUI/Tailwind boundary.
+
+## Authentication rules
+
+- All authenticated pages/routes validate the session server-side (`auth.api.getSession` via
+  `auth/get-authenticated-user.ts`) — never rely solely on `proxy.ts`'s cookie-presence check.
+- Never expose Keycloak access/refresh/ID tokens to Client Components or client-visible state.
+- Never disable Better Auth's CSRF or origin checks (`disableCSRFCheck`/`disableOriginCheck`).
+- Never use a wildcard trusted origin.
+- Never persist auth tokens in local storage or session storage.
+- Never accept an arbitrary, unvalidated callback or logout redirect — validate against an
+  allowlist (see `auth/build-keycloak-logout-url.ts` and `config/env.server.ts`).
+- All new shell/workspace routes use MUI components, per the existing MUI/Tailwind boundary
+  rule above.
+- The application context (module/organization/branch) stays a typed value
+  (`config/application-context.ts`) — never an untyped/`any` blob.
+- Profile and shell UI render only the sanitized `FinaxisUser` DTO
+  (`auth/map-authenticated-user.ts`), never a raw Better Auth session or Keycloak claims object.

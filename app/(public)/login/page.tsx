@@ -11,7 +11,8 @@ import CalculateOutlined from '@mui/icons-material/CalculateOutlined';
 import { FinaxisLogo } from '@/components/branding/finaxis-logo';
 import { ProductFeature } from '@/components/branding/product-feature';
 import { ThemeModeToggle } from '@/components/providers/theme-mode-toggle';
-import { LoginForm } from '@/components/auth/login-form';
+import { ContinueWithKeycloakButton } from '@/components/auth/continue-with-keycloak-button';
+import { LoginStatusAlert } from '@/components/auth/login-status-alert';
 
 export const metadata: Metadata = {
   title: 'Sign in',
@@ -24,7 +25,19 @@ const CAPABILITIES = [
   { icon: CalculateOutlined, label: 'Accounting' },
 ];
 
-export default function LoginPage() {
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+interface LoginPageProps {
+  searchParams: Promise<{ error?: string | string[]; reason?: string | string[] }>;
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const resolvedParams = await searchParams;
+  const error = firstParam(resolvedParams.error);
+  const reason = firstParam(resolvedParams.reason);
+
   return (
     <Box className="flex min-h-dvh w-full flex-col overflow-x-hidden md:flex-row">
       {/* Compact brand header, mobile only */}
@@ -110,7 +123,8 @@ export default function LoginPage() {
             Sign in to access your Finaxis workspace.
           </Typography>
 
-          <LoginForm />
+          <LoginStatusAlert error={error} reason={reason} />
+          <ContinueWithKeycloakButton />
 
           <Stack spacing={1} sx={{ alignItems: 'center', mt: 4 }}>
             <Typography variant="body2" color="text.secondary">

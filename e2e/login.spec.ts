@@ -10,58 +10,30 @@ test.describe('Login page', () => {
   test('displays Finaxis branding', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
-    // The default (desktop) viewport shows the full brand panel, not the mobile header.
     await expect(
       page.getByRole('complementary', { name: 'About Finaxis' }).getByText('Finaxis'),
     ).toBeVisible();
   });
 
-  test('shows required-field validation errors', async ({ page }) => {
+  test('shows the Continue to Finaxis action and no password field', async ({ page }) => {
     await page.goto('/login');
-    await page.getByRole('button', { name: 'Sign in' }).click();
-
-    await expect(page.getByText(/enter your email or username/i).first()).toBeVisible();
-    await expect(page.getByText(/password must be at least 8 characters/i).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Continue to Finaxis' })).toBeVisible();
+    await expect(page.getByLabel(/password/i)).toHaveCount(0);
   });
 
-  test('can show and hide the password', async ({ page }) => {
-    await page.goto('/login');
-    const passwordInput = page.getByLabel('Password', { exact: true });
-
-    await expect(passwordInput).toHaveAttribute('type', 'password');
-    await page.getByRole('button', { name: 'Show password' }).click();
-    await expect(passwordInput).toHaveAttribute('type', 'text');
-    await page.getByRole('button', { name: 'Hide password' }).click();
-    await expect(passwordInput).toHaveAttribute('type', 'password');
+  test('shows a generic message for a failed-authentication redirect', async ({ page }) => {
+    await page.goto('/login?error=authentication_failed');
+    await expect(page.getByRole('status')).toContainText(/couldn't sign you in/i);
   });
 
-  test('shows a mock-auth result on valid submission', async ({ page }) => {
-    await page.goto('/login');
-    await page.getByRole('textbox', { name: /email or username/i }).fill('member@finaxis.test');
-    await page.getByLabel('Password', { exact: true }).fill('supersecret');
-    await page.getByRole('button', { name: 'Sign in' }).click();
-
-    await expect(page.getByText(/ui foundation is ready/i)).toBeVisible();
+  test('shows a generic message for an expired-session redirect', async ({ page }) => {
+    await page.goto('/login?reason=session_expired');
+    await expect(page.getByRole('status')).toContainText(/session has expired/i);
   });
 
-  test('shows a generic error for the locked demo account', async ({ page }) => {
-    await page.goto('/login');
-    await page.getByRole('textbox', { name: /email or username/i }).fill('locked@finaxis.test');
-    await page.getByLabel('Password', { exact: true }).fill('supersecret');
-    await page.getByRole('button', { name: 'Sign in' }).click();
-
-    await expect(page.getByText(/we could not sign you in/i)).toBeVisible();
-  });
-
-  test('is keyboard navigable end to end', async ({ page }) => {
-    await page.goto('/login');
-    await page.getByRole('textbox', { name: /email or username/i }).focus();
-    await page.keyboard.type('member@finaxis.test');
-    await page.keyboard.press('Tab');
-    await page.keyboard.type('supersecret');
-    await page.keyboard.press('Enter');
-
-    await expect(page.getByText(/ui foundation is ready/i)).toBeVisible();
+  test('shows a generic message after logging out', async ({ page }) => {
+    await page.goto('/login?reason=logged_out');
+    await expect(page.getByRole('status')).toContainText(/signed out/i);
   });
 
   test('works at mobile viewport widths without horizontal scroll', async ({ page }) => {
