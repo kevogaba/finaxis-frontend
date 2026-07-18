@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p ${PORT:-3100}",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p ${PORT:-3100}",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
@@ -16,6 +16,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:e2e:keycloak": "playwright test --config=playwright.keycloak.config.ts",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:run",
     "verify": "pnpm check && pnpm test:coverage && pnpm build",
     "prepare": "husky"
@@ -28,10 +29,12 @@
     "@mui/icons-material": "^9.2.0",
     "@mui/material": "^9.2.0",
     "@mui/material-nextjs": "^9.1.1",
+    "better-auth": "1.6.23",
     "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-hook-form": "^7.81.0",
+    "server-only": "^0.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

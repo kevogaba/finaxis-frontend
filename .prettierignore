@@ -7,3 +7,7 @@ pnpm-lock.yaml
 *.tsbuildinfo
 next-env.d.ts
 public
+.claude/worktrees
+
+# SDD orchestration scratch files (fully gitignored; not project source)
+.superpowers

@@ -1,3 +1,8 @@
+overrides:
+  # next@16.2.10 bundles postcss@8.4.31, which is vulnerable to GHSA-qx2v-qp2m-jg93
+  # (XSS via unescaped </style> in CSS stringify output). Force the patched 8.x release
+  # everywhere in the tree — a same-major bump, not a next.js version change.
+  postcss: '^8.5.10'
 allowBuilds:
   sharp: true
   unrs-resolver: true

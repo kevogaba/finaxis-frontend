@@ -63,6 +63,8 @@ const eslintConfig = defineConfig([
     'playwright-report/**',
     'test-results/**',
     'node_modules/**',
+    // Git worktrees (local development only):
+    '.claude/worktrees/**',
   ]),
 ]);
 

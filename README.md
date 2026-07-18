@@ -3,10 +3,10 @@
 The production frontend foundation for **Finaxis**, a modern SACCO core banking and
 enterprise financial platform.
 
-This repository establishes the project's frontend foundation — tooling, theming, and one
-representative login experience — so future feature work has a clean, consistent base to
-build on. It intentionally does **not** implement authentication, dashboards, domain modules,
-API integrations, or business workflows.
+This repository establishes the project's frontend foundation — tooling, theming, real Keycloak
+authentication, and an authenticated shell (Administration, Profile) — so future feature work has
+a clean, consistent base to build on. It does not yet implement domain modules, API integrations,
+or business workflows beyond the authentication and shell scaffolding described below.
 
 ## Technology stack
 
@@ -39,20 +39,21 @@ Open [http://localhost:3000](http://localhost:3000) — the root route redirects
 
 ## Available scripts
 
-| Script                         | Purpose                                          |
-| ------------------------------ | ------------------------------------------------ |
-| `pnpm dev`                     | Start the Turbopack dev server                   |
-| `pnpm build`                   | Production build                                 |
-| `pnpm start`                   | Serve the production build                       |
-| `pnpm lint` / `lint:fix`       | ESLint (flat config), zero warnings allowed      |
-| `pnpm typecheck`               | `tsc --noEmit`                                   |
-| `pnpm format` / `format:check` | Prettier                                         |
-| `pnpm test` / `test:run`       | Vitest (watch / single run)                      |
-| `pnpm test:coverage`           | Vitest with V8 coverage                          |
-| `pnpm test:e2e`                | Playwright end-to-end tests                      |
-| `pnpm test:e2e:ui`             | Playwright UI mode                               |
-| `pnpm check`                   | format:check + lint + typecheck + unit tests     |
-| `pnpm verify`                  | `check` + coverage + build (full pre-merge gate) |
+| Script                         | Purpose                                                           |
+| ------------------------------ | ----------------------------------------------------------------- |
+| `pnpm dev`                     | Start the Turbopack dev server                                    |
+| `pnpm build`                   | Production build                                                  |
+| `pnpm start`                   | Serve the production build                                        |
+| `pnpm lint` / `lint:fix`       | ESLint (flat config), zero warnings allowed                       |
+| `pnpm typecheck`               | `tsc --noEmit`                                                    |
+| `pnpm format` / `format:check` | Prettier                                                          |
+| `pnpm test` / `test:run`       | Vitest (watch / single run)                                       |
+| `pnpm test:coverage`           | Vitest with V8 coverage                                           |
+| `pnpm test:e2e`                | Playwright end-to-end tests (Keycloak-independent)                |
+| `pnpm test:e2e:ui`             | Playwright UI mode                                                |
+| `pnpm test:e2e:keycloak`       | Real-Keycloak smoke test (manual; requires a live local Keycloak) |
+| `pnpm check`                   | format:check + lint + typecheck + unit tests                      |
+| `pnpm verify`                  | `check` + coverage + build (full pre-merge gate)                  |
 
 ## Git hooks and linting
 
@@ -72,12 +73,21 @@ catching a bug beats a reviewer catching it.
 ## Testing
 
 - **Unit/component**: `pnpm test:run` (or `pnpm test:coverage` for coverage). Tests live next to
-  the code they cover (e.g. `components/auth/login-form.test.tsx`) and query the DOM by role and
-  accessible name rather than implementation details.
+  the code they cover (e.g. `components/auth/continue-with-keycloak-button.test.tsx`) and query
+  the DOM by role and accessible name rather than implementation details.
 - **End-to-end**: `pnpm test:e2e`. Playwright starts the dev server automatically, covers the
-  redirect, form validation, password visibility, mock submission, keyboard navigation, both
-  color schemes, both viewport classes, and an axe accessibility scan. Chromium is the required
-  project; install the browser once with `pnpm exec playwright install chromium`.
+  root redirect, the Keycloak sign-in action, error/expired-session/logged-out status messages,
+  keyboard navigation, both color schemes, both viewport classes, and an axe accessibility scan.
+  Chromium is the required project; install the browser once with
+  `pnpm exec playwright install chromium`. This suite never talks to a real Keycloak.
+- **Real-Keycloak smoke test**: `pnpm test:e2e:keycloak` (`e2e/keycloak-smoke.spec.ts`,
+  `playwright.keycloak.config.ts`). A separate, manually invoked test that requires a live local
+  Keycloak + Postgres (e.g. `docker compose up -d postgres keycloak` in the platform repo) and
+  the local `finaxis` realm's `local.admin` user. It exercises one genuine browser round trip —
+  login redirect, Keycloak's hosted login form, the authenticated shell, sign-out through
+  Keycloak's logout confirmation page, and a truly cleared session — and skips (rather than
+  fails) with an actionable message if Keycloak isn't reachable on `:8080`. See
+  `docs/authentication/security.md` for what running it for real uncovered.
 
 ## Theme architecture
 
@@ -109,43 +119,71 @@ augmentation in `theme/theme.types.ts` and consumed as ordinary palette paths, e
 
 ```
 app/
-├── (auth)/login/page.tsx   # Split-screen login page
-├── globals.css             # CSS layers, Tailwind import, MUI/Tailwind bridge, restrained defaults
-├── layout.tsx               # Root layout: fonts, AppRouterCacheProvider, AppProviders
+├── (public)/login/page.tsx  # Split-screen login page (Better Auth Keycloak sign-in)
+├── (authenticated)/          # Server-guarded routes: layout.tsx validates the session
+│   ├── layout.tsx             # Authoritative auth guard for /admin and /profile
+│   ├── admin/                 # Users, Branches, Roles & Permissions, Settings, Audit Logs
+│   └── profile/page.tsx
+├── api/auth/                 # Better Auth route handlers (`[...all]`, `logout`)
+├── globals.css               # CSS layers, Tailwind import, MUI/Tailwind bridge, restrained defaults
+├── layout.tsx                 # Root layout: fonts, AppRouterCacheProvider, AppProviders
 ├── loading.tsx / not-found.tsx
-└── icon.tsx                 # Generated favicon (temporary Finaxis mark)
+└── icon.tsx                   # Generated favicon (temporary Finaxis mark)
+auth/
+├── auth.ts / auth-client.ts  # Better Auth server instance + browser client (keycloak() plugin)
+├── auth.types.ts
+├── get-authenticated-user.ts  # Server-side session validation used by route guards
+├── map-authenticated-user.ts  # Raw session/claims -> sanitized `FinaxisUser` DTO
+└── build-keycloak-logout-url.ts
+config/
+├── application-context.ts    # Typed module/organization/branch context (hardcoded fixture)
+└── env.server.ts              # Validated server environment variables
+modules/
+└── administration/            # Administration module + navigation registration
 components/
-├── auth/                    # Login form, its Zod schema, its test, mock auth
-├── branding/                # FinaxisLogo, ProductFeature
-├── navigation/               # next/link client re-export (Next.js 16 RSC boundary workaround)
-└── providers/                # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle
+├── auth/                     # Keycloak sign-in button, login status alert
+├── branding/                  # FinaxisLogo, ProductFeature
+├── navigation/                 # next/link client re-export (Next.js 16 RSC boundary workaround)
+├── profile/                   # Profile view
+├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle
+└── shell/                      # AppShell, header, drawer, user menu, workspace navigation
 theme/
-├── create-finaxis-theme.ts  # Single theme, light/dark colorSchemes, component defaults
-├── theme.types.ts            # Palette module augmentation (brand.* tokens)
-└── index.ts                  # Public exports
-test/                         # Vitest setup + renderWithProviders
-e2e/                           # Playwright specs
+├── create-finaxis-theme.ts   # Single theme, light/dark colorSchemes, component defaults
+├── theme.types.ts              # Palette module augmentation (brand.* tokens)
+└── index.ts                    # Public exports
+proxy.ts                        # Optimistic cookie-presence redirect (not a trust boundary)
+test/                           # Vitest setup + renderWithProviders
+e2e/                             # Playwright specs
+docs/authentication/            # Architecture, Keycloak setup, security, session-model docs
 .github/workflows/ci.yml
 ```
 
-## Mock authentication
+## Authentication
 
-The login form does **not** call any real authentication service:
+Real Keycloak OIDC authentication via [Better Auth](https://better-auth.com), running
+stateless (no application auth database) — see `docs/authentication/architecture.md` for the
+full sequence and `docs/authentication/stateless-sessions.md` for the session model and its
+trade-offs.
 
-- Submission runs through `components/auth/mock-authenticate.ts`, a small isolated async
-  function with a short artificial delay, so it can be swapped for a real identity provider
-  (the plan is [Better Auth](https://better-auth.com) fronting Keycloak) without touching the
-  form itself.
-- A valid-looking submission shows a success alert stating the UI foundation is ready but
-  authentication isn't connected yet.
-- The demo identifier `locked@finaxis.test` returns a generic "couldn't sign you in" error, to
-  exercise the failure path without implying real accounts exist.
-- Passwords are never persisted, logged, or sent over the network.
+- The login page's single action starts a Better Auth Generic OAuth (`keycloak()` provider)
+  Authorization Code + PKCE flow through same-origin `/api/auth/*` routes — the browser never
+  calls Keycloak directly.
+- `app/(authenticated)/layout.tsx` is the authoritative, server-validated guard for `/admin` and
+  `/profile`; `proxy.ts` only does an optimistic, cookie-presence redirect.
+- Logout (`components/shell/user-menu.tsx`) is a real `<form method="POST">` submit to
+  `/api/auth/logout`, which clears the local session and redirects the browser to Keycloak's
+  RP-initiated logout endpoint — see `docs/authentication/security.md` for why it can't include
+  `id_token_hint` in this Better Auth version.
+- `docs/authentication/keycloak.md` documents the required Keycloak client settings.
 
 ## Current limitations
 
-- No authentication, session, or identity-provider integration.
-- No dashboard, organization selection, or domain modules.
+- No organization/branch selection API yet — `config/application-context.ts` is a hardcoded
+  fixture standing in for it.
+- No authorization/permission enforcement — roles shown in the UI (currently always empty,
+  since no Keycloak claim mappers exist yet) are informational only, not a trust boundary.
+- Administration's Users/Branches/Roles & Permissions/Settings/Audit Logs pages are polished
+  placeholders, not connected to real data.
 - No API client or data layer.
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
   `/forgot-password` are placeholders; the first three routes resolve to the app's `not-found`
@@ -155,9 +193,11 @@ The login form does **not** call any real authentication service:
 
 ## Next recommended implementation steps
 
-1. Wire real authentication via Better Auth against Keycloak, replacing
-   `mock-authenticate.ts` behind the same `LoginForm` interface.
-2. Add session/middleware (`proxy.ts` in Next.js 16) once auth exists.
-3. Introduce the dashboard shell and organization selection.
+1. Build a real organization/branch selection API and replace the
+   `config/application-context.ts` fixture with it.
+2. Add Keycloak claim mappers and enforce authorization/permissions server-side, instead of
+   treating UI-shown roles as informational only.
+3. Connect Administration's Users/Branches/Roles & Permissions/Settings/Audit Logs pages to
+   real data.
 4. Replace the temporary `FinaxisLogo` mark with the official brand asset.
 5. Expand the theme's component defaults only as real screens demand them.
