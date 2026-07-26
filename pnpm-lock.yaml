@@ -52,8 +52,8 @@ importers:
         specifier: ^4.12.1
         version: 4.12.1(playwright-core@1.62.0)
       '@hookform/resolvers':
-        specifier: ^5.5.4
-        version: 5.5.4(@standard-schema/spec@1.1.0)(react-hook-form@7.83.0(react@19.2.8))(zod@4.4.3)
+        specifier: ^5.5.5
+        version: 5.5.5(@standard-schema/spec@1.1.0)(react-hook-form@7.83.0(react@19.2.8))(zod@4.4.3)
       '@playwright/test':
         specifier: ^1.62.0
         version: 1.62.0
@@ -472,8 +472,8 @@ packages:
       '@noble/hashes':
         optional: true
 
-  '@hookform/resolvers@5.5.4':
-    resolution: {integrity: sha512-oJAjb7BXBprmIxsYn9NEIXefLGy9Se2td759TOINHEQWvelm1zOVwckcVElL1eIRWN6Yw3Mx8R2PIn57uHQl1A==}
+  '@hookform/resolvers@5.5.5':
+    resolution: {integrity: sha512-GasYS5ssEPrG3N1RtgXehMgkhZ7Q1dLTh++Z2ZOqY2gaunEVUru4r5H8cWR2JUtpNywbH76KF+ejLC3sBrWgfw==}
     peerDependencies:
       '@sinclair/typebox': '>=0.25.24'
       '@standard-schema/spec': ^1.0.0
@@ -3640,7 +3640,7 @@ snapshots:
     optionalDependencies:
       '@noble/hashes': 2.2.0
 
-  '@hookform/resolvers@5.5.4(@standard-schema/spec@1.1.0)(react-hook-form@7.83.0(react@19.2.8))(zod@4.4.3)':
+  '@hookform/resolvers@5.5.5(@standard-schema/spec@1.1.0)(react-hook-form@7.83.0(react@19.2.8))(zod@4.4.3)':
     dependencies:
       '@standard-schema/utils': 0.3.0
       react-hook-form: 7.83.0(react@19.2.8)
