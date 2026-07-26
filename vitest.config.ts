@@ -1,10 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
-import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
-  plugins: [tsconfigPaths(), react()],
+  plugins: [react()],
   resolve: {
     alias: {
       // Next.js resolves `server-only` to its no-op export via the
@@ -13,6 +12,7 @@ export default defineConfig({
       // imports server-only modules (e.g. config/env.server.ts).
       'server-only': fileURLToPath(new URL('./node_modules/server-only/empty.js', import.meta.url)),
     },
+    tsconfigPaths: true,
   },
   test: {
     environment: 'jsdom',
