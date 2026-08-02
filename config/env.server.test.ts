@@ -4,6 +4,7 @@ const REQUIRED_ENV = {
   NODE_ENV: 'development',
   BETTER_AUTH_URL: 'http://localhost:3100',
   BETTER_AUTH_SECRET: 'a'.repeat(32),
+  PLATFORM_ORGANISATION_ID: '8d0cb4e6-521a-4e51-bac0-e4d938c0ee76',
   KEYCLOAK_ISSUER: 'http://localhost:8080/realms/finaxis',
   KEYCLOAK_CLIENT_ID: 'finaxis-web',
   KEYCLOAK_CLIENT_SECRET: 'secret-value',
@@ -55,6 +56,26 @@ describe('serverEnv', () => {
   it('throws when a required variable is missing', async () => {
     await expect(loadEnvServerWith({ BETTER_AUTH_SECRET: undefined })).rejects.toThrow(
       /Invalid server environment configuration/,
+    );
+  });
+
+  it('accepts a valid platform organisation UUID', async () => {
+    const { serverEnv } = await loadEnvServerWith({
+      PLATFORM_ORGANISATION_ID: '5f01b1bf-bd10-49ea-a0df-072ad35030a4',
+    });
+
+    expect(serverEnv.PLATFORM_ORGANISATION_ID).toBe('5f01b1bf-bd10-49ea-a0df-072ad35030a4');
+  });
+
+  it('requires PLATFORM_ORGANISATION_ID', async () => {
+    await expect(loadEnvServerWith({ PLATFORM_ORGANISATION_ID: undefined })).rejects.toThrow(
+      /PLATFORM_ORGANISATION_ID/,
+    );
+  });
+
+  it('requires PLATFORM_ORGANISATION_ID to be a UUID', async () => {
+    await expect(loadEnvServerWith({ PLATFORM_ORGANISATION_ID: 'platform-admin' })).rejects.toThrow(
+      /PLATFORM_ORGANISATION_ID/,
     );
   });
 

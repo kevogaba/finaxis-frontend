@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { backendApi } from '@/auth/backend-api';
 import { readContextToken } from '@/auth/context-cookie';
 import type { FinaxisUser } from '@/auth/auth.types';
-import type { ApplicationContext } from '@/config/application-context';
+import {
+  resolveApplicationContextModule,
+  type ApplicationContext,
+} from '@/config/application-context';
 import type {
   BackendBranch,
   BackendOrganisation,
@@ -182,7 +185,7 @@ export async function getSelectedContextProfile(headers: Headers): Promise<Selec
     kind: 'resolved',
     profile,
     context: {
-      module: { id: 'administration', name: 'Administration' },
+      module: resolveApplicationContextModule(profile.organisation.id),
       organization: { id: profile.organisation.id, name: profile.organisation.name },
       branch: { id: profile.selected_branch.id, name: profile.selected_branch.name },
     },

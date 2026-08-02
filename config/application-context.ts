@@ -1,7 +1,18 @@
-export interface ApplicationContextModule {
-  id: string;
-  name: string;
-}
+import 'server-only';
+import { serverEnv } from '@/config/env.server';
+
+export const administrationModule = {
+  id: 'administration',
+  name: 'Administration',
+} as const;
+
+export const platformAdministrationModule = {
+  id: 'platform-administration',
+  name: 'Platform Administration',
+} as const;
+
+export type ApplicationContextModule =
+  typeof administrationModule | typeof platformAdministrationModule;
 
 export interface ApplicationContextOrganization {
   id: string;
@@ -19,6 +30,16 @@ export interface ApplicationContext {
   branch: ApplicationContextBranch;
 }
 
+export function isPlatformOrganisation(organisationId: string): boolean {
+  return organisationId === serverEnv.PLATFORM_ORGANISATION_ID;
+}
+
+export function resolveApplicationContextModule(organisationId: string): ApplicationContextModule {
+  return isPlatformOrganisation(organisationId)
+    ? platformAdministrationModule
+    : administrationModule;
+}
+
 /**
  * Stand-in for the future organization/branch-selection flow. Branch and
  * organization resolution isn't implemented yet — this fixture unblocks the
@@ -26,10 +47,7 @@ export interface ApplicationContext {
  * treat this as authoritative for authorization.
  */
 export const applicationContext: ApplicationContext = {
-  module: {
-    id: 'administration',
-    name: 'Administration',
-  },
+  module: administrationModule,
   organization: {
     id: 'greenfield-sacco',
     name: 'GreenField SACCO',

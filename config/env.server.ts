@@ -15,6 +15,7 @@ const rawServerEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   BETTER_AUTH_URL: z.url(),
   BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET must be at least 32 characters.'),
+  PLATFORM_ORGANISATION_ID: z.uuid(),
   KEYCLOAK_ISSUER: z.url(),
   KEYCLOAK_CLIENT_ID: z.string().min(1),
   KEYCLOAK_CLIENT_SECRET: z.string().min(1),

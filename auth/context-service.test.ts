@@ -1,5 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+Object.assign(process.env, {
+  NODE_ENV: 'test',
+  BETTER_AUTH_URL: 'http://localhost:3100',
+  BETTER_AUTH_SECRET: 'a'.repeat(32),
+  PLATFORM_ORGANISATION_ID: '8d0cb4e6-521a-4e51-bac0-e4d938c0ee76',
+  KEYCLOAK_ISSUER: 'http://localhost:8080/realms/finaxis',
+  KEYCLOAK_CLIENT_ID: 'finaxis-web',
+  KEYCLOAK_CLIENT_SECRET: 'secret-value',
+  AUTH_TRUSTED_ORIGINS: 'http://localhost:3100',
+  AUTH_POST_LOGOUT_REDIRECT_URI: 'http://localhost:3100/login',
+  FINAXIS_API_URL: 'http://localhost:8080',
+});
+
 const { backendApi, readContextToken } = vi.hoisted(() => ({
   backendApi: { get: vi.fn(), post: vi.fn() },
   readContextToken: vi.fn(),
@@ -13,13 +26,15 @@ const {
   discoverBranches,
   discoverOrganisations,
   getSelectedContextProfile,
+  parseDiscoveryPageQuery,
   profileToFinaxisUser,
   selectBranch,
   selectOrganisation,
 } = await import('./context-service');
 
 const requestHeaders = new Headers({ cookie: 'finaxis.session_token=session-value' });
-const organisationId = '9b4c0317-9d61-41d7-a68d-5713ad5b3db2';
+const platformOrganisationId = '8d0cb4e6-521a-4e51-bac0-e4d938c0ee76';
+const tenantOrganisationId = '9b4c0317-9d61-41d7-a68d-5713ad5b3db2';
 const branchId = 'd0e5649c-88fd-4601-8696-0c733987a51c';
 
 const profile = {
@@ -40,7 +55,7 @@ const profile = {
   },
   organisation: {
     code: 'FINAXIS',
-    id: organisationId,
+    id: platformOrganisationId,
     name: 'Finaxis Holdings',
     status: 'ACTIVE',
   },
@@ -58,6 +73,44 @@ const profile = {
 describe('context service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it.each([
+    [undefined, 0],
+    ['', 0],
+    ['4', 4],
+    [['5', '6'], 5],
+  ])('parses valid discovery page query %s', (value, expected) => {
+    expect(parseDiscoveryPageQuery(value)).toBe(expected);
+  });
+
+  it.each(['-1', '1.5', 'not-a-number'])('rejects invalid discovery page query %s', (value) => {
+    expect(parseDiscoveryPageQuery(value)).toBeNull();
+  });
+
+  it('uses fallback identity values when profile fields are absent', () => {
+    const result = profileToFinaxisUser(
+      {
+        ...profile,
+        email: null,
+        full_name: null,
+        organisation: null,
+        selected_branch: null,
+      },
+      {
+        branches: [],
+        email: 'fallback@example.com',
+        id: 'fallback-user',
+        name: 'Fallback User',
+        permissions: [],
+        roles: [],
+      },
+    );
+
+    expect(result.email).toBe('fallback@example.com');
+    expect(result.name).toBe('fallback@example.com');
+    expect(result.image).toBeUndefined();
+    expect(result.username).toBeUndefined();
   });
 
   it('discovers the first bounded organisation page with the incoming request headers', async () => {
@@ -95,13 +148,13 @@ describe('context service', () => {
   });
 
   it('sends a validated organisation selection to the backend', async () => {
-    backendApi.post.mockResolvedValueOnce({ organisation_id: organisationId });
+    backendApi.post.mockResolvedValueOnce({ organisation_id: platformOrganisationId });
 
-    await selectOrganisation(requestHeaders, organisationId);
+    await selectOrganisation(requestHeaders, platformOrganisationId);
 
     expect(backendApi.post).toHaveBeenCalledWith(
       '/api/v1/auth/select-organisation',
-      { organisation_id: organisationId },
+      { organisation_id: platformOrganisationId },
       requestHeaders,
     );
   });
@@ -157,15 +210,15 @@ describe('context service', () => {
     );
   });
 
-  it('resolves the selected backend profile and a typed application context from the HttpOnly cookie', async () => {
+  it('resolves the platform administration module for the reserved organisation', async () => {
     readContextToken.mockResolvedValueOnce('signed-context-token');
     backendApi.get.mockResolvedValueOnce(profile);
 
     await expect(getSelectedContextProfile(requestHeaders)).resolves.toEqual({
       context: {
         branch: { id: branchId, name: 'Headquarters' },
-        module: { id: 'administration', name: 'Administration' },
-        organization: { id: organisationId, name: 'Finaxis Holdings' },
+        module: { id: 'platform-administration', name: 'Platform Administration' },
+        organization: { id: platformOrganisationId, name: 'Finaxis Holdings' },
       },
       kind: 'resolved',
       profile,
@@ -175,6 +228,28 @@ describe('context service', () => {
       requestHeaders,
       'signed-context-token',
     );
+  });
+
+  it('keeps tenant organisations on the administration module', async () => {
+    readContextToken.mockResolvedValueOnce('signed-context-token');
+    backendApi.get.mockResolvedValueOnce({
+      ...profile,
+      organisation: { ...profile.organisation, id: tenantOrganisationId, name: 'Tenant SACCO' },
+    });
+
+    const result = await getSelectedContextProfile(requestHeaders);
+
+    expect(result.kind).toBe('resolved');
+    if (result.kind !== 'resolved') {
+      return;
+    }
+
+    expect(result.context.module.id).toBe('administration');
+    expect(result.context.module.name).toBe('Administration');
+    expect(result.context.organization).toEqual({
+      id: tenantOrganisationId,
+      name: 'Tenant SACCO',
+    });
   });
 
   it('maps the backend profile to a sanitized browser DTO', () => {
@@ -193,7 +268,7 @@ describe('context service', () => {
       id: 'user-1',
       image: undefined,
       name: 'Jane Muthoni',
-      organization: { id: organisationId, name: 'Finaxis Holdings' },
+      organization: { id: platformOrganisationId, name: 'Finaxis Holdings' },
       permissions: ['iam.profile.read', 'iam.user.invite'],
       roles: ['BRANCH_TELLER', 'TENANT_ADMIN'],
       selectedBranch: { id: branchId, name: 'Headquarters' },

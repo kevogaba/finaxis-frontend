@@ -15,6 +15,16 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    env:
+      BETTER_AUTH_URL: http://localhost:3100
+      BETTER_AUTH_SECRET: ci-e2e-secret-ci-e2e-secret-ci-e2e-secret
+      PLATFORM_ORGANISATION_ID: 8d0cb4e6-521a-4e51-bac0-e4d938c0ee76
+      KEYCLOAK_ISSUER: http://localhost:8080/realms/finaxis
+      KEYCLOAK_CLIENT_ID: finaxis-web-e2e
+      KEYCLOAK_CLIENT_SECRET: ci-e2e-client-secret
+      AUTH_TRUSTED_ORIGINS: http://localhost:3100
+      AUTH_POST_LOGOUT_REDIRECT_URI: http://localhost:3100/login
+      FINAXIS_API_URL: http://localhost:8080
     steps:
       - name: Checkout
         uses: actions/checkout@v7

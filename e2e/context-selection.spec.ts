@@ -82,11 +82,19 @@ test.describe('Authenticated context selection', () => {
     const organisationRequest = page.waitForRequest(
       sameOriginRequest(testInfo, '/api/context/organisation', 'POST'),
     );
+    const organisationResponse = page.waitForResponse((response) =>
+      sameOriginRequest(testInfo, '/api/context/organisation', 'POST')(response.request()),
+    );
+    const branchResponse = page.waitForResponse((response) =>
+      sameOriginRequest(testInfo, '/api/context/branches', 'GET')(response.request()),
+    );
     await selectMuiOption(page, 'Organisation', /Greenfield SACCO/);
     const organisationPost = await organisationRequest;
     expect(organisationPost.postDataJSON()).toEqual({ organisation_id: ORGANISATION_ID });
 
-    await expect(page.getByRole('combobox', { name: 'Branch' })).toBeVisible();
+    expect((await organisationResponse).status()).toBe(200);
+    expect((await branchResponse).status()).toBe(200);
+    await expect(page.getByRole('combobox', { name: 'Branch' })).toBeVisible({ timeout: 15000 });
 
     const branchRequest = page.waitForRequest(
       sameOriginRequest(testInfo, '/api/context/branch', 'POST'),
@@ -99,7 +107,7 @@ test.describe('Authenticated context selection', () => {
     await expect(page.getByRole('banner').getByText('Administration')).toBeVisible();
     await expect(page.getByText('Greenfield SACCO · Head Office')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
-    await expect(page.getByText('Backend Jane Manager')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Backend Jane Manager' })).toBeVisible();
     await expect(page.getByText('backend.jane@greenfield.example')).toBeVisible();
     await expect(page.getByText('users.read')).toBeVisible();
   });
