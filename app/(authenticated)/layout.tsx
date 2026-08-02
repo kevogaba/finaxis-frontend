@@ -2,18 +2,27 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { getAuthenticatedUser } from '@/auth/get-authenticated-user';
-import { applicationContext } from '@/config/application-context';
+import { getSelectedContextProfile, profileToFinaxisUser } from '@/auth/context-service';
 import { AppShell } from '@/components/shell/app-shell';
 
 export default async function AuthenticatedLayout({ children }: { children: ReactNode }) {
-  const user = await getAuthenticatedUser(await headers());
+  const requestHeaders = await headers();
+  const sessionUser = await getAuthenticatedUser(requestHeaders);
 
-  if (!user) {
+  if (!sessionUser) {
     redirect('/login?reason=session_expired');
   }
 
+  const selectedContext = await getSelectedContextProfile(requestHeaders);
+  if (selectedContext.kind !== 'resolved') {
+    redirect('/select-context');
+  }
+
   return (
-    <AppShell user={user} context={applicationContext}>
+    <AppShell
+      user={profileToFinaxisUser(selectedContext.profile, sessionUser)}
+      context={selectedContext.context}
+    >
       {children}
     </AppShell>
   );

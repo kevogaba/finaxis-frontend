@@ -9,6 +9,7 @@ const REQUIRED_ENV = {
   KEYCLOAK_CLIENT_SECRET: 'secret-value',
   AUTH_TRUSTED_ORIGINS: 'http://localhost:3100',
   AUTH_POST_LOGOUT_REDIRECT_URI: 'http://localhost:3100/login',
+  FINAXIS_API_URL: 'http://localhost:8080',
 };
 
 async function loadEnvServerWith(overrides: Record<string, string | undefined>) {
@@ -57,6 +58,18 @@ describe('serverEnv', () => {
     );
   });
 
+  it('requires FINAXIS_API_URL', async () => {
+    await expect(loadEnvServerWith({ FINAXIS_API_URL: undefined })).rejects.toThrow(
+      /FINAXIS_API_URL/,
+    );
+  });
+
+  it('requires FINAXIS_API_URL to be a URL', async () => {
+    await expect(loadEnvServerWith({ FINAXIS_API_URL: 'not-a-url' })).rejects.toThrow(
+      /FINAXIS_API_URL/,
+    );
+  });
+
   it('throws when BETTER_AUTH_SECRET is shorter than 32 characters', async () => {
     await expect(loadEnvServerWith({ BETTER_AUTH_SECRET: 'short' })).rejects.toThrow(
       /Invalid server environment configuration/,
@@ -94,6 +107,19 @@ describe('serverEnv', () => {
         AUTH_TRUSTED_ORIGINS: 'https://app.finaxis.example',
         AUTH_POST_LOGOUT_REDIRECT_URI: 'https://app.finaxis.example/login',
         KEYCLOAK_ISSUER: 'http://localhost:8080/realms/finaxis',
+      }),
+    ).rejects.toThrow(/HTTPS/);
+  });
+
+  it('requires HTTPS for the platform API URL in production', async () => {
+    await expect(
+      loadEnvServerWith({
+        NODE_ENV: 'production',
+        BETTER_AUTH_URL: 'https://app.finaxis.example',
+        AUTH_TRUSTED_ORIGINS: 'https://app.finaxis.example',
+        AUTH_POST_LOGOUT_REDIRECT_URI: 'https://app.finaxis.example/login',
+        KEYCLOAK_ISSUER: 'https://identity.finaxis.example/realms/finaxis',
+        FINAXIS_API_URL: 'http://api.finaxis.example',
       }),
     ).rejects.toThrow(/HTTPS/);
   });

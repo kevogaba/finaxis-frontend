@@ -20,6 +20,7 @@ const rawServerEnvSchema = z.object({
   KEYCLOAK_CLIENT_SECRET: z.string().min(1),
   AUTH_TRUSTED_ORIGINS: trustedOriginsSchema,
   AUTH_POST_LOGOUT_REDIRECT_URI: z.url(),
+  FINAXIS_API_URL: z.url(),
 });
 
 export type ServerEnv = z.infer<typeof rawServerEnvSchema>;
@@ -43,6 +44,7 @@ function assertHttpsInProduction(env: ServerEnv): void {
     env.BETTER_AUTH_URL,
     env.AUTH_POST_LOGOUT_REDIRECT_URI,
     env.KEYCLOAK_ISSUER,
+    env.FINAXIS_API_URL,
     ...env.AUTH_TRUSTED_ORIGINS,
   ];
   const insecure = candidates.find((url) => !url.startsWith('https://'));

@@ -10,6 +10,7 @@ const USER: FinaxisUser = {
   id: 'user-1',
   name: 'Jane Muthoni',
   email: 'jane.muthoni@finaxis.test',
+  permissions: [],
   roles: [],
   branches: [],
 };

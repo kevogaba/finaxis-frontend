@@ -4,6 +4,7 @@ import { genericOAuth, keycloak } from 'better-auth/plugins';
 import { nextCookies } from 'better-auth/next-js';
 import { serverEnv } from '@/config/env.server';
 import { AUTH_COOKIE_PREFIX } from '@/auth/auth.types';
+import { getE2eBetterAuthSession } from '@/auth/e2e-test-mode';
 
 const SESSION_LIFETIME_SECONDS = 60 * 60 * 8; // 8 hours — conservative for an enterprise finance system.
 
@@ -88,6 +89,36 @@ function getAuth(): Auth {
   return memoizedAuth;
 }
 
+interface HeadersContext {
+  headers: Headers;
+}
+
+type GetSessionEndpoint = (context: HeadersContext) => Promise<unknown>;
+
+function apiWithE2eSession(api: unknown): unknown {
+  if (typeof api !== 'object' || api === null) {
+    return api;
+  }
+
+  return new Proxy(api, {
+    get(target, prop, receiver): unknown {
+      const value: unknown = Reflect.get(target, prop, receiver) as unknown;
+      if (prop !== 'getSession' || typeof value !== 'function') {
+        return value;
+      }
+
+      return async (context: HeadersContext): Promise<unknown> => {
+        const e2eSession = getE2eBetterAuthSession(context.headers);
+        if (e2eSession) {
+          return e2eSession;
+        }
+
+        return (value as GetSessionEndpoint)(context);
+      };
+    },
+  });
+}
+
 /**
  * Lazily-constructed Better Auth instance.
  *
@@ -103,7 +134,8 @@ function getAuth(): Auth {
  */
 export const auth: Auth = new Proxy({} as Auth, {
   get(_target, prop, receiver): unknown {
-    return Reflect.get(getAuth(), prop, receiver) as unknown;
+    const value = Reflect.get(getAuth(), prop, receiver) as unknown;
+    return prop === 'api' ? apiWithE2eSession(value) : value;
   },
   has(_target, prop) {
     return Reflect.has(getAuth(), prop);

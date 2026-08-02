@@ -34,6 +34,11 @@ Web origin:
 http://localhost:3100
 ```
 
+The `finaxis-web` client must also include an `oidc-audience-mapper` protocol mapper that adds
+`finaxis-platform` to the access-token audience. The frontend keeps the token server-side, then
+uses it when calling the Spring resource server, whose accepted audience is `finaxis-platform`.
+Without this mapper, login succeeds but the first organisation-discovery request returns `401`.
+
 > **Port note:** this environment runs the frontend on `3100` because the platform's
 > `grafana-lgtm` container already holds `3000`. The Keycloak client registers both
 > `3000` and `3100` variants of every URI above so the same client definition works

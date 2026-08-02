@@ -45,6 +45,7 @@ describe('getAuthenticatedUser', () => {
       roles: [],
       branches: [],
       organization: undefined,
+      permissions: [],
     });
   });
 });

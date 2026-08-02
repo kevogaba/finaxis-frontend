@@ -18,6 +18,7 @@ describe('mapAuthenticatedUser', () => {
       username: undefined,
       image: undefined,
       roles: [],
+      permissions: [],
       branches: [],
       organization: undefined,
     });
