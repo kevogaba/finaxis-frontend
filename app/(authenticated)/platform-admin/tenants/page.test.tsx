@@ -120,4 +120,20 @@ describe('TenantDirectoryPage', () => {
     expect(screen.getByText(/tenant directory is temporarily unavailable/i)).toBeInTheDocument();
     expect(screen.getByText('Tenant service timed out.')).toBeInTheDocument();
   });
+
+  it('renders a validation error instead of crashing on an out-of-range page size', async () => {
+    const ui = await TenantDirectoryPage({ searchParams: Promise.resolve({ size: '101' }) });
+    renderWithProviders(ui);
+
+    expect(screen.getByText(/these search parameters aren.t valid/i)).toBeInTheDocument();
+    expect(listTenants).not.toHaveBeenCalled();
+  });
+
+  it('renders a validation error instead of crashing on a negative page number', async () => {
+    const ui = await TenantDirectoryPage({ searchParams: Promise.resolve({ page: '-1' }) });
+    renderWithProviders(ui);
+
+    expect(screen.getByText(/these search parameters aren.t valid/i)).toBeInTheDocument();
+    expect(listTenants).not.toHaveBeenCalled();
+  });
 });

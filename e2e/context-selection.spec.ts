@@ -65,7 +65,7 @@ test.describe('Authenticated context selection', () => {
 
     await page.goto('/profile');
 
-    await expect(page).toHaveURL(/\/select-context$/);
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/);
     await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
     await expect(page.getByRole('banner')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Users', exact: true })).toHaveCount(0);
@@ -77,7 +77,7 @@ test.describe('Authenticated context selection', () => {
   }, testInfo) => {
     await authenticate(context, testInfo);
     await page.goto('/profile');
-    await expect(page).toHaveURL(/\/select-context$/);
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/);
 
     const organisationRequest = page.waitForRequest(
       sameOriginRequest(testInfo, '/api/context/organisation', 'POST'),
@@ -153,7 +153,7 @@ test.describe('Authenticated context selection', () => {
 
     await page.goto('/profile');
 
-    await expect(page).toHaveURL(/\/select-context$/);
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/);
     await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
     await expect(page.getByRole('banner')).toHaveCount(0);
     await expect(page.getByText('Backend Jane Manager')).toHaveCount(0);

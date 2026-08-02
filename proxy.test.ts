@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { describe, expect, it } from 'vitest';
+import { REQUEST_PATHNAME_HEADER } from '@/auth/auth.types';
 import { config, proxy } from './proxy';
 
 function requestFor(path: string, cookie?: string): NextRequest {
@@ -18,6 +19,15 @@ describe('proxy', () => {
     );
   });
 
+  it('redirects platform-admin routes without a session cookie', () => {
+    const response = proxy(requestFor('/platform-admin/tenants'));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'http://localhost:3100/login?reason=session_expired',
+    );
+  });
+
   it('lets login render even when an unvalidated session cookie is present', () => {
     const response = proxy(requestFor('/login', 'finaxis.session_token=stale'));
 
@@ -25,7 +35,18 @@ describe('proxy', () => {
     expect(response.headers.get('location')).toBeNull();
   });
 
+  it('forwards the requested pathname on a protected route so it can be restored after context selection', () => {
+    const response = proxy(
+      requestFor('/platform-admin/tenants?status=ACTIVE', 'finaxis.session_token=valid'),
+    );
+
+    expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.get('x-middleware-request-' + REQUEST_PATHNAME_HEADER)).toBe(
+      '/platform-admin/tenants',
+    );
+  });
+
   it('does not match login requests', () => {
-    expect(config.matcher).toEqual(['/admin/:path*', '/profile']);
+    expect(config.matcher).toEqual(['/admin/:path*', '/platform-admin/:path*', '/profile']);
   });
 });

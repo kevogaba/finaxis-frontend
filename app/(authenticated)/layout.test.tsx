@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
+import { REQUEST_PATHNAME_HEADER } from '@/auth/auth.types';
 
 const { profileToFinaxisUser, renderedShell } = vi.hoisted(() => ({
   profileToFinaxisUser: vi.fn((profile: Record<string, unknown>, fallbackUser: unknown) => {
@@ -155,5 +157,28 @@ describe('AuthenticatedLayout', () => {
 
     expect(redirect).toHaveBeenCalledWith('/select-context');
     expect(renderedShell).not.toHaveBeenCalled();
+  });
+
+  it('preserves the originally requested path through context selection', async () => {
+    vi.mocked(headers).mockResolvedValueOnce(
+      new Headers({ [REQUEST_PATHNAME_HEADER]: '/admin/users' }),
+    );
+    getAuthenticatedUser.mockResolvedValueOnce({
+      id: 'user-1',
+      name: 'Jane Muthoni',
+      email: 'jane.muthoni@finaxis.test',
+      roles: [],
+      branches: [],
+    });
+    getSelectedContextProfile.mockResolvedValueOnce({
+      kind: 'redirect-to-context-selection',
+      reason: 'missing-context-token',
+    });
+
+    await expect(AuthenticatedLayout({ children: <div>Protected content</div> })).rejects.toThrow(
+      'NEXT_REDIRECT',
+    );
+
+    expect(redirect).toHaveBeenCalledWith('/select-context?next=%2Fadmin%2Fusers');
   });
 });

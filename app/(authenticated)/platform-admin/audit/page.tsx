@@ -5,14 +5,14 @@ import Link from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import NextLink from '@/components/navigation/next-link';
+import { AuditEventTable } from '@/modules/platform-administration/components/audit-event-table';
 import { PlatformPageShell } from '@/modules/platform-administration/components/platform-page-shell';
-import { TenantTable } from '@/modules/platform-administration/components/tenant-table';
-import { safeParseTenantListQuery } from '@/modules/platform-administration/platform-administration-queries';
+import { safeParseAuditListQuery } from '@/modules/platform-administration/platform-administration-queries';
 import { platformAdministrationService } from '@/modules/platform-administration/platform-administration-service';
 
-export const metadata: Metadata = { title: 'Tenant Directory' };
+export const metadata: Metadata = { title: 'Audit Events' };
 
-interface TenantDirectoryPageProps {
+interface AuditEventsPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
@@ -35,19 +35,16 @@ function toUrlSearchParams(params: Record<string, string | string[] | undefined>
   return result;
 }
 
-export default async function TenantDirectoryPage({ searchParams }: TenantDirectoryPageProps) {
+export default async function AuditEventsPage({ searchParams }: AuditEventsPageProps) {
   const requestHeaders = await headers();
-  const query = safeParseTenantListQuery(toUrlSearchParams(await searchParams));
+  const query = safeParseAuditListQuery(toUrlSearchParams(await searchParams));
 
   if (!query) {
     return (
       <PlatformPageShell
-        title="Tenant directory"
-        description="Inspect tenant identity, lifecycle state, and locale metadata through the live read-only platform API."
-        breadcrumbs={[
-          { href: '/platform-admin', label: 'Overview' },
-          { label: 'Tenant directory' },
-        ]}
+        title="Audit events"
+        description="Review live audit events through the dedicated directory without enabling write actions in this stage."
+        breadcrumbs={[{ href: '/platform-admin', label: 'Overview' }, { label: 'Audit events' }]}
       >
         <Alert severity="error">
           <Stack spacing={0.5}>
@@ -56,8 +53,8 @@ export default async function TenantDirectoryPage({ searchParams }: TenantDirect
             </Typography>
             <Typography variant="body2">
               Check the page number and page size in the URL, or{' '}
-              <Link component={NextLink} href="/platform-admin/tenants">
-                reset the tenant directory
+              <Link component={NextLink} href="/platform-admin/audit">
+                reset the audit event directory
               </Link>
               .
             </Typography>
@@ -67,9 +64,9 @@ export default async function TenantDirectoryPage({ searchParams }: TenantDirect
     );
   }
 
-  const tenantDirectoryResult = await platformAdministrationService
-    .listTenants(requestHeaders, query)
-    .then((tenantsPage) => ({ kind: 'success' as const, tenantsPage }))
+  const auditEventsResult = await platformAdministrationService
+    .listAuditEvents(requestHeaders, query)
+    .then((auditEventsPage) => ({ kind: 'success' as const, auditEventsPage }))
     .catch((error: unknown) => ({
       error:
         error instanceof Error ? error.message : 'The backend did not return a usable response.',
@@ -78,24 +75,23 @@ export default async function TenantDirectoryPage({ searchParams }: TenantDirect
 
   return (
     <PlatformPageShell
-      title="Tenant directory"
-      description="Inspect tenant identity, lifecycle state, and locale metadata through the live read-only platform API."
-      breadcrumbs={[{ href: '/platform-admin', label: 'Overview' }, { label: 'Tenant directory' }]}
+      title="Audit events"
+      description="Review live audit events through the dedicated directory without enabling write actions in this stage."
+      breadcrumbs={[{ href: '/platform-admin', label: 'Overview' }, { label: 'Audit events' }]}
     >
-      {tenantDirectoryResult.kind === 'error' ? (
+      {auditEventsResult.kind === 'error' ? (
         <Alert severity="error">
           <Stack spacing={0.5}>
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              Tenant directory is temporarily unavailable.
+              Audit event directory is temporarily unavailable.
             </Typography>
-            <Typography variant="body2">{tenantDirectoryResult.error}</Typography>
+            <Typography variant="body2">{auditEventsResult.error}</Typography>
           </Stack>
         </Alert>
       ) : (
-        <TenantTable
-          pathname="/platform-admin/tenants"
-          query={query}
-          tenantsPage={tenantDirectoryResult.tenantsPage}
+        <AuditEventTable
+          auditEventsPage={auditEventsResult.auditEventsPage}
+          pathname="/platform-admin/audit"
         />
       )}
     </PlatformPageShell>

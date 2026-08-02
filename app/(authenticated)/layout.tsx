@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { getAuthenticatedUser } from '@/auth/get-authenticated-user';
 import { getSelectedContextProfile, profileToFinaxisUser } from '@/auth/context-service';
+import { contextSelectionRedirectPath } from '@/auth/context-selection-redirect';
 import { AppShell } from '@/components/shell/app-shell';
 
 export default async function AuthenticatedLayout({ children }: { children: ReactNode }) {
@@ -15,7 +16,7 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
 
   const selectedContext = await getSelectedContextProfile(requestHeaders);
   if (selectedContext.kind !== 'resolved') {
-    redirect('/select-context');
+    redirect(contextSelectionRedirectPath(requestHeaders));
   }
 
   return (

@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getSessionCookie } from 'better-auth/cookies';
-import { AUTH_COOKIE_PREFIX } from '@/auth/auth.types';
+import { AUTH_COOKIE_PREFIX, REQUEST_PATHNAME_HEADER } from '@/auth/auth.types';
 
-const PROTECTED_PREFIXES = ['/admin', '/profile'];
+const PROTECTED_PREFIXES = ['/admin', '/platform-admin', '/profile'];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -20,9 +20,11 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login?reason=session_expired', request.url));
   }
 
-  return NextResponse.next();
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(REQUEST_PATHNAME_HEADER, pathname);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/profile'],
+  matcher: ['/admin/:path*', '/platform-admin/:path*', '/profile'],
 };

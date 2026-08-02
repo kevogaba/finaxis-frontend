@@ -67,7 +67,7 @@ test.describe('Protected routes with a mocked authenticated session', () => {
 
     await page.goto('/admin');
 
-    await expect(page).toHaveURL(/\/select-context$/);
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fadmin$/);
     await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
     await expect(page.getByRole('banner')).toHaveCount(0);
   });

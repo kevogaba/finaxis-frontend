@@ -117,4 +117,17 @@ describe('PlatformOverviewPage', () => {
       '/platform-admin/audit',
     );
   });
+
+  it('falls back to default pagination instead of crashing on an invalid page size', async () => {
+    const ui = await PlatformOverviewPage({ searchParams: Promise.resolve({ size: '101' }) });
+    renderWithProviders(ui);
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Platform overview' }),
+    ).toBeInTheDocument();
+    expect(listTenants).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ page: 0, size: 25 }),
+    );
+  });
 });

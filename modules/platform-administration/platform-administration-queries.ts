@@ -54,6 +54,19 @@ export function parseTenantListQuery(params: URLSearchParams): TenantListQuery {
   };
 }
 
+/**
+ * Query parsers validate with `.parse()` so malformed input (e.g. `size=101`) is
+ * rejected rather than silently clamped. Server Component pages must not let that
+ * rejection surface as an uncaught error, so route through this before rendering.
+ */
+export function safeParseTenantListQuery(params: URLSearchParams): TenantListQuery | null {
+  try {
+    return parseTenantListQuery(params);
+  } catch {
+    return null;
+  }
+}
+
 export function parseUserListQuery(params: URLSearchParams): UserListQuery {
   return {
     q: optionalText(params.get('q')),
@@ -87,6 +100,15 @@ export function parseAuditListQuery(params: URLSearchParams): AuditListQuery {
     page: parsePage(params.get('page')),
     size: parseSize(params.get('size')),
   };
+}
+
+/** See safeParseTenantListQuery — same rationale, for the audit event list. */
+export function safeParseAuditListQuery(params: URLSearchParams): AuditListQuery | null {
+  try {
+    return parseAuditListQuery(params);
+  } catch {
+    return null;
+  }
 }
 
 export function toQueryString(query: Record<string, string | number | undefined>): string {

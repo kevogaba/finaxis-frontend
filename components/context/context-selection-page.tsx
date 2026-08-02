@@ -23,6 +23,9 @@ import type {
 const CONTEXT_UPDATE_ERROR = "We couldn't update your context. Please try again.";
 const BRANCH_DISCOVERY_ERROR = "We couldn't load branches. Please try again.";
 const ORGANISATION_DISCOVERY_ERROR = "We couldn't load organisations. Please try again.";
+const STALE_CONTEXT_MESSAGE =
+  'Your saved context is no longer valid. Select an organisation again.';
+const SESSION_EXPIRED_REDIRECT = '/login?reason=session_expired';
 const DEFAULT_DESTINATION = '/profile';
 
 export type ContextSelectionDestination =
@@ -32,7 +35,10 @@ export type ContextSelectionDestination =
   | '/admin/branches'
   | '/admin/roles'
   | '/admin/settings'
-  | '/admin/users';
+  | '/admin/users'
+  | '/platform-admin'
+  | '/platform-admin/tenants'
+  | '/platform-admin/audit';
 
 interface ContextSelectionPageProps {
   organisations: BrowserPage<BrowserOrganisation>;
@@ -103,9 +109,24 @@ function isBrowserPage<T>(
   );
 }
 
+class ContextRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`Context request failed with status ${status}.`);
+    this.name = 'ContextRequestError';
+  }
+}
+
+function isSessionExpired(error: unknown): boolean {
+  return error instanceof ContextRequestError && error.status === 401;
+}
+
+function isStaleContext(error: unknown): boolean {
+  return error instanceof ContextRequestError && error.status === 409;
+}
+
 async function readSuccessfulJson(response: Response): Promise<unknown> {
   if (!response.ok) {
-    throw new Error('Context request failed.');
+    throw new ContextRequestError(response.status);
   }
 
   return response.json() as Promise<unknown>;
@@ -200,7 +221,11 @@ export function ContextSelectionPage({
         throw new Error('Invalid organisation response.');
       }
       setOrganisationPage(body);
-    } catch {
+    } catch (error) {
+      if (isSessionExpired(error)) {
+        router.replace(SESSION_EXPIRED_REDIRECT);
+        return;
+      }
       setOrganisationError(true);
     } finally {
       setIsLoadingOrganisations(false);
@@ -219,8 +244,17 @@ export function ContextSelectionPage({
         throw new Error('Invalid branch response.');
       }
       setBranchPage(body);
-    } catch {
+    } catch (error) {
+      if (isSessionExpired(error)) {
+        router.replace(SESSION_EXPIRED_REDIRECT);
+        return;
+      }
       setBranchPage(null);
+      if (isStaleContext(error)) {
+        setOrganisationId('');
+        setUpdateError(STALE_CONTEXT_MESSAGE);
+        return;
+      }
       setBranchError(BRANCH_DISCOVERY_ERROR);
     } finally {
       setIsLoadingBranches(false);
@@ -256,7 +290,11 @@ export function ContextSelectionPage({
 
       setIsSavingOrganisation(false);
       await loadBranches(0);
-    } catch {
+    } catch (error) {
+      if (isSessionExpired(error)) {
+        router.replace(SESSION_EXPIRED_REDIRECT);
+        return;
+      }
       setUpdateError(CONTEXT_UPDATE_ERROR);
     } finally {
       setIsSavingOrganisation(false);
@@ -279,7 +317,17 @@ export function ContextSelectionPage({
       });
       await readSuccessfulJson(response);
       router.replace(destination);
-    } catch {
+    } catch (error) {
+      if (isSessionExpired(error)) {
+        router.replace(SESSION_EXPIRED_REDIRECT);
+        return;
+      }
+      if (isStaleContext(error)) {
+        setBranchPage(null);
+        setOrganisationId('');
+        setUpdateError(STALE_CONTEXT_MESSAGE);
+        return;
+      }
       setUpdateError(CONTEXT_UPDATE_ERROR);
     } finally {
       setIsSavingBranch(false);
@@ -358,7 +406,7 @@ export function ContextSelectionPage({
             </FormControl>
           )}
 
-          {!organisationError && !hasNoOrganisations && (
+          {!organisationError && (
             <PaginationControls
               ariaLabel="Organisation pages"
               disabled={isMutating || isDiscoveryLoading}
@@ -441,7 +489,7 @@ export function ContextSelectionPage({
             </FormControl>
           )}
 
-          {hasLoadedBranches && !hasNoBranches && (
+          {hasLoadedBranches && (
             <PaginationControls
               ariaLabel="Branch pages"
               disabled={isMutating || isDiscoveryLoading}

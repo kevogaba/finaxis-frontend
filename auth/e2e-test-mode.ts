@@ -162,6 +162,36 @@ const profile: BackendProfile = {
   user_id: 'e2e-backend-user',
 };
 
+const PLATFORM_TENANT_ID = '99999999-9999-4999-8999-999999999999';
+
+const platformTenant = {
+  base_currency_code: 'KES',
+  bootstrap_failure_code: null,
+  bootstrap_status: 'COMPLETE',
+  country_code: 'KE',
+  created_at: '2026-07-01T08:00:00.000Z',
+  display_name: 'Acme SACCO',
+  id: PLATFORM_TENANT_ID,
+  status: 'ACTIVE',
+  tenant_code: 'ACME',
+  timezone: 'Africa/Nairobi',
+  updated_at: '2026-07-24T08:00:00.000Z',
+};
+
+const platformAuditEvent = {
+  action: 'UPDATE',
+  actor_type: 'HUMAN',
+  actor_user_id: 'e2e-backend-user',
+  entity_id: PLATFORM_TENANT_ID,
+  entity_type: 'TENANT',
+  event_type: 'TENANT_UPDATED',
+  id: 'e0000000-0000-4000-8000-000000000000',
+  occurred_at: '2026-07-01T08:00:00.000Z',
+  organisation_id: ORGANISATION_ID,
+  outcome: 'SUCCESS',
+  severity: 'INFO',
+};
+
 export function getE2eAuthenticatedUser(headers: Headers): FinaxisUser | null {
   if (!isE2eTestMode() || !hasE2eSession(headers)) {
     return null;
@@ -282,6 +312,38 @@ export function getE2eBackendResult<T>(
     }
 
     return { body: profile as T, kind: 'success' };
+  }
+
+  if (method === 'GET' && pathname === '/api/v1/platform/tenants') {
+    if (contextToken !== BRANCH_CONTEXT_TOKEN) {
+      return { kind: 'error', status: 403 };
+    }
+
+    return { body: page([platformTenant]) as T, kind: 'success' };
+  }
+
+  if (method === 'GET' && pathname === `/api/v1/platform/tenants/${PLATFORM_TENANT_ID}`) {
+    if (contextToken !== BRANCH_CONTEXT_TOKEN) {
+      return { kind: 'error', status: 403 };
+    }
+
+    return { body: platformTenant as T, kind: 'success' };
+  }
+
+  if (method === 'GET' && pathname?.startsWith('/api/v1/platform/tenants/')) {
+    if (contextToken !== BRANCH_CONTEXT_TOKEN) {
+      return { kind: 'error', status: 403 };
+    }
+
+    return { kind: 'error', status: 404 };
+  }
+
+  if (method === 'GET' && pathname === '/api/v1/tenant/audit-events') {
+    if (contextToken !== BRANCH_CONTEXT_TOKEN) {
+      return { kind: 'error', status: 403 };
+    }
+
+    return { body: page([platformAuditEvent]) as T, kind: 'success' };
   }
 
   return { kind: 'unhandled' };

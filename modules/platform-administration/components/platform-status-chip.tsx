@@ -7,8 +7,9 @@ interface PlatformStatusChipProps {
 export function PlatformStatusChip({ status }: PlatformStatusChipProps) {
   const value = status?.trim() ?? 'Unknown';
   const normalized = value.toLowerCase();
-  const color =
-    normalized.includes('active') || normalized.includes('success')
+  const color = normalized.includes('inactive')
+    ? 'default'
+    : normalized.includes('active') || normalized.includes('success')
       ? 'success'
       : normalized.includes('suspend') ||
           normalized.includes('reject') ||

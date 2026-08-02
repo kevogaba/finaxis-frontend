@@ -19,4 +19,11 @@ describe('PlatformStatusChip', () => {
       expect(screen.getByLabelText(/^Status:/)).toBeInTheDocument();
     },
   );
+
+  it('does not render INACTIVE with the success (active) color', () => {
+    renderWithProviders(<PlatformStatusChip status="INACTIVE" />);
+
+    const chip = screen.getByLabelText('Status: Inactive');
+    expect(chip.className).not.toMatch(/success/i);
+  });
 });

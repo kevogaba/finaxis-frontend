@@ -13,9 +13,21 @@ import NextLink from '@/components/navigation/next-link';
 import { getSelectedContextProfile } from '@/auth/context-service';
 import { PlatformPageShell } from '@/modules/platform-administration/components/platform-page-shell';
 import { platformAdministrationService } from '@/modules/platform-administration/platform-administration-service';
-import { parseTenantListQuery } from '@/modules/platform-administration/platform-administration-queries';
+import { safeParseTenantListQuery } from '@/modules/platform-administration/platform-administration-queries';
 import { platformAdministrationModule } from '@/modules/platform-administration/platform-administration-module';
 import type { TenantListQuery } from '@/modules/platform-administration/platform-administration.types';
+
+const DEFAULT_TENANT_LIST_QUERY: TenantListQuery = {
+  q: undefined,
+  status: undefined,
+  country: undefined,
+  createdFrom: undefined,
+  createdTo: undefined,
+  page: 0,
+  size: 25,
+  sortBy: undefined,
+  sortDir: 'asc',
+};
 
 export const metadata: Metadata = { title: 'Platform Overview' };
 
@@ -56,7 +68,8 @@ function describeTenantDirectoryState(query: TenantListQuery, totalItems: number
 
 export default async function PlatformOverviewPage({ searchParams }: PlatformOverviewPageProps) {
   const requestHeaders = await headers();
-  const query = parseTenantListQuery(toUrlSearchParams(await searchParams));
+  const query =
+    safeParseTenantListQuery(toUrlSearchParams(await searchParams)) ?? DEFAULT_TENANT_LIST_QUERY;
   const selectedContext = await getSelectedContextProfile(requestHeaders);
 
   if (selectedContext.kind !== 'resolved') {

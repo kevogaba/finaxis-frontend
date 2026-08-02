@@ -478,4 +478,80 @@ describe('ContextSelectionPage', () => {
       }),
     );
   });
+
+  it('redirects to login instead of retrying forever when organisation selection reports a stale session', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'session expired' }, 401));
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/login?reason=session_expired');
+    });
+  });
+
+  it('resets to organisation selection instead of retrying a doomed request when branch discovery reports a stale context', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: 'stale context' }, 409));
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/saved context is no longer valid/i);
+    expect(screen.queryByRole('combobox', { name: /branch/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /organisation/i })).toBeEnabled();
+  });
+
+  it('keeps organisation pagination reachable on an empty page instead of trapping the user', () => {
+    renderWithProviders(
+      <ContextSelectionPage
+        organisations={organisationPage([], {
+          hasNext: false,
+          hasPrevious: true,
+          number: 2,
+          totalItems: 2,
+          totalPages: 2,
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/no organisations are available/i);
+    expect(screen.getByRole('navigation', { name: /organisation pages/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /previous/i })).toBeEnabled();
+  });
+
+  it('resets to organisation selection instead of retrying a doomed request when branch selection reports a stale context', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(branchPage([branch])))
+      .mockResolvedValueOnce(jsonResponse({ message: 'stale context' }, 409));
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+    await chooseBranch(user);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/saved context is no longer valid/i);
+    expect(screen.queryByRole('combobox', { name: /branch/i })).not.toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+  });
 });

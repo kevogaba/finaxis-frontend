@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders, screen } from '@/test/test-utils';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
+import { REQUEST_PATHNAME_HEADER } from '@/auth/auth.types';
 
 const getSelectedContextProfile = vi.fn();
 
@@ -76,5 +78,21 @@ describe('PlatformAdministrationLayout', () => {
 
     expect(redirect).toHaveBeenCalledWith('/admin');
     expect(screen.queryByText('Should not render')).not.toBeInTheDocument();
+  });
+
+  it('preserves the originally requested platform-admin path through context selection', async () => {
+    vi.mocked(headers).mockResolvedValueOnce(
+      new Headers({ [REQUEST_PATHNAME_HEADER]: '/platform-admin/tenants' }),
+    );
+    getSelectedContextProfile.mockResolvedValueOnce({
+      kind: 'redirect-to-context-selection',
+      reason: 'missing-context-token',
+    });
+
+    await expect(
+      PlatformAdministrationLayout({ children: <div>Should not render</div> }),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(redirect).toHaveBeenCalledWith('/select-context?next=%2Fplatform-admin%2Ftenants');
   });
 });

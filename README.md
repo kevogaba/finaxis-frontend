@@ -122,10 +122,15 @@ augmentation in `theme/theme.types.ts` and consumed as ordinary palette paths, e
 app/
 ├── (public)/login/page.tsx  # Split-screen login page (Better Auth Keycloak sign-in)
 ├── (authenticated)/          # Server-guarded routes: layout.tsx validates session + context
-│   ├── layout.tsx             # Authoritative auth guard for /admin and /profile
+│   ├── layout.tsx             # Authoritative auth guard for /admin, /profile, /platform-admin
 │   ├── admin/                 # Users, Branches, Roles & Permissions, Settings, Audit Logs
+│   ├── platform-admin/         # Read-only workspace, gated to the platform organisation's context
+│   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
+│   │   ├── tenants/             # Live tenant directory + tenant detail (dynamic route)
+│   │   └── audit/               # Live audit event directory
 │   └── profile/page.tsx
 ├── api/auth/                 # Better Auth route handlers (`[...all]`, `logout`)
+├── api/context/               # Same-origin context discovery/selection routes
 ├── globals.css               # CSS layers, Tailwind import, MUI/Tailwind bridge, restrained defaults
 ├── layout.tsx                 # Root layout: fonts, AppRouterCacheProvider, AppProviders
 ├── loading.tsx / not-found.tsx
@@ -136,15 +141,20 @@ auth/
 ├── get-authenticated-user.ts  # Server-side session validation used by route guards
 ├── map-authenticated-user.ts  # Raw session/claims -> sanitized `FinaxisUser` DTO
 ├── context-service.ts        # Server-only backend discovery/selection/profile calls
+├── context-cookie.ts          # HttpOnly context token cookie (never sent to the browser)
+├── context-browser-dto.ts     # Whitelisted/camelCased context shapes exposed to the browser
+├── context-selection-redirect.ts # Builds the `/select-context?next=` redirect from proxy.ts's header
 └── build-keycloak-logout-url.ts
 config/
 ├── application-context.ts    # Typed module/organisation/branch context value
 └── env.server.ts              # Validated server environment variables
 modules/
-└── administration/            # Administration module + navigation registration
+├── administration/            # Administration module + navigation registration
+└── platform-administration/   # Platform module: read-only tenant/audit backend integration
 components/
 ├── auth/                     # Keycloak sign-in button, login status alert
 ├── branding/                  # FinaxisLogo, ProductFeature
+├── context/                    # ContextSelectionPage (organisation/branch picker)
 ├── navigation/                 # next/link client re-export (Next.js 16 RSC boundary workaround)
 ├── profile/                   # Profile view
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle
@@ -153,7 +163,9 @@ theme/
 ├── create-finaxis-theme.ts   # Single theme, light/dark colorSchemes, component defaults
 ├── theme.types.ts              # Palette module augmentation (brand.* tokens)
 └── index.ts                    # Public exports
-proxy.ts                        # Optimistic cookie-presence redirect (not a trust boundary)
+proxy.ts                        # Optimistic cookie-presence redirect (not a trust boundary);
+                                 # forwards the requested pathname so context selection can return
+                                 # the user to it afterwards
 test/                           # Vitest setup + renderWithProviders
 e2e/                             # Playwright specs
 docs/authentication/            # Architecture, Keycloak setup, security, session-model docs
@@ -189,8 +201,13 @@ trade-offs.
   permissions are informational and are not a trust boundary.
 - Administration's Users/Branches/Roles & Permissions/Settings/Audit Logs pages are polished
   placeholders, not connected to real data.
-- The current server-only backend API client covers context discovery, selection, and profile
-  retrieval; domain API modules are not connected yet.
+- The Platform Administration workspace (`/platform-admin`, reachable only when the selected
+  context's organisation is the platform organisation) reads live, paginated data from the
+  backend — tenant directory, tenant detail, and audit events — through
+  `modules/platform-administration/platform-administration-service.ts`. It is read-only: no
+  create/update/delete actions are exposed in this stage.
+- Beyond context discovery/selection, profile retrieval, and the platform read endpoints above,
+  other domain API modules (e.g. Administration's branches/users/roles) are not connected yet.
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
   `/forgot-password` are placeholders; the first three routes resolve to the app's `not-found`
   page until real content exists.
@@ -203,5 +220,7 @@ trade-offs.
    treating UI-shown roles as informational only.
 2. Connect Administration's Users/Branches/Roles & Permissions/Settings/Audit Logs pages to
    real data.
-3. Replace the temporary `FinaxisLogo` mark with the official brand asset.
-4. Expand the theme's component defaults only as real screens demand them.
+3. Extend Platform Administration's live reads to branches and users, and design a write-action
+   model (with audit logging) before enabling any mutations there.
+4. Replace the temporary `FinaxisLogo` mark with the official brand asset.
+5. Expand the theme's component defaults only as real screens demand them.

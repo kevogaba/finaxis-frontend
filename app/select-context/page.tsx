@@ -23,6 +23,9 @@ const ALLOWED_DESTINATIONS: readonly ContextSelectionDestination[] = [
   '/admin/roles',
   '/admin/settings',
   '/admin/users',
+  '/platform-admin',
+  '/platform-admin/tenants',
+  '/platform-admin/audit',
 ];
 
 interface SelectContextPageProps {
