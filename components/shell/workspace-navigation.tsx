@@ -17,17 +17,36 @@ export interface WorkspaceNavigationItem {
 
 interface WorkspaceNavigationProps {
   items: readonly WorkspaceNavigationItem[];
+  ariaLabel?: string;
   collapsed?: boolean;
   onNavigate?: () => void;
 }
 
-export function WorkspaceNavigation({ items, collapsed, onNavigate }: WorkspaceNavigationProps) {
+function isNavigationItemActive(pathname: string, href: string): boolean {
+  if (pathname === href) {
+    return true;
+  }
+
+  const hrefSegments = href.split('/').filter(Boolean);
+  if (href === '/' || hrefSegments.length <= 1) {
+    return false;
+  }
+
+  return pathname.startsWith(`${href}/`);
+}
+
+export function WorkspaceNavigation({
+  items,
+  ariaLabel = 'Administration',
+  collapsed,
+  onNavigate,
+}: WorkspaceNavigationProps) {
   const pathname = usePathname();
 
   return (
-    <List component="nav" aria-label="Administration" sx={{ px: 1 }}>
+    <List component="nav" aria-label={ariaLabel} sx={{ px: 1 }}>
       {items.map((item) => {
-        const isActive = pathname === item.href;
+        const isActive = isNavigationItemActive(pathname, item.href);
         const button = (
           <ListItemButton
             key={item.href}

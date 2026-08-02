@@ -21,6 +21,7 @@ export function mapAuthenticatedUser(input: MapAuthenticatedUserInput): FinaxisU
     username: undefined,
     image: input.image ?? undefined,
     roles: [],
+    permissions: [],
     branches: [],
     organization: undefined,
   };

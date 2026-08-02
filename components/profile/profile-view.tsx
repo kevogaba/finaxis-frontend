@@ -72,13 +72,26 @@ export function ProfileView({ user, signedInAt }: ProfileViewProps) {
           <Stack spacing={3}>
             <Paper variant="outlined" sx={{ p: 3 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>
-                Organization
+                Organisation
               </Typography>
               {user.organization ? (
                 <Typography variant="body2">{user.organization.name}</Typography>
               ) : (
                 <Alert severity="info" variant="outlined">
-                  No organization assigned
+                  No organisation assigned
+                </Alert>
+              )}
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 3 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>
+                Selected branch
+              </Typography>
+              {user.selectedBranch ? (
+                <Typography variant="body2">{user.selectedBranch.name}</Typography>
+              ) : (
+                <Alert severity="info" variant="outlined">
+                  No branch selected
                 </Alert>
               )}
             </Paper>
@@ -96,6 +109,23 @@ export function ProfileView({ user, signedInAt }: ProfileViewProps) {
               ) : (
                 <Alert severity="info" variant="outlined">
                   No branches assigned
+                </Alert>
+              )}
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 3 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>
+                Permissions
+              </Typography>
+              {user.permissions.length > 0 ? (
+                <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+                  {user.permissions.map((permission) => (
+                    <Chip key={permission} label={permission} />
+                  ))}
+                </Stack>
+              ) : (
+                <Alert severity="info" variant="outlined">
+                  No application permissions assigned
                 </Alert>
               )}
             </Paper>

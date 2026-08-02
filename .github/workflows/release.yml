@@ -15,6 +15,19 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    env:
+      BETTER_AUTH_URL: http://localhost:3100
+      BETTER_AUTH_SECRET: ci-e2e-secret-ci-e2e-secret-ci-e2e-secret
+      # Must match the e2e fixture's hardcoded organisation id (auth/e2e-test-mode.ts) so
+      # pnpm test:e2e actually resolves into the platform-administration module and exercises
+      # /platform-admin/* routes, instead of always falling back to the tenant admin module.
+      PLATFORM_ORGANISATION_ID: 11111111-1111-4111-8111-111111111111
+      KEYCLOAK_ISSUER: http://localhost:8080/realms/finaxis
+      KEYCLOAK_CLIENT_ID: finaxis-web-e2e
+      KEYCLOAK_CLIENT_SECRET: ci-e2e-client-secret
+      AUTH_TRUSTED_ORIGINS: http://localhost:3100
+      AUTH_POST_LOGOUT_REDIRECT_URI: http://localhost:3100/login
+      FINAXIS_API_URL: http://localhost:8080
     steps:
       - name: Checkout
         uses: actions/checkout@v7

@@ -14,11 +14,17 @@ const COLLAPSED_WIDTH = 72;
 
 interface WorkspaceDrawerProps {
   items: readonly WorkspaceNavigationItem[];
+  navigationAriaLabel?: string;
   mobileOpen: boolean;
   onMobileClose: () => void;
 }
 
-export function WorkspaceDrawer({ items, mobileOpen, onMobileClose }: WorkspaceDrawerProps) {
+export function WorkspaceDrawer({
+  items,
+  navigationAriaLabel,
+  mobileOpen,
+  onMobileClose,
+}: WorkspaceDrawerProps) {
   const [collapsed, setCollapsed] = useState(false);
   const width = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
 
@@ -44,7 +50,7 @@ export function WorkspaceDrawer({ items, mobileOpen, onMobileClose }: WorkspaceD
           },
         }}
       >
-        <WorkspaceNavigation items={items} collapsed={collapsed} />
+        <WorkspaceNavigation items={items} ariaLabel={navigationAriaLabel} collapsed={collapsed} />
         <Box
           sx={{
             mt: 'auto',
@@ -81,7 +87,11 @@ export function WorkspaceDrawer({ items, mobileOpen, onMobileClose }: WorkspaceD
           '& .MuiDrawer-paper': { width: EXPANDED_WIDTH },
         }}
       >
-        <WorkspaceNavigation items={items} onNavigate={onMobileClose} />
+        <WorkspaceNavigation
+          items={items}
+          ariaLabel={navigationAriaLabel}
+          onNavigate={onMobileClose}
+        />
       </Drawer>
     </>
   );

@@ -15,11 +15,13 @@ const rawServerEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   BETTER_AUTH_URL: z.url(),
   BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET must be at least 32 characters.'),
+  PLATFORM_ORGANISATION_ID: z.uuid(),
   KEYCLOAK_ISSUER: z.url(),
   KEYCLOAK_CLIENT_ID: z.string().min(1),
   KEYCLOAK_CLIENT_SECRET: z.string().min(1),
   AUTH_TRUSTED_ORIGINS: trustedOriginsSchema,
   AUTH_POST_LOGOUT_REDIRECT_URI: z.url(),
+  FINAXIS_API_URL: z.url(),
 });
 
 export type ServerEnv = z.infer<typeof rawServerEnvSchema>;
@@ -43,6 +45,7 @@ function assertHttpsInProduction(env: ServerEnv): void {
     env.BETTER_AUTH_URL,
     env.AUTH_POST_LOGOUT_REDIRECT_URI,
     env.KEYCLOAK_ISSUER,
+    env.FINAXIS_API_URL,
     ...env.AUTH_TRUSTED_ORIGINS,
   ];
   const insecure = candidates.find((url) => !url.startsWith('https://'));

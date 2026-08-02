@@ -4,11 +4,13 @@ const REQUIRED_ENV = {
   NODE_ENV: 'development',
   BETTER_AUTH_URL: 'http://localhost:3100',
   BETTER_AUTH_SECRET: 'a'.repeat(32),
+  PLATFORM_ORGANISATION_ID: '8d0cb4e6-521a-4e51-bac0-e4d938c0ee76',
   KEYCLOAK_ISSUER: 'http://localhost:8080/realms/finaxis',
   KEYCLOAK_CLIENT_ID: 'finaxis-web',
   KEYCLOAK_CLIENT_SECRET: 'secret-value',
   AUTH_TRUSTED_ORIGINS: 'http://localhost:3100',
   AUTH_POST_LOGOUT_REDIRECT_URI: 'http://localhost:3100/login',
+  FINAXIS_API_URL: 'http://localhost:8080',
 };
 
 async function loadEnvServerWith(overrides: Record<string, string | undefined>) {
@@ -57,6 +59,38 @@ describe('serverEnv', () => {
     );
   });
 
+  it('accepts a valid platform organisation UUID', async () => {
+    const { serverEnv } = await loadEnvServerWith({
+      PLATFORM_ORGANISATION_ID: '5f01b1bf-bd10-49ea-a0df-072ad35030a4',
+    });
+
+    expect(serverEnv.PLATFORM_ORGANISATION_ID).toBe('5f01b1bf-bd10-49ea-a0df-072ad35030a4');
+  });
+
+  it('requires PLATFORM_ORGANISATION_ID', async () => {
+    await expect(loadEnvServerWith({ PLATFORM_ORGANISATION_ID: undefined })).rejects.toThrow(
+      /PLATFORM_ORGANISATION_ID/,
+    );
+  });
+
+  it('requires PLATFORM_ORGANISATION_ID to be a UUID', async () => {
+    await expect(loadEnvServerWith({ PLATFORM_ORGANISATION_ID: 'platform-admin' })).rejects.toThrow(
+      /PLATFORM_ORGANISATION_ID/,
+    );
+  });
+
+  it('requires FINAXIS_API_URL', async () => {
+    await expect(loadEnvServerWith({ FINAXIS_API_URL: undefined })).rejects.toThrow(
+      /FINAXIS_API_URL/,
+    );
+  });
+
+  it('requires FINAXIS_API_URL to be a URL', async () => {
+    await expect(loadEnvServerWith({ FINAXIS_API_URL: 'not-a-url' })).rejects.toThrow(
+      /FINAXIS_API_URL/,
+    );
+  });
+
   it('throws when BETTER_AUTH_SECRET is shorter than 32 characters', async () => {
     await expect(loadEnvServerWith({ BETTER_AUTH_SECRET: 'short' })).rejects.toThrow(
       /Invalid server environment configuration/,
@@ -94,6 +128,19 @@ describe('serverEnv', () => {
         AUTH_TRUSTED_ORIGINS: 'https://app.finaxis.example',
         AUTH_POST_LOGOUT_REDIRECT_URI: 'https://app.finaxis.example/login',
         KEYCLOAK_ISSUER: 'http://localhost:8080/realms/finaxis',
+      }),
+    ).rejects.toThrow(/HTTPS/);
+  });
+
+  it('requires HTTPS for the platform API URL in production', async () => {
+    await expect(
+      loadEnvServerWith({
+        NODE_ENV: 'production',
+        BETTER_AUTH_URL: 'https://app.finaxis.example',
+        AUTH_TRUSTED_ORIGINS: 'https://app.finaxis.example',
+        AUTH_POST_LOGOUT_REDIRECT_URI: 'https://app.finaxis.example/login',
+        KEYCLOAK_ISSUER: 'https://identity.finaxis.example/realms/finaxis',
+        FINAXIS_API_URL: 'http://api.finaxis.example',
       }),
     ).rejects.toThrow(/HTTPS/);
   });

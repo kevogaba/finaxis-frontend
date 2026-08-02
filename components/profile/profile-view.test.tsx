@@ -13,6 +13,7 @@ describe('ProfileView', () => {
       name: 'Jane Muthoni',
       email: 'jane.muthoni@finaxis.test',
       roles: [],
+      permissions: [],
       branches: [],
     };
 
@@ -20,7 +21,9 @@ describe('ProfileView', () => {
 
     expect(screen.getByText('No branches assigned')).toBeInTheDocument();
     expect(screen.getByText('No application roles assigned')).toBeInTheDocument();
-    expect(screen.getByText('No organization assigned')).toBeInTheDocument();
+    expect(screen.getByText('No organisation assigned')).toBeInTheDocument();
+    expect(screen.getByText('No branch selected')).toBeInTheDocument();
+    expect(screen.getByText('No application permissions assigned')).toBeInTheDocument();
   });
 
   it('renders assigned branches, roles, and organization as chips', () => {
@@ -29,15 +32,18 @@ describe('ProfileView', () => {
       name: 'Kevin Otieno',
       email: 'kevin.otieno@finaxis.test',
       roles: ['branch-teller'],
+      permissions: ['iam.profile.read'],
       branches: [{ id: 'nairobi-central', name: 'Nairobi Central Branch' }],
+      selectedBranch: { id: 'nairobi-central', name: 'Nairobi Central Branch' },
       organization: { id: 'greenfield-sacco', name: 'GreenField SACCO' },
     };
 
     renderWithProviders(<ProfileView user={user} signedInAt={SIGNED_IN_AT} />);
 
-    expect(screen.getByText('Nairobi Central Branch')).toBeInTheDocument();
+    expect(screen.getAllByText('Nairobi Central Branch')).toHaveLength(2);
     expect(screen.getByText('branch-teller')).toBeInTheDocument();
     expect(screen.getByText('GreenField SACCO')).toBeInTheDocument();
+    expect(screen.getByText('iam.profile.read')).toBeInTheDocument();
   });
 
   it('shows the user ID only inside the technical-details section, not the main view', () => {
@@ -46,6 +52,7 @@ describe('ProfileView', () => {
       name: 'Amina Yusuf',
       email: 'amina.yusuf@finaxis.test',
       roles: [],
+      permissions: [],
       branches: [],
     };
 

@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.PORT) || 3100;
 const baseURL = `http://localhost:${PORT}`;
+process.env.FINAXIS_E2E_TEST_MODE = '1';
 
 export default defineConfig({
   testDir: './e2e',
@@ -28,7 +29,13 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: process.env.CI ? 'pnpm build && pnpm start' : 'pnpm dev',
+    // CI builds separately before this suite; keep the test server non-production so the
+    // explicitly gated, token-free E2E fixture can exercise authenticated flows.
+    command: 'pnpm dev',
+    env: {
+      ...process.env,
+      FINAXIS_E2E_TEST_MODE: '1',
+    },
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

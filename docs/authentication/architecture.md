@@ -24,7 +24,14 @@ participant Keycloak
     Keycloak-->>Finaxis: Tokens + identity claims
     Finaxis-->>Browser: Encrypted HttpOnly session cookie (Set-Cookie)
     Browser->>Finaxis: GET /admin
-    Finaxis-->>Browser: Authenticated app shell
+    Finaxis->>Finaxis: Validate session and discover selected context
+    Finaxis-->>Browser: Redirect to /select-context when context is absent
+    User->>Browser: Choose organisation, then branch
+    Browser->>Finaxis: POST /api/context/organisation and /api/context/branch
+    Finaxis->>Finaxis: Select context upstream and persist opaque token in HttpOnly cookie
+    Browser->>Finaxis: GET /admin or /profile
+    Finaxis->>Finaxis: Resolve backend profile for selected context
+    Finaxis-->>Browser: Authenticated app shell and profile
 ```
 
 ## Logout sequence
@@ -56,6 +63,10 @@ participant Keycloak
   form) sign-out.
 - `auth/get-authenticated-user.ts` / `auth/map-authenticated-user.ts` — the single server-side
   boundary between Better Auth's session shape and the application's `FinaxisUser` DTO.
+- `auth/backend-api.ts` / `auth/context-service.ts` — server-only backend proxy and context/profile
+  application service. Keycloak access tokens and the selected context token remain server-side.
+- `app/select-context/page.tsx` / `components/context/context-selection-page.tsx` — shell-free
+  organisation and branch selection UI, backed by same-origin route handlers.
 - `app/(authenticated)/layout.tsx` — the authoritative, server-validated route guard.
 - `proxy.ts` — optimistic, cookie-presence-only redirects; never the authorization boundary.
 
