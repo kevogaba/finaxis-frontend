@@ -72,7 +72,13 @@ not a blanket relaxation:
 - **`form-action`**: includes the Keycloak issuer's origin (derived from `KEYCLOAK_ISSUER` at
   CSP-emission time in `next.config.ts`), not just `'self'`. `KEYCLOAK_ISSUER` is required when
   emitting the header outside tests; missing or invalid values fail fast instead of silently
-  baking `form-action 'self'` into the app. The sign-out flow
+  baking `form-action 'self'` into the app. This emission happens at `next build` time, not per
+  request — `next.config.ts`'s `headers()` is evaluated once during the build, and a built image
+  serves that value permanently regardless of what `KEYCLOAK_ISSUER` is set to at runtime
+  afterwards (confirmed by running a built image with a different runtime value and observing the
+  header still reflects the build-time one). Rotating the Keycloak origin therefore needs a
+  rebuild, not just a restart — see `docs/deployment.md` for how the Docker build supplies this.
+  The sign-out flow
   (`components/shell/user-menu.tsx`) submits a real `<form>` to `/api/auth/logout`, which
   303-redirects the same top-level navigation on to Keycloak's RP-initiated logout endpoint.
   Chromium enforces `form-action` against every hop of that redirect chain, not only the
@@ -104,6 +110,12 @@ re-removing `'unsafe-inline'` without the nonce plumbing in place.
 - HTTPS is required in production (`config/env.server.ts` enforces this at startup); enable
   HSTS at the ingress or confirm `next.config.ts`'s production-only `Strict-Transport-Security`
   header reaches the client unmodified.
+- The one exception: `FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS=1` (local-only, never set in a real
+  deployment) lets `localhost`/`127.0.0.1`/`::1` origins stay HTTP even under
+  `NODE_ENV=production` — needed because Next's standalone server (`pnpm start`, the Dockerfile)
+  hardcodes `NODE_ENV=production` unconditionally, so there's no other way to run that build
+  locally at all. A non-local origin still requires HTTPS regardless of this flag. See
+  `config/env.server.ts`'s `isInsecureLocalOriginAllowed`.
 - Keycloak must see the exact public redirect URI — if the app sits behind a path-rewriting
   proxy, register the externally visible callback path, not the internal one.
 
@@ -122,11 +134,22 @@ switch to passing `id_token_hint` for stricter logout-request validation.
 
 Enabled in production (`auth/auth.ts`'s `rateLimit.enabled: serverEnv.NODE_ENV ===
 'production'`), with tighter custom rules on the OAuth callback and sign-out endpoints.
-The default in-memory rate-limit store is **not sufficient once more than one application
-instance runs** (multiple instances don't share counters) — a multi-instance or serverless
-production deployment must configure `rateLimit.storage: 'secondary-storage'` backed by
-Redis before going live with more than one instance. This is not implemented yet; it's
-called out here so it isn't missed at deploy time.
+
+The default in-memory rate-limit store is not sufficient once more than one application
+instance runs (multiple instances don't share counters), so `auth/auth.ts` backs the limiter
+with Redis instead: when `REDIS_URL` is set, `rateLimit.customStorage` is set to a small
+`ioredis`-backed atomic increment-with-TTL implementation (`createRedisRateLimitStorage` in
+`auth/auth.ts`). This deliberately does **not** use Better Auth's top-level `secondaryStorage`
+option — Better Auth treats any configured `secondaryStorage` (or `database`) as making the
+deployment "stateful" and silently disables `session.cookieCache.refreshCache` as a result
+(confirmed against its source: `hasServerSessionStore` checks exactly those two options), which
+would undermine the fully-stateless session design in `docs/authentication/stateless-sessions.md`
+for a change that's only supposed to affect rate-limit counters. `rateLimit.customStorage` has
+no such side effect. `REDIS_URL` is required in production (`config/env.server.ts`'s
+`assertRedisUrlInProduction`) and unset in development/test, where rate limiting stays disabled
+and no local Redis is needed. Every key is namespaced under `REDIS_KEY_PREFIX` (defaults to
+`finaxis-web`) so one Redis instance can be shared across multiple apps/environments without key
+collisions — see `docs/deployment.md` for how this is wired up on the VPS/Coolify deployment.
 
 ## Test strategy
 

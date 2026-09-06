@@ -78,6 +78,7 @@ export function createSecurityHeaders(env: CspEnv = process.env): SecurityHeader
 }
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   headers() {
     return [
       {

@@ -3,13 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { screen } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 
-const signInOauth2 = vi.fn();
+const signInSocial = vi.fn();
 
 vi.mock('@/auth/auth-client', () => ({
   authClient: {
     signIn: {
-      oauth2: (...args: unknown[]) =>
-        signInOauth2(...args) as Promise<{ error?: { message: string } }>,
+      social: (...args: unknown[]) =>
+        signInSocial(...args) as Promise<{ error?: { message: string } }>,
     },
   },
 }));
@@ -21,18 +21,18 @@ describe('ContinueWithKeycloakButton', () => {
   // so its call history must be cleared between tests — otherwise assertions
   // like `toHaveBeenCalledTimes(1)` see calls left over from earlier tests.
   beforeEach(() => {
-    signInOauth2.mockClear();
+    signInSocial.mockClear();
   });
 
   it('initiates Keycloak OAuth sign-in with the correct provider id and destinations', async () => {
-    signInOauth2.mockResolvedValueOnce({ error: undefined });
+    signInSocial.mockResolvedValueOnce({ error: undefined });
     const user = userEvent.setup();
     renderWithProviders(<ContinueWithKeycloakButton />);
 
     await user.click(screen.getByRole('button', { name: /continue to finaxis/i }));
 
-    expect(signInOauth2).toHaveBeenCalledWith({
-      providerId: 'keycloak',
+    expect(signInSocial).toHaveBeenCalledWith({
+      provider: 'keycloak',
       callbackURL: '/admin',
       errorCallbackURL: '/login?error=authentication_failed',
     });
@@ -40,7 +40,7 @@ describe('ContinueWithKeycloakButton', () => {
 
   it('disables the button and shows a loading label while redirecting', async () => {
     let resolveSignIn: (value: { error?: undefined }) => void = () => undefined;
-    signInOauth2.mockImplementationOnce(
+    signInSocial.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           resolveSignIn = resolve;
@@ -57,7 +57,7 @@ describe('ContinueWithKeycloakButton', () => {
   });
 
   it('prevents a second submission while a redirect is in flight', async () => {
-    signInOauth2.mockImplementation(
+    signInSocial.mockImplementation(
       () =>
         new Promise(() => {
           /* never resolves within this test */
@@ -77,11 +77,11 @@ describe('ContinueWithKeycloakButton', () => {
     await user.click(button);
     await user.click(screen.getByRole('button', { name: /redirecting/i }));
 
-    expect(signInOauth2).toHaveBeenCalledTimes(1);
+    expect(signInSocial).toHaveBeenCalledTimes(1);
   });
 
   it('shows an accessible error message when sign-in fails to start', async () => {
-    signInOauth2.mockResolvedValueOnce({ error: { message: 'network error' } });
+    signInSocial.mockResolvedValueOnce({ error: { message: 'network error' } });
     const user = userEvent.setup();
     renderWithProviders(<ContinueWithKeycloakButton />);
 
@@ -92,7 +92,7 @@ describe('ContinueWithKeycloakButton', () => {
   });
 
   it('shows an accessible error message and re-enables the button when sign-in rejects', async () => {
-    signInOauth2.mockRejectedValueOnce(new Error('network error'));
+    signInSocial.mockRejectedValueOnce(new Error('network error'));
     const user = userEvent.setup();
     renderWithProviders(<ContinueWithKeycloakButton />);
 

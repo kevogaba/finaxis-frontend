@@ -22,6 +22,11 @@ const rawServerEnvSchema = z.object({
   AUTH_TRUSTED_ORIGINS: trustedOriginsSchema,
   AUTH_POST_LOGOUT_REDIRECT_URI: z.url(),
   FINAXIS_API_URL: z.url(),
+  REDIS_URL: z.url().optional(),
+  // Namespaces every key this app writes to Redis, so one Redis instance can safely
+  // be shared across multiple apps/environments without key collisions. Override
+  // per-environment (e.g. "finaxis-web-prod", "finaxis-web-staging") when doing so.
+  REDIS_KEY_PREFIX: z.string().min(1).default('finaxis-web'),
 });
 
 export type ServerEnv = z.infer<typeof rawServerEnvSchema>;
@@ -37,6 +42,50 @@ function assertNoWildcardOrigins(origins: readonly string[]): void {
   }
 }
 
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
+
+function isLocalOrigin(url: string): boolean {
+  try {
+    return LOCAL_HOSTNAMES.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether this process is running the standalone production build for local testing
+ * rather than a real deployment.
+ *
+ * Next.js's standalone server (`.next/standalone/server.js`, used by both `pnpm
+ * start` and the Dockerfile) hardcodes `NODE_ENV=production` unconditionally, so
+ * there is no way to distinguish "running the production build locally" from a real
+ * deployment via `NODE_ENV` alone. `FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS=1` is that
+ * distinction — deliberately not part of `rawServerEnvSchema` (like
+ * `FINAXIS_E2E_TEST_MODE` in auth/e2e-test-mode.ts, this is a local-only escape
+ * hatch, not real production config, so it's read directly off `process.env` rather
+ * than the validated schema). It relaxes two independent production requirements
+ * that otherwise make it impossible to run this build locally at all:
+ * `assertHttpsInProduction` below (paired with `isInsecureLocalOriginAllowed`'s own
+ * per-origin scoping, so a real deployment's non-local origins still require HTTPS
+ * regardless of this flag) and `assertRedisUrlInProduction` (no equivalent scoping
+ * is possible there — REDIS_URL isn't a URL this app is served from — so a real
+ * deployment stays safe only because nothing would ever set this flag there).
+ */
+function isLocalTestingModeEnabled(): boolean {
+  return process.env.FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS === '1';
+}
+
+/**
+ * Whether `url` is allowed to be plain HTTP despite `NODE_ENV=production`. Used both
+ * by `assertHttpsInProduction` below and by `auth/auth.ts`'s `useSecureCookies` (a
+ * `Secure` cookie is silently dropped by the browser over plain HTTP, which would
+ * otherwise still block a real local sign-in even once the check below stops
+ * throwing).
+ */
+export function isInsecureLocalOriginAllowed(url: string): boolean {
+  return isLocalTestingModeEnabled() && isLocalOrigin(url);
+}
+
 function assertHttpsInProduction(env: ServerEnv): void {
   if (env.NODE_ENV !== 'production') {
     return;
@@ -48,9 +97,20 @@ function assertHttpsInProduction(env: ServerEnv): void {
     env.FINAXIS_API_URL,
     ...env.AUTH_TRUSTED_ORIGINS,
   ];
-  const insecure = candidates.find((url) => !url.startsWith('https://'));
+  const insecure = candidates.find(
+    (url) => !url.startsWith('https://') && !isInsecureLocalOriginAllowed(url),
+  );
   if (insecure) {
     throw new Error(`Production requires HTTPS origins; got "${insecure}".`);
+  }
+}
+
+function assertRedisUrlInProduction(env: ServerEnv): void {
+  if (env.NODE_ENV === 'production' && !env.REDIS_URL && !isLocalTestingModeEnabled()) {
+    throw new Error(
+      "REDIS_URL is required in production — Better Auth's rate limiter needs a shared " +
+        'store once more than one application instance may be running.',
+    );
   }
 }
 
@@ -76,6 +136,7 @@ function parseServerEnv(): ServerEnv {
   assertNoWildcardOrigins(parsed.data.AUTH_TRUSTED_ORIGINS);
   assertHttpsInProduction(parsed.data);
   assertPostLogoutRedirectIsTrusted(parsed.data);
+  assertRedisUrlInProduction(parsed.data);
 
   return parsed.data;
 }

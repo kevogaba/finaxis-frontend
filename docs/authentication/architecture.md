@@ -14,12 +14,12 @@ participant Finaxis as Finaxis / Better Auth
 participant Keycloak
 
     User->>Browser: Select "Continue to Finaxis"
-    Browser->>Finaxis: POST /api/auth/sign-in/oauth2 (providerId: keycloak)
+    Browser->>Finaxis: POST /api/auth/sign-in/social (provider: keycloak)
     Finaxis->>Browser: Redirect to Keycloak with PKCE challenge + state
     Browser->>Keycloak: Authorization request
     User->>Keycloak: Authenticate
     Keycloak->>Browser: Redirect with authorization code + state
-    Browser->>Finaxis: GET /api/auth/oauth2/callback/keycloak
+    Browser->>Finaxis: GET /api/auth/callback/keycloak
     Finaxis->>Keycloak: Exchange code for tokens (PKCE verifier)
     Keycloak-->>Finaxis: Tokens + identity claims
     Finaxis-->>Browser: Encrypted HttpOnly session cookie (Set-Cookie)
@@ -73,8 +73,8 @@ participant Keycloak
 ## Callback URL
 
 ```
-http://localhost:3100/api/auth/oauth2/callback/keycloak   (this environment)
-http://localhost:3000/api/auth/oauth2/callback/keycloak   (canonical/documented example)
+http://localhost:3100/api/auth/callback/keycloak   (this environment)
+http://localhost:3000/api/auth/callback/keycloak   (canonical/documented example)
 ```
 
 See `docs/authentication/keycloak.md` for the full client configuration and

@@ -25,7 +25,7 @@ http://localhost:3100 (this environment; 3000 is canonical
 — see the port note below)
 
 Valid redirect URI:
-http://localhost:3100/api/auth/oauth2/callback/keycloak
+http://localhost:3100/api/auth/callback/keycloak
 
 Valid post-logout redirect URI:
 http://localhost:3100/login
@@ -50,7 +50,7 @@ Without this mapper, login succeeds but the first organisation-discovery request
 Use exact HTTPS origins — never `*`, `https://*`, or `http://*`:
 
 ```
-https://app.finaxis.example/api/auth/oauth2/callback/keycloak
+https://app.finaxis.example/api/auth/callback/keycloak
 https://app.finaxis.example/login
 https://app.finaxis.example
 ```
