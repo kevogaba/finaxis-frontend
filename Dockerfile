@@ -16,6 +16,13 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
   pnpm install --frozen-lockfile
 
 FROM base AS builder
+# next.config.ts's headers() runs during `next build` itself and bakes the Keycloak
+# origin into the compiled Content-Security-Policy — it is not re-evaluated per
+# request, so the real KEYCLOAK_ISSUER must be present here, not only at runtime.
+# Scoped to this stage only (never `base`/`runner`) so it can't leak into the final
+# image if Coolify ever failed to supply it.
+ARG KEYCLOAK_ISSUER
+ENV KEYCLOAK_ISSUER=$KEYCLOAK_ISSUER
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN pnpm build

@@ -72,7 +72,13 @@ not a blanket relaxation:
 - **`form-action`**: includes the Keycloak issuer's origin (derived from `KEYCLOAK_ISSUER` at
   CSP-emission time in `next.config.ts`), not just `'self'`. `KEYCLOAK_ISSUER` is required when
   emitting the header outside tests; missing or invalid values fail fast instead of silently
-  baking `form-action 'self'` into the app. The sign-out flow
+  baking `form-action 'self'` into the app. This emission happens at `next build` time, not per
+  request — `next.config.ts`'s `headers()` is evaluated once during the build, and a built image
+  serves that value permanently regardless of what `KEYCLOAK_ISSUER` is set to at runtime
+  afterwards (confirmed by running a built image with a different runtime value and observing the
+  header still reflects the build-time one). Rotating the Keycloak origin therefore needs a
+  rebuild, not just a restart — see `docs/deployment.md` for how the Docker build supplies this.
+  The sign-out flow
   (`components/shell/user-menu.tsx`) submits a real `<form>` to `/api/auth/logout`, which
   303-redirects the same top-level navigation on to Keycloak's RP-initiated logout endpoint.
   Chromium enforces `form-action` against every hop of that redirect chain, not only the

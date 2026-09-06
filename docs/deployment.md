@@ -16,10 +16,19 @@ managed by [Coolify](https://coolify.io), building from the repo's `Dockerfile`.
   to match `.nvmrc`/`.node-version`, using `corepack enable` so `pnpm@12.3.4` (the version pinned
   in `package.json`'s `packageManager` field) is what actually runs the install/build, not
   whatever `pnpm` the build host happens to have.
-- No real secrets are needed at build time: `config/env.server.ts`'s Zod schema is validated
-  lazily (on first property access, not at import), so `pnpm build` never touches production env
-  values, and nothing in this codebase is a `NEXT_PUBLIC_*` variable that would need baking into
-  the client bundle.
+- `config/env.server.ts`'s Zod schema is validated lazily (on first property access, not at
+  import), so `pnpm build` never touches most production env values, and nothing in this codebase
+  is a `NEXT_PUBLIC_*` variable that would need baking into the client bundle. **`KEYCLOAK_ISSUER`
+  is the one exception**: `next.config.ts`'s `headers()` is a separate, eager code path that Next.js
+  calls during `next build` itself (not lazily per request) to compile the CSP `form-action`
+  directive, and it throws if `KEYCLOAK_ISSUER` is missing or invalid outside test mode. The
+  `Dockerfile`'s `builder` stage takes it as a build `ARG` for exactly this reason — scoped to that
+  stage only, never inherited by `runner` — so Coolify must supply the real value at build time,
+  not only at runtime (see the environment-variables table below).
+- Testing this Dockerfile locally needs the same build-time value:
+  `docker build --build-arg KEYCLOAK_ISSUER=https://<keycloak-domain>/realms/finaxis .` — omitting
+  it reproduces the exact `KEYCLOAK_ISSUER is required to emit the Content-Security-Policy header`
+  build failure the previous bullet explains.
 - `.dockerignore` excludes the host's `node_modules` — this matters for correctness, not just
   image size: without it, the builder stage's `COPY . .` would overwrite the freshly-installed
   Linux/musl `node_modules` (with correctly-resolved native binaries, e.g. `sharp`) with whatever
@@ -75,24 +84,24 @@ them.
    plain Node specifically because a UI-configured check needs `curl`/`wget` in the image, which
    this `node:alpine`-based image deliberately doesn't include.
 5. **Environment variables** — Coolify's dashboard lets each variable be marked "Build + Runtime"
-   (default), "Build only", or "Runtime only". Set every variable below as **Runtime only**: none
-   of them are needed at build time (`config/env.server.ts`'s Zod schema validates lazily, on
-   first property access — see "Build" above), and keeping secrets out of the build phase means
-   they're never at risk of being baked into an image layer. See `.env.example` for the full
-   annotated list:
+   (default), "Build only", or "Runtime only". Set every variable below as **Runtime only** except
+   `KEYCLOAK_ISSUER`, which needs **Build + Runtime** (see its row below, and "Build" above). None
+   of the rest are needed at build time (`config/env.server.ts`'s Zod schema validates lazily, on
+   first property access), so keeping them out of the build phase means they're never at risk of
+   being baked into an image layer. See `.env.example` for the full annotated list:
 
-   | Variable                                        | Notes                                                                                                                                                                    |
-   | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-   | `BETTER_AUTH_URL`                               | Exact `https://` production origin.                                                                                                                                      |
-   | `BETTER_AUTH_SECRET`                            | ≥32 chars.                                                                                                                                                               |
-   | `PLATFORM_ORGANISATION_ID`                      | UUID.                                                                                                                                                                    |
-   | `KEYCLOAK_ISSUER`                               | `https://<keycloak-domain>/realms/finaxis` — the already-running Keycloak instance. Also required just to emit response headers — see `docs/authentication/security.md`. |
-   | `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_CLIENT_SECRET` |                                                                                                                                                                          |
-   | `AUTH_TRUSTED_ORIGINS`                          | Exact origin(s), comma-separated, no wildcards.                                                                                                                          |
-   | `AUTH_POST_LOGOUT_REDIRECT_URI`                 | Must belong to a trusted origin.                                                                                                                                         |
-   | `FINAXIS_API_URL`                               | The already-running backend Spring API's origin, reachable from the VPS.                                                                                                 |
-   | `REDIS_URL`                                     | The already-running Redis instance's connection string. See below. Required in production.                                                                               |
-   | `REDIS_KEY_PREFIX`                              | See below. Defaults to `finaxis-web` if unset.                                                                                                                           |
+   | Variable                                        | Notes                                                                                                                                                                                                                                                                                             |
+   | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `BETTER_AUTH_URL`                               | Exact `https://` production origin.                                                                                                                                                                                                                                                               |
+   | `BETTER_AUTH_SECRET`                            | ≥32 chars.                                                                                                                                                                                                                                                                                        |
+   | `PLATFORM_ORGANISATION_ID`                      | UUID.                                                                                                                                                                                                                                                                                             |
+   | `KEYCLOAK_ISSUER`                               | `https://<keycloak-domain>/realms/finaxis` — the already-running Keycloak instance. **Mark this one Build + Runtime**: `next.config.ts` bakes it into the CSP at build time (see "Build" above), so rotating it later needs a rebuild, not just a restart. See `docs/authentication/security.md`. |
+   | `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_CLIENT_SECRET` |                                                                                                                                                                                                                                                                                                   |
+   | `AUTH_TRUSTED_ORIGINS`                          | Exact origin(s), comma-separated, no wildcards.                                                                                                                                                                                                                                                   |
+   | `AUTH_POST_LOGOUT_REDIRECT_URI`                 | Must belong to a trusted origin.                                                                                                                                                                                                                                                                  |
+   | `FINAXIS_API_URL`                               | The already-running backend Spring API's origin, reachable from the VPS.                                                                                                                                                                                                                          |
+   | `REDIS_URL`                                     | The already-running Redis instance's connection string. See below. Required in production.                                                                                                                                                                                                        |
+   | `REDIS_KEY_PREFIX`                              | See below. Defaults to `finaxis-web` if unset.                                                                                                                                                                                                                                                    |
 
 6. **Redis**: point `REDIS_URL` at the already-running instance — `ioredis` parses credentials
    directly out of the URL, so either auth style works with no extra config:

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p ${PORT:-3100}",
     "build": "next build",
-    "postbuild": "cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/",
+    "postbuild": "if [ -d public ]; then cp -r public .next/standalone/; fi && cp -r .next/static .next/standalone/.next/",
     "start": "node --env-file=.env.local .next/standalone/server.js",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
