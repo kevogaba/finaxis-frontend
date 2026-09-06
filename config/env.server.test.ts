@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const REQUIRED_ENV = {
+const REQUIRED_ENV: Record<string, string | undefined> = {
   NODE_ENV: 'development',
   BETTER_AUTH_URL: 'http://localhost:3100',
   BETTER_AUTH_SECRET: 'a'.repeat(32),
@@ -11,6 +11,10 @@ const REQUIRED_ENV = {
   AUTH_TRUSTED_ORIGINS: 'http://localhost:3100',
   AUTH_POST_LOGOUT_REDIRECT_URI: 'http://localhost:3100/login',
   FINAXIS_API_URL: 'http://localhost:8080',
+  // Not part of the schema (read directly off process.env — see
+  // config/env.server.ts's isInsecureLocalOriginAllowed) but still reset for every
+  // test so a developer's own .env.local can never affect these results.
+  FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS: undefined,
 };
 
 async function loadEnvServerWith(overrides: Record<string, string | undefined>) {
@@ -29,7 +33,7 @@ async function loadEnvServerWith(overrides: Record<string, string | undefined>) 
     // The module's `serverEnv` export is a lazily-validated Proxy: validation runs on first
     // property access, not at import time. Force that access now, while `process.env` still
     // holds the overrides, so callers see the same validate-immediately behavior as before.
-    void mod.serverEnv.BETTER_AUTH_URL;
+    const _forceValidation = mod.serverEnv.BETTER_AUTH_URL;
     return mod;
   } finally {
     process.env = original;
@@ -41,6 +45,16 @@ describe('serverEnv', () => {
     const { serverEnv } = await loadEnvServerWith({});
     expect(serverEnv.BETTER_AUTH_URL).toBe('http://localhost:3100');
     expect(serverEnv.AUTH_TRUSTED_ORIGINS).toEqual(['http://localhost:3100']);
+  });
+
+  it('defaults REDIS_KEY_PREFIX to finaxis-web', async () => {
+    const { serverEnv } = await loadEnvServerWith({});
+    expect(serverEnv.REDIS_KEY_PREFIX).toBe('finaxis-web');
+  });
+
+  it('accepts a REDIS_KEY_PREFIX override', async () => {
+    const { serverEnv } = await loadEnvServerWith({ REDIS_KEY_PREFIX: 'finaxis-web-staging' });
+    expect(serverEnv.REDIS_KEY_PREFIX).toBe('finaxis-web-staging');
   });
 
   it('splits and trims comma-separated trusted origins', async () => {
@@ -143,5 +157,81 @@ describe('serverEnv', () => {
         FINAXIS_API_URL: 'http://api.finaxis.example',
       }),
     ).rejects.toThrow(/HTTPS/);
+  });
+
+  it('allows a local HTTP origin in production when FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS=1', async () => {
+    const { serverEnv } = await loadEnvServerWith({
+      NODE_ENV: 'production',
+      BETTER_AUTH_URL: 'http://localhost:3100',
+      AUTH_TRUSTED_ORIGINS: 'http://localhost:3100',
+      AUTH_POST_LOGOUT_REDIRECT_URI: 'http://localhost:3100/login',
+      KEYCLOAK_ISSUER: 'https://identity.finaxis.example/realms/finaxis',
+      FINAXIS_API_URL: 'https://api.finaxis.example',
+      REDIS_URL: 'redis://localhost:6379',
+      FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS: '1',
+    });
+
+    expect(serverEnv.BETTER_AUTH_URL).toBe('http://localhost:3100');
+  });
+
+  it('still requires HTTPS for a non-local origin even with FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS=1', async () => {
+    await expect(
+      loadEnvServerWith({
+        NODE_ENV: 'production',
+        BETTER_AUTH_URL: 'http://app.finaxis.example',
+        AUTH_TRUSTED_ORIGINS: 'http://app.finaxis.example',
+        AUTH_POST_LOGOUT_REDIRECT_URI: 'http://app.finaxis.example/login',
+        REDIS_URL: 'redis://localhost:6379',
+        FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS: '1',
+      }),
+    ).rejects.toThrow(/HTTPS/);
+  });
+
+  it('does not require REDIS_URL in production when FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS=1', async () => {
+    const { serverEnv } = await loadEnvServerWith({
+      NODE_ENV: 'production',
+      BETTER_AUTH_URL: 'http://localhost:3100',
+      AUTH_TRUSTED_ORIGINS: 'http://localhost:3100',
+      AUTH_POST_LOGOUT_REDIRECT_URI: 'http://localhost:3100/login',
+      KEYCLOAK_ISSUER: 'https://identity.finaxis.example/realms/finaxis',
+      FINAXIS_API_URL: 'https://api.finaxis.example',
+      REDIS_URL: undefined,
+      FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS: '1',
+    });
+
+    expect(serverEnv.REDIS_URL).toBeUndefined();
+  });
+
+  it('does not require REDIS_URL outside production', async () => {
+    const { serverEnv } = await loadEnvServerWith({ REDIS_URL: undefined });
+    expect(serverEnv.REDIS_URL).toBeUndefined();
+  });
+
+  it('requires REDIS_URL in production', async () => {
+    await expect(
+      loadEnvServerWith({
+        NODE_ENV: 'production',
+        BETTER_AUTH_URL: 'https://app.finaxis.example',
+        AUTH_TRUSTED_ORIGINS: 'https://app.finaxis.example',
+        AUTH_POST_LOGOUT_REDIRECT_URI: 'https://app.finaxis.example/login',
+        KEYCLOAK_ISSUER: 'https://identity.finaxis.example/realms/finaxis',
+        FINAXIS_API_URL: 'https://api.finaxis.example',
+        REDIS_URL: undefined,
+      }),
+    ).rejects.toThrow(/REDIS_URL/);
+  });
+
+  it('accepts a valid REDIS_URL in production', async () => {
+    const { serverEnv } = await loadEnvServerWith({
+      NODE_ENV: 'production',
+      BETTER_AUTH_URL: 'https://app.finaxis.example',
+      AUTH_TRUSTED_ORIGINS: 'https://app.finaxis.example',
+      AUTH_POST_LOGOUT_REDIRECT_URI: 'https://app.finaxis.example/login',
+      KEYCLOAK_ISSUER: 'https://identity.finaxis.example/realms/finaxis',
+      FINAXIS_API_URL: 'https://api.finaxis.example',
+      REDIS_URL: 'redis://default:secret@redis:6379',
+    });
+
+    expect(serverEnv.REDIS_URL).toBe('redis://default:secret@redis:6379');
   });
 });

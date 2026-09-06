@@ -169,6 +169,8 @@ proxy.ts                        # Optimistic cookie-presence redirect (not a tru
 test/                           # Vitest setup + renderWithProviders
 e2e/                             # Playwright specs
 docs/authentication/            # Architecture, Keycloak setup, security, session-model docs
+docs/deployment.md               # VPS/Coolify deployment
+Dockerfile                      # Multi-stage build for the standalone Next.js output
 .github/workflows/ci.yml
 ```
 
@@ -189,6 +191,13 @@ trade-offs.
   RP-initiated logout endpoint — see `docs/authentication/security.md` for why it can't include
   `id_token_hint` in this Better Auth version.
 - `docs/authentication/keycloak.md` documents the required Keycloak client settings.
+
+## Deployment
+
+Server-rendered only — no static export (see `docs/deployment.md` for why and how). The
+`Dockerfile` builds a `next.config.ts`-standalone-output image for deployment to a VPS via
+[Coolify](https://coolify.io); `docs/deployment.md` covers the full setup, required environment
+variables, and the Redis-backed rate limiter needed once more than one instance runs.
 
 ## Current limitations
 

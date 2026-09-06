@@ -30,7 +30,7 @@ describe('backendApi', () => {
     expectedHeaders.set('origin', 'https://app.finaxis.test');
     expect(getAccessToken).toHaveBeenCalledWith({
       headers: expectedHeaders,
-      body: { providerId: 'keycloak' },
+      body: { useAccountCookie: true },
     });
   });
 

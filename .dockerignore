@@ -1,0 +1,21 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+
+# Test-only files not needed at runtime
+**/*.test.ts
+**/*.test.tsx
+e2e
+playwright-report
+test-results
+playwright.config.ts
+playwright.keycloak.config.ts
+
+docs
+README.md
+.github
+.husky
+.vscode

@@ -39,3 +39,5 @@ minimumReleaseAgeExclude:
   - '@next/eslint-plugin-next@16.2.12'
   - eslint-config-next@16.2.12
   - '@hookform/resolvers@5.5.4'
+  - '@better-auth/core@1.7.3'
+  - '@better-auth/redis-storage@1.7.3'

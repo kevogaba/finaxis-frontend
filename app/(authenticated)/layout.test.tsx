@@ -5,8 +5,7 @@ import { headers } from 'next/headers';
 import { REQUEST_PATHNAME_HEADER } from '@/auth/auth.types';
 
 const { profileToFinaxisUser, renderedShell } = vi.hoisted(() => ({
-  profileToFinaxisUser: vi.fn((profile: Record<string, unknown>, fallbackUser: unknown) => {
-    void fallbackUser;
+  profileToFinaxisUser: vi.fn((profile: Record<string, unknown>, _fallbackUser: unknown) => {
     return {
       branches: [{ id: 'branch-1', name: 'Headquarters' }],
       email: profile.email,

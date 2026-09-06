@@ -20,8 +20,8 @@ export function ContinueWithKeycloakButton() {
     setHasError(false);
 
     try {
-      const { error } = await authClient.signIn.oauth2({
-        providerId: 'keycloak',
+      const { error } = await authClient.signIn.social({
+        provider: 'keycloak',
         callbackURL: '/admin',
         errorCallbackURL: '/login?error=authentication_failed',
       });

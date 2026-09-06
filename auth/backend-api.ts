@@ -42,9 +42,12 @@ export async function getKeycloakAccessToken(headers: Headers): Promise<string> 
       authHeaders.set('origin', serverEnv.BETTER_AUTH_URL);
     }
 
+    // `useAccountCookie` reads the signed account cookie Better Auth already sets on
+    // sign-in (`account.storeAccountCookie: true` in auth/auth.ts) — replaces the old
+    // `providerId`-keyed lookup, since accounts are no longer looked up by provider id.
     const token = await auth.api.getAccessToken({
       headers: authHeaders,
-      body: { providerId: 'keycloak' },
+      body: { useAccountCookie: true },
     });
 
     if (typeof token.accessToken !== 'string' || token.accessToken.length === 0) {

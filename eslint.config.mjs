@@ -34,6 +34,16 @@ const eslintConfig = defineConfig([
       // Numbers in template literals (`${count} items`) are safe and idiomatic;
       // keep the rule for objects/booleans/etc. rather than disabling it outright.
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+      // A leading underscore is an explicit, opt-in marker for "intentionally
+      // unused" (e.g. a mock parameter kept only to match a real function's
+      // signature, or a value read purely to force a lazy getter's side
+      // effect) — narrower than disabling the rule, and avoids fighting
+      // @typescript-eslint/no-meaningless-void-operator and
+      // no-unused-expressions over how to discard a non-call value.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
   {
