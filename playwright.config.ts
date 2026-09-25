@@ -28,16 +28,24 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    // CI builds separately before this suite; keep the test server non-production so the
-    // explicitly gated, token-free E2E fixture can exercise authenticated flows.
-    command: 'pnpm dev',
-    env: {
-      ...process.env,
-      FINAXIS_E2E_TEST_MODE: '1',
+  webServer: [
+    {
+      command: 'node e2e/fake-api/server.mts',
+      url: `http://127.0.0.1:${process.env.FAKE_API_PORT ?? '3199'}/__health`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
     },
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+    {
+      // CI builds separately before this suite; keep the test server non-production so the
+      // explicitly gated, token-free E2E fixture can exercise authenticated flows.
+      command: 'pnpm dev',
+      env: {
+        ...process.env,
+        FINAXIS_E2E_TEST_MODE: '1',
+      },
+      url: baseURL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
 });

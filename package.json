@@ -18,6 +18,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:keycloak": "playwright test --config=playwright.keycloak.config.ts",
+    "fake-api": "node e2e/fake-api/server.mts",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:run",
     "verify": "pnpm check && pnpm test:coverage && pnpm build",
     "prepare": "husky"
