@@ -3,10 +3,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ProblemError, problem, sendJson, sendProblem } from './http.mts';
 import { matchRoute } from './router.mts';
 import type { Route } from './router.mts';
+import { authRoutes } from './routes/auth.mts';
 import { stateForToken } from './state.mts';
 
 /** Each layer appends its route list here. */
-const routes: Route[] = [];
+const routes: Route[] = [...authRoutes];
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://fake-api.local');

@@ -1,152 +1,72 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  E2E_RUN_COOKIE_NAME,
   E2E_SESSION_COOKIE_NAME,
   E2E_SESSION_COOKIE_VALUE,
   getE2eAccessToken,
   getE2eAuthenticatedUser,
-  getE2eBackendResult,
+  getE2eBetterAuthSession,
 } from './e2e-test-mode';
 
-const PLATFORM_TENANT_ID = '99999999-9999-4999-8999-999999999999';
-
-const authenticatedHeaders = () =>
-  new Headers({
-    cookie: `${E2E_SESSION_COOKIE_NAME}=${E2E_SESSION_COOKIE_VALUE}`,
+function headersWith(cookies: Record<string, string>) {
+  return new Headers({
+    cookie: Object.entries(cookies)
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; '),
   });
+}
 
-describe('E2E test mode security gate', () => {
+const session = { [E2E_SESSION_COOKIE_NAME]: E2E_SESSION_COOKIE_VALUE };
+
+describe('e2e test mode', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it('does not activate in production', () => {
+  it('is inert unless FINAXIS_E2E_TEST_MODE=1 outside production', () => {
     vi.stubEnv('FINAXIS_E2E_TEST_MODE', '1');
     vi.stubEnv('NODE_ENV', 'production');
 
-    expect(getE2eAuthenticatedUser(authenticatedHeaders())).toBeNull();
-    expect(getE2eAccessToken(authenticatedHeaders())).toBeNull();
+    expect(getE2eAuthenticatedUser(headersWith(session))).toBeNull();
+    expect(getE2eAccessToken(headersWith(session))).toBeNull();
+    expect(getE2eBetterAuthSession(headersWith(session))).toBeNull();
   });
 
-  it('activates only for the explicit non-production test mode', () => {
+  it('requires the e2e session cookie', () => {
     vi.stubEnv('FINAXIS_E2E_TEST_MODE', '1');
-    vi.stubEnv('NODE_ENV', 'test');
 
-    expect(getE2eAuthenticatedUser(authenticatedHeaders())).not.toBeNull();
-    expect(getE2eAccessToken(authenticatedHeaders())).toBe('e2e-server-only-access-token');
+    expect(getE2eAccessToken(new Headers())).toBeNull();
+    expect(getE2eAuthenticatedUser(new Headers())).toBeNull();
   });
-});
 
-describe('getE2eBackendResult platform administration fixtures', () => {
-  beforeEach(() => {
+  it('derives the fake-API bearer token from the run cookie', () => {
     vi.stubEnv('FINAXIS_E2E_TEST_MODE', '1');
-    vi.stubEnv('NODE_ENV', 'test');
-  });
 
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  function branchContextToken(): string {
-    const orgSelection = getE2eBackendResult<{ context_token: string }>(
-      '/api/v1/auth/select-organisation',
-      authenticatedHeaders(),
-      { method: 'POST' },
-    );
-    if (orgSelection.kind !== 'success') {
-      throw new Error('Expected organisation selection to succeed.');
-    }
-
-    const branchSelection = getE2eBackendResult<{ context_token: string }>(
-      '/api/v1/auth/select-branch',
-      authenticatedHeaders(),
-      { method: 'POST' },
-      orgSelection.body.context_token,
-    );
-    if (branchSelection.kind !== 'success') {
-      throw new Error('Expected branch selection to succeed.');
-    }
-
-    return branchSelection.body.context_token;
-  }
-
-  it('is unhandled outside e2e test mode or without a session', () => {
-    vi.unstubAllEnvs();
-
-    expect(getE2eBackendResult('/api/v1/platform/tenants', authenticatedHeaders(), {})).toEqual({
-      kind: 'unhandled',
-    });
-    expect(getE2eBackendResult('/api/v1/platform/tenants', new Headers(), {})).toEqual({
-      kind: 'unhandled',
-    });
-  });
-
-  it('is unhandled for a path it does not recognize', () => {
     expect(
-      getE2eBackendResult('/api/v1/unknown', authenticatedHeaders(), {}, branchContextToken()),
-    ).toEqual({ kind: 'unhandled' });
+      getE2eAccessToken(
+        headersWith({ ...session, [E2E_RUN_COOKIE_NAME]: 'platform-operator.run-1' }),
+      ),
+    ).toBe('e2e.platform-operator.run-1');
   });
 
-  it('lists tenants only for the branch context token', () => {
-    const forbidden = getE2eBackendResult<{ items: unknown[] }>(
-      '/api/v1/platform/tenants',
-      authenticatedHeaders(),
-      {},
-    );
-    expect(forbidden).toEqual({ kind: 'error', status: 403 });
+  it('falls back to the shared default run for a missing or malformed run cookie', () => {
+    vi.stubEnv('FINAXIS_E2E_TEST_MODE', '1');
 
-    const result = getE2eBackendResult<{ items: readonly { id: string }[] }>(
-      '/api/v1/platform/tenants?page=0',
-      authenticatedHeaders(),
-      {},
-      branchContextToken(),
+    expect(getE2eAccessToken(headersWith(session))).toBe('e2e.default.shared');
+    expect(getE2eAccessToken(headersWith({ ...session, [E2E_RUN_COOKIE_NAME]: 'x;y' }))).toBe(
+      'e2e.default.shared',
     );
-    expect(result.kind).toBe('success');
-    expect(result.kind === 'success' && result.body.items[0]?.id).toBe(PLATFORM_TENANT_ID);
   });
 
-  it('returns tenant detail for a known id and 404 for an unknown id', () => {
-    const contextToken = branchContextToken();
+  it('provides a Better Auth-shaped session and a sanitized user', () => {
+    vi.stubEnv('FINAXIS_E2E_TEST_MODE', '1');
 
-    const found = getE2eBackendResult<{ id: string }>(
-      `/api/v1/platform/tenants/${PLATFORM_TENANT_ID}`,
-      authenticatedHeaders(),
-      {},
-      contextToken,
+    expect(getE2eBetterAuthSession(headersWith(session))?.session.token).toBe(
+      E2E_SESSION_COOKIE_VALUE,
     );
-    expect(found.kind).toBe('success');
-    expect(found.kind === 'success' && found.body.id).toBe(PLATFORM_TENANT_ID);
-
-    const missing = getE2eBackendResult(
-      '/api/v1/platform/tenants/00000000-0000-4000-8000-000000000000',
-      authenticatedHeaders(),
-      {},
-      contextToken,
-    );
-    expect(missing).toEqual({ kind: 'error', status: 404 });
-
-    const forbidden = getE2eBackendResult(
-      `/api/v1/platform/tenants/${PLATFORM_TENANT_ID}`,
-      authenticatedHeaders(),
-      {},
-    );
-    expect(forbidden).toEqual({ kind: 'error', status: 403 });
-  });
-
-  it('lists audit events only for the branch context token', () => {
-    const forbidden = getE2eBackendResult(
-      '/api/v1/tenant/audit-events',
-      authenticatedHeaders(),
-      {},
-    );
-    expect(forbidden).toEqual({ kind: 'error', status: 403 });
-
-    const result = getE2eBackendResult<{ items: readonly { entity_type: string }[] }>(
-      '/api/v1/tenant/audit-events?page=0',
-      authenticatedHeaders(),
-      {},
-      branchContextToken(),
-    );
-    expect(result.kind).toBe('success');
-    expect(result.kind === 'success' && result.body.items[0]?.entity_type).toBe('TENANT');
+    expect(getE2eAuthenticatedUser(headersWith(session))).toMatchObject({
+      email: 'e2e.session@greenfield.example',
+      permissions: [],
+    });
   });
 });
