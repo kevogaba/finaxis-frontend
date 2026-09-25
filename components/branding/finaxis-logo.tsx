@@ -1,5 +1,3 @@
-'use client';
-
 import { useId } from 'react';
 import type { SVGProps } from 'react';
 import { MARK_GRADIENT } from '@/theme/tokens';
@@ -12,10 +10,13 @@ interface FinaxisLogoProps extends SVGProps<SVGSVGElement> {
  * The Finaxis mark: two interlocking strokes rising left to right — members, institutions, and
  * transactions moving through one governed platform — shading from deep blue to teal. Recreated
  * from the prototype's raster mark (spec §7.4). Decorative: always paired with visible "Finaxis"
- * text. Client component only for `useId`, so repeated marks never share a gradient id.
+ * text. A Server Component: React's Server Components dispatcher implements `useId` (unlike
+ * `useState`/`useEffect`, which it throws on — see the `HooksDispatcher` in
+ * node_modules/next/dist/compiled/react-server-dom-webpack/cjs/*.js), so repeated marks still get
+ * distinct gradient ids without a client boundary.
  */
 export function FinaxisLogo({ size = 40, ...props }: FinaxisLogoProps) {
-  const gradientId = `finaxis-mark-${useId().replace(/:/g, '')}`;
+  const gradientId = `finaxis-mark-${useId()}`;
 
   return (
     <svg
