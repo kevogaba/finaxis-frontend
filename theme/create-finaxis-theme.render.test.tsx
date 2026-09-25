@@ -99,6 +99,41 @@ describe('MuiOutlinedInput notch (finding 8)', () => {
   });
 });
 
+describe('MuiChip transition speed (finding 10)', () => {
+  it("runs background-color/box-shadow feedback at duration.short, not MUI's 300ms default", () => {
+    // jsdom's CSSOM doesn't resolve the `transition` shorthand back into its longhands
+    // (getComputedStyle(...).transitionProperty reports the initial value, "all", regardless of
+    // what's actually declared) — read the emitted CSS text directly instead, the same way the
+    // hover-cascade assertions above do.
+    const { container } = renderWithProviders(<Chip label="Active" />);
+    const chip = container.querySelector('.MuiChip-root');
+    if (!chip) throw new Error('Chip root not found');
+
+    const hash = hashClassOf(chip);
+    // The bare, unconditional rule for this render's class — no pseudo-class or nested selector
+    // attached — carries every merged top-level property in one rule body, MUI's base style and
+    // this theme's `styleOverrides.root` concatenated in that order (not deep-merged). A property
+    // both sides set, like `transition`, appears twice; ordinary CSS same-rule cascade applies, so
+    // the last occurrence — this theme's override — is the one that actually takes effect.
+    const baseRule = new RegExp(`\\.${hash.replace(/[.:#]/g, '\\$&')}\\{([^}]*)\\}`).exec(
+      allEmittedCss(),
+    )?.[1];
+    if (!baseRule) throw new Error('No base rule found for the chip');
+    let transitionDeclaration: string | undefined;
+    for (const match of baseRule.matchAll(/transition:([^;]*);/g)) {
+      transitionDeclaration = match[1];
+    }
+    if (!transitionDeclaration) throw new Error('No transition declaration found');
+
+    expect(transitionDeclaration).toContain('background-color');
+    expect(transitionDeclaration).toContain('box-shadow');
+    // MASTER.md: "hover/press feedback runs 150-200ms" — MUI's own default for this transition
+    // is duration.standard (300ms); this theme moves it to duration.short (200ms) instead.
+    expect(transitionDeclaration).not.toContain('300ms');
+    expect(transitionDeclaration).toContain('200ms');
+  });
+});
+
 describe.each(['success', 'warning', 'error', 'info'] as const)(
   'MuiChip soft %s variant (finding 2)',
   (color) => {

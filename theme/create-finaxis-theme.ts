@@ -192,7 +192,17 @@ export function createFinaxisTheme() {
       },
       MuiChip: {
         styleOverrides: {
-          root: { borderRadius: 999, fontWeight: 750 },
+          // Chip.js's own transition (`getTransitionStyles(theme, ['background-color',
+          // 'box-shadow'])`) defaults to duration.standard (300ms) — override the same two
+          // properties at duration.short so the hover/focus ring above (finding 2) actually
+          // lands in the spec's 150-200ms window instead of MUI's slower default.
+          root: ({ theme }) => ({
+            borderRadius: 999,
+            fontWeight: 750,
+            transition: theme.transitions.create(['background-color', 'box-shadow'], {
+              duration: theme.transitions.duration.short,
+            }),
+          }),
           // No per-size label slot exists on ChipClasses; scope the label's padding to the small
           // root via a nested selector instead of a fictitious `labelSmall` override key.
           sizeSmall: {
