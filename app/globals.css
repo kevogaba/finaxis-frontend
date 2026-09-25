@@ -12,6 +12,8 @@
   --color-primary: var(--finaxis-palette-primary-main);
   --color-secondary: var(--finaxis-palette-secondary-main);
   --color-divider: var(--finaxis-palette-divider);
+  --color-surface: var(--finaxis-palette-background-paper);
+  --color-surface-secondary: var(--finaxis-palette-surfaces-secondary);
   --font-sans: var(--font-finaxis);
 }
 
