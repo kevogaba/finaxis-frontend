@@ -37,8 +37,7 @@ export type ContextSelectionDestination =
   | '/admin/settings'
   | '/admin/users'
   | '/platform-admin'
-  | '/platform-admin/tenants'
-  | '/platform-admin/audit';
+  | '/platform-admin/tenants';
 
 interface ContextSelectionPageProps {
   organisations: BrowserPage<BrowserOrganisation>;

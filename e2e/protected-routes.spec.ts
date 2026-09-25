@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const SESSION_COOKIE_NAME = 'finaxis.session_token';
-const SESSION_COOKIE_VALUE = 'e2e-authenticated-session';
+import { addCookie, authenticate, SESSION_COOKIE_NAME } from './support/auth';
 
 test.describe('Protected routes without a session', () => {
   test('redirects /admin to /login with reason=session_expired', async ({ page }) => {
@@ -23,20 +21,7 @@ test.describe('Protected routes without a session', () => {
     context,
     page,
   }, testInfo) => {
-    const baseURL = testInfo.project.use.baseURL;
-    if (typeof baseURL !== 'string') {
-      throw new Error('Playwright baseURL must be configured for cookie setup.');
-    }
-    await context.addCookies([
-      {
-        httpOnly: true,
-        name: SESSION_COOKIE_NAME,
-        sameSite: 'Lax',
-        secure: false,
-        url: baseURL,
-        value: 'stale-or-revoked-cookie',
-      },
-    ]);
+    await addCookie(context, testInfo, SESSION_COOKIE_NAME, 'stale-or-revoked-cookie');
 
     await page.goto('/login');
 
@@ -50,20 +35,7 @@ test.describe('Protected routes with a mocked authenticated session', () => {
     context,
     page,
   }, testInfo) => {
-    const baseURL = testInfo.project.use.baseURL;
-    if (typeof baseURL !== 'string') {
-      throw new Error('Playwright baseURL must be configured for cookie setup.');
-    }
-    await context.addCookies([
-      {
-        httpOnly: true,
-        name: SESSION_COOKIE_NAME,
-        sameSite: 'Lax',
-        secure: false,
-        url: baseURL,
-        value: SESSION_COOKIE_VALUE,
-      },
-    ]);
+    await authenticate(context, testInfo);
 
     await page.goto('/admin');
 

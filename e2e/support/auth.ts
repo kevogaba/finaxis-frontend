@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { expect } from '@playwright/test';
 import type { BrowserContext, Page, TestInfo } from '@playwright/test';
 
 export const SESSION_COOKIE_NAME = 'finaxis.session_token';
@@ -46,6 +47,17 @@ export async function authenticate(
 }
 
 export async function selectMuiOption(page: Page, label: string, option: RegExp): Promise<void> {
-  await page.getByRole('combobox', { name: label }).click();
+  const combobox = page.getByRole('combobox', { name: label });
+  // MUI's Select only opens once React hydrates and attaches its click handler; a click that lands
+  // on the pre-hydration SSR markup just focuses the element and never opens the listbox (visible
+  // under a cold `next dev` compile with several Playwright workers contending for it). Wait for
+  // React to have claimed the node (it tags hydrated DOM nodes with an internal `__reactProps$*`
+  // key) before clicking, instead of clicking blind and hoping hydration already happened.
+  await expect
+    .poll(() =>
+      combobox.evaluate((el) => Object.keys(el).some((key) => key.startsWith('__reactProps'))),
+    )
+    .toBe(true);
+  await combobox.click();
   await page.getByRole('option', { name: option }).click();
 }

@@ -4,9 +4,6 @@ import { readContextToken } from '@/auth/context-cookie';
 import { z } from 'zod';
 import type {
   ApiPage,
-  AuditEvent,
-  AuditEventDetail,
-  AuditListQuery,
   BranchDetail,
   BranchListQuery,
   TenantDetail,
@@ -18,8 +15,6 @@ import type {
 } from './platform-administration.types';
 import { toQueryString } from './platform-administration-queries';
 import {
-  mapAuditDetail,
-  mapAuditPage,
   mapBranch,
   mapBranchPage,
   mapTenantDetail,
@@ -114,27 +109,6 @@ export const platformAdministrationService = {
       `/api/v1/platform/tenants/${idSchema.parse(tenantId)}/branches/${idSchema.parse(branchId)}`,
       headers,
       (raw) => mapBranch(raw as Parameters<typeof mapBranch>[0]),
-    );
-  },
-  listAuditEvents(headers: Headers, query: AuditListQuery): Promise<ApiPage<AuditEvent>> {
-    return read<ApiPage<AuditEvent>>(
-      `/api/v1/tenant/audit-events${toQueryString({
-        entity_type: query.entityType,
-        entity_id: query.entityId,
-        actor_id: query.actorId,
-        action: query.action,
-        occurred_from: query.occurredFrom,
-        occurred_to: query.occurredTo,
-        page: query.page ?? 0,
-        size: query.size ?? 25,
-      })}`,
-      headers,
-      (raw) => mapAuditPage(raw as Parameters<typeof mapAuditPage>[0]),
-    );
-  },
-  getAuditEvent(headers: Headers, eventId: string): Promise<AuditEventDetail> {
-    return read(`/api/v1/tenant/audit-events/${idSchema.parse(eventId)}`, headers, (raw) =>
-      mapAuditDetail(raw as Parameters<typeof mapAuditDetail>[0]),
     );
   },
 };

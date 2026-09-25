@@ -1,49 +1,14 @@
-import { test, expect, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
+import { test, expect, type TestInfo } from '@playwright/test';
+import {
+  addCookie,
+  authenticate,
+  baseUrl,
+  CONTEXT_COOKIE_NAME,
+  selectMuiOption,
+} from './support/auth';
 
-const SESSION_COOKIE_NAME = 'finaxis.session_token';
-const SESSION_COOKIE_VALUE = 'e2e-authenticated-session';
-const CONTEXT_COOKIE_NAME = 'finaxis_context';
-const SCENARIO_COOKIE_NAME = 'finaxis_e2e_scenario';
 const ORGANISATION_ID = '11111111-1111-4111-8111-111111111111';
 const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
-
-function baseUrl(testInfo: TestInfo): string {
-  const configuredBaseUrl = testInfo.project.use.baseURL;
-  if (typeof configuredBaseUrl !== 'string') {
-    throw new Error('Playwright baseURL must be configured for e2e auth fixtures.');
-  }
-
-  return configuredBaseUrl;
-}
-
-async function addCookie(context: BrowserContext, testInfo: TestInfo, name: string, value: string) {
-  await context.addCookies([
-    {
-      httpOnly: true,
-      name,
-      sameSite: 'Lax',
-      secure: false,
-      url: baseUrl(testInfo),
-      value,
-    },
-  ]);
-}
-
-async function authenticate(
-  context: BrowserContext,
-  testInfo: TestInfo,
-  scenario?: 'empty-organisations' | 'selection-forbidden',
-) {
-  await addCookie(context, testInfo, SESSION_COOKIE_NAME, SESSION_COOKIE_VALUE);
-  if (scenario) {
-    await addCookie(context, testInfo, SCENARIO_COOKIE_NAME, scenario);
-  }
-}
-
-async function selectMuiOption(page: Page, label: string, option: RegExp) {
-  await page.getByRole('combobox', { name: label }).click();
-  await page.getByRole('option', { name: option }).click();
-}
 
 function sameOriginRequest(testInfo: TestInfo, pathname: string, method: string) {
   const expectedOrigin = new URL(baseUrl(testInfo)).origin;
@@ -109,7 +74,7 @@ test.describe('Authenticated context selection', () => {
     await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Backend Jane Manager' })).toBeVisible();
     await expect(page.getByText('backend.jane@greenfield.example')).toBeVisible();
-    await expect(page.getByText('users.read')).toBeVisible();
+    await expect(page.getByText('user.view')).toBeVisible();
   });
 
   test('shows an actionable empty state when no organisations are available', async ({
@@ -134,7 +99,16 @@ test.describe('Authenticated context selection', () => {
     await authenticate(context, testInfo, 'selection-forbidden');
     await page.goto('/select-context');
 
+    // The 403 response can be slow under a cold `next dev` compile of the route handler, so wait
+    // for it explicitly rather than trusting the alert to render inside the default assertion
+    // timeout (see the equivalent wait in the success-path test above).
+    const organisationResponse = page.waitForResponse(
+      (response) =>
+        sameOriginRequest(testInfo, '/api/context/organisation', 'POST')(response.request()),
+      { timeout: 20000 },
+    );
     await selectMuiOption(page, 'Organisation', /Greenfield SACCO/);
+    await organisationResponse;
 
     await expect(
       page.getByRole('alert').filter({ hasText: "We couldn't update your context" }),
