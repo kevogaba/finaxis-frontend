@@ -85,11 +85,29 @@ export function createFinaxisTheme() {
     },
     spacing: 4,
     shape: { borderRadius: 6 },
+    // Spec: hover/press feedback runs 150-200ms (MASTER.md "Motion is functional"). Only the
+    // short end of MUI's scale moves — `standard`/`complex` (dialogs, larger transitions) keep
+    // MUI's defaults. `prefers-reduced-motion` still wins regardless: the `!important` rule in
+    // app/globals.css's `@layer base` overrides any duration, MUI's included.
+    transitions: { duration: { shortest: 150, shorter: 175, short: 200 } },
     typography: {
       fontFamily: FONT_STACK,
       htmlFontSize: 16,
       fontSize: 13,
-      h1: { fontSize: '1.75rem', fontWeight: 700, lineHeight: 1.15, letterSpacing: '-0.02em' },
+      h1: {
+        fontSize: '1.75rem',
+        fontWeight: 700,
+        lineHeight: 1.15,
+        letterSpacing: '-0.02em',
+        // Spec §7.2: 28px desktop, 25px mobile. `theme.breakpoints` doesn't exist yet inside
+        // this object (it's built from it), so `down('md')` is inlined — CSSProperties' index
+        // signature (createMixins.d.ts) allows an arbitrary nested-selector key here, and
+        // `createTypography` merges it straight through onto `theme.typography.h1`.
+        // ponytail: hardcodes the default `md` breakpoint (900px); switch to a
+        // `components.MuiTypography.styleOverrides.h1` function using `theme.breakpoints` if
+        // this theme ever customises breakpoints.
+        '@media (max-width:899.95px)': { fontSize: '1.5625rem' },
+      },
       h2: { fontSize: '1.5625rem', fontWeight: 700, lineHeight: 1.15, letterSpacing: '-0.015em' },
       h3: { fontSize: '1.375rem', fontWeight: 700, lineHeight: 1.2, letterSpacing: '-0.01em' },
       h4: { fontSize: '1.25rem', fontWeight: 700, lineHeight: 1.25, letterSpacing: '-0.01em' },
@@ -153,18 +171,24 @@ export function createFinaxisTheme() {
       },
       MuiIconButton: {
         styleOverrides: {
-          root: ({ theme }) => ({
-            borderRadius: 6,
-            width: 42,
-            height: 42,
-            color: theme.vars.palette.text.secondary,
-            '&:hover': {
-              backgroundColor: theme.vars.palette.surfaces.secondary,
-              color: theme.vars.palette.text.primary,
-            },
-          }),
+          // Anatomy only here — `color` must not sit in `root`, or it overrides every MUI
+          // colour variant (color="primary"/"inherit"/etc. all fall back to a fixed colour).
+          // The neutral look is scoped to the `default` colour via a variant below instead.
+          root: { borderRadius: 6, width: 42, height: 42 },
           sizeSmall: { width: 32, height: 32 },
         },
+        variants: [
+          {
+            props: { color: 'default' },
+            style: ({ theme }) => ({
+              color: theme.vars.palette.text.secondary,
+              '&:hover': {
+                backgroundColor: theme.vars.palette.surfaces.secondary,
+                color: theme.vars.palette.text.primary,
+              },
+            }),
+          },
+        ],
       },
       MuiChip: {
         styleOverrides: {
@@ -195,6 +219,24 @@ export function createFinaxisTheme() {
             style: ({ theme }: { theme: Theme }) => ({
               backgroundColor: theme.vars.palette.status[SOFT_BACKGROUND[color]],
               color: theme.vars.palette[color].main,
+              // MUI's own clickable+colour variant (Chip.js) repaints :hover and
+              // .Mui-focusVisible with palette[color].dark while text stays .main — 1.6–2:1.
+              // Re-assert the soft background (adding `.MuiChip-clickable` beats its plain
+              // `:hover` on specificity; matching `.Mui-focusVisible` wins because theme
+              // variants are always emitted after the component's own styles) and signal the
+              // interaction with a ring instead of a colour change.
+              '&.MuiChip-clickable:hover, &.Mui-focusVisible': {
+                backgroundColor: theme.vars.palette.status[SOFT_BACKGROUND[color]],
+                boxShadow: `inset 0 0 0 1px ${theme.vars.palette[color].main}`,
+              },
+              // MUI's own filled-colour variant paints the delete icon in contrastText at
+              // 70% opacity — meant for a solid `palette[color].main` fill, not our soft tint.
+              '& .MuiChip-deleteIcon': {
+                color: theme.vars.palette[color].main,
+                '&:hover, &:active': {
+                  color: theme.vars.palette[color].main,
+                },
+              },
             }),
           })),
         ],
@@ -246,10 +288,22 @@ export function createFinaxisTheme() {
       MuiOutlinedInput: {
         defaultProps: { notched: false },
         styleOverrides: {
+          // `styleOverrides.notchedOutline` looks like the obvious key for the fieldset/legend,
+          // but it's inert: OutlinedInput renders that slot via `useSlot`, which never consults
+          // `theme.components.MuiOutlinedInput.styleOverrides` (checked in
+          // node_modules/@mui/material/OutlinedInput/OutlinedInput.js and utils/useSlot.js), and
+          // its own styled() call (NotchedOutline.js) registers no slot/overridesResolver either.
+          // Reach the legend the same proven way `root` already reaches the outline's border
+          // colour above: a nested selector on the stable `.MuiOutlinedInput-notchedOutline`
+          // class, which the root's `rootOverridesResolver` *does* apply.
           root: ({ theme }) => ({
             borderRadius: 6,
             backgroundColor: theme.vars.palette.background.paper,
             '& .MuiOutlinedInput-notchedOutline': { borderColor: theme.vars.palette.divider },
+            // Harden the notch: an explicit `slotProps.inputLabel.shrink` forwards `notched`
+            // straight through (TextField.js), bypassing `defaultProps.notched: false` below and
+            // re-opening the outline gap the labels-above anatomy never needs.
+            '& .MuiOutlinedInput-notchedOutline legend': { maxWidth: '0.01px' },
             '&.Mui-disabled': { backgroundColor: theme.vars.palette.surfaces.secondary },
           }),
           input: { paddingBlock: 10 },

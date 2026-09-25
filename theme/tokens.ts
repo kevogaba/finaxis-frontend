@@ -2,7 +2,10 @@
  * Finaxis design tokens, ported from the Administration prototype's styles.css
  * (`[data-theme]` blocks and `:root` brand scale). Dark-scheme semantic foregrounds and the dark
  * primary are lightened from the prototype so every text pair meets WCAG AA — enforced by
- * theme/tokens.test.ts. Components never import these directly; they use palette paths.
+ * theme/tokens.test.ts. Most consumers should go through palette paths (e.g.
+ * `sx={{ color: 'status.warningBg' }}`) instead of importing from here — the exceptions are
+ * `components/branding/finaxis-logo.tsx` and `app/icon.tsx` (the brand-mark gradient isn't part
+ * of the MUI palette) and `app/layout.tsx` (the pre-hydration viewport `theme-color`).
  */
 export const BRAND = {
   deep: '#071A36',
@@ -12,7 +15,7 @@ export const BRAND = {
   onNavyMuted: '#B8C7DA',
   onNavyBorder: 'rgba(255, 255, 255, 0.12)',
   onNavySurface: 'rgba(255, 255, 255, 0.07)',
-  onNavyAccent: 'rgba(117, 162, 255, 0.85)',
+  onNavyAccent: '#75A2FF',
   railMarker: '#75A2FF',
   /** Active rail item fill (a gradient, used as `backgroundImage`). */
   railActive: 'linear-gradient(90deg, rgba(47, 109, 242, 0.65), rgba(47, 109, 242, 0.25))',

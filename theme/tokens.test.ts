@@ -3,6 +3,8 @@ import { contrastRatio } from './contrast';
 import { BRAND, DARK, LIGHT } from './tokens';
 
 const AA_TEXT = 4.5;
+/** WCAG 2.1 SC 1.4.11 (non-text contrast): UI components / graphical objects need 3:1, not 4.5:1. */
+const AA_NON_TEXT = 3;
 
 type Scheme = typeof LIGHT | typeof DARK;
 
@@ -54,6 +56,20 @@ describe.each([
   it.each(textPairs(scheme))('%s meets WCAG AA (4.5:1)', (_label, foreground, background) => {
     expect(contrastRatio(foreground, background)).toBeGreaterThanOrEqual(AA_TEXT);
   });
+
+  it.each([
+    ['focus on background.default', scheme.focus, scheme.background.default],
+    ['focus on background.paper', scheme.focus, scheme.background.paper],
+    ['focus on surfaces.secondary', scheme.focus, scheme.surfaces.secondary],
+    ['focus on surfaces.tertiary', scheme.focus, scheme.surfaces.tertiary],
+    ['focus on brand.navy', scheme.focus, BRAND.navy],
+    ['focus on brand.deep', scheme.focus, BRAND.deep],
+  ] as [string, string, string][])(
+    '%s meets non-text WCAG AA (3:1)',
+    (_label, foreground, background) => {
+      expect(contrastRatio(foreground, background)).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    },
+  );
 });
 
 describe('brand rail tokens', () => {
@@ -65,6 +81,8 @@ describe('brand rail tokens', () => {
     ['onNavyMuted on navy', BRAND.onNavyMuted, BRAND.navy],
     ['onNavyMuted on raised', BRAND.onNavyMuted, BRAND.raised],
     ['railMarker on navy', BRAND.railMarker, BRAND.navy],
+    ['onNavyAccent on navy', BRAND.onNavyAccent, BRAND.navy],
+    ['onNavyAccent on deep', BRAND.onNavyAccent, BRAND.deep],
   ])('%s meets WCAG AA (4.5:1)', (_label, foreground, background) => {
     expect(contrastRatio(foreground, background)).toBeGreaterThanOrEqual(AA_TEXT);
   });

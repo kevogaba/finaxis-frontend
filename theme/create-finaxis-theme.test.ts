@@ -10,12 +10,16 @@ describe('createFinaxisTheme', () => {
   it('maps the prototype tokens into both colour schemes', () => {
     expect(light?.primary.main).toBe(LIGHT.primary.main);
     expect(light?.background.default).toBe(LIGHT.background.default);
-    expect(light?.surfaces.tertiary).toBe(LIGHT.surfaces.tertiary);
-    expect(light?.status.warningBg).toBe(LIGHT.status.warningBg);
+    expect(light?.surfaces).toEqual(LIGHT.surfaces);
+    expect(light?.status).toEqual(LIGHT.status);
+    expect(light?.avatar).toEqual(LIGHT.avatar);
     expect(light?.focus).toBe(LIGHT.focus);
     expect(dark?.primary.main).toBe(DARK.primary.main);
     expect(dark?.error.main).toBe(DARK.error.main);
-    expect(dark?.status.infoBg).toBe(DARK.status.infoBg);
+    expect(dark?.surfaces).toEqual(DARK.surfaces);
+    expect(dark?.status).toEqual(DARK.status);
+    expect(dark?.avatar).toEqual(DARK.avatar);
+    expect(dark?.focus).toBe(DARK.focus);
   });
 
   it('keeps brand tokens identical in both schemes', () => {
@@ -30,6 +34,11 @@ describe('createFinaxisTheme', () => {
     expect(theme.typography.caption.fontSize).toBe('0.6875rem');
     expect(theme.typography.overline.textTransform).toBe('none');
     expect(theme.typography.button.textTransform).toBe('none');
+  });
+
+  it('shrinks the h1 page title below the md breakpoint (spec §7.2: 28px desktop, 25px mobile)', () => {
+    const h1 = theme.typography.h1 as Record<string, unknown>;
+    expect(h1[theme.breakpoints.down('md')]).toEqual({ fontSize: '1.5625rem' });
   });
 
   it('defaults dense components to their small size', () => {
@@ -52,5 +61,11 @@ describe('createFinaxisTheme', () => {
 
   it('uses 6 px as the base radius', () => {
     expect(theme.shape.borderRadius).toBe(6);
+  });
+
+  it('runs hover/press feedback at 150-200ms (MASTER.md "Motion is functional")', () => {
+    expect(theme.transitions.duration.shortest).toBe(150);
+    expect(theme.transitions.duration.shorter).toBe(175);
+    expect(theme.transitions.duration.short).toBe(200);
   });
 });
