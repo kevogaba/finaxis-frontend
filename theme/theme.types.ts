@@ -1,36 +1,69 @@
 import type { Palette, PaletteOptions } from '@mui/material/styles';
 
 /**
- * Finaxis brand tokens that sit outside MUI's standard semantic palette:
- * - `brand.navy` is the fixed identity color for the login brand panel (same in both schemes).
- * - `surfaces.secondary` / `surfaces.elevated` are the extra surface levels called for by the
- *   light/dark specs (beyond `background.default` / `background.paper`).
+ * Finaxis tokens outside MUI's standard palette. `brand.*` is scheme-independent (the navigation
+ * rail and login brand panel are always navy); the rest have light and dark values
+ * (theme/tokens.ts). Consume them as palette paths, e.g. `sx={{ bgcolor: 'status.warningBg' }}`.
  */
 export interface FinaxisBrandTokens {
-  /** Fixed identity color for the login brand panel — the same in both schemes. */
+  /** Darkest navy — top of the rail gradient. */
+  deep: string;
+  /** Identity navy — rail and login brand panel. */
   navy: string;
-  /** Text/icon/border tones for content placed on top of `navy`, also scheme-independent. */
+  /** Raised navy for hover/emphasis on navy surfaces. */
+  raised: string;
   onNavy: string;
   onNavyMuted: string;
   onNavyBorder: string;
   onNavySurface: string;
   onNavyAccent: string;
+  /** Active navigation marker on the rail. */
+  railMarker: string;
+  /** Active rail item fill — a CSS gradient for `backgroundImage`, not a colour. */
+  railActive: string;
 }
 
 export interface FinaxisSurfaceTokens {
   secondary: string;
+  tertiary: string;
+  /** Same as `background.paper`; kept for existing call sites. */
   elevated: string;
+}
+
+export interface FinaxisStatusTokens {
+  successBg: string;
+  warningBg: string;
+  dangerBg: string;
+  infoBg: string;
+}
+
+export interface FinaxisAvatarTokens {
+  bg: string;
+  fg: string;
 }
 
 declare module '@mui/material/styles' {
   interface Palette {
     brand: FinaxisBrandTokens;
     surfaces: FinaxisSurfaceTokens;
+    status: FinaxisStatusTokens;
+    avatar: FinaxisAvatarTokens;
+    focus: string;
   }
 
   interface PaletteOptions {
     brand?: Partial<FinaxisBrandTokens>;
     surfaces?: Partial<FinaxisSurfaceTokens>;
+    status?: Partial<FinaxisStatusTokens>;
+    avatar?: Partial<FinaxisAvatarTokens>;
+    focus?: string;
+  }
+}
+
+declare module '@mui/material/Chip' {
+  interface ChipPropsVariantOverrides {
+    /** Pill with a soft semantic background — the prototype's status badge. */
+    soft: true;
   }
 }
 
