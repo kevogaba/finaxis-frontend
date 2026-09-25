@@ -39,9 +39,10 @@ labels).
 
 ## Typography
 
-Inter with tabular numerals. Page title 28 px/700 (`h1`); record title 25 px (`h2`); section title
-17 px (`h5` rendered as `h2`/`h3`); body 13 px; dense cells 12.5 px; captions 11 px; eyebrow 12 px/650
-(`overline`, no uppercase); buttons 13 px/700, sentence case.
+Inter with tabular numerals. Page title 28 px/700 (`h1`, 25 px below the `md` breakpoint); record
+title 25 px (`h2`); section title 17 px (`h5` rendered as `h2`/`h3`); body 13 px; dense cells
+12.5 px; captions 11 px; eyebrow 12 px/650 (`overline`, no uppercase); buttons 13 px/700, sentence
+case.
 
 ## Density and layout
 
@@ -70,7 +71,8 @@ Inter with tabular numerals. Page title 28 px/700 (`h1`); record title 25 px (`h
 - A person can hold many roles — identity shows name and email, never a single role.
 - High-risk actions use explicit review steps, reasons, and permanence warnings; maker-checker is
   explained, not hidden.
-- Motion is functional: 150–200 ms transitions, disabled under `prefers-reduced-motion`.
+- Motion is functional: hover/press feedback (`theme.transitions.duration.shortest/shorter/short`)
+  runs 150–200 ms; disabled under `prefers-reduced-motion`.
 
 ## Anti-patterns
 
