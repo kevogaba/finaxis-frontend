@@ -11,3 +11,5 @@ public
 
 # SDD orchestration scratch files (fully gitignored; not project source)
 .superpowers
+# Claude Remember plugin scratch files (fully gitignored; not project source)
+.remember

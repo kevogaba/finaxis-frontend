@@ -5,7 +5,7 @@
       "source": "better-auth/skills",
       "sourceType": "github",
       "skillPath": "better-auth/best-practices/SKILL.md",
-      "computedHash": "61ba0ef64ed2e7c424401cc848ca33dd6d790a720c44727717dc0c5cba5fc122"
+      "computedHash": "0c30be0e118c2b7a0c4c57bd9e63bf110c7e420a79ec6ce7997153f3b1e066ee"
     },
     "better-auth-security-best-practices": {
       "source": "better-auth/skills",
@@ -17,13 +17,13 @@
       "source": "better-auth/skills",
       "sourceType": "github",
       "skillPath": "better-auth/create-auth/SKILL.md",
-      "computedHash": "4e261efac2ae9a2321c4495c846ef97cf239818fc8bd2ab7e92ed1f9d25470f7"
+      "computedHash": "9a9b498bc144367b8e237233f89def63fb2bd69e8cafe173eaa58fe3a863cdc4"
     },
     "material-ui-nextjs": {
       "source": "mui/material-ui",
       "sourceType": "github",
       "skillPath": "skills/material-ui-nextjs/SKILL.md",
-      "computedHash": "dcee153b8af675ae22b01eb7bd73cab8484990f2889bd190bf5aca55107c67a7"
+      "computedHash": "c304c084df2b50efd47e2557209f87f2da6ffe4ec0c43fecf0b9096fe77ed7a0"
     },
     "material-ui-styling": {
       "source": "mui/material-ui",
@@ -47,7 +47,7 @@
       "source": "better-auth/skills",
       "sourceType": "github",
       "skillPath": "better-auth/organization/SKILL.md",
-      "computedHash": "27627eb3a13bd44eff3a5d890f96e7db052b623db90e01684f759abe3e7fe56b"
+      "computedHash": "8c85e683dabef4532f1e8b67bbed5c453d39e0e3d5aeedd69d16b568f6e6d44f"
     }
   }
 }
