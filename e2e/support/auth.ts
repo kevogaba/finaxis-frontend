@@ -8,7 +8,11 @@ export const CONTEXT_COOKIE_NAME = 'finaxis_context';
 
 /** Mirrors `SCENARIOS` in e2e/fake-api/scenarios.mts. */
 export type FakeApiScenario =
-  'default' | 'empty-organisations' | 'selection-forbidden' | 'platform-operator';
+  | 'default'
+  | 'empty-organisations'
+  | 'selection-forbidden'
+  | 'platform-operator'
+  | 'suspended-branch';
 
 export function baseUrl(testInfo: TestInfo): string {
   const configured = testInfo.project.use.baseURL;

@@ -275,6 +275,18 @@ const BUILDERS: Record<string, () => RunState> = {
   'empty-organisations': () => ({ ...greenfieldTenant(), memberships: [] }),
   'selection-forbidden': () => ({ ...greenfieldTenant(), forbidOrganisationSelection: true }),
   'platform-operator': platformOperator,
+  // Keeps westlands' branch assignment ACTIVE while the branch itself is SUSPENDED, so a route
+  // can prove it lists a SUSPENDED branch (or correctly excludes one) without a branch-lifecycle
+  // route to reach that state at runtime.
+  'suspended-branch': () => {
+    const state = greenfieldTenant();
+    return {
+      ...state,
+      branches: state.branches.map((candidate) =>
+        candidate.id === IDS.westlands ? { ...candidate, status: 'SUSPENDED' } : candidate,
+      ),
+    };
+  },
 };
 
 export const SCENARIOS: readonly string[] = Object.keys(BUILDERS);

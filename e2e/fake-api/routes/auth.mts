@@ -17,8 +17,24 @@ function profileBranch(branch: FakeBranch) {
   return { id: branch.id, code: branch.code, name: branch.name, status: branch.status };
 }
 
+/** `/branches` (AvailableBranch) — always ACTIVE, so it reuses `activeAssignmentRows`'s filter. */
 function branchRows(state: RunState, userId: string, organisationId: string): FakeBranch[] {
   return activeAssignmentRows(state, userId, organisationId)
+    .map((row) => state.branches.find((branch) => branch.id === row.branchId))
+    .filter((branch): branch is FakeBranch => branch !== undefined)
+    .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+/**
+ * Contract §C: `/me`'s `branches[]` is "per ACTIVE assignment ... may include SUSPENDED
+ * branches" — unlike `branchRows`, only the assignment needs to be ACTIVE, not the branch.
+ */
+function profileBranches(state: RunState, userId: string, organisationId: string): FakeBranch[] {
+  return state.branchAssignments
+    .filter(
+      (row) =>
+        row.userId === userId && row.organisationId === organisationId && row.status === 'ACTIVE',
+    )
     .map((row) => state.branches.find((branch) => branch.id === row.branchId))
     .filter((branch): branch is FakeBranch => branch !== undefined)
     .sort((a, b) => a.code.localeCompare(b.code));
@@ -156,7 +172,7 @@ export const authRoutes: Route[] = [
     if (!user) {
       throw problem(404, 'resource_not_found', 'User not found.');
     }
-    const branches = branchRows(state, user.id, access.organisation.id);
+    const branches = profileBranches(state, user.id, access.organisation.id);
     const selected = state.branches.find((branch) => branch.id === access.claims.branchId);
     const roles = state.roleAssignments
       .filter(

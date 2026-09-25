@@ -122,4 +122,42 @@ test.describe('fake API', () => {
       violations: [{ field: 'organisation_id', code: 'NotNull' }],
     });
   });
+
+  // Contract §B: bad paging on the auth list routes is validation_failed with no violations,
+  // unlike every other route's pageOf failure (which keeps a field-level violations array).
+  test('rejects bad paging on /auth/organisations as validation_failed with no violations', async ({
+    request,
+  }) => {
+    const response = await request.get(`${FAKE_API_URL}/api/v1/auth/organisations?size=0`, {
+      headers: bearer(),
+    });
+    expect(response.status()).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'validation_failed', violations: null });
+  });
+
+  // Contract §C: /me's branches[] is "per ACTIVE assignment ... may include SUSPENDED branches",
+  // unlike /branches (AvailableBranch, always ACTIVE) — the two routes intentionally disagree.
+  test('lists a SUSPENDED branch on /me but excludes it from /branches', async ({ request }) => {
+    const headers = bearer('suspended-branch');
+    const selection = await request.post(`${FAKE_API_URL}/api/v1/auth/select-organisation`, {
+      headers,
+      data: { organisation_id: '11111111-1111-4111-8111-111111111111' },
+    });
+    const { context_token: contextToken } = (await selection.json()) as { context_token: string };
+    const contextHeaders = { ...headers, 'X-Active-Organisation-Context': contextToken };
+
+    const branches = await request.get(`${FAKE_API_URL}/api/v1/auth/branches`, {
+      headers: contextHeaders,
+    });
+    expect(await branches.json()).toMatchObject({
+      items: [{ branch_code: 'HEAD_OFFICE', branch_status: 'ACTIVE' }],
+    });
+
+    const profile = await request.get(`${FAKE_API_URL}/api/v1/auth/me`, {
+      headers: contextHeaders,
+    });
+    const body = (await profile.json()) as { branches: { code: string; status: string }[] };
+    expect(body.branches.map((item) => item.code)).toEqual(['HEAD_OFFICE', 'WESTLANDS']);
+    expect(body.branches.find((item) => item.code === 'WESTLANDS')?.status).toBe('SUSPENDED');
+  });
 });
