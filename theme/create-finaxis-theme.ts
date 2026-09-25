@@ -253,8 +253,11 @@ export function createFinaxisTheme() {
             '&.Mui-disabled': { backgroundColor: theme.vars.palette.surfaces.secondary },
           }),
           input: { paddingBlock: 10 },
-          // v9 renamed the small-size input slot key from `inputSizeSmall` to `sizeSmall`.
-          sizeSmall: { paddingBlock: 9.5 },
+          // `sizeSmall` resolves against the root slot (InputBase's `inputOverridesResolver` has
+          // no size branch — checked in node_modules/@mui/material/InputBase/InputBase.js), so
+          // reach the actual input element the same way the notched-outline override does above:
+          // a nested selector on its stable class, not a (nonexistent) `inputSizeSmall` key.
+          sizeSmall: { '& .MuiOutlinedInput-input': { paddingBlock: 9.5 } },
         },
       },
       MuiFormHelperText: {
