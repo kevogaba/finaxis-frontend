@@ -60,11 +60,16 @@ export function requireContext({ req, state }: RouteContext): AccessContext {
   if (claims?.userId !== state.actorUserId) {
     throw invalidContext();
   }
+  const user = state.users.find((candidate) => candidate.id === claims.userId);
   const membership = state.memberships.find((candidate) => candidate.id === claims.membershipId);
   const organisation = state.organisations.find(
     (candidate) => candidate.id === claims.organisationId,
   );
-  if (membership?.status !== 'ACTIVE' || organisation?.status !== 'ACTIVE') {
+  if (
+    (user?.status !== 'ACTIVE' && user?.status !== 'INVITED') ||
+    membership?.status !== 'ACTIVE' ||
+    organisation?.status !== 'ACTIVE'
+  ) {
     throw invalidContext();
   }
   if (

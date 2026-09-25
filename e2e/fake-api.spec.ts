@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { seedScenario } from './fake-api/scenarios.mts';
 
 const FAKE_API_URL = `http://127.0.0.1:${process.env.FAKE_API_PORT ?? '3199'}`;
 
@@ -38,5 +39,22 @@ test.describe('fake API', () => {
     const response = await request.get(`${FAKE_API_URL}/api/v1/nope`, { headers: bearer() });
     expect(response.status()).toBe(404);
     expect(await response.json()).toMatchObject({ code: 'resource_not_found' });
+  });
+
+  // No route yet exposes user/role state to assert this over HTTP (Task 2+ adds those routes),
+  // so this seeds directly: two independent tokens for the same scenario must never observe each
+  // other's mutations, which requires every seed to own fresh objects/arrays, not shared fixtures.
+  test('seeds independent, unshared fixtures for every call', () => {
+    const first = seedScenario('default');
+    const second = seedScenario('default');
+
+    expect(first.users[0]).toBeDefined();
+    expect(first.users[0]).not.toBe(second.users[0]);
+
+    const firstRole = first.roles[0];
+    const secondRole = second.roles[0];
+    expect(firstRole).toBeDefined();
+    expect(firstRole?.permissions).not.toBe(secondRole?.permissions);
+    expect(firstRole?.permissions).toEqual(secondRole?.permissions);
   });
 });

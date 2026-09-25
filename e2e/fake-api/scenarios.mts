@@ -143,7 +143,9 @@ function role(
     description: null,
     systemRole: true,
     status: 'ACTIVE',
-    permissions,
+    // Copy: callers pass shared module-level arrays (e.g. TENANT_ADMIN_PERMISSIONS) and later
+    // layers mutate a role's permissions in place — every seed must own its own array.
+    permissions: [...permissions],
     createdAt: CREATED,
     updatedAt: UPDATED,
   };
@@ -171,7 +173,9 @@ function greenfieldTenant(): RunState {
     actorUserId: IDS.jane,
     forbidOrganisationSelection: false,
     organisations: [organisation(IDS.greenfield, 'greenfield', 'Greenfield SACCO')],
-    users: [jane],
+    // Copy: `jane` is a shared module-level fixture; later layers mutate a user in place, so
+    // every seed must own its own object.
+    users: [{ ...jane }],
     memberships: [membership(IDS.greenfieldMembership, IDS.greenfield, IDS.jane)],
     branches: [
       branch(IDS.headOffice, IDS.greenfield, 'HEAD_OFFICE', 'Head Office', 'HEAD_OFFICE'),
@@ -226,7 +230,7 @@ function platformOperator(): RunState {
       }),
       organisation(IDS.acme, 'acme', 'Acme SACCO'),
     ],
-    users: [jane],
+    users: [{ ...jane }],
     memberships: [membership(IDS.platformMembership, IDS.platformOrganisation, IDS.jane)],
     branches: [
       branch(
