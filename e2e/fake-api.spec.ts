@@ -160,4 +160,45 @@ test.describe('fake API', () => {
     expect(body.branches.map((item) => item.code)).toEqual(['HEAD_OFFICE', 'WESTLANDS']);
     expect(body.branches.find((item) => item.code === 'WESTLANDS')?.status).toBe('SUSPENDED');
   });
+
+  // Contract §A/§C: created_from/created_to on /platform/tenants are instants, compared by time
+  // and inclusive — not the tenant's createdAt string, which would wrongly exclude a same-instant
+  // boundary once a date-only value (no time/Z) is involved.
+  test('includes a tenant when created_to exactly equals its createdAt', async ({ request }) => {
+    const headers = bearer('platform-operator');
+    const selection = await request.post(`${FAKE_API_URL}/api/v1/auth/select-organisation`, {
+      headers,
+      data: { organisation_id: '00000000-0000-0000-0000-000000000000' },
+    });
+    const { context_token: contextToken } = (await selection.json()) as { context_token: string };
+    const contextHeaders = { ...headers, 'X-Active-Organisation-Context': contextToken };
+
+    const response = await request.get(
+      `${FAKE_API_URL}/api/v1/platform/tenants?created_to=2026-07-01T08:00:00Z`,
+      { headers: contextHeaders },
+    );
+    expect(response.status()).toBe(200);
+    const body = (await response.json()) as { items: { tenant_code: string }[] };
+    expect(body.items.map((item) => item.tenant_code)).toContain('acme');
+  });
+
+  test('rejects a date-only created_to as invalid_parameter', async ({ request }) => {
+    const headers = bearer('platform-operator');
+    const selection = await request.post(`${FAKE_API_URL}/api/v1/auth/select-organisation`, {
+      headers,
+      data: { organisation_id: '00000000-0000-0000-0000-000000000000' },
+    });
+    const { context_token: contextToken } = (await selection.json()) as { context_token: string };
+    const contextHeaders = { ...headers, 'X-Active-Organisation-Context': contextToken };
+
+    const response = await request.get(
+      `${FAKE_API_URL}/api/v1/platform/tenants?created_to=2026-07-01`,
+      { headers: contextHeaders },
+    );
+    expect(response.status()).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: 'invalid_parameter',
+      violations: [{ field: 'created_to', code: 'invalid_parameter' }],
+    });
+  });
 });

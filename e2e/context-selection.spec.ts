@@ -1,25 +1,14 @@
-import { test, expect, type TestInfo } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import {
   addCookie,
   authenticate,
-  baseUrl,
   CONTEXT_COOKIE_NAME,
+  sameOriginRequest,
   selectMuiOption,
 } from './support/auth';
 
 const ORGANISATION_ID = '11111111-1111-4111-8111-111111111111';
 const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
-
-function sameOriginRequest(testInfo: TestInfo, pathname: string, method: string) {
-  const expectedOrigin = new URL(baseUrl(testInfo)).origin;
-
-  return (request: { method(): string; url(): string }) => {
-    const url = new URL(request.url());
-    return (
-      url.origin === expectedOrigin && url.pathname === pathname && request.method() === method
-    );
-  };
-}
 
 test.describe('Authenticated context selection', () => {
   test('stops authenticated profile access at shell-free /select-context', async ({
@@ -108,7 +97,7 @@ test.describe('Authenticated context selection', () => {
       { timeout: 20000 },
     );
     await selectMuiOption(page, 'Organisation', /Greenfield SACCO/);
-    await organisationResponse;
+    expect((await organisationResponse).status()).toBe(403);
 
     await expect(
       page.getByRole('alert').filter({ hasText: "We couldn't update your context" }),

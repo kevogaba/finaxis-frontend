@@ -46,6 +46,17 @@ export async function authenticate(
   return run;
 }
 
+/** Predicate for a same-origin request/response, e.g. inside `page.waitForRequest`/`waitForResponse`. */
+export function sameOriginRequest(testInfo: TestInfo, pathname: string, method: string) {
+  const expectedOrigin = new URL(baseUrl(testInfo)).origin;
+  return (request: { method(): string; url(): string }) => {
+    const url = new URL(request.url());
+    return (
+      url.origin === expectedOrigin && url.pathname === pathname && request.method() === method
+    );
+  };
+}
+
 export async function selectMuiOption(page: Page, label: string, option: RegExp): Promise<void> {
   const combobox = page.getByRole('combobox', { name: label });
   // MUI's Select only opens once React hydrates and attaches its click handler; a click that lands
@@ -53,9 +64,13 @@ export async function selectMuiOption(page: Page, label: string, option: RegExp)
   // under a cold `next dev` compile with several Playwright workers contending for it). Wait for
   // React to have claimed the node (it tags hydrated DOM nodes with an internal `__reactProps$*`
   // key) before clicking, instead of clicking blind and hoping hydration already happened.
+  // 20s, not the 5s default: the element itself can still be compiling in under heavy Playwright
+  // worker contention on a cold `next dev` server, on top of the hydration wait this poll exists for.
   await expect
-    .poll(() =>
-      combobox.evaluate((el) => Object.keys(el).some((key) => key.startsWith('__reactProps'))),
+    .poll(
+      () =>
+        combobox.evaluate((el) => Object.keys(el).some((key) => key.startsWith('__reactProps'))),
+      { timeout: 20000 },
     )
     .toBe(true);
   await combobox.click();

@@ -45,6 +45,28 @@ function detail(tenant: FakeOrganisation) {
   };
 }
 
+/** Contract §A `instant`: ISO-8601 UTC with a literal `Z` — a date-only value is not one. */
+const INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+
+/**
+ * Mirrors the backend binding `created_from`/`created_to` as `Instant`: compares by time, not by
+ * string, so an inclusive `created_to` on a tenant's exact `createdAt` matches. An absent or blank
+ * value means "no filter"; a present value that isn't a valid instant is a 400 (contract §B).
+ */
+function parseInstantParam(query: URLSearchParams, name: string): number | undefined {
+  const value = query.get(name);
+  if (!value) {
+    return undefined;
+  }
+  const time = INSTANT_PATTERN.test(value) ? Date.parse(value) : NaN;
+  if (Number.isNaN(time)) {
+    throw problem(400, 'invalid_parameter', `Invalid ${name}.`, [
+      { field: name, code: 'invalid_parameter', message: 'must be an ISO-8601 instant' },
+    ]);
+  }
+  return time;
+}
+
 export const platformTenantRoutes: Route[] = [
   route('GET', '/api/v1/platform/tenants', (context) => {
     const access = requireContext(context);
@@ -54,8 +76,8 @@ export const platformTenantRoutes: Route[] = [
     const q = query.get('q')?.toLowerCase();
     const status = query.get('status');
     const country = query.get('country');
-    const createdFrom = query.get('created_from');
-    const createdTo = query.get('created_to');
+    const createdFrom = parseInstantParam(query, 'created_from');
+    const createdTo = parseInstantParam(query, 'created_to');
     const tenants = context.state.organisations.filter(
       (tenant) =>
         (!q ||
@@ -63,8 +85,8 @@ export const platformTenantRoutes: Route[] = [
           tenant.displayName.toLowerCase().includes(q)) &&
         (!status || tenant.status === status) &&
         (!country || tenant.countryCode === country) &&
-        (!createdFrom || tenant.createdAt >= createdFrom) &&
-        (!createdTo || tenant.createdAt <= createdTo),
+        (createdFrom === undefined || Date.parse(tenant.createdAt) >= createdFrom) &&
+        (createdTo === undefined || Date.parse(tenant.createdAt) <= createdTo),
     );
     sendJson(context.res, 200, pageOf(sortTenants(tenants, query).map(summary), query));
   }),

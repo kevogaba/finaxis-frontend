@@ -95,7 +95,7 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
       description="Confirm the active platform context and move into the live read-only workspaces."
     >
       <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
               <Stack spacing={1}>
@@ -122,7 +122,7 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
           </Card>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
               <Stack spacing={1.25}>
