@@ -6,22 +6,19 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { useRouter } from 'next/navigation';
 import type { BrowserOrganisation, BrowserPage } from '@/auth/context-browser-dto';
+import { DEFAULT_CONTEXT_DESTINATION } from '@/auth/context-destination';
 import { ContextSelectionForm } from './context-selection-form';
 
 const SESSION_EXPIRED_REDIRECT = '/login?reason=session_expired';
-const DEFAULT_DESTINATION = '/profile';
-
-export type ContextSelectionDestination =
-  '/profile' | '/admin' | '/platform-admin' | '/platform-admin/tenants';
 
 interface ContextSelectionPageProps {
   organisations: BrowserPage<BrowserOrganisation>;
-  destination?: ContextSelectionDestination;
+  destination?: string;
   hasOrganisationLoadError?: boolean;
 }
 
 export function ContextSelectionPage({
-  destination = DEFAULT_DESTINATION,
+  destination = DEFAULT_CONTEXT_DESTINATION,
   organisations,
   hasOrganisationLoadError = false,
 }: ContextSelectionPageProps) {
