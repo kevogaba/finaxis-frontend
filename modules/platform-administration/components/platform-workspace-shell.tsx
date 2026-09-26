@@ -10,18 +10,28 @@ import { MobileNavigationButton } from '@/components/shell/mobile-navigation-but
 import { platformAdministrationModule } from '../platform-administration-module';
 import { platformAdministrationNavigationItems } from '../platform-administration-navigation';
 
+// Transitional: Task 4 (PR 04) deletes this shell and moves the drawer into AppShell, which
+// gets the collapse preference from a cookie and the footer identity from the resolved
+// ApplicationContext. This local state exists only until then.
 export function PlatformWorkspaceShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <Box sx={{ display: 'flex', minHeight: 'calc(100dvh - 64px)' }}>
       <WorkspaceDrawer
         items={platformAdministrationNavigationItems}
         navigationAriaLabel={platformAdministrationModule.name}
+        collapsed={collapsed}
+        onToggleCollapsed={() => {
+          setCollapsed((prev) => !prev);
+        }}
         mobileOpen={mobileOpen}
         onMobileClose={() => {
           setMobileOpen(false);
         }}
+        footerTitle={platformAdministrationModule.name}
+        footerSubtitle={platformAdministrationModule.description}
       />
       <Box sx={{ flexGrow: 1, minWidth: 0 }}>
         <Toolbar
