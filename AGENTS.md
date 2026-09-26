@@ -39,6 +39,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   violations.
 - Update `README.md` (and this file) when the architecture changes — e.g. swapping the mock auth
   module for a real identity provider, or changing the MUI/Tailwind boundary.
+- E2E tests run against the standalone fake API in `e2e/fake-api/` — never add backend fixtures to
+  app code. Fake-API files run under plain `node`: relative `.mts` imports, `import type` for types,
+  erasable TypeScript only (no enums, namespaces, parameter properties). Add only endpoints a layer
+  uses, mirroring the contract document exactly (including backend quirks).
+- The backend's wire format is snake_case and differs from the published OpenAPI casing; never
+  generate a client from the OpenAPI as-is. Follow
+  `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`.
 
 ## Authentication rules
 
