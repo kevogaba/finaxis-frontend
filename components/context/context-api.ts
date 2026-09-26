@@ -94,6 +94,15 @@ export function isContextLost(error: unknown): error is ContextRequestError {
   return error instanceof ContextRequestError && (error.status === 403 || error.status === 409);
 }
 
+/**
+ * The organisation endpoint (`/api/context/organisation`), unlike the branch endpoints
+ * `isContextLost` is scoped to, never clears the context cookie and never returns 409 — a 403 here
+ * is access denied for the pick, with the pinned context left intact.
+ */
+export function isOrganisationAccessDenied(error: unknown): boolean {
+  return error instanceof ContextRequestError && error.status === 403;
+}
+
 async function readSuccessfulJson(response: Response): Promise<unknown> {
   if (!response.ok) {
     throw new ContextRequestError(response.status);

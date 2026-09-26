@@ -421,6 +421,94 @@ describe('ContextSwitcherDialog', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('shows a retryable state with no false-success toast/push when the unpin POST 5xxs', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [CURRENT_ORG], page: PAGE }))
+      .mockImplementationOnce(() => json(BRANCHES_PAGE))
+      .mockImplementationOnce(() => Promise.resolve(new Response('{}', { status: 500 })));
+    renderDialog();
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Umoja SACCO/ }));
+    await user.click(await screen.findByRole('combobox', { name: 'Branch' }));
+    await user.click(screen.getByRole('option', { name: /All branches/ }));
+
+    await screen.findByText(/couldn't update your context/i);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.refresh).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
+    // The stale Branch select (loaded for the old, now-unpinned attempt) must not survive the
+    // failure — otherwise a second pick from it fires onComplete with an empty organisationId.
+    expect(screen.queryByRole('combobox', { name: 'Branch' })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Organisation' })).toBeInTheDocument();
+  });
+
+  it('shows a retryable state with no false-success toast/push when the unpin POST fails with a network error', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [CURRENT_ORG], page: PAGE }))
+      .mockImplementationOnce(() => json(BRANCHES_PAGE))
+      .mockImplementationOnce(() => Promise.reject(new Error('network error')));
+    renderDialog();
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Umoja SACCO/ }));
+    await user.click(await screen.findByRole('combobox', { name: 'Branch' }));
+    await user.click(screen.getByRole('option', { name: /All branches/ }));
+
+    await screen.findByText(/couldn't update your context/i);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.refresh).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Branch' })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Organisation' })).toBeInTheDocument();
+  });
+
+  it('shows access-denied with no false-success toast/push when the unpin POST 403s, and lets it be retried', async () => {
+    // The organisation route never clears the context cookie and never returns 409 on a 403 (unlike
+    // the branch endpoints) — the pinned context is intact, so this must not behave like a lost
+    // context (no silent refresh-only Close, no disabled fast path): a retry can still succeed.
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [CURRENT_ORG], page: PAGE }))
+      .mockImplementationOnce(() => json(BRANCHES_PAGE))
+      .mockImplementationOnce(() => Promise.resolve(new Response('{}', { status: 403 })))
+      .mockImplementationOnce(() => json(BRANCHES_PAGE))
+      .mockImplementationOnce(() =>
+        json({ branchId: null, requiresBranchSelection: true, assignedBranchIds: ['b-1', 'b-2'] }),
+      );
+    renderDialog();
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Umoja SACCO/ }));
+    await user.click(await screen.findByRole('combobox', { name: 'Branch' }));
+    await user.click(screen.getByRole('option', { name: /All branches/ }));
+
+    await screen.findByText(/do not have access/i);
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.refresh).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Branch' })).not.toBeInTheDocument();
+
+    // Retry: re-pick the same organisation (the fast path still lists its branches, proving the
+    // 403 was not treated as a lost context) and choose All branches again.
+    await user.click(screen.getByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Umoja SACCO/ }));
+    await user.click(await screen.findByRole('combobox', { name: 'Branch' }));
+    await user.click(screen.getByRole('option', { name: /All branches/ }));
+
+    await vi.waitFor(() => {
+      expect(router.refresh).toHaveBeenCalled();
+    });
+    expect(router.push).not.toHaveBeenCalled();
+    // The full organisation name must reach the toast — a regression that let onComplete fire with
+    // an empty organisationId would show "Switched to  · All branches" instead.
+    expect(await screen.findByText('Switched to Umoja SACCO · All branches')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
   it('sends the user to login when the organisations list fails with a session-expired 401', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementationOnce(() =>
       Promise.resolve(new Response('{}', { status: 401 })),

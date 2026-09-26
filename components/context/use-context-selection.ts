@@ -11,6 +11,7 @@ import {
   fetchBranches,
   fetchOrganisations,
   isContextLost,
+  isOrganisationAccessDenied,
   isSessionExpired,
   selectBranchRequest,
   selectOrganisationRequest,
@@ -155,7 +156,7 @@ export function useContextSelection({
     branchId: string,
     forOrganisationId = organisationId,
   ): Promise<boolean> => {
-    if (!branchId || isSavingBranch) {
+    if (!branchId || !forOrganisationId || isSavingBranch) {
       return false;
     }
     setUpdateError(null);
@@ -242,6 +243,11 @@ export function useContextSelection({
   };
 
   const selectAllBranches = async () => {
+    if (!organisationId) {
+      // Defensive: onComplete must never fire with no organisation chosen — see the catch below,
+      // which always clears both the organisation and the stale branch list on an unpin failure.
+      return;
+    }
     if (!isCurrentOrganisation || currentBranchId === null) {
       // Either a freshly-committed organisation (already institution-level once its POST
       // succeeded) or this organisation already has no branch pinned: nothing to change
@@ -264,14 +270,17 @@ export function useContextSelection({
         onSessionExpired();
         return;
       }
-      if (isContextLost(error)) {
-        setOrganisationId('');
-        setUpdateError(contextLostMessage(error));
-        onOrganisationLost?.();
-        return;
-      }
+      // The organisation endpoint never clears the context cookie and never returns 409 (unlike
+      // the branch endpoints `isContextLost` is scoped to): the pinned context is still intact, so
+      // this never calls onOrganisationLost. Clear the organisation choice *and* the now-stale
+      // branch list so the Branch select hides — leaving it up would let a second pick from it
+      // fire onComplete with an empty organisationId (a false-success All-branches switch). A
+      // re-pick of the organisation retries the whole step.
       setOrganisationId('');
-      setUpdateError(CONTEXT_UPDATE_ERROR);
+      setBranchPage(null);
+      setUpdateError(
+        isOrganisationAccessDenied(error) ? CONTEXT_ACCESS_DENIED_MESSAGE : CONTEXT_UPDATE_ERROR,
+      );
     } finally {
       setIsSavingOrganisation(false);
     }
