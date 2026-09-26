@@ -9,6 +9,13 @@ async function enterGreenfield(page: Page) {
   // Slower default timeout: this can be the first hit of the /admin route tree under a cold
   // `next dev` compile (see the platform-admin equivalent below).
   await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
+  // The URL updates before the route finishes compiling: app/loading.tsx's 'Loading…' fallback
+  // can still be showing right after the URL match (observed: a caller's very next assertion
+  // failed with "element(s) not found" while the page snapshot showed only the loading status).
+  // Wait for the page's own heading here, once, so every caller sees settled content.
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Administration Overview' }),
+  ).toBeVisible({ timeout: 15000 });
 }
 
 // The platform operator has a single branch, so selecting the organisation auto-selects it and
@@ -19,6 +26,10 @@ async function enterPlatformAdmin(page: Page) {
   // Slower default timeout: this route tree gets no warm-compile head start from an earlier test
   // when the a11y matrix below hits it first (see e2e/platform-administration.spec.ts).
   await expect(page).toHaveURL(/\/platform-admin$/, { timeout: 15000 });
+  // Same cold-compile race as enterGreenfield above: wait for the page's own heading here, once.
+  await expect(page.getByRole('heading', { level: 1, name: 'Platform overview' })).toBeVisible({
+    timeout: 15000,
+  });
 }
 
 test.describe('application shell', () => {

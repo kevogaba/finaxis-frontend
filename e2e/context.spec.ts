@@ -168,6 +168,16 @@ test.describe('working context', () => {
           await selectMuiOption(page, 'Branch', /Head Office/);
           await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
 
+          // The URL updates before the (already-visited, but possibly still cold under this
+          // worker) /admin route finishes compiling: app/loading.tsx's 'Loading…' fallback can
+          // still be showing, with an empty document title, right after the URL match.
+          // /admin/page.tsx's `metadata` is a static object (not `generateMetadata`), so it can't
+          // stream in separately from the page body (see streaming-metadata docs) — waiting for
+          // the page's own heading also waits for the title.
+          await expect(
+            page.getByRole('heading', { level: 1, name: 'Administration Overview' }),
+          ).toBeVisible({ timeout: 15000 });
+
           await expect(page.locator('html')).toHaveClass(new RegExp(colorScheme));
           await expect(page).toHaveTitle(/.+/);
 
