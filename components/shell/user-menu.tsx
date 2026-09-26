@@ -43,15 +43,40 @@ export function UserMenu({ user }: UserMenuProps) {
         aria-expanded={open ? 'true' : undefined}
         onClick={handleOpen}
         color="inherit"
-        sx={{ textTransform: 'none', gap: 1 }}
+        sx={{ gap: 2.5, px: 1, height: 46, minWidth: 0 }}
       >
-        <Avatar src={user.image} sx={{ width: 32, height: 32, fontSize: 14 }}>
+        <Avatar src={user.image} sx={{ width: 38, height: 38, fontSize: '0.8125rem' }}>
           {!user.image && initialsOf(user.name)}
         </Avatar>
-        <Typography component="span" variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
-          {user.name}
-        </Typography>
-        <KeyboardArrowDownOutlined fontSize="small" />
+        <Box
+          component="span"
+          sx={{
+            display: { xs: 'none', lg: 'flex' },
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            minWidth: 0,
+            textAlign: 'left',
+          }}
+        >
+          <Typography
+            component="span"
+            variant="subtitle2"
+            noWrap
+            sx={{ fontWeight: 700, maxWidth: 180 }}
+          >
+            {user.name}
+          </Typography>
+          <Typography
+            component="span"
+            variant="caption"
+            color="text.secondary"
+            noWrap
+            sx={{ maxWidth: 180 }}
+          >
+            {user.email}
+          </Typography>
+        </Box>
+        <KeyboardArrowDownOutlined fontSize="small" aria-hidden="true" />
       </Button>
       <Menu id={menuId} anchorEl={anchorEl} open={open} onClose={handleClose}>
         <Box sx={{ px: 2, py: 1, minWidth: 220 }}>

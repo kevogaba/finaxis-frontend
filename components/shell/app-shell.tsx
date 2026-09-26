@@ -17,7 +17,8 @@ export function AppShell({ user, context, children }: AppShellProps) {
   return (
     <ApplicationContextProvider value={context}>
       <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
-        <GlobalHeader user={user} />
+        {/* Task 4 recomposes AppShell around WorkspaceDrawer's mobile-open state; no-op until then. */}
+        <GlobalHeader user={user} onOpenNavigation={() => undefined} />
         <Box component="main" sx={{ flexGrow: 1, minWidth: 0 }}>
           {children}
         </Box>
