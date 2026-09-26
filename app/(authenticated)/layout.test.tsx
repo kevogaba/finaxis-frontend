@@ -220,4 +220,40 @@ describe('AuthenticatedLayout', () => {
       expect.objectContaining({ initialNavCollapsed: true }),
     );
   });
+
+  it('treats a tampered cookie value as expanded rather than collapsed', async () => {
+    const { cookies } = await import('next/headers');
+    vi.mocked(cookies).mockResolvedValueOnce({
+      get: (name: string) => (name === 'finaxis_nav' ? { name, value: 'COLLAPSED' } : undefined),
+    } as unknown as Awaited<ReturnType<typeof cookies>>);
+    getAuthenticatedUser.mockResolvedValueOnce({
+      id: 'user-1',
+      name: 'Jane Muthoni',
+      email: 'jane.muthoni@finaxis.test',
+      roles: [],
+      branches: [],
+    });
+    getSelectedContextProfile.mockResolvedValueOnce({
+      context: {
+        branch: { id: 'branch-1', name: 'Headquarters' },
+        module: { id: 'administration', name: 'Administration' },
+        organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
+      },
+      kind: 'resolved',
+      profile: {
+        user_id: 'u',
+        full_name: 'Jane',
+        email: 'j@x',
+        branches: [],
+        roles: [],
+        permissions: [],
+      },
+    });
+
+    render(await AuthenticatedLayout({ children: <div /> }));
+
+    expect(renderedShell).toHaveBeenCalledWith(
+      expect.objectContaining({ initialNavCollapsed: false }),
+    );
+  });
 });

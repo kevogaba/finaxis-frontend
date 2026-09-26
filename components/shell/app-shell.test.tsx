@@ -68,4 +68,19 @@ describe('AppShell', () => {
     expect(document.cookie).toContain('finaxis_nav=collapsed');
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toBeInTheDocument();
   });
+
+  it('opens the mobile navigation drawer from the header button', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <AppShell user={USER} context={PLATFORM} initialNavCollapsed={false}>
+        <div />
+      </AppShell>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
 });
