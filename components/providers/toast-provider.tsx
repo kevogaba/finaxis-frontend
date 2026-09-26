@@ -16,7 +16,12 @@ interface Toast {
   severity: AlertColor;
 }
 
-/** One transient outcome message at a time (prototype `.toast`), announced politely. */
+/**
+ * One transient outcome message at a time (prototype `.toast`). The Alert keeps MUI's default
+ * `role="alert"`, announced by screen readers as soon as it's inserted — an explicit
+ * `role="status"` here would enter the DOM already holding its text, which a polite live region
+ * does not reliably announce (VoiceOver especially).
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null);
   const notify = useCallback<Notify>((message, severity = 'success') => {
@@ -39,7 +44,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         {toast ? (
-          <Alert severity={toast.severity} variant="filled" onClose={close} role="status">
+          <Alert severity={toast.severity} variant="filled" onClose={close}>
             {toast.message}
           </Alert>
         ) : undefined}

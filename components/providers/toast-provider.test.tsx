@@ -28,7 +28,7 @@ describe('ToastProvider', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Notify' }));
-    expect(await screen.findByText('Context switched to Head Office')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Context switched to Head Office');
 
     await user.click(screen.getByRole('button', { name: /close/i }));
     expect(screen.queryByText('Context switched to Head Office')).not.toBeInTheDocument();
