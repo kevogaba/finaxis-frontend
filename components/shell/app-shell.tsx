@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import type { FinaxisUser } from '@/auth/auth.types';
 import type { ApplicationContext } from '@/config/application-context';
 import { administrationNavigationItems } from '@/modules/administration/administration-navigation';
@@ -33,6 +34,16 @@ interface AppShellProps {
 export function AppShell({ user, context, initialNavCollapsed, children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(initialNavCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Safe on the server: matchMedia is unavailable there, so this starts (and stays, until
+  // hydration) false — matching `mobileOpen`'s own initial value.
+  const isDesktop = useMediaQuery((theme) => theme.breakpoints.up('md'));
+  // Widening past `md` with the mobile drawer still open would otherwise leave the temporary
+  // Drawer's Modal open (body scroll locked, rest of the app `aria-hidden`) even though it's
+  // CSS-hidden at this width; resetting the state here — not just the derived prop below — also
+  // stops it popping back open if the viewport narrows again without a fresh tap on the toggle.
+  if (isDesktop && mobileOpen) {
+    setMobileOpen(false);
+  }
   const items = visibleNavigationItems(NAVIGATION[context.module.id], user.permissions);
 
   return (
@@ -47,7 +58,7 @@ export function AppShell({ user, context, initialNavCollapsed, children }: AppSh
             setCollapsed(next);
             writeNavCollapsed(next);
           }}
-          mobileOpen={mobileOpen}
+          mobileOpen={mobileOpen && !isDesktop}
           onMobileClose={() => {
             setMobileOpen(false);
           }}

@@ -55,7 +55,12 @@ export function GlobalHeader({ user, onOpenNavigation }: GlobalHeaderProps) {
           }}
         >
           <AppsOutlined fontSize="small" aria-hidden="true" />
-          <Typography variant="subtitle2" component="span" noWrap sx={{ fontWeight: 700 }}>
+          <Typography
+            variant="subtitle2"
+            component="span"
+            noWrap
+            sx={{ display: { xs: 'none', md: 'block' }, fontWeight: 700 }}
+          >
             {module.name}
           </Typography>
         </Box>
@@ -71,10 +76,11 @@ export function GlobalHeader({ user, onOpenNavigation }: GlobalHeaderProps) {
           <Box
             component="span"
             sx={{
-              display: { xs: 'none', sm: 'flex' },
+              display: { xs: 'none', md: 'flex' },
               flexDirection: 'column',
               alignItems: 'flex-start',
               minWidth: 0,
+              maxWidth: { md: 160, lg: 260 },
               textAlign: 'left',
             }}
           >
@@ -82,7 +88,7 @@ export function GlobalHeader({ user, onOpenNavigation }: GlobalHeaderProps) {
               component="span"
               variant="subtitle2"
               noWrap
-              sx={{ fontWeight: 700, maxWidth: { sm: 160, lg: 260 } }}
+              sx={{ fontWeight: 700, maxWidth: '100%' }}
             >
               {organization.name}
             </Typography>
@@ -91,7 +97,7 @@ export function GlobalHeader({ user, onOpenNavigation }: GlobalHeaderProps) {
               variant="caption"
               color="text.secondary"
               noWrap
-              sx={{ maxWidth: { sm: 160, lg: 260 } }}
+              sx={{ maxWidth: '100%' }}
             >
               {branch.name}
             </Typography>

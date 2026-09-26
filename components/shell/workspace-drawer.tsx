@@ -220,7 +220,12 @@ export function WorkspaceDrawer({
         onClose={onMobileClose}
         ModalProps={{ keepMounted: true }}
         sx={{ display: { xs: 'block', md: 'none' } }}
-        slotProps={{ paper: railPaper(MOBILE_WIDTH) }}
+        slotProps={{
+          // MUI gives this Paper `role="dialog" aria-modal="true"` (temporary variant) but no
+          // accessible name of its own; without one, axe flags `aria-dialog-name`. Distinct from
+          // the nested nav's own "Administration"/"Platform Administration" label.
+          paper: { ...railPaper(MOBILE_WIDTH), 'aria-label': 'Navigation menu' },
+        }}
       >
         <ButtonBase
           onClick={onMobileClose}

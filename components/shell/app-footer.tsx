@@ -18,7 +18,7 @@ export function AppFooter() {
         textAlign: { xs: 'center', md: 'left' },
       }}
     >
-      <Typography variant="caption">
+      <Typography variant="caption" suppressHydrationWarning>
         © {new Date().getFullYear()} Finaxis. Open for a stronger cooperative tomorrow.
       </Typography>
       <Typography variant="caption">Built for African cooperatives</Typography>

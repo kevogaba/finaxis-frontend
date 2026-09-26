@@ -8,6 +8,7 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Tooltip from '@mui/material/Tooltip';
 import NextLink from '@/components/navigation/next-link';
+import { canAny } from '@/auth/permissions';
 
 export interface WorkspaceNavigationItem {
   href: string;
@@ -17,13 +18,16 @@ export interface WorkspaceNavigationItem {
   requiresAny?: readonly string[];
 }
 
+/**
+ * An item with no `requiresAny` is always visible; one with `requiresAny: []` is always hidden
+ * (`canAny` treats zero required codes as unsatisfied) — a defensive default for a misconfigured
+ * registry entry, not a way to intentionally show or hide an item.
+ */
 export function visibleNavigationItems(
   items: readonly WorkspaceNavigationItem[],
   permissions: readonly string[],
 ): WorkspaceNavigationItem[] {
-  return items.filter(
-    (item) => !item.requiresAny || item.requiresAny.some((code) => permissions.includes(code)),
-  );
+  return items.filter((item) => !item.requiresAny || canAny({ permissions }, item.requiresAny));
 }
 
 export function isNavigationItemActive(pathname: string, href: string): boolean {
