@@ -1529,6 +1529,7 @@ it('renders the business date slot', () => {
     <ApplicationContextProvider value={CONTEXT}>
       <GlobalHeader
         user={USER}
+        platformOrganisationId="platform"
         onOpenNavigation={vi.fn()}
         onOpenContextSwitcher={vi.fn()}
         businessDate={<span>Business date slot</span>}
