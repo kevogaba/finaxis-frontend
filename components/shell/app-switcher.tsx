@@ -14,8 +14,14 @@ import AppsOutlined from '@mui/icons-material/AppsOutlined';
 import DomainOutlined from '@mui/icons-material/DomainOutlined';
 import KeyboardArrowDownOutlined from '@mui/icons-material/KeyboardArrowDownOutlined';
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
+import type { BrowserOrganisation } from '@/auth/context-browser-dto';
 import type { ApplicationContextModule } from '@/config/application-context';
-import { fetchOrganisations, selectOrganisationRequest } from '@/components/context/context-api';
+import { useToast } from '@/components/providers/toast-provider';
+import {
+  fetchOrganisations,
+  selectBranchRequest,
+  selectOrganisationRequest,
+} from '@/components/context/context-api';
 import { nextStepAfterOrganisation } from '@/components/context/use-context-selection';
 
 type ModuleId = ApplicationContextModule['id'];
@@ -92,11 +98,16 @@ export function AppSwitcher({
   moduleName,
 }: AppSwitcherProps) {
   const router = useRouter();
+  const notify = useToast();
   const popoverId = useId();
+  const titleId = useId();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  const [hasPlatform, setHasPlatform] = useState<boolean | null>(null);
+  const [platform, setPlatform] = useState<BrowserOrganisation | null | undefined>(undefined);
   const [switching, setSwitching] = useState(false);
   const open = Boolean(anchorEl);
+  // The label trigger sits at the left of the app bar; anchoring its popover under the trigger's
+  // own left edge (instead of the icon trigger's right anchor) keeps the 320px paper off the rail.
+  const horizontal = trigger === 'label' ? 'left' : 'right';
 
   const handleOpen = (event: MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -104,10 +115,12 @@ export function AppSwitcher({
     // would not see the tile — page through if that ever happens.
     void fetchOrganisations(0)
       .then((page) => {
-        setHasPlatform(page.items.some((item) => item.organisationId === platformOrganisationId));
+        setPlatform(
+          page.items.find((item) => item.organisationId === platformOrganisationId) ?? null,
+        );
       })
       .catch(() => {
-        setHasPlatform(false);
+        setPlatform(null);
       });
   };
 
@@ -122,33 +135,43 @@ export function AppSwitcher({
     }
   };
 
-  const openPlatform = async () => {
+  const openPlatform = async (name: string) => {
     if (currentModuleId === 'platform-administration') {
       close();
       return;
     }
     setSwitching(true);
+    // Only the organisation POST can leave the switch stranded: once it succeeds the platform
+    // organisation is already committed (spec §6.5), so a failed auto-pin below must never reach
+    // onOpenContextSwitcher — that would re-open the dialog on top of a token that already moved.
+    let step: ReturnType<typeof nextStepAfterOrganisation>;
     try {
-      const selection = await selectOrganisationRequest(platformOrganisationId);
-      const step = nextStepAfterOrganisation(selection);
-      close();
-      if (step === 'done-branch' || step === 'done-institution') {
-        router.push('/platform-admin');
-        router.refresh();
-        return;
-      }
-      onOpenContextSwitcher();
+      step = nextStepAfterOrganisation(await selectOrganisationRequest(platformOrganisationId));
     } catch {
       close();
-      onOpenContextSwitcher();
-    } finally {
       setSwitching(false);
+      onOpenContextSwitcher();
+      return;
     }
+    let pinned = step === 'done-branch';
+    if (typeof step === 'object') {
+      // A failed auto-pin still lands at All branches, exactly as closing the context dialog mid
+      // auto-pin does.
+      pinned = await selectBranchRequest(step.autoSelect).then(
+        () => true,
+        () => false,
+      );
+    }
+    close();
+    setSwitching(false);
+    notify(pinned ? `Switched to ${name}` : `Switched to ${name} · All branches`);
+    router.push('/platform-admin');
+    router.refresh();
   };
 
   const triggerProps = {
     'aria-controls': open ? popoverId : undefined,
-    'aria-haspopup': 'true' as const,
+    'aria-haspopup': 'dialog' as const,
     'aria-expanded': open ? ('true' as const) : undefined,
     onClick: handleOpen,
   };
@@ -195,17 +218,19 @@ export function AppSwitcher({
         anchorEl={anchorEl}
         open={open}
         onClose={close}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        slotProps={{ paper: { sx: { width: 320, p: 3.5 } } }}
+        anchorOrigin={{ vertical: 'bottom', horizontal }}
+        transformOrigin={{ vertical: 'top', horizontal }}
+        slotProps={{
+          paper: { role: 'dialog', 'aria-labelledby': titleId, sx: { width: 320, p: 3.5 } },
+        }}
       >
-        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+        <Typography id={titleId} variant="subtitle2" sx={{ fontWeight: 700 }}>
           Finaxis apps
         </Typography>
         <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 3 }}>
           Choose a workspace
         </Typography>
-        {hasPlatform === null || switching ? (
+        {platform === undefined || switching ? (
           <Box role="status" sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
             <CircularProgress size={20} aria-label="Loading workspaces" />
           </Box>
@@ -218,14 +243,14 @@ export function AppSwitcher({
               selected={currentModuleId === 'administration'}
               onClick={openAdministration}
             />
-            {hasPlatform && (
+            {platform && (
               <Tile
                 title="Platform administration"
                 description="Tenant governance"
                 icon={DomainOutlined}
                 selected={currentModuleId === 'platform-administration'}
                 onClick={() => {
-                  void openPlatform();
+                  void openPlatform(platform.displayName);
                 }}
               />
             )}

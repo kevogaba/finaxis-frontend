@@ -61,6 +61,7 @@ describe('AppSwitcher', () => {
 
     await user.click(screen.getByRole('button', { name: 'Switch application' }));
 
+    expect(await screen.findByRole('dialog', { name: 'Finaxis apps' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /Administration/ })).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /Platform administration/ }),
@@ -69,7 +70,8 @@ describe('AppSwitcher', () => {
 
   it('switches into the platform workspace through the real context change', async () => {
     const user = userEvent.setup();
-    vi.spyOn(globalThis, 'fetch')
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(organisations(['umoja', 'platform']))
       .mockResolvedValueOnce(
         new Response(
@@ -96,6 +98,89 @@ describe('AppSwitcher', () => {
     await vi.waitFor(() => {
       expect(router.push).toHaveBeenCalledWith('/platform-admin');
     });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/context/organisation',
+      expect.objectContaining({ body: JSON.stringify({ organisation_id: 'platform' }) }),
+    );
+    expect(router.refresh).toHaveBeenCalled();
+    expect(await screen.findByText('Switched to platform')).toBeInTheDocument();
+  });
+
+  it('auto-pins the single distinct branch and finishes the switch to the platform', async () => {
+    const user = userEvent.setup();
+    const onOpenContextSwitcher = vi.fn();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(organisations(['umoja', 'platform']))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            branchId: null,
+            requiresBranchSelection: true,
+            assignedBranchIds: ['ops', 'ops'],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
+    renderWithProviders(
+      <AppSwitcher
+        currentModuleId="administration"
+        platformOrganisationId="platform"
+        onOpenContextSwitcher={onOpenContextSwitcher}
+        trigger="icon"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Switch application' }));
+    await user.click(await screen.findByRole('button', { name: /Platform administration/ }));
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/context/branch',
+        expect.objectContaining({ body: JSON.stringify({ branch_id: 'ops' }) }),
+      );
+      expect(router.push).toHaveBeenCalledWith('/platform-admin');
+      expect(router.refresh).toHaveBeenCalled();
+    });
+    expect(onOpenContextSwitcher).not.toHaveBeenCalled();
+  });
+
+  it('lands on All branches when several distinct branches are assigned', async () => {
+    const user = userEvent.setup();
+    const onOpenContextSwitcher = vi.fn();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(organisations(['umoja', 'platform']))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            branchId: null,
+            requiresBranchSelection: true,
+            assignedBranchIds: ['ops', 'hq'],
+          }),
+          { status: 200 },
+        ),
+      );
+    renderWithProviders(
+      <AppSwitcher
+        currentModuleId="administration"
+        platformOrganisationId="platform"
+        onOpenContextSwitcher={onOpenContextSwitcher}
+        trigger="icon"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Switch application' }));
+    await user.click(await screen.findByRole('button', { name: /Platform administration/ }));
+
+    await vi.waitFor(() => {
+      expect(router.push).toHaveBeenCalledWith('/platform-admin');
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(router.refresh).toHaveBeenCalled();
+    expect(await screen.findByText('Switched to platform · All branches')).toBeInTheDocument();
+    expect(onOpenContextSwitcher).not.toHaveBeenCalled();
   });
 
   it('asks for a tenant organisation when switching back to Administration', async () => {
