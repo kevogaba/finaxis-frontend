@@ -166,6 +166,24 @@ describe('ContextSelectionPage', () => {
     );
     expect(screen.getByRole('alert')).not.toHaveTextContent('member details: secret');
     expect(screen.getByRole('combobox', { name: /organisation/i })).toBeEnabled();
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assignedBranchIds: [branch.branchId],
+        branchId: branch.branchId,
+        membershipId: organisation.membershipId,
+        organisationId: organisation.organisationId,
+        requiresBranchSelection: false,
+      }),
+    );
+    await chooseOrganisation(user);
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/profile');
+    });
+    expect(
+      fetchMock.mock.calls.filter((call) => String(call[0]) === '/api/context/organisation'),
+    ).toHaveLength(2);
   });
 
   it('disables the organisation control while its selection request is pending', async () => {
@@ -279,6 +297,50 @@ describe('ContextSelectionPage', () => {
       method: 'POST',
     });
     expect(screen.queryByRole('combobox', { name: /branch/i })).not.toBeInTheDocument();
+  });
+
+  it('lets the user retry when auto-pinning the lone branch fails', async () => {
+    const organisationSuccessBody = {
+      assignedBranchIds: [branch.branchId],
+      branchId: null,
+      membershipId: organisation.membershipId,
+      organisationId: organisation.organisationId,
+      requiresBranchSelection: true,
+    };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(organisationSuccessBody))
+      .mockResolvedValueOnce(jsonResponse({ message: 'backend token: secret' }, 502))
+      .mockResolvedValueOnce(jsonResponse(organisationSuccessBody))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          branchId: branch.branchId,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+        }),
+      );
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /couldn.t update your context\. please try again\./i,
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent('backend token: secret');
+    expect(screen.queryByRole('combobox', { name: /branch/i })).not.toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+
+    await chooseOrganisation(user);
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/profile');
+    });
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      '/api/context/organisation',
+      '/api/context/branch',
+      '/api/context/organisation',
+      '/api/context/branch',
+    ]);
   });
 
   it('shows a branch loading state after an organisation requires branch selection', async () => {

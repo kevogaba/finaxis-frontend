@@ -116,27 +116,32 @@ export function useContextSelection({
     }
   };
 
-  const selectBranch = async (branchId: string, forOrganisationId = organisationId) => {
+  const selectBranch = async (
+    branchId: string,
+    forOrganisationId = organisationId,
+  ): Promise<boolean> => {
     if (!branchId || isSavingBranch) {
-      return;
+      return false;
     }
     setUpdateError(null);
     setIsSavingBranch(true);
     try {
       await selectBranchRequest(branchId);
       onComplete({ kind: 'branch', organisationId: forOrganisationId, branchId });
+      return true;
     } catch (error) {
       if (isSessionExpired(error)) {
         onSessionExpired();
-        return;
+        return false;
       }
       if (isStaleContext(error)) {
         setBranchPage(null);
         setOrganisationId('');
         setUpdateError(STALE_CONTEXT_MESSAGE);
-        return;
+        return false;
       }
       setUpdateError(CONTEXT_UPDATE_ERROR);
+      return false;
     } finally {
       setIsSavingBranch(false);
     }
@@ -173,7 +178,11 @@ export function useContextSelection({
       // not a stale one (spec §6.5).
       onOrganisationCommitted?.(nextOrganisationId);
       if (typeof step === 'object') {
-        await selectBranch(step.autoSelect, nextOrganisationId);
+        // A failed auto-pin leaves no branch list, and MUI Select ignores re-picking its current
+        // value, so clear the organisation choice: choosing it again retries the whole step.
+        if (!(await selectBranch(step.autoSelect, nextOrganisationId))) {
+          setOrganisationId('');
+        }
         return;
       }
       await loadBranches(0);
@@ -182,6 +191,7 @@ export function useContextSelection({
         onSessionExpired();
         return;
       }
+      setOrganisationId('');
       setUpdateError(CONTEXT_UPDATE_ERROR);
     } finally {
       setIsSavingOrganisation(false);
