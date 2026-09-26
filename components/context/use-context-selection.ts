@@ -11,7 +11,6 @@ import {
   fetchBranches,
   fetchOrganisations,
   isContextLost,
-  isOrganisationAccessDenied,
   isSessionExpired,
   selectBranchRequest,
   selectOrganisationRequest,
@@ -60,13 +59,8 @@ interface UseContextSelectionOptions {
   /** Called once the organisation is committed and a branch choice is still pending. */
   onOrganisationCommitted?: (organisationId: string) => void;
   onSessionExpired: () => void;
-  /** The organisation the caller is already pinned to (dialog-only): re-picking it re-lists its
-   * branches instead of re-POSTing select-organisation, since the ambient token already covers it. */
-  currentOrganisationId?: string;
-  /** The branch, if any, `currentOrganisationId`'s token currently carries. */
-  currentBranchId?: string | null;
-  /** The backend cleared the context cookie server-side (a 403/409 from the branch endpoints); the
-   * caller should stop treating `currentOrganisationId` as still pinned. */
+  /** The backend cleared the context cookie server-side (a 403/409 from the branch endpoints), so
+   * any organisation committed earlier is gone. */
   onOrganisationLost?: () => void;
 }
 
@@ -76,8 +70,6 @@ export function useContextSelection({
   onComplete,
   onOrganisationCommitted,
   onSessionExpired,
-  currentOrganisationId,
-  currentBranchId = null,
   onOrganisationLost,
 }: UseContextSelectionOptions) {
   const [organisationPage, setOrganisationPage] = useState(initialOrganisations);
@@ -97,15 +89,6 @@ export function useContextSelection({
 
   const isMutating = isSavingOrganisation || isSavingBranch;
   const isDiscoveryLoading = isLoadingOrganisations || isLoadingBranches;
-  const isCurrentOrganisation =
-    currentOrganisationId !== undefined && organisationId === currentOrganisationId;
-  const distinctLoadedBranches = branchPage
-    ? new Set(branchPage.items.map((branch) => branch.branchId)).size
-    : 0;
-  // Outside the reselect-current-organisation mode this is always true (the branch step is only
-  // ever reached there with 2+ distinct assigned branches); inside it, a page that turns out to
-  // hold at most one distinct branch must not offer a no-op All branches (spec §6.5).
-  const canOfferAllBranches = !isCurrentOrganisation || distinctLoadedBranches > 1;
 
   const loadOrganisations = async (page: number) => {
     setLastOrganisationPageRequest(page);
@@ -192,13 +175,11 @@ export function useContextSelection({
     setBranchPage(null);
     setUpdateError(null);
     setBranchError(null);
-    if (nextOrganisationId === currentOrganisationId) {
-      // The ambient token is already pinned to this organisation (there is no "unpin" endpoint),
-      // so just re-list its branches instead of re-POSTing select-organisation — that also keeps
-      // this well clear of the 20/min auth-selection rate limit.
-      await loadBranches(0);
-      return;
-    }
+    // Always POST, even for the organisation the caller believes is current: the context cookie is
+    // shared across tabs, so only a fresh select-organisation guarantees the token matches the pick
+    // (and clears any pinned branch — there is no unpin endpoint).
+    // ponytail: costs one auth-selection call (20/min limit) per re-pick; verify the token's
+    // organisation/branch server-side first if that limit ever bites.
     setIsSavingOrganisation(true);
     try {
       const selection = await selectOrganisationRequest(nextOrganisationId);
@@ -242,47 +223,11 @@ export function useContextSelection({
     }
   };
 
-  const selectAllBranches = async () => {
-    if (!organisationId) {
-      // Defensive: onComplete must never fire with no organisation chosen — see the catch below,
-      // which always clears both the organisation and the stale branch list on an unpin failure.
-      return;
-    }
-    if (!isCurrentOrganisation || currentBranchId === null) {
-      // Either a freshly-committed organisation (already institution-level once its POST
-      // succeeded) or this organisation already has no branch pinned: nothing to change
-      // server-side.
+  const selectAllBranches = () => {
+    // The branch step is only reached after this form's own select-organisation POST succeeded,
+    // which already left the token at institution level: nothing more to change server-side.
+    if (organisationId) {
       onComplete({ kind: 'institution', organisationId });
-      return;
-    }
-    if (isMutating) {
-      return;
-    }
-    setUpdateError(null);
-    setIsSavingOrganisation(true);
-    try {
-      // Only a fresh select-organisation call clears a previously pinned branch — there is no
-      // dedicated "unpin" endpoint.
-      await selectOrganisationRequest(organisationId);
-      onComplete({ kind: 'institution', organisationId });
-    } catch (error) {
-      if (isSessionExpired(error)) {
-        onSessionExpired();
-        return;
-      }
-      // The organisation endpoint never clears the context cookie and never returns 409 (unlike
-      // the branch endpoints `isContextLost` is scoped to): the pinned context is still intact, so
-      // this never calls onOrganisationLost. Clear the organisation choice *and* the now-stale
-      // branch list so the Branch select hides — leaving it up would let a second pick from it
-      // fire onComplete with an empty organisationId (a false-success All-branches switch). A
-      // re-pick of the organisation retries the whole step.
-      setOrganisationId('');
-      setBranchPage(null);
-      setUpdateError(
-        isOrganisationAccessDenied(error) ? CONTEXT_ACCESS_DENIED_MESSAGE : CONTEXT_UPDATE_ERROR,
-      );
-    } finally {
-      setIsSavingOrganisation(false);
     }
   };
 
@@ -301,7 +246,6 @@ export function useContextSelection({
     organisationError,
     updateError,
     branchError,
-    canOfferAllBranches,
     loadOrganisations,
     loadBranches,
     selectOrganisation,

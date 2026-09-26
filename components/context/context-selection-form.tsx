@@ -26,10 +26,6 @@ interface ContextSelectionFormProps {
   onComplete: (outcome: SelectionOutcome) => void;
   onOrganisationCommitted?: (organisationId: string) => void;
   onSessionExpired: () => void;
-  /** The organisation/branch the caller is already pinned to (dialog-only) — see
-   * `useContextSelection`'s options of the same name. */
-  currentOrganisationId?: string;
-  currentBranchId?: string | null;
   onOrganisationLost?: () => void;
 }
 
@@ -178,16 +174,14 @@ export function ContextSelectionForm(props: ContextSelectionFormProps) {
             inputRef={branchSelectRef}
             onChange={(event) => {
               if (event.target.value === ALL_BRANCHES_VALUE) {
-                void selection.selectAllBranches();
+                selection.selectAllBranches();
                 return;
               }
               void selection.selectBranch(event.target.value);
             }}
             value=""
           >
-            {selection.canOfferAllBranches && (
-              <MenuItem value={ALL_BRANCHES_VALUE}>All branches (institution level)</MenuItem>
-            )}
+            <MenuItem value={ALL_BRANCHES_VALUE}>All branches (institution level)</MenuItem>
             {branchPage.items.map((branch) => (
               <MenuItem key={branch.branchId} value={branch.branchId}>
                 {branch.branchName} ({branch.branchCode})

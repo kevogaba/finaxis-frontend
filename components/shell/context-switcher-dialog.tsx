@@ -95,22 +95,24 @@ export function ContextSwitcherDialog({
   };
 
   const finish = (outcome: SelectionOutcome) => {
-    if (
+    // Already at All branches for the current organisation as far as this tab knows: no toast.
+    // The refresh below still runs — the shared cookie may have moved in another tab (or an
+    // earlier switch's refresh may still be in flight), and the select-organisation POST that led
+    // here has just reset it, so the shell must re-read it rather than trust `current`.
+    const unchanged =
       outcome.kind === 'institution' &&
       outcome.organisationId === current.organization.id &&
-      current.branch === null
-    ) {
-      // Already at All branches for the current organisation: nothing actually changed.
-      reset();
-      onClose();
-      return;
-    }
+      current.branch === null;
     const name = nameOf(outcome.organisationId);
     reset();
     onClose();
-    notify(
-      outcome.kind === 'institution' ? `Switched to ${name} · All branches` : `Switched to ${name}`,
-    );
+    if (!unchanged) {
+      notify(
+        outcome.kind === 'institution'
+          ? `Switched to ${name} · All branches`
+          : `Switched to ${name}`,
+      );
+    }
     if (outcome.organisationId !== current.organization.id) {
       // A different organisation may still resolve to the same path (e.g. two tenant
       // organisations both land on `/admin`), which the Next router treats as a same-URL no-op —
@@ -195,14 +197,6 @@ export function ContextSwitcherDialog({
           {load.kind === 'ready' && (
             <ContextSelectionForm
               initialOrganisations={load.organisations}
-              // Once a different organisation has been committed in this dialog session
-              // (`committed !== null`), the server token has moved off the ambient organisation —
-              // re-picking it must go through a real select-organisation POST again, not the
-              // same-organisation fast path.
-              currentOrganisationId={
-                contextLost || committed !== null ? undefined : current.organization.id
-              }
-              currentBranchId={current.branch?.id ?? null}
               onComplete={finish}
               onOrganisationCommitted={(organisationId) => {
                 // The dialog was closed mid-save (Close/Escape/backdrop, while the organisation

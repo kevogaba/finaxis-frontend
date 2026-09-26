@@ -231,7 +231,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   organisation/branch selection in a dialog, so a signed-in user can switch organisation or branch,
   or drop to All branches, at any time. A same-organisation branch switch refreshes in place; an
   organisation change also navigates to that organisation's workspace (`/admin` or
-  `/platform-admin`).
+  `/platform-admin`). Picking an organisation, the current one included, always re-POSTs
+  select-organisation, because the context cookie is shared across tabs and may no longer match
+  what this tab shows; that POST drops any pinned branch, so closing the dialog at the branch step
+  lands at All branches.
 - The two-tile app switcher (`components/shell/app-switcher.tsx`) moves a platform member between
   the Administration and Platform Administration workspaces. Multi-branch platform members land at
   All branches from the switcher; they pin a specific branch afterwards with the context button. A
