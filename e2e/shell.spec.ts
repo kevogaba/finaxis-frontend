@@ -6,7 +6,9 @@ async function enterGreenfield(page: Page) {
   await page.goto('/admin');
   await selectMuiOption(page, 'Organisation', /Greenfield/);
   await selectMuiOption(page, 'Branch', /Head Office/);
-  await expect(page).toHaveURL(/\/admin$/);
+  // Slower default timeout: this can be the first hit of the /admin route tree under a cold
+  // `next dev` compile (see the platform-admin equivalent below).
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
 }
 
 // The platform operator has a single branch, so selecting the organisation auto-selects it and
