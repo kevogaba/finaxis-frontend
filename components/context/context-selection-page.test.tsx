@@ -244,12 +244,49 @@ describe('ContextSelectionPage', () => {
     });
   });
 
+  it('auto-pins the lone distinct branch without showing the branch control', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          branchId: branch.branchId,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+        }),
+      );
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/profile');
+    });
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      '/api/context/organisation',
+      '/api/context/branch',
+    ]);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      body: JSON.stringify({ branch_id: branch.branchId }),
+      method: 'POST',
+    });
+    expect(screen.queryByRole('combobox', { name: /branch/i })).not.toBeInTheDocument();
+  });
+
   it('shows a branch loading state after an organisation requires branch selection', async () => {
     let resolveBranches: (response: Response) => void = () => undefined;
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -282,7 +319,7 @@ describe('ContextSelectionPage', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -365,11 +402,44 @@ describe('ContextSelectionPage', () => {
     expect(await screen.findByText(/page 2 of 2/i)).toBeInTheDocument();
   });
 
+  it('offers All branches when several distinct branches are assigned and completes without posting a branch', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(branchPage([branch, secondBranch])));
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ContextSelectionPage
+        destination="/admin"
+        organisations={organisationPage([organisation])}
+      />,
+    );
+
+    await chooseOrganisation(user);
+    await user.click(await screen.findByRole('combobox', { name: /branch/i }));
+    await user.click(screen.getByRole('option', { name: /all branches/i }));
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/admin');
+    });
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      '/api/context/organisation',
+      '/api/context/branches?page=0',
+    ]);
+  });
+
   it('shows safe error copy when explicit branch selection fails', async () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -395,7 +465,7 @@ describe('ContextSelectionPage', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -441,7 +511,7 @@ describe('ContextSelectionPage', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -495,7 +565,7 @@ describe('ContextSelectionPage', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -535,7 +605,7 @@ describe('ContextSelectionPage', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
