@@ -78,14 +78,68 @@ test.describe('application shell', () => {
     expect(hasHorizontalScroll).toBe(false);
   });
 
+  test('keeps the workspace and context labels from overlapping the header controls, even with long names', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 600, height: 900 });
+    await authenticate(context, testInfo, 'long-names');
+    await enterGreenfield(page);
+
+    const contextLink = page.getByRole('link', { name: /switch organisation or branch/i });
+    await expect(contextLink).toBeVisible();
+    // Scoped to the context button: the same org name also appears, always-visible, in the rail's
+    // footer, which `page.getByText(...)` would otherwise match too.
+    const orgText = contextLink.getByText(
+      'Greenfield Teachers and Public Service Employees Savings and Credit Co-operative Society',
+    );
+    // Below `md` the workspace and context labels are hidden outright (not just shrunk), so
+    // nothing is left that could spill into the chevron or the app switcher next to it.
+    await expect(orgText).toBeHidden();
+
+    // 900px is the narrowest width where `md` reveals the label again — the worst case for the
+    // fixed-width button it sits in, and with the long-names scenario, the worst case for text.
+    await page.setViewportSize({ width: 900, height: 900 });
+    await expect(orgText).toBeVisible();
+
+    const chevron = contextLink.locator('svg').last();
+    const [orgBox, chevronBox] = await Promise.all([orgText.boundingBox(), chevron.boundingBox()]);
+    if (!orgBox || !chevronBox) {
+      throw new Error('expected bounding boxes for the context text and its chevron');
+    }
+    expect(orgBox.x + orgBox.width).toBeLessThanOrEqual(chevronBox.x + 1);
+  });
+
+  test('closes the mobile drawer (and its aria-hidden lockout on the rest of the app) when the viewport widens past the rail breakpoint', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await authenticate(context, testInfo);
+    await enterGreenfield(page);
+
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await expect(page.getByRole('button', { name: 'Close' })).toBeVisible();
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    // `getByRole` excludes anything under an `aria-hidden` ancestor, so this only resolves once
+    // the (still React-`open`) drawer's Modal actually releases the aria-hidden lockout it put on
+    // the rest of the app when it opened.
+    await expect(page.getByRole('main')).toBeVisible();
+  });
+
   // Layer a11y gate (controller ruling): both modules, both color schemes, desktop + 375px.
   const AXE_TARGETS = [
     { label: 'admin', scenario: 'default', enter: enterGreenfield },
     { label: 'platform-admin', scenario: 'platform-operator', enter: enterPlatformAdmin },
   ] as const;
   const VIEWPORTS = [
-    { label: 'desktop', width: 1280, height: 800 },
-    { label: '375px', width: 375, height: 812 },
+    { label: 'desktop', width: 1280, height: 800, openDrawer: false },
+    { label: '375px', width: 375, height: 812, openDrawer: false },
+    // Covers the temporary drawer's OPEN state: its Paper is a named dialog (see
+    // workspace-drawer.tsx), which axe's `aria-dialog-name` rule would otherwise flag.
+    { label: '375px-drawer-open', width: 375, height: 812, openDrawer: true },
   ] as const;
 
   for (const colorScheme of ['light', 'dark'] as const) {
@@ -106,6 +160,17 @@ test.describe('application shell', () => {
           // Confirm the emulated scheme actually took before trusting the scan below — otherwise a
           // "dark" run that silently rendered light would report a false pass.
           await expect(page.locator('html')).toHaveClass(new RegExp(colorScheme));
+          // Pre-existing flake (reproduces on this suite's original combos too, unrelated to this
+          // layer's fixes): the client-side navigation in `enter()` can resolve the URL a tick
+          // before Next.js commits the route's `<title>`, so axe's `document-title` rule
+          // occasionally fires on a still-empty title. Waiting for it is condition-based, not a
+          // sleep, and matches exactly what that rule checks.
+          await expect(page).toHaveTitle(/.+/);
+
+          if (viewport.openDrawer) {
+            await page.getByRole('button', { name: 'Open navigation' }).click();
+            await expect(page.getByRole('dialog', { name: 'Navigation menu' })).toBeVisible();
+          }
 
           const results = await new AxeBuilder({ page }).analyze();
           expect(

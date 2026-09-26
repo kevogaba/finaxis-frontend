@@ -33,6 +33,19 @@ describe('visibleNavigationItems', () => {
     ]);
     expect(visibleNavigationItems(ITEMS, []).map((item) => item.label)).toEqual(['Overview']);
   });
+
+  it('hides an item whose requiresAny is empty, regardless of permissions held', () => {
+    const unreachable: WorkspaceNavigationItem = {
+      href: '/platform-admin/unreachable',
+      label: 'Unreachable',
+      icon: HomeOutlined,
+      requiresAny: [],
+    };
+
+    expect(
+      visibleNavigationItems([...ITEMS, unreachable], ['tenant.view']).map((item) => item.label),
+    ).toEqual(['Overview', 'SACCO institutions']);
+  });
 });
 
 describe('isNavigationItemActive', () => {

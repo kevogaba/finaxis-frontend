@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import GroupOutlined from '@mui/icons-material/GroupOutlined';
 import HomeOutlined from '@mui/icons-material/HomeOutlined';
 import { renderWithProviders } from '@/test/test-utils';
@@ -71,5 +71,22 @@ describe('WorkspaceDrawer', () => {
 
     await user.keyboard('{Escape}');
     expect(props.onMobileClose).toHaveBeenCalled();
+  });
+
+  it('closes the mobile drawer when a rail link inside it is followed', () => {
+    const props = renderDrawer({ mobileOpen: true });
+
+    // Both the permanent rail and the temporary drawer render their own copy of the nav (MUI's
+    // `ModalProps={{ keepMounted: true }}` keeps the latter in the DOM). jsdom's default (desktop)
+    // emulated width resolves both Drawers' responsive `display` as a real browser would at that
+    // width, so only the permanent copy is exposed to role queries — reach the temporary drawer's
+    // copy directly (the second `<a href="/admin">` in DOM order) to exercise its `onNavigate`.
+    const overviewLinks = document.querySelectorAll<HTMLAnchorElement>('a[href="/admin"]');
+    const mobileOverviewLink = overviewLinks[1];
+    if (!mobileOverviewLink) throw new Error('mobile drawer link missing');
+
+    fireEvent.click(mobileOverviewLink);
+
+    expect(props.onMobileClose).toHaveBeenCalledTimes(1);
   });
 });
