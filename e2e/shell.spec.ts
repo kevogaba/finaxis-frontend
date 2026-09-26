@@ -88,7 +88,7 @@ test.describe('application shell', () => {
     await authenticate(context, testInfo, 'long-names');
     await enterGreenfield(page);
 
-    const contextLink = page.getByRole('link', { name: /switch organisation or branch/i });
+    const contextLink = page.getByRole('button', { name: /switch organisation or branch/i });
     await expect(contextLink).toBeVisible();
     // Scoped to the context button: the same org name also appears, always-visible, in the rail's
     // footer, which `page.getByText(...)` would otherwise match too.

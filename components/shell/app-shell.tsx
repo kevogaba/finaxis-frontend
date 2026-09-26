@@ -9,6 +9,7 @@ import type { ApplicationContext } from '@/config/application-context';
 import { administrationNavigationItems } from '@/modules/administration/administration-navigation';
 import { platformAdministrationNavigationItems } from '@/modules/platform-administration/platform-administration-navigation';
 import { AppFooter } from './app-footer';
+import { ContextSwitcherDialog } from './context-switcher-dialog';
 import { GlobalHeader } from './global-header';
 import { writeNavCollapsed } from './navigation-preferences';
 import { ApplicationContextProvider } from './organization-context';
@@ -24,6 +25,7 @@ interface AppShellProps {
   user: FinaxisUser;
   context: ApplicationContext;
   initialNavCollapsed: boolean;
+  platformOrganisationId: string;
   children: ReactNode;
 }
 
@@ -31,9 +33,16 @@ interface AppShellProps {
  * Global authenticated shell. Navigation registries are imported here (client side) because nav
  * items carry icon components, which cannot cross the Server → Client boundary.
  */
-export function AppShell({ user, context, initialNavCollapsed, children }: AppShellProps) {
+export function AppShell({
+  user,
+  context,
+  initialNavCollapsed,
+  platformOrganisationId,
+  children,
+}: AppShellProps) {
   const [collapsed, setCollapsed] = useState(initialNavCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   // Safe on the server: matchMedia is unavailable there, so this starts (and stays, until
   // hydration) false — matching `mobileOpen`'s own initial value.
   const isDesktop = useMediaQuery((theme) => theme.breakpoints.up('md'));
@@ -71,6 +80,9 @@ export function AppShell({ user, context, initialNavCollapsed, children }: AppSh
             onOpenNavigation={() => {
               setMobileOpen(true);
             }}
+            onOpenContextSwitcher={() => {
+              setContextOpen(true);
+            }}
           />
           <Box component="main" sx={{ flexGrow: 1, px: { xs: 3.5, md: 6 }, pt: 5, pb: 4 }}>
             {children}
@@ -78,6 +90,13 @@ export function AppShell({ user, context, initialNavCollapsed, children }: AppSh
           <AppFooter />
         </Box>
       </Box>
+      <ContextSwitcherDialog
+        open={contextOpen}
+        onClose={() => {
+          setContextOpen(false);
+        }}
+        platformOrganisationId={platformOrganisationId}
+      />
     </ApplicationContextProvider>
   );
 }

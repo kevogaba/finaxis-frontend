@@ -31,6 +31,10 @@ vi.mock('next/headers', () => ({
   headers: vi.fn(() => new Headers()),
 }));
 
+vi.mock('@/config/env.server', () => ({
+  serverEnv: { PLATFORM_ORGANISATION_ID: 'platform-org' },
+}));
+
 const getAuthenticatedUser = vi.fn();
 vi.mock('@/auth/get-authenticated-user', () => ({
   getAuthenticatedUser: (...args: unknown[]) => getAuthenticatedUser(...args) as unknown,
@@ -48,14 +52,16 @@ vi.mock('@/components/shell/app-shell', () => ({
     children,
     context,
     initialNavCollapsed,
+    platformOrganisationId,
     user,
   }: {
     children: React.ReactNode;
     context: unknown;
     initialNavCollapsed: boolean;
+    platformOrganisationId: unknown;
     user: unknown;
   }) => {
-    renderedShell({ context, initialNavCollapsed, user });
+    renderedShell({ context, initialNavCollapsed, platformOrganisationId, user });
     return children;
   },
 }));
@@ -115,6 +121,7 @@ describe('AuthenticatedLayout', () => {
         organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
       },
       initialNavCollapsed: false,
+      platformOrganisationId: 'platform-org',
       user: {
         branches: [{ id: 'branch-1', name: 'Headquarters' }],
         email: 'backend.jane@finaxis.test',

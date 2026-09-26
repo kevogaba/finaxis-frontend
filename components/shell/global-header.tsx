@@ -1,6 +1,5 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -12,7 +11,6 @@ import AppsOutlined from '@mui/icons-material/AppsOutlined';
 import DomainOutlined from '@mui/icons-material/DomainOutlined';
 import KeyboardArrowDownOutlined from '@mui/icons-material/KeyboardArrowDownOutlined';
 import MenuOutlined from '@mui/icons-material/MenuOutlined';
-import NextLink from '@/components/navigation/next-link';
 import type { FinaxisUser } from '@/auth/auth.types';
 import { AppSwitcher } from './app-switcher';
 import { ThemeModeMenu } from './theme-mode-menu';
@@ -22,12 +20,12 @@ import { useApplicationContext } from './organization-context';
 interface GlobalHeaderProps {
   user: FinaxisUser;
   onOpenNavigation: () => void;
+  onOpenContextSwitcher: () => void;
 }
 
 /** 68 px app bar (prototype `.topbar`): workspace, context, then global controls. */
-export function GlobalHeader({ user, onOpenNavigation }: GlobalHeaderProps) {
+export function GlobalHeader({ user, onOpenNavigation, onOpenContextSwitcher }: GlobalHeaderProps) {
   const { module, organization, branch } = useApplicationContext();
-  const pathname = usePathname();
 
   return (
     <AppBar position="sticky">
@@ -66,8 +64,8 @@ export function GlobalHeader({ user, onOpenNavigation }: GlobalHeaderProps) {
         </Box>
 
         <Button
-          component={NextLink}
-          href={`/select-context?next=${encodeURIComponent(pathname)}`}
+          onClick={onOpenContextSwitcher}
+          aria-haspopup="dialog"
           color="inherit"
           aria-label={`Switch organisation or branch. Current: ${organization.name}, ${branch?.name ?? 'All branches'}`}
           sx={{ minWidth: 0, height: 46, gap: 2.5, px: 2, color: 'text.primary' }}
