@@ -29,15 +29,7 @@ const SESSION_EXPIRED_REDIRECT = '/login?reason=session_expired';
 const DEFAULT_DESTINATION = '/profile';
 
 export type ContextSelectionDestination =
-  | '/profile'
-  | '/admin'
-  | '/admin/audit'
-  | '/admin/branches'
-  | '/admin/roles'
-  | '/admin/settings'
-  | '/admin/users'
-  | '/platform-admin'
-  | '/platform-admin/tenants';
+  '/profile' | '/admin' | '/platform-admin' | '/platform-admin/tenants';
 
 interface ContextSelectionPageProps {
   organisations: BrowserPage<BrowserOrganisation>;

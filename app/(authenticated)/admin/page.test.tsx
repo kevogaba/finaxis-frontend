@@ -4,34 +4,19 @@ import { renderWithProviders } from '@/test/test-utils';
 import AdminOverviewPage from './page';
 
 describe('AdminOverviewPage', () => {
-  it('renders one h1 and quick links to each management area', () => {
+  it('renders the Administration Overview heading', () => {
     renderWithProviders(<AdminOverviewPage />);
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('link', { name: /manage users/i })).toHaveAttribute(
-      'href',
-      '/admin/users',
-    );
-    expect(screen.getByRole('link', { name: /manage branches/i })).toHaveAttribute(
-      'href',
-      '/admin/branches',
-    );
-    expect(screen.getByRole('link', { name: /review roles/i })).toHaveAttribute(
-      'href',
-      '/admin/roles',
-    );
-    expect(screen.getByRole('link', { name: /open audit logs/i })).toHaveAttribute(
-      'href',
-      '/admin/audit',
-    );
-    expect(screen.getByRole('link', { name: /open settings/i })).toHaveAttribute(
-      'href',
-      '/admin/settings',
-    );
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Administration Overview' }),
+    ).toBeInTheDocument();
   });
 
-  it('labels summary figures as sample data rather than implying they are live', () => {
+  it('renders no sample or placeholder data', () => {
     renderWithProviders(<AdminOverviewPage />);
-    expect(screen.getByText(/sample data/i)).toBeInTheDocument();
+
+    expect(screen.queryByText(/sample data/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });

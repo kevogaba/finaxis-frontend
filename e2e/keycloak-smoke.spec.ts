@@ -31,9 +31,6 @@ test.describe('Real Keycloak authentication (requires the platform docker compos
     await expect(page.getByRole('menuitem', { name: /administration/i })).toBeVisible();
     await page.keyboard.press('Escape');
 
-    await page.getByRole('link', { name: 'Users', exact: true }).click();
-    await expect(page).toHaveURL(/\/admin\/users$/);
-
     await page.goto('/profile');
     await expect(page.getByText('No branches assigned')).toBeVisible();
     await expect(page.getByText('No application roles assigned')).toBeVisible();
