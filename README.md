@@ -224,19 +224,25 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   before the authenticated shell renders. The selected backend context token is persisted only in
   an HttpOnly cookie; browser route responses contain status-safe data and never expose the token.
 - A multi-branch member can choose "All branches (institution level)" instead of a single branch;
-  the header, app shell footer, and platform-admin page all render `branch?.name ?? 'All branches'`
-  for that nullable-branch context (AGENTS.md).
+  the header, app shell footer, and platform-admin page render `branch?.name ?? 'All branches'` for
+  that nullable-branch context (AGENTS.md), and the profile page renders the same nullable selected
+  branch as "All branches (institution level)".
 - The app bar's context button (`components/shell/context-switcher-dialog.tsx`) re-runs the same
-  organisation/branch selection in a dialog without leaving the current page, so a signed-in user
-  can switch organisation or branch, or drop to All branches, at any time.
+  organisation/branch selection in a dialog, so a signed-in user can switch organisation or branch,
+  or drop to All branches, at any time. A same-organisation branch switch refreshes in place; an
+  organisation change also navigates to that organisation's workspace (`/admin` or
+  `/platform-admin`).
 - The two-tile app switcher (`components/shell/app-switcher.tsx`) moves a platform member between
-  the Administration and Platform Administration workspaces. Multi-branch platform members, and a
-  failed auto-pin, land at All branches from the switcher; they pin a specific branch afterwards
-  with the context button. A rejected organisation POST from the switcher opens the context dialog
-  with no further explanation.
-- Deep links into a protected route survive `/select-context`: the redirect's `next` query param is
-  validated against a prefix allow-list (`auth/context-destination.ts`) before the post-selection
-  redirect uses it, so an unrecognized or external value falls back to `/profile`.
+  the Administration and Platform Administration workspaces. Multi-branch platform members land at
+  All branches from the switcher; they pin a specific branch afterwards with the context button. A
+  failed auto-pin (server error) also lands at All branches; one that fails because the context was
+  rejected or already gone (403/409) instead sends the user to `/select-context` with no toast. A
+  rejected organisation POST from the switcher opens the context dialog with no further explanation.
+- Deep links into a protected route survive `/select-context` by path only: the redirect's `next`
+  query param is validated against a prefix allow-list (`auth/context-destination.ts`) before the
+  post-selection redirect uses it, so an unrecognized or external value falls back to `/profile`;
+  `SAFE_PATH` rejects a `?`, so a deep link's own query string (e.g. tenant-directory paging) is
+  dropped, not preserved.
 - `app/error.tsx` is the root error boundary for anything thrown below the root layout, including a
   backend outage or a response that no longer matches the contract. It shows only Next's error
   digest as a support reference; server error messages are never rendered.
