@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen } from '@testing-library/react';
@@ -139,5 +140,120 @@ describe('ContextSwitcherDialog', () => {
     expect(router.push).toHaveBeenCalledWith('/admin');
     expect(router.refresh).toHaveBeenCalled();
     expect(await screen.findByText(/Imara SACCO · All branches/)).toBeInTheDocument();
+  });
+
+  it('lands at All branches when closed while the organisation POST is still in flight', async () => {
+    const user = userEvent.setup();
+    let resolveSelect!: (response: Response) => void;
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [ORG], page: PAGE }))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveSelect = resolve;
+          }),
+      )
+      .mockImplementationOnce(() =>
+        json({
+          items: [
+            {
+              branchId: 'b-1',
+              branchCode: 'HQ',
+              branchName: 'Head Office',
+              branchStatus: 'ACTIVE',
+            },
+            { branchId: 'b-2', branchCode: 'WST', branchName: 'Westlands', branchStatus: 'ACTIVE' },
+          ],
+          page: { ...PAGE, totalItems: 2 },
+        }),
+      );
+
+    const onClose = vi.fn();
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <ApplicationContextProvider
+          value={{
+            module: { id: 'administration', name: 'Administration' },
+            organization: { id: 'org-1', name: 'Umoja SACCO' },
+            branch: { id: 'b-1', name: 'Head Office' },
+          }}
+        >
+          <ContextSwitcherDialog
+            open={open}
+            onClose={() => {
+              onClose();
+              setOpen(false);
+            }}
+            platformOrganisationId="platform"
+          />
+        </ApplicationContextProvider>
+      );
+    }
+    renderWithProviders(<Harness />);
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Imara SACCO/ }));
+    await screen.findByText(/saving organisation/i);
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.refresh).not.toHaveBeenCalled();
+
+    resolveSelect(
+      new Response(
+        JSON.stringify({
+          branchId: null,
+          requiresBranchSelection: true,
+          assignedBranchIds: ['b-1', 'b-2'],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await vi.waitFor(() => {
+      expect(router.refresh).toHaveBeenCalled();
+    });
+    expect(router.push).toHaveBeenCalledWith('/admin');
+    expect(await screen.findByText(/Imara SACCO · All branches/)).toBeInTheDocument();
+  });
+
+  it('sends the platform organisation to its own workspace', async () => {
+    const user = userEvent.setup();
+    const PLATFORM_ORG = { ...ORG, organisationId: 'platform', displayName: 'Platform' };
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [PLATFORM_ORG], page: PAGE }))
+      .mockImplementationOnce(() =>
+        json({ branchId: 'b-p', requiresBranchSelection: false, assignedBranchIds: ['b-p'] }),
+      );
+    renderDialog();
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Platform/ }));
+
+    await vi.waitFor(() => {
+      expect(router.push).toHaveBeenCalledWith('/platform-admin');
+    });
+    expect(router.refresh).toHaveBeenCalled();
+  });
+
+  it('refreshes without pushing when the chosen organisation is the current one', async () => {
+    const user = userEvent.setup();
+    const CURRENT_ORG = { ...ORG, organisationId: 'org-1', displayName: 'Umoja SACCO' };
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [CURRENT_ORG], page: PAGE }))
+      .mockImplementationOnce(() =>
+        json({ branchId: 'b-2', requiresBranchSelection: false, assignedBranchIds: ['b-2'] }),
+      );
+    renderDialog();
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Umoja SACCO/ }));
+
+    await vi.waitFor(() => {
+      expect(router.refresh).toHaveBeenCalled();
+    });
+    expect(router.push).not.toHaveBeenCalled();
   });
 });

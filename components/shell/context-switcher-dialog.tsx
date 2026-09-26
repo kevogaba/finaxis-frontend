@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
@@ -40,7 +40,11 @@ export function ContextSwitcherDialog({
   const notify = useToast();
   const current = useApplicationContext();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
-  const [committed, setCommitted] = useState<{ id: string; name: string } | null>(null);
+  const [committed, setCommitted] = useState<string | null>(null);
+  // Mirrors `open` for the async `onOrganisationCommitted` callback below, which fires from a
+  // promise continuation and needs the dialog's *current* open state, not the one closed over at
+  // click time.
+  const openRef = useRef(open);
 
   const homeFor = (organisationId: string) =>
     organisationId === platformOrganisationId ? '/platform-admin' : '/admin';
@@ -56,6 +60,7 @@ export function ContextSwitcherDialog({
       : '';
 
   useEffect(() => {
+    openRef.current = open;
     if (!open) {
       return;
     }
@@ -102,7 +107,7 @@ export function ContextSwitcherDialog({
   const close = () => {
     if (committed) {
       // The organisation token is already issued; without a branch the context is institution level.
-      finish({ kind: 'institution', organisationId: committed.id });
+      finish({ kind: 'institution', organisationId: committed });
       return;
     }
     reset();
@@ -148,7 +153,21 @@ export function ContextSwitcherDialog({
               initialOrganisations={load.organisations}
               onComplete={finish}
               onOrganisationCommitted={(organisationId) => {
-                setCommitted({ id: organisationId, name: nameOf(organisationId) });
+                // The dialog was closed mid-save (Close/Escape/backdrop, while the organisation
+                // POST was still in flight): `committed` would land on a dialog nothing else
+                // finishes, stranding the shell on the old organisation. Finish it now, at
+                // institution level, per spec §6.5 (All branches). `finish` here is this render's
+                // closure (captured while `load.kind === 'ready'`), so `nameOf` still has the
+                // loaded organisations list to name the toast.
+                // ponytail: if this organisation is also mid auto-pin, that pin can still resolve
+                // afterwards and call `onComplete` -> `finish` a second time (the All-branches
+                // toast, then the branch toast) — the final route/refresh is still correct either
+                // way, so this double notify is left as-is.
+                if (!openRef.current) {
+                  finish({ kind: 'institution', organisationId });
+                  return;
+                }
+                setCommitted(organisationId);
               }}
               onSessionExpired={() => {
                 router.replace('/login?reason=session_expired');
