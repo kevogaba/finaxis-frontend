@@ -1,24 +1,26 @@
 import type {
   BrowserBranch,
   BrowserOrganisation,
+  BrowserOrganisationSelection,
   BrowserPage,
   BrowserPageMetadata,
 } from '@/auth/context-browser-dto';
 
-export interface OrganisationSelectionResponse {
-  branchId: string | null;
-  requiresBranchSelection: boolean;
-  /** De-duplicated server-side; older fixtures may omit it. */
-  assignedBranchIds: readonly string[];
-}
+type OrganisationSelectionResponse = Pick<
+  BrowserOrganisationSelection,
+  'branchId' | 'requiresBranchSelection' | 'assignedBranchIds'
+>;
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-export function isOrganisationSelectionResponse(
+/** Narrows only the fields this module actually reads off the raw body — see the defensive parse
+ * of `assignedBranchIds` below, which isn't part of this shape. */
+function hasOrganisationSelectionShape(
   value: unknown,
-): value is OrganisationSelectionResponse {
+): value is Record<string, unknown> &
+  Pick<BrowserOrganisationSelection, 'branchId' | 'requiresBranchSelection'> {
   return (
     isRecord(value) &&
     typeof value.requiresBranchSelection === 'boolean' &&
@@ -26,7 +28,7 @@ export function isOrganisationSelectionResponse(
   );
 }
 
-export function isBrowserBranch(value: unknown): value is BrowserBranch {
+function isBrowserBranch(value: unknown): value is BrowserBranch {
   return (
     isRecord(value) &&
     typeof value.branchId === 'string' &&
@@ -48,7 +50,7 @@ function isBrowserPageMetadata(value: unknown): value is BrowserPageMetadata {
   );
 }
 
-export function isBrowserOrganisation(value: unknown): value is BrowserOrganisation {
+function isBrowserOrganisation(value: unknown): value is BrowserOrganisation {
   return (
     isRecord(value) &&
     typeof value.displayName === 'string' &&
@@ -60,7 +62,7 @@ export function isBrowserOrganisation(value: unknown): value is BrowserOrganisat
   );
 }
 
-export function isBrowserPage<T>(
+function isBrowserPage<T>(
   value: unknown,
   isItem: (item: unknown) => item is T,
 ): value is BrowserPage<T> {
@@ -72,7 +74,7 @@ export function isBrowserPage<T>(
   );
 }
 
-export class ContextRequestError extends Error {
+class ContextRequestError extends Error {
   constructor(readonly status: number) {
     super(`Context request failed with status ${status}.`);
     this.name = 'ContextRequestError';
@@ -83,11 +85,16 @@ export function isSessionExpired(error: unknown): boolean {
   return error instanceof ContextRequestError && error.status === 401;
 }
 
-export function isStaleContext(error: unknown): boolean {
-  return error instanceof ContextRequestError && error.status === 409;
+/**
+ * The backend clears the context cookie server-side on a 403 (`invalid_active_tenant_context` or
+ * `forbidden`) or a 409 (already gone) from the branch endpoints — either way there is no context
+ * left to retry against without re-selecting an organisation.
+ */
+export function isContextLost(error: unknown): error is ContextRequestError {
+  return error instanceof ContextRequestError && (error.status === 403 || error.status === 409);
 }
 
-export async function readSuccessfulJson(response: Response): Promise<unknown> {
+async function readSuccessfulJson(response: Response): Promise<unknown> {
   if (!response.ok) {
     throw new ContextRequestError(response.status);
   }
@@ -121,11 +128,11 @@ export async function selectOrganisationRequest(
       method: 'POST',
     }),
   );
-  if (!isOrganisationSelectionResponse(body)) {
+  if (!hasOrganisationSelectionShape(body)) {
     throw new Error('Invalid organisation selection response.');
   }
-  const assigned =
-    isRecord(body) && Array.isArray(body.assignedBranchIds) ? body.assignedBranchIds : [];
+  // Defensive parse: assignedBranchIds isn't part of the narrowed shape above, so validate it here.
+  const assigned = Array.isArray(body.assignedBranchIds) ? body.assignedBranchIds : [];
   return {
     branchId: body.branchId,
     requiresBranchSelection: body.requiresBranchSelection,

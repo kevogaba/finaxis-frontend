@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -17,7 +18,7 @@ import {
   type SelectionOutcome,
 } from './use-context-selection';
 
-export const ALL_BRANCHES_VALUE = '__all__';
+const ALL_BRANCHES_VALUE = '__all__';
 
 interface ContextSelectionFormProps {
   initialOrganisations: BrowserPage<BrowserOrganisation>;
@@ -25,6 +26,11 @@ interface ContextSelectionFormProps {
   onComplete: (outcome: SelectionOutcome) => void;
   onOrganisationCommitted?: (organisationId: string) => void;
   onSessionExpired: () => void;
+  /** The organisation/branch the caller is already pinned to (dialog-only) — see
+   * `useContextSelection`'s options of the same name. */
+  currentOrganisationId?: string;
+  currentBranchId?: string | null;
+  onOrganisationLost?: () => void;
 }
 
 export function ContextSelectionForm(props: ContextSelectionFormProps) {
@@ -34,6 +40,21 @@ export function ContextSelectionForm(props: ContextSelectionFormProps) {
   const canChooseOrganisation = !selection.organisationError && !hasNoOrganisations;
   const hasLoadedBranches = branchPage !== null;
   const hasNoBranches = hasLoadedBranches && branchPage.items.length === 0;
+  const showBranchSelect = hasLoadedBranches && !hasNoBranches;
+
+  // jsx-a11y/no-autofocus (this ESLint config's `strict` preset) rejects a literal `autoFocus`
+  // prop; move focus imperatively instead, once, the first time the Branch step appears.
+  const branchSelectRef = useRef<{ focus: () => void } | null>(null);
+  const hasFocusedBranchSelect = useRef(false);
+  useEffect(() => {
+    if (showBranchSelect && !hasFocusedBranchSelect.current) {
+      branchSelectRef.current?.focus();
+      hasFocusedBranchSelect.current = true;
+    }
+    if (!showBranchSelect) {
+      hasFocusedBranchSelect.current = false;
+    }
+  }, [showBranchSelect]);
 
   return (
     <>
@@ -148,22 +169,25 @@ export function ContextSelectionForm(props: ContextSelectionFormProps) {
         </Alert>
       )}
 
-      {hasLoadedBranches && !hasNoBranches && (
+      {showBranchSelect && (
         <FormControl fullWidth disabled={selection.isMutating || selection.isDiscoveryLoading}>
           <InputLabel id="branch-label">Branch</InputLabel>
           <Select<string>
             label="Branch"
             labelId="branch-label"
+            inputRef={branchSelectRef}
             onChange={(event) => {
               if (event.target.value === ALL_BRANCHES_VALUE) {
-                selection.selectAllBranches();
+                void selection.selectAllBranches();
                 return;
               }
               void selection.selectBranch(event.target.value);
             }}
             value=""
           >
-            <MenuItem value={ALL_BRANCHES_VALUE}>All branches (institution level)</MenuItem>
+            {selection.canOfferAllBranches && (
+              <MenuItem value={ALL_BRANCHES_VALUE}>All branches (institution level)</MenuItem>
+            )}
             {branchPage.items.map((branch) => (
               <MenuItem key={branch.branchId} value={branch.branchId}>
                 {branch.branchName} ({branch.branchCode})

@@ -509,7 +509,7 @@ describe('ContextSelectionPage', () => {
         }),
       )
       .mockResolvedValueOnce(jsonResponse(branchPage([branch])))
-      .mockResolvedValueOnce(jsonResponse({ message: 'context token leaked detail' }, 403));
+      .mockResolvedValueOnce(jsonResponse({ message: 'context token leaked detail' }, 500));
     const user = userEvent.setup();
     renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
 
@@ -518,6 +518,34 @@ describe('ContextSelectionPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       /couldn.t update your context\. please try again\./i,
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/context token leaked detail/i);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('shows an access-denied message when the branch endpoint finds the context already gone (403)', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(branchPage([branch])))
+      .mockResolvedValueOnce(jsonResponse({ message: 'context token leaked detail' }, 403));
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+    await chooseBranch(user);
+
+    // The backend clears the context cookie server-side on a 403 (contract §E), so there is
+    // nothing left to retry against — the safe message says so instead of the generic "try again".
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /you do not have access to this context/i,
     );
     expect(screen.getByRole('alert')).not.toHaveTextContent(/context token leaked detail/i);
     expect(replace).not.toHaveBeenCalled();

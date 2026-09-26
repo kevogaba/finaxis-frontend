@@ -16,6 +16,7 @@ import type { BrowserOrganisation, BrowserPage } from '@/auth/context-browser-dt
 import { useToast } from '@/components/providers/toast-provider';
 import { fetchOrganisations, isSessionExpired } from '@/components/context/context-api';
 import { ContextSelectionForm } from '@/components/context/context-selection-form';
+import { ORGANISATION_DISCOVERY_ERROR } from '@/components/context/use-context-selection';
 import type { SelectionOutcome } from '@/components/context/use-context-selection';
 import { useApplicationContext } from './organization-context';
 
@@ -41,9 +42,14 @@ export function ContextSwitcherDialog({
   const current = useApplicationContext();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [committed, setCommitted] = useState<string | null>(null);
-  // Mirrors `open` for the async `onOrganisationCommitted` callback below, which fires from a
-  // promise continuation and needs the dialog's *current* open state, not the one closed over at
-  // click time.
+  // The branch endpoints clear the context cookie server-side on a 403/409 — once that happens the
+  // ambient organisation/branch this dialog opened with is no longer pinned, so Close must stop
+  // treating it as a completed switch and just let the shared layout notice on its own refresh.
+  const [contextLost, setContextLost] = useState(false);
+  const [organisationRetry, setOrganisationRetry] = useState(0);
+  // Mirrors `open` for the async `onOrganisationCommitted`/`onOrganisationLost` callbacks below,
+  // which fire from a promise continuation and need the dialog's *current* open state, not the one
+  // closed over at click time.
   const openRef = useRef(open);
 
   const homeFor = (organisationId: string) =>
@@ -80,14 +86,25 @@ export function ContextSwitcherDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, router]);
+  }, [open, router, organisationRetry]);
 
   const reset = () => {
     setLoad({ kind: 'loading' });
     setCommitted(null);
+    setContextLost(false);
   };
 
   const finish = (outcome: SelectionOutcome) => {
+    if (
+      outcome.kind === 'institution' &&
+      outcome.organisationId === current.organization.id &&
+      current.branch === null
+    ) {
+      // Already at All branches for the current organisation: nothing actually changed.
+      reset();
+      onClose();
+      return;
+    }
     const name = nameOf(outcome.organisationId);
     reset();
     onClose();
@@ -106,8 +123,18 @@ export function ContextSwitcherDialog({
 
   const close = () => {
     if (committed) {
-      // The organisation token is already issued; without a branch the context is institution level.
+      // The organisation token is already issued; without a branch the context is institution
+      // level. `onOrganisationLost` always clears `committed` first, so a still-lost context never
+      // reaches here — this only fires once a (possibly later) organisation POST has recovered it.
       finish({ kind: 'institution', organisationId: committed });
+      return;
+    }
+    if (contextLost) {
+      // No toast, no push: the context is already gone server-side, so a refresh is what lets the
+      // shared layout notice and route to /select-context on its own.
+      reset();
+      onClose();
+      router.refresh();
       return;
     }
     reset();
@@ -136,8 +163,9 @@ export function ContextSwitcherDialog({
       <DialogContent>
         <Stack spacing={3}>
           <Typography color="text.secondary">
-            Available actions depend on your active membership and branch assignment. All branches
-            lets multi-branch users administer every branch at institution level.
+            Choosing an organisation or branch switches to it straight away. Available actions
+            depend on your active membership and branch assignment; All branches lets multi-branch
+            users administer every branch at institution level.
           </Typography>
           {load.kind === 'loading' && (
             <Stack direction="row" role="status" spacing={1} sx={{ alignItems: 'center' }}>
@@ -146,11 +174,35 @@ export function ContextSwitcherDialog({
             </Stack>
           )}
           {load.kind === 'error' && (
-            <Alert severity="error">We couldn&apos;t load organisations. Please try again.</Alert>
+            <Alert
+              severity="error"
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    setLoad({ kind: 'loading' });
+                    setOrganisationRetry((count) => count + 1);
+                  }}
+                >
+                  Try again
+                </Button>
+              }
+            >
+              {ORGANISATION_DISCOVERY_ERROR}
+            </Alert>
           )}
           {load.kind === 'ready' && (
             <ContextSelectionForm
               initialOrganisations={load.organisations}
+              // Once a different organisation has been committed in this dialog session
+              // (`committed !== null`), the server token has moved off the ambient organisation —
+              // re-picking it must go through a real select-organisation POST again, not the
+              // same-organisation fast path.
+              currentOrganisationId={
+                contextLost || committed !== null ? undefined : current.organization.id
+              }
+              currentBranchId={current.branch?.id ?? null}
               onComplete={finish}
               onOrganisationCommitted={(organisationId) => {
                 // The dialog was closed mid-save (Close/Escape/backdrop, while the organisation
@@ -168,6 +220,22 @@ export function ContextSwitcherDialog({
                   return;
                 }
                 setCommitted(organisationId);
+              }}
+              onOrganisationLost={() => {
+                setCommitted(null);
+                if (!openRef.current) {
+                  // Nothing to reset visually; just let the shared layout notice on its own refresh.
+                  // ponytail: if the dialog was already closed mid-save and `onOrganisationCommitted`
+                  // already ran `finish` (All-branches toast + push, same double-notify ceiling as
+                  // above), the user sees that toast first and only then, once this later 403/409
+                  // resolves, a silent refresh — which is what lets the layout notice the context is
+                  // actually gone and route to /select-context. Upgrade by tracking a single
+                  // in-flight generation id if a user ever reports the stale toast as confusing.
+                  reset();
+                  router.refresh();
+                  return;
+                }
+                setContextLost(true);
               }}
               onSessionExpired={() => {
                 router.replace('/login?reason=session_expired');

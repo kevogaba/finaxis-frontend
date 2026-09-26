@@ -19,6 +19,7 @@ import type { ApplicationContextModule } from '@/config/application-context';
 import { useToast } from '@/components/providers/toast-provider';
 import {
   fetchOrganisations,
+  isContextLost,
   selectBranchRequest,
   selectOrganisationRequest,
 } from '@/components/context/context-api';
@@ -153,18 +154,24 @@ export function AppSwitcher({
       onOpenContextSwitcher();
       return;
     }
-    let pinned = step === 'done-branch';
+    let pin: 'ok' | 'lost' | 'failed' = step === 'done-branch' ? 'ok' : 'failed';
     if (typeof step === 'object') {
       // A failed auto-pin still lands at All branches, exactly as closing the context dialog mid
-      // auto-pin does.
-      pinned = await selectBranchRequest(step.autoSelect).then(
-        () => true,
-        () => false,
+      // auto-pin does — unless the branch endpoint also cleared the context cookie (403/409), in
+      // which case there is nothing left to land on and the shared layout must send the user to
+      // /select-context instead.
+      pin = await selectBranchRequest(step.autoSelect).then(
+        () => 'ok' as const,
+        (error: unknown) => (isContextLost(error) ? 'lost' : 'failed'),
       );
     }
     close();
     setSwitching(false);
-    notify(pinned ? `Switched to ${name}` : `Switched to ${name} · All branches`);
+    if (pin === 'lost') {
+      router.refresh();
+      return;
+    }
+    notify(pin === 'ok' ? `Switched to ${name}` : `Switched to ${name} · All branches`);
     router.push('/platform-admin');
     router.refresh();
   };
@@ -224,7 +231,7 @@ export function AppSwitcher({
           paper: { role: 'dialog', 'aria-labelledby': titleId, sx: { width: 320, p: 3.5 } },
         }}
       >
-        <Typography id={titleId} variant="subtitle2" sx={{ fontWeight: 700 }}>
+        <Typography id={titleId} component="h2" variant="subtitle2" sx={{ fontWeight: 700 }}>
           Finaxis apps
         </Typography>
         <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 3 }}>

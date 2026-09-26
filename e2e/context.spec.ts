@@ -113,12 +113,16 @@ test.describe('working context', () => {
     await page.getByRole('button', { name: /Platform administration/ }).click();
 
     // The platform operator has a single branch, so switching auto-pins it — toast before the
-    // banner/URL, per the same auto-hiding-Snackbar-vs-refresh ordering as above.
-    await expect(page.getByRole('alert').filter({ hasText: /Switched to Platform/ })).toBeVisible();
+    // banner/URL, per the same auto-hiding-Snackbar-vs-refresh ordering as above. Anchored so a
+    // regression that inverted the pin result (landing on All branches instead) would fail here.
+    await expect(
+      page.getByRole('alert').filter({ hasText: /^Switched to Platform$/ }),
+    ).toBeVisible();
     await expect(page).toHaveURL(/\/platform-admin$/, { timeout: 15000 });
     await expect(page.getByRole('banner').getByText('Platform', { exact: true })).toBeVisible({
       timeout: 15000,
     });
+    await expect(page.getByRole('banner').getByText('Platform Operations')).toBeVisible();
   });
 
   test('keeps a deep link through context selection', async ({ context, page }, testInfo) => {

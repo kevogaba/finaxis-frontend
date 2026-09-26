@@ -62,6 +62,7 @@ describe('AppSwitcher', () => {
     await user.click(screen.getByRole('button', { name: 'Switch application' }));
 
     expect(await screen.findByRole('dialog', { name: 'Finaxis apps' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Finaxis apps' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /Administration/ })).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /Platform administration/ }),
@@ -144,6 +145,43 @@ describe('AppSwitcher', () => {
       expect(router.refresh).toHaveBeenCalled();
     });
     expect(onOpenContextSwitcher).not.toHaveBeenCalled();
+    expect(await screen.findByText('Switched to platform')).toBeInTheDocument();
+  });
+
+  it('sends the user to select-context with no toast when the auto-pin finds the context already gone (403)', async () => {
+    const user = userEvent.setup();
+    const onOpenContextSwitcher = vi.fn();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(organisations(['umoja', 'platform']))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            branchId: null,
+            requiresBranchSelection: true,
+            assignedBranchIds: ['ops', 'ops'],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response('{}', { status: 403 }));
+    renderWithProviders(
+      <AppSwitcher
+        currentModuleId="administration"
+        platformOrganisationId="platform"
+        onOpenContextSwitcher={onOpenContextSwitcher}
+        trigger="icon"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Switch application' }));
+    await user.click(await screen.findByRole('button', { name: /Platform administration/ }));
+
+    await vi.waitFor(() => {
+      expect(router.refresh).toHaveBeenCalled();
+    });
+    expect(router.push).not.toHaveBeenCalled();
+    expect(onOpenContextSwitcher).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
   });
 
   it('lands on All branches when several distinct branches are assigned', async () => {

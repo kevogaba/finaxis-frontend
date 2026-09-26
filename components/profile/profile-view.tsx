@@ -86,13 +86,9 @@ export function ProfileView({ user, signedInAt }: ProfileViewProps) {
               <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>
                 Selected branch
               </Typography>
-              {user.selectedBranch ? (
-                <Typography variant="body2">{user.selectedBranch.name}</Typography>
-              ) : (
-                <Alert severity="info" variant="outlined">
-                  No branch selected
-                </Alert>
-              )}
+              <Typography variant="body2">
+                {user.selectedBranch?.name ?? 'All branches (institution level)'}
+              </Typography>
             </Paper>
 
             <Paper variant="outlined" sx={{ p: 3 }}>
