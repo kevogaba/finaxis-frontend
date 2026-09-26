@@ -21,7 +21,7 @@ interface WorkspaceDrawerProps {
 
 export function WorkspaceDrawer({
   items,
-  navigationAriaLabel = 'Workspace navigation',
+  navigationAriaLabel = 'Administration',
   mobileOpen,
   onMobileClose,
 }: WorkspaceDrawerProps) {
