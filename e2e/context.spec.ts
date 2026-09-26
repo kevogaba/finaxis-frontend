@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { IDS } from './fake-api/scenarios.mts';
 import { authenticate, selectMuiOption } from './support/auth';
 
 const ACME_TENANT_ID = '99999999-9999-4999-8999-999999999999';
@@ -94,6 +95,61 @@ test.describe('working context', () => {
     // waits on router.refresh() and a cold compile of the (already-visited) /admin route.
     await expect(
       page.getByRole('alert').filter({ hasText: /Switched to Greenfield SACCO/ }),
+    ).toBeVisible();
+    await expect(page.getByRole('banner').getByText('Westlands Branch')).toBeVisible({
+      timeout: 15000,
+    });
+  });
+
+  test('re-selects the current organisation after another tab moved the shared context', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'multi-org');
+    // `context.request` shares this browser context's cookie jar, so it stands in for another tab
+    // (and skips the /select-context UI the sibling tests already cover, keeping this within the
+    // 60s budget). Bounded: possibly the run's first hit of these route handlers.
+    const select = async (path: string, data: Record<string, string>) => {
+      const response = await context.request.post(path, { data, timeout: 20000 });
+      expect(response.ok()).toBe(true);
+    };
+    await select('/api/context/organisation', { organisation_id: IDS.greenfield });
+    await select('/api/context/branch', { branch_id: IDS.headOffice });
+    await page.goto('/admin');
+    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible({
+      timeout: 20000,
+    });
+
+    // Another tab moves the shared context cookie to Platform.
+    await select('/api/context/organisation', { organisation_id: IDS.platformOrganisation });
+
+    // The first tab still renders Greenfield. Re-picking it must re-select it server-side rather
+    // than list Platform's branches under a Greenfield label. A click on the pre-hydration SSR
+    // markup is dropped (see selectMuiOption), so wait for React to own the button first.
+    const contextButton = page.getByRole('button', { name: /switch organisation or branch/i });
+    await expect
+      .poll(
+        () =>
+          contextButton.evaluate((el) =>
+            Object.keys(el).some((key) => key.startsWith('__reactProps')),
+          ),
+        { timeout: 20000 },
+      )
+      .toBe(true);
+    await contextButton.click();
+    const dialog = page.getByRole('dialog', { name: /switch working context/i });
+    // First hit of the run's /api/context/organisations route handler (a cold `next dev` compile).
+    await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible({
+      timeout: 20000,
+    });
+    await dialog.getByRole('combobox', { name: 'Organisation' }).click();
+    await page.getByRole('option', { name: /Greenfield/ }).click();
+    await dialog.getByRole('combobox', { name: 'Branch' }).click();
+    await expect(page.getByRole('option', { name: /Westlands/ })).toBeVisible();
+    await page.getByRole('option', { name: /Westlands/ }).click();
+
+    await expect(
+      page.getByRole('alert').filter({ hasText: /^Switched to Greenfield SACCO$/ }),
     ).toBeVisible();
     await expect(page.getByRole('banner').getByText('Westlands Branch')).toBeVisible({
       timeout: 15000,
