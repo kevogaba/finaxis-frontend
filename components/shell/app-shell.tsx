@@ -77,6 +77,7 @@ export function AppShell({
         <Box sx={{ flexGrow: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <GlobalHeader
             user={user}
+            platformOrganisationId={platformOrganisationId}
             onOpenNavigation={() => {
               setMobileOpen(true);
             }}

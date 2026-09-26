@@ -7,7 +7,6 @@ import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
-import AppsOutlined from '@mui/icons-material/AppsOutlined';
 import DomainOutlined from '@mui/icons-material/DomainOutlined';
 import KeyboardArrowDownOutlined from '@mui/icons-material/KeyboardArrowDownOutlined';
 import MenuOutlined from '@mui/icons-material/MenuOutlined';
@@ -19,12 +18,18 @@ import { useApplicationContext } from './organization-context';
 
 interface GlobalHeaderProps {
   user: FinaxisUser;
+  platformOrganisationId: string;
   onOpenNavigation: () => void;
   onOpenContextSwitcher: () => void;
 }
 
 /** 68 px app bar (prototype `.topbar`): workspace, context, then global controls. */
-export function GlobalHeader({ user, onOpenNavigation, onOpenContextSwitcher }: GlobalHeaderProps) {
+export function GlobalHeader({
+  user,
+  platformOrganisationId,
+  onOpenNavigation,
+  onOpenContextSwitcher,
+}: GlobalHeaderProps) {
   const { module, organization, branch } = useApplicationContext();
 
   return (
@@ -38,30 +43,13 @@ export function GlobalHeader({ user, onOpenNavigation, onOpenContextSwitcher }: 
           <MenuOutlined />
         </IconButton>
 
-        <Box
-          sx={{
-            display: { xs: 'none', sm: 'flex' },
-            alignItems: 'center',
-            gap: 2.5,
-            height: 46,
-            px: 3,
-            flexShrink: 0,
-            border: 1,
-            borderColor: 'divider',
-            borderRadius: 1,
-            bgcolor: 'surfaces.secondary',
-          }}
-        >
-          <AppsOutlined fontSize="small" aria-hidden="true" />
-          <Typography
-            variant="subtitle2"
-            component="span"
-            noWrap
-            sx={{ display: { xs: 'none', md: 'block' }, fontWeight: 700 }}
-          >
-            {module.name}
-          </Typography>
-        </Box>
+        <AppSwitcher
+          trigger="label"
+          moduleName={module.name}
+          currentModuleId={module.id}
+          platformOrganisationId={platformOrganisationId}
+          onOpenContextSwitcher={onOpenContextSwitcher}
+        />
 
         <Button
           onClick={onOpenContextSwitcher}
@@ -106,7 +94,12 @@ export function GlobalHeader({ user, onOpenNavigation, onOpenContextSwitcher }: 
         <Box sx={{ flexGrow: 1 }} />
 
         <Stack direction="row" sx={{ alignItems: 'center', gap: 0.75, flexShrink: 0 }}>
-          <AppSwitcher />
+          <AppSwitcher
+            trigger="icon"
+            currentModuleId={module.id}
+            platformOrganisationId={platformOrganisationId}
+            onOpenContextSwitcher={onOpenContextSwitcher}
+          />
           <ThemeModeMenu />
           <UserMenu user={user} />
         </Stack>
