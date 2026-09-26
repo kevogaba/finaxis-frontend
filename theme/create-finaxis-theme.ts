@@ -81,7 +81,24 @@ export function createFinaxisTheme() {
     },
     colorSchemes: {
       light: { palette: paletteFor('light', LIGHT) },
-      dark: { palette: paletteFor('dark', DARK) },
+      dark: {
+        palette: {
+          ...paletteFor('dark', DARK),
+          // MUI paints dark-scheme filled Alerts on `<severity>.dark` (darken 0.3) with white
+          // text, which falls below 4.5:1 for success/warning/error — pin the fill and text to
+          // tokens that pass (theme/create-finaxis-theme.test.ts).
+          Alert: {
+            successFilledBg: DARK.success.main,
+            successFilledColor: DARK.background.default,
+            warningFilledBg: DARK.warning.main,
+            warningFilledColor: DARK.background.default,
+            errorFilledBg: DARK.error.main,
+            errorFilledColor: DARK.background.default,
+            infoFilledBg: DARK.info.main,
+            infoFilledColor: DARK.background.default,
+          },
+        },
+      },
     },
     spacing: 4,
     shape: { borderRadius: 6 },
