@@ -226,6 +226,9 @@ export function useContextSelection({
   const selectAllBranches = () => {
     // The branch step is only reached after this form's own select-organisation POST succeeded,
     // which already left the token at institution level: nothing more to change server-side.
+    // ponytail: checked at that POST, not at this click — another tab switching while this form
+    // sits at the branch step still gets a stale toast here (and a branch pick runs under the moved
+    // cookie), though the caller's refresh re-reads the real context. Re-POST here if that matters.
     if (organisationId) {
       onComplete({ kind: 'institution', organisationId });
     }
