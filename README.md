@@ -130,7 +130,9 @@ app/
 ├── (public)/login/page.tsx  # Split-screen login page (Better Auth Keycloak sign-in)
 ├── (authenticated)/          # Server-guarded routes: layout.tsx validates session + context
 │   ├── layout.tsx             # Authoritative auth guard for /admin, /profile, /platform-admin
-│   ├── admin/                 # Users, Branches, Roles & Permissions, Settings, Audit Logs
+│   ├── admin/                 # Overview page; later layers add Approval queue, Users & access,
+│   │                            # Branches, Roles & permissions, Settings, Business date, and
+│   │                            # Audit trail as their own nav items (spec §8)
 │   ├── platform-admin/         # Read-only workspace, gated to the platform organisation's context
 │   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
 │   │   └── tenants/             # Live tenant directory + tenant detail (dynamic route)
@@ -218,8 +220,16 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   organisation, selected branch, assigned branches, roles, and permissions.
 - Authorization/permission enforcement remains a backend concern; UI-displayed roles and
   permissions are informational and are not a trust boundary.
-- Administration's Users/Branches/Roles & Permissions/Settings/Audit Logs pages are polished
-  placeholders, not connected to real data.
+- The global shell (`components/shell/app-shell.tsx`) mirrors that same boundary: each module's
+  rail navigation is filtered to the items the signed-in user's permissions satisfy
+  (`workspace-navigation.tsx`'s `visibleNavigationItems`) — UI gating only, not authorization; the
+  backend stays the authority. The rail's collapsed/expanded preference persists in a
+  `finaxis_nav` cookie read server-side (`app/(authenticated)/layout.tsx`) so first paint already
+  renders the right rail width.
+- Administration currently ships only the Overview page; Approval queue, Users & access, Branches,
+  Roles & permissions, Settings, Business date, and Audit trail are built out (with real data, not
+  placeholders) as their own layers land, each registering its own item in
+  `modules/administration/administration-navigation.ts`.
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) reads live, paginated data from the
   backend — tenant directory and tenant detail — through
@@ -237,8 +247,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
 
 1. Add Keycloak claim mappers and enforce authorization/permissions server-side, instead of
    treating UI-shown roles as informational only.
-2. Connect Administration's Users/Branches/Roles & Permissions/Settings/Audit Logs pages to
-   real data.
+2. Build out Administration's remaining pages (Approval queue, Users & access, Branches,
+   Roles & permissions, Settings, Business date, Audit trail) against real data, each registering
+   its own navigation item.
 3. Extend Platform Administration's live reads to branches and users, and design a write-action
    model (with audit logging) before enabling any mutations there.
 4. Replace the temporary `FinaxisLogo` mark with the official brand asset.
