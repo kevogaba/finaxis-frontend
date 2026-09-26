@@ -50,7 +50,7 @@ describe('PlatformAdministrationLayout', () => {
 
     expect(screen.getByRole('navigation', { name: 'Platform Administration' })).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Overview' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('link', { name: 'Tenants' })[0]).toHaveAttribute(
+    expect(screen.getAllByRole('link', { name: 'SACCO institutions' })[0]).toHaveAttribute(
       'aria-current',
       'page',
     );
