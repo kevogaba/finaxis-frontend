@@ -374,6 +374,13 @@ describe('context service', () => {
     });
   });
 
+  it('rethrows non-API failures (e.g. a network error) instead of redirecting', async () => {
+    readContextToken.mockResolvedValueOnce('signed-context-token');
+    backendApi.get.mockRejectedValueOnce(new Error('backend detail: sensitive context token'));
+
+    await expect(getSelectedContextProfile(requestHeaders)).rejects.toThrow('backend detail');
+  });
+
   it('throws on backend outages and schema drift instead of looping through selection', async () => {
     readContextToken.mockResolvedValueOnce('signed-context-token');
     backendApi.get.mockRejectedValueOnce(new BackendApiError(502));
