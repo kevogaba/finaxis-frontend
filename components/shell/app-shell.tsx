@@ -63,7 +63,7 @@ export function AppShell({ user, context, initialNavCollapsed, children }: AppSh
             setMobileOpen(false);
           }}
           footerTitle={context.organization.name}
-          footerSubtitle={context.branch.name}
+          footerSubtitle={context.branch?.name ?? 'All branches'}
         />
         <Box sx={{ flexGrow: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <GlobalHeader

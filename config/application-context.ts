@@ -27,7 +27,8 @@ export interface ApplicationContextBranch {
 export interface ApplicationContext {
   module: ApplicationContextModule;
   organization: ApplicationContextOrganization;
-  branch: ApplicationContextBranch;
+  /** `null` = All branches (organisation selected, no branch — institution level). */
+  branch: ApplicationContextBranch | null;
 }
 
 export function isPlatformOrganisation(organisationId: string): boolean {
@@ -39,21 +40,3 @@ export function resolveApplicationContextModule(organisationId: string): Applica
     ? platformAdministrationModule
     : administrationModule;
 }
-
-/**
- * Stand-in for the future organization/branch-selection flow. Branch and
- * organization resolution isn't implemented yet — this fixture unblocks the
- * shell's header/context UI until a real selection API exists. Never
- * treat this as authoritative for authorization.
- */
-export const applicationContext: ApplicationContext = {
-  module: administrationModule,
-  organization: {
-    id: 'greenfield-sacco',
-    name: 'GreenField SACCO',
-  },
-  branch: {
-    id: 'nairobi-central',
-    name: 'Nairobi Central Branch',
-  },
-};

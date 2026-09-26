@@ -70,4 +70,14 @@ describe('GlobalHeader', () => {
     expect(screen.getByRole('button', { name: /switch application/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /notifications/i })).not.toBeInTheDocument();
   });
+
+  it('shows All branches for an institution-level context', () => {
+    renderWithProviders(
+      <ApplicationContextProvider value={{ ...CONTEXT, branch: null }}>
+        <GlobalHeader user={USER} onOpenNavigation={vi.fn()} />
+      </ApplicationContextProvider>,
+    );
+
+    expect(screen.getByText('All branches')).toBeInTheDocument();
+  });
 });

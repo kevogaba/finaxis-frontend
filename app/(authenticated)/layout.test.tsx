@@ -36,9 +36,9 @@ vi.mock('@/auth/get-authenticated-user', () => ({
   getAuthenticatedUser: (...args: unknown[]) => getAuthenticatedUser(...args) as unknown,
 }));
 
-const getSelectedContextProfile = vi.fn();
+const getCurrentContextProfile = vi.fn();
 vi.mock('@/auth/context-service', () => ({
-  getSelectedContextProfile: (...args: unknown[]) => getSelectedContextProfile(...args) as unknown,
+  getCurrentContextProfile: (...args: unknown[]) => getCurrentContextProfile(...args) as unknown,
   profileToFinaxisUser: (profile: Record<string, unknown>, fallbackUser: unknown) =>
     profileToFinaxisUser(profile, fallbackUser) as unknown,
 }));
@@ -93,7 +93,7 @@ describe('AuthenticatedLayout', () => {
       selected_branch: { id: 'branch-1', code: 'HQ', name: 'Headquarters', status: 'ACTIVE' },
       user_id: 'backend-user-1',
     };
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       context: {
         branch: { id: 'branch-1', name: 'Headquarters' },
         module: { id: 'administration', name: 'Administration' },
@@ -137,7 +137,7 @@ describe('AuthenticatedLayout', () => {
     );
 
     expect(redirect).toHaveBeenCalledWith('/login?reason=session_expired');
-    expect(getSelectedContextProfile).not.toHaveBeenCalled();
+    expect(getCurrentContextProfile).not.toHaveBeenCalled();
     expect(renderedShell).not.toHaveBeenCalled();
   });
 
@@ -149,7 +149,7 @@ describe('AuthenticatedLayout', () => {
       roles: [],
       branches: [],
     });
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       kind: 'redirect-to-context-selection',
       reason: 'missing-context-token',
     });
@@ -173,7 +173,7 @@ describe('AuthenticatedLayout', () => {
       roles: [],
       branches: [],
     });
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       kind: 'redirect-to-context-selection',
       reason: 'missing-context-token',
     });
@@ -197,7 +197,7 @@ describe('AuthenticatedLayout', () => {
       roles: [],
       branches: [],
     });
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       context: {
         branch: { id: 'branch-1', name: 'Headquarters' },
         module: { id: 'administration', name: 'Administration' },
@@ -233,7 +233,7 @@ describe('AuthenticatedLayout', () => {
       roles: [],
       branches: [],
     });
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       context: {
         branch: { id: 'branch-1', name: 'Headquarters' },
         module: { id: 'administration', name: 'Administration' },

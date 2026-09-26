@@ -14,16 +14,41 @@ export interface SafeBackendProblem {
 
 export class BackendApiError extends Error {
   readonly problem: SafeBackendProblem;
+  readonly code: string | null;
+  readonly requestId: string | null;
 
-  constructor(readonly status: number) {
+  constructor(
+    readonly status: number,
+    details: { code?: string | null; requestId?: string | null } = {},
+  ) {
     super(`Platform API request failed with status ${status}.`);
     this.name = 'BackendApiError';
     this.problem = { status, title: 'Platform API request failed.' };
+    this.code = details.code ?? null;
+    this.requestId = details.requestId ?? null;
   }
 }
 
 function toBackendApiError(status: number): BackendApiError {
   return new BackendApiError(status);
+}
+
+/** Reads only the safe, stable fields of a problem+json body; anything else is ignored. */
+async function problemDetails(
+  response: Response,
+): Promise<{ code: string | null; requestId: string | null }> {
+  try {
+    const body = (await response.json()) as unknown;
+    if (typeof body !== 'object' || body === null) {
+      return { code: null, requestId: null };
+    }
+    const code = 'code' in body && typeof body.code === 'string' ? body.code : null;
+    const requestId =
+      'request_id' in body && typeof body.request_id === 'string' ? body.request_id : null;
+    return { code, requestId };
+  } catch {
+    return { code: null, requestId: response.headers.get('x-request-id') };
+  }
 }
 
 function backendUrl(path: string): string {
@@ -88,7 +113,7 @@ async function request<T>(
     throw toBackendApiError(UPSTREAM_FAILURE_STATUS);
   }
   if (!response.ok) {
-    throw new BackendApiError(response.status);
+    throw new BackendApiError(response.status, await problemDetails(response));
   }
 
   try {

@@ -69,7 +69,7 @@ export function GlobalHeader({ user, onOpenNavigation }: GlobalHeaderProps) {
           component={NextLink}
           href={`/select-context?next=${encodeURIComponent(pathname)}`}
           color="inherit"
-          aria-label={`Switch organisation or branch. Current: ${organization.name}, ${branch.name}`}
+          aria-label={`Switch organisation or branch. Current: ${organization.name}, ${branch?.name ?? 'All branches'}`}
           sx={{ minWidth: 0, height: 46, gap: 2.5, px: 2, color: 'text.primary' }}
         >
           <DomainOutlined aria-hidden="true" />
@@ -99,7 +99,7 @@ export function GlobalHeader({ user, onOpenNavigation }: GlobalHeaderProps) {
               noWrap
               sx={{ maxWidth: '100%' }}
             >
-              {branch.name}
+              {branch?.name ?? 'All branches'}
             </Typography>
           </Box>
           <KeyboardArrowDownOutlined fontSize="small" aria-hidden="true" />

@@ -2,7 +2,7 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { getAuthenticatedUser } from '@/auth/get-authenticated-user';
-import { getSelectedContextProfile, profileToFinaxisUser } from '@/auth/context-service';
+import { getCurrentContextProfile, profileToFinaxisUser } from '@/auth/context-service';
 import { contextSelectionRedirectPath } from '@/auth/context-selection-redirect';
 import { AppShell } from '@/components/shell/app-shell';
 import {
@@ -18,7 +18,7 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
     redirect('/login?reason=session_expired');
   }
 
-  const selectedContext = await getSelectedContextProfile(requestHeaders);
+  const selectedContext = await getCurrentContextProfile();
   if (selectedContext.kind !== 'resolved') {
     redirect(contextSelectionRedirectPath(requestHeaders));
   }

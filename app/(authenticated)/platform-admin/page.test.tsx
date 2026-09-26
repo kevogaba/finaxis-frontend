@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders, screen } from '@/test/test-utils';
 
-const { getSelectedContextProfile, listTenants } = vi.hoisted(() => ({
-  getSelectedContextProfile: vi.fn(),
+const { getCurrentContextProfile, listTenants } = vi.hoisted(() => ({
+  getCurrentContextProfile: vi.fn(),
   listTenants: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({ headers: vi.fn(() => new Headers()) }));
 vi.mock('@/auth/context-service', () => ({
-  getSelectedContextProfile: (...args: unknown[]) => getSelectedContextProfile(...args) as unknown,
+  getCurrentContextProfile: (...args: unknown[]) => getCurrentContextProfile(...args) as unknown,
 }));
 vi.mock('@/modules/platform-administration/platform-administration-service', () => ({
   platformAdministrationService: {
@@ -21,7 +21,7 @@ const { default: PlatformOverviewPage } = await import('./page');
 describe('PlatformOverviewPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getSelectedContextProfile.mockResolvedValue({
+    getCurrentContextProfile.mockResolvedValue({
       context: {
         branch: { id: 'branch-1', name: 'Platform HQ' },
         module: { id: 'platform-administration', name: 'Platform Administration' },
