@@ -76,6 +76,10 @@ describe('ContextSwitcherDialog', () => {
       expect(router.push).toHaveBeenCalledWith('/admin');
     });
     expect(onClose).toHaveBeenCalled();
+    // A push to a route the user may already be on (e.g. staying in tenant administration while
+    // switching organisation) is a same-URL no-op for the Next router; only `refresh()` forces the
+    // shared authenticated layout to re-read the new context cookie.
+    expect(router.refresh).toHaveBeenCalled();
   });
 
   it('lands at All branches when closed after the organisation was committed', async () => {
@@ -108,6 +112,32 @@ describe('ContextSwitcherDialog', () => {
 
     expect(onClose).toHaveBeenCalled();
     expect(router.push).toHaveBeenCalledWith('/admin');
+    expect(router.refresh).toHaveBeenCalled();
+    expect(await screen.findByText(/Imara SACCO · All branches/)).toBeInTheDocument();
+  });
+
+  it('finishes at the committed organisation when a failed auto-pin leaves the branch step incomplete', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [ORG], page: PAGE }))
+      .mockImplementationOnce(() =>
+        json({ branchId: null, requiresBranchSelection: true, assignedBranchIds: ['b-1'] }),
+      )
+      .mockImplementationOnce(() => Promise.resolve(new Response('{}', { status: 500 })));
+    const onClose = renderDialog();
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Imara SACCO/ }));
+
+    // The auto-pin POST failed, which clears the Organisation select back to blank — but the
+    // organisation token is already issued (onOrganisationCommitted already fired), so closing
+    // now must still finish at that organisation, not a stale one.
+    await screen.findByText(/couldn't update your context/i);
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledWith('/admin');
+    expect(router.refresh).toHaveBeenCalled();
     expect(await screen.findByText(/Imara SACCO · All branches/)).toBeInTheDocument();
   });
 });

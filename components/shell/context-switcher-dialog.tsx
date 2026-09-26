@@ -89,11 +89,14 @@ export function ContextSwitcherDialog({
     notify(
       outcome.kind === 'institution' ? `Switched to ${name} · All branches` : `Switched to ${name}`,
     );
-    if (outcome.organisationId === current.organization.id) {
-      router.refresh();
-    } else {
+    if (outcome.organisationId !== current.organization.id) {
+      // A different organisation may still resolve to the same path (e.g. two tenant
+      // organisations both land on `/admin`), which the Next router treats as a same-URL no-op —
+      // so `refresh()` below is what actually forces the shared layout to re-read the new
+      // context cookie, not this `push`.
       router.push(homeFor(outcome.organisationId));
     }
+    router.refresh();
   };
 
   const close = () => {
