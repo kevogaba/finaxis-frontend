@@ -53,6 +53,7 @@ Open [http://localhost:3000](http://localhost:3000) — the root route redirects
 | `pnpm test:e2e`                | Playwright end-to-end tests (Keycloak-independent)                |
 | `pnpm test:e2e:ui`             | Playwright UI mode                                                |
 | `pnpm test:e2e:keycloak`       | Real-Keycloak smoke test (manual; requires a live local Keycloak) |
+| `pnpm fake-api`                | Run the E2E fake backend alone (port 3199)                        |
 | `pnpm check`                   | format:check + lint + typecheck + unit tests                      |
 | `pnpm verify`                  | `check` + coverage + build (full pre-merge gate)                  |
 
@@ -78,9 +79,9 @@ catching a bug beats a reviewer catching it.
   the DOM by role and accessible name rather than implementation details.
 - **End-to-end**: `pnpm test:e2e`. Playwright starts two servers: the standalone fake platform API
   (`e2e/fake-api/`, plain `node` with type stripping, zero dependencies) and the Next dev server
-  pointed at it. Each test calls `authenticate(context, testInfo, scenario)` from
-  `e2e/support/auth.ts`, which gets an isolated, scenario-seeded fake backend. The fake mirrors the
-  real API's wire behaviour (snake_case, problem+json, context tokens, permissions — see
+  pointed at it. Tests that need a signed-in session call `authenticate(context, testInfo, scenario)` from
+  `e2e/support/auth.ts`, which gives each test its own scenario-seeded fake backend; unauthenticated and fake-API smoke specs don't.
+  The fake mirrors the real API's wire behaviour (snake_case, problem+json, context tokens, permissions — see
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`). Run it alone with
   `pnpm fake-api`. Chromium is the required project; install it once with
   `pnpm exec playwright install chromium`. This suite never talks to a real Keycloak or backend.
@@ -169,7 +170,10 @@ proxy.ts                        # Optimistic cookie-presence redirect (not a tru
                                  # forwards the requested pathname so context selection can return
                                  # the user to it afterwards
 test/                           # Vitest setup + renderWithProviders
-e2e/                             # Playwright specs
+e2e/
+├── fake-api/                   # Standalone fake backend (plain Node, `.mts`; routes/, scenarios/, state/)
+├── support/                     # Shared spec helpers (`auth.ts`)
+└── *.spec.ts                    # Playwright specs
 docs/authentication/            # Architecture, Keycloak setup, security, session-model docs
 docs/deployment.md               # VPS/Coolify deployment
 Dockerfile                      # Multi-stage build for the standalone Next.js output
