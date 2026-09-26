@@ -146,51 +146,59 @@ test.describe('working context', () => {
     { width: 375, height: 812 },
   ] as const;
 
-  for (const colorScheme of ['light', 'dark'] as const) {
-    for (const viewport of AXE_VIEWPORTS) {
-      test(`context overlays have no serious or critical accessibility violations (${colorScheme}, ${viewport.width}x${viewport.height})`, async ({
-        context,
-        page,
-      }, testInfo) => {
-        // Set scheme and viewport before navigating: InitColorSchemeScript reads `matchMedia` on
-        // load (see e2e/shell.spec.ts).
-        await page.emulateMedia({ colorScheme });
-        await page.setViewportSize(viewport);
-        await authenticate(context, testInfo);
-        await goToAdminAsGreenfield(page);
-        await selectMuiOption(page, 'Branch', /Head Office/);
-        await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
+  test.describe('context overlays accessibility', () => {
+    // Each case authenticates, selects a branch, then opens and axe-scans both the dialog and the
+    // popover — more sequential work than the file's other tests. Under full-suite worker
+    // contention this can exceed the outer describe's 60s budget (siblings measured 43.5-48.3s;
+    // the (light, 1280x800) case timed out at 60s twice while passing in 7.1s run alone).
+    test.describe.configure({ timeout: 90000 });
 
-        await expect(page.locator('html')).toHaveClass(new RegExp(colorScheme));
-        await expect(page).toHaveTitle(/.+/);
+    for (const colorScheme of ['light', 'dark'] as const) {
+      for (const viewport of AXE_VIEWPORTS) {
+        test(`context overlays have no serious or critical accessibility violations (${colorScheme}, ${viewport.width}x${viewport.height})`, async ({
+          context,
+          page,
+        }, testInfo) => {
+          // Set scheme and viewport before navigating: InitColorSchemeScript reads `matchMedia` on
+          // load (see e2e/shell.spec.ts).
+          await page.emulateMedia({ colorScheme });
+          await page.setViewportSize(viewport);
+          await authenticate(context, testInfo);
+          await goToAdminAsGreenfield(page);
+          await selectMuiOption(page, 'Branch', /Head Office/);
+          await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
 
-        // Context switcher dialog.
-        await page.getByRole('button', { name: /switch organisation or branch/i }).click();
-        const dialog = page.getByRole('dialog', { name: /switch working context/i });
-        // First hit of the run's /api/context/organisations route handler (a cold `next dev` compile).
-        await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible({
-          timeout: 20000,
+          await expect(page.locator('html')).toHaveClass(new RegExp(colorScheme));
+          await expect(page).toHaveTitle(/.+/);
+
+          // Context switcher dialog.
+          await page.getByRole('button', { name: /switch organisation or branch/i }).click();
+          const dialog = page.getByRole('dialog', { name: /switch working context/i });
+          // First hit of the run's /api/context/organisations route handler (a cold `next dev` compile).
+          await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible({
+            timeout: 20000,
+          });
+          await expect(dialog).toBeInViewport();
+          // MUI's Fade sets `opacity` directly on the dialog's transition container (not the
+          // dialog paper); axe blends ancestor opacity into color-contrast, so scanning mid-fade
+          // can intermittently report a false contrast violation in dark mode.
+          await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1');
+          await expectNoSeriousOrCriticalViolations(page);
+          await dialog.getByRole('button', { name: 'Close' }).click();
+          // Until the exit transition ends, the rest of the app stays aria-hidden and getByRole
+          // can't find the trigger below.
+          await expect(dialog).toBeHidden();
+
+          // App switcher popover.
+          await page.getByRole('button', { name: 'Switch application', exact: true }).click();
+          const popover = page.getByRole('dialog', { name: 'Finaxis apps' });
+          await expect(popover.getByRole('button', { name: /^Administration/ })).toBeInViewport();
+          // Same fade-timing guard: MUI's Grow sets `opacity` directly on the popover paper.
+          await expect(popover).toHaveCSS('opacity', '1');
+          await expectNoSeriousOrCriticalViolations(page);
+          await page.keyboard.press('Escape');
         });
-        await expect(dialog).toBeInViewport();
-        // MUI's Fade sets `opacity` directly on the dialog's transition container (not the
-        // dialog paper); axe blends ancestor opacity into color-contrast, so scanning mid-fade
-        // can intermittently report a false contrast violation in dark mode.
-        await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1');
-        await expectNoSeriousOrCriticalViolations(page);
-        await dialog.getByRole('button', { name: 'Close' }).click();
-        // Until the exit transition ends, the rest of the app stays aria-hidden and getByRole
-        // can't find the trigger below.
-        await expect(dialog).toBeHidden();
-
-        // App switcher popover.
-        await page.getByRole('button', { name: 'Switch application', exact: true }).click();
-        const popover = page.getByRole('dialog', { name: 'Finaxis apps' });
-        await expect(popover.getByRole('button', { name: /^Administration/ })).toBeInViewport();
-        // Same fade-timing guard: MUI's Grow sets `opacity` directly on the popover paper.
-        await expect(popover).toHaveCSS('opacity', '1');
-        await expectNoSeriousOrCriticalViolations(page);
-        await page.keyboard.press('Escape');
-      });
+      }
     }
-  }
+  });
 });
