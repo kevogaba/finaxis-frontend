@@ -1,26 +1,70 @@
 'use client';
 
-import Box from '@mui/material/Box';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
+import Box from '@mui/material/Box';
 import type { FinaxisUser } from '@/auth/auth.types';
 import type { ApplicationContext } from '@/config/application-context';
-import { ApplicationContextProvider } from './organization-context';
+import { administrationNavigationItems } from '@/modules/administration/administration-navigation';
+import { platformAdministrationNavigationItems } from '@/modules/platform-administration/platform-administration-navigation';
+import { AppFooter } from './app-footer';
 import { GlobalHeader } from './global-header';
+import { writeNavCollapsed } from './navigation-preferences';
+import { ApplicationContextProvider } from './organization-context';
+import { WorkspaceDrawer } from './workspace-drawer';
+import { visibleNavigationItems } from './workspace-navigation';
+
+const NAVIGATION = {
+  administration: administrationNavigationItems,
+  'platform-administration': platformAdministrationNavigationItems,
+} as const;
 
 interface AppShellProps {
   user: FinaxisUser;
   context: ApplicationContext;
+  initialNavCollapsed: boolean;
   children: ReactNode;
 }
 
-export function AppShell({ user, context, children }: AppShellProps) {
+/**
+ * Global authenticated shell. Navigation registries are imported here (client side) because nav
+ * items carry icon components, which cannot cross the Server → Client boundary.
+ */
+export function AppShell({ user, context, initialNavCollapsed, children }: AppShellProps) {
+  const [collapsed, setCollapsed] = useState(initialNavCollapsed);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const items = visibleNavigationItems(NAVIGATION[context.module.id], user.permissions);
+
   return (
     <ApplicationContextProvider value={context}>
-      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
-        {/* Task 4 recomposes AppShell around WorkspaceDrawer's mobile-open state; no-op until then. */}
-        <GlobalHeader user={user} onOpenNavigation={() => undefined} />
-        <Box component="main" sx={{ flexGrow: 1, minWidth: 0 }}>
-          {children}
+      <Box sx={{ display: 'flex', minHeight: '100dvh', bgcolor: 'background.default' }}>
+        <WorkspaceDrawer
+          items={items}
+          navigationAriaLabel={context.module.name}
+          collapsed={collapsed}
+          onToggleCollapsed={() => {
+            const next = !collapsed;
+            setCollapsed(next);
+            writeNavCollapsed(next);
+          }}
+          mobileOpen={mobileOpen}
+          onMobileClose={() => {
+            setMobileOpen(false);
+          }}
+          footerTitle={context.organization.name}
+          footerSubtitle={context.branch.name}
+        />
+        <Box sx={{ flexGrow: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <GlobalHeader
+            user={user}
+            onOpenNavigation={() => {
+              setMobileOpen(true);
+            }}
+          />
+          <Box component="main" sx={{ flexGrow: 1, px: { xs: 3.5, md: 6 }, pt: 5, pb: 4 }}>
+            {children}
+          </Box>
+          <AppFooter />
         </Box>
       </Box>
     </ApplicationContextProvider>

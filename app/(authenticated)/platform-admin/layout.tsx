@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import { getSelectedContextProfile } from '@/auth/context-service';
 import { contextSelectionRedirectPath } from '@/auth/context-selection-redirect';
 import { platformAdministrationModule } from '@/modules/platform-administration/platform-administration-module';
-import { PlatformWorkspaceShell } from '@/modules/platform-administration/components/platform-workspace-shell';
 
 export default async function PlatformAdministrationLayout({ children }: { children: ReactNode }) {
   const requestHeaders = await headers();
@@ -18,5 +17,5 @@ export default async function PlatformAdministrationLayout({ children }: { child
     redirect('/admin');
   }
 
-  return <PlatformWorkspaceShell>{children}</PlatformWorkspaceShell>;
+  return <>{children}</>;
 }
