@@ -217,7 +217,11 @@ export function useContextSelection({
         return;
       }
       setOrganisationId('');
-      setUpdateError(CONTEXT_UPDATE_ERROR);
+      // A 403 here means the platform rejected this organisation outright — retrying the same pick
+      // cannot succeed, so it gets the access-denied copy instead of the generic retryable one.
+      // `isContextLost` also matches 409, which this endpoint never returns; contextLostMessage
+      // still resolves 409 to the stale-context copy if that ever changes.
+      setUpdateError(isContextLost(error) ? contextLostMessage(error) : CONTEXT_UPDATE_ERROR);
     } finally {
       setIsSavingOrganisation(false);
     }

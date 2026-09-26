@@ -52,6 +52,31 @@ export function ContextSelectionForm(props: ContextSelectionFormProps) {
     }
   }, [showBranchSelect]);
 
+  // A failure (select-branch 403/409, or a branch page load 5xx) unmounts the Branch select and
+  // its pagination together (both live behind `hasLoadedBranches`), dropping focus onto <body> if
+  // either was focused. Recover it onto whatever the failure put on screen instead: the error it
+  // raised, or the Organisation select otherwise.
+  const organisationSelectRef = useRef<{ focus: () => void } | null>(null);
+  const updateErrorAlertRef = useRef<HTMLDivElement | null>(null);
+  const branchErrorAlertRef = useRef<HTMLDivElement | null>(null);
+  const wasBranchAreaMounted = useRef(false);
+  useEffect(() => {
+    if (
+      wasBranchAreaMounted.current &&
+      !hasLoadedBranches &&
+      document.activeElement === document.body
+    ) {
+      if (selection.updateError) {
+        updateErrorAlertRef.current?.focus();
+      } else if (selection.branchError) {
+        branchErrorAlertRef.current?.focus();
+      } else {
+        organisationSelectRef.current?.focus();
+      }
+    }
+    wasBranchAreaMounted.current = hasLoadedBranches;
+  }, [hasLoadedBranches, selection.updateError, selection.branchError]);
+
   return (
     <>
       {selection.organisationError && (
@@ -88,6 +113,7 @@ export function ContextSelectionForm(props: ContextSelectionFormProps) {
           <Select
             label="Organisation"
             labelId="organisation-label"
+            inputRef={organisationSelectRef}
             onChange={(event) => {
               void selection.selectOrganisation(event.target.value);
             }}
@@ -119,7 +145,13 @@ export function ContextSelectionForm(props: ContextSelectionFormProps) {
       )}
 
       {selection.updateError && (
-        <Alert role="alert" severity="error" variant="outlined">
+        <Alert
+          ref={updateErrorAlertRef}
+          role="alert"
+          severity="error"
+          tabIndex={-1}
+          variant="outlined"
+        >
           {selection.updateError}
         </Alert>
       )}
@@ -140,6 +172,7 @@ export function ContextSelectionForm(props: ContextSelectionFormProps) {
 
       {selection.branchError && (
         <Alert
+          ref={branchErrorAlertRef}
           action={
             <Button
               color="inherit"
@@ -152,6 +185,7 @@ export function ContextSelectionForm(props: ContextSelectionFormProps) {
           }
           role="alert"
           severity="error"
+          tabIndex={-1}
           variant="outlined"
         >
           {selection.branchError}

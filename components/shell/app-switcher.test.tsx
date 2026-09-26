@@ -184,6 +184,139 @@ describe('AppSwitcher', () => {
     expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
   });
 
+  it('sends the user to login with no toast or push when the auto-pin session has expired (401)', async () => {
+    const user = userEvent.setup();
+    const onOpenContextSwitcher = vi.fn();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(organisations(['umoja', 'platform']))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            branchId: null,
+            requiresBranchSelection: true,
+            assignedBranchIds: ['ops', 'ops'],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }));
+    renderWithProviders(
+      <AppSwitcher
+        currentModuleId="administration"
+        platformOrganisationId="platform"
+        onOpenContextSwitcher={onOpenContextSwitcher}
+        trigger="icon"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Switch application' }));
+    await user.click(await screen.findByRole('button', { name: /Platform administration/ }));
+
+    await vi.waitFor(() => {
+      expect(router.replace).toHaveBeenCalledWith('/login?reason=session_expired');
+    });
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.refresh).not.toHaveBeenCalled();
+    expect(onOpenContextSwitcher).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
+  });
+
+  it('opens the context switcher with no toast, push or refresh when the organisation POST fails', async () => {
+    const user = userEvent.setup();
+    const onOpenContextSwitcher = vi.fn();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(organisations(['umoja', 'platform']))
+      .mockResolvedValueOnce(new Response('{}', { status: 500 }));
+    renderWithProviders(
+      <AppSwitcher
+        currentModuleId="administration"
+        platformOrganisationId="platform"
+        onOpenContextSwitcher={onOpenContextSwitcher}
+        trigger="icon"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Switch application' }));
+    await user.click(await screen.findByRole('button', { name: /Platform administration/ }));
+
+    await vi.waitFor(() => {
+      expect(onOpenContextSwitcher).toHaveBeenCalledTimes(1);
+    });
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.refresh).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
+  });
+
+  it('lands on All branches with a toast when the auto-pin fails with a plain server error', async () => {
+    const user = userEvent.setup();
+    const onOpenContextSwitcher = vi.fn();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(organisations(['umoja', 'platform']))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            branchId: null,
+            requiresBranchSelection: true,
+            assignedBranchIds: ['ops', 'ops'],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response('{}', { status: 500 }));
+    renderWithProviders(
+      <AppSwitcher
+        currentModuleId="administration"
+        platformOrganisationId="platform"
+        onOpenContextSwitcher={onOpenContextSwitcher}
+        trigger="icon"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Switch application' }));
+    await user.click(await screen.findByRole('button', { name: /Platform administration/ }));
+
+    await vi.waitFor(() => {
+      expect(router.push).toHaveBeenCalledWith('/platform-admin');
+    });
+    expect(router.refresh).toHaveBeenCalled();
+    expect(onOpenContextSwitcher).not.toHaveBeenCalled();
+    expect(await screen.findByText('Switched to platform · All branches')).toBeInTheDocument();
+  });
+
+  it('lands on All branches straight away when the organisation has no branches at all', async () => {
+    const user = userEvent.setup();
+    const onOpenContextSwitcher = vi.fn();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(organisations(['umoja', 'platform']))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ branchId: null, requiresBranchSelection: false, assignedBranchIds: [] }),
+          { status: 200 },
+        ),
+      );
+    renderWithProviders(
+      <AppSwitcher
+        currentModuleId="administration"
+        platformOrganisationId="platform"
+        onOpenContextSwitcher={onOpenContextSwitcher}
+        trigger="icon"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Switch application' }));
+    await user.click(await screen.findByRole('button', { name: /Platform administration/ }));
+
+    await vi.waitFor(() => {
+      expect(router.push).toHaveBeenCalledWith('/platform-admin');
+    });
+    // done-institution never calls the branch endpoint.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(router.refresh).toHaveBeenCalled();
+    expect(onOpenContextSwitcher).not.toHaveBeenCalled();
+    expect(await screen.findByText('Switched to platform · All branches')).toBeInTheDocument();
+  });
+
   it('lands on All branches when several distinct branches are assigned', async () => {
     const user = userEvent.setup();
     const onOpenContextSwitcher = vi.fn();

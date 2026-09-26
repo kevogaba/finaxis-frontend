@@ -154,7 +154,9 @@ describe('ContextSelectionPage', () => {
     expect(await screen.findByText(/page 2 of 2/i)).toBeInTheDocument();
   });
 
-  it('shows safe retryable error copy when organisation selection fails', async () => {
+  it('shows access-denied copy, not the generic retryable one, when organisation selection fails with a 403', async () => {
+    // A 403 here can never succeed on retry (unlike a 5xx or a network error), so it gets its own
+    // safe copy instead of "We couldn't update your context. Please try again."
     fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'member details: secret' }, 403));
     const user = userEvent.setup();
     renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
@@ -162,7 +164,7 @@ describe('ContextSelectionPage', () => {
     await chooseOrganisation(user);
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /couldn.t update your context\. please try again\./i,
+      /you do not have access to this context/i,
     );
     expect(screen.getByRole('alert')).not.toHaveTextContent('member details: secret');
     expect(screen.getByRole('combobox', { name: /organisation/i })).toBeEnabled();
@@ -551,6 +553,33 @@ describe('ContextSelectionPage', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
+  it('moves focus off <body> onto the alert when a lost context unmounts the focused Branch select', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(branchPage([branch])))
+      .mockResolvedValueOnce(jsonResponse({ message: 'context token leaked detail' }, 403));
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+    await chooseBranch(user);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/you do not have access to this context/i);
+    expect(screen.queryByRole('combobox', { name: /branch/i })).not.toBeInTheDocument();
+    // The Branch select it was focused on is gone; the browser would otherwise strand focus on
+    // <body>, so it is recovered onto the alert that replaced it.
+    expect(document.activeElement).toBe(alert);
+  });
+
   it('shows a safe branch-discovery error and retries without exposing response details', async () => {
     fetchMock
       .mockResolvedValueOnce(
@@ -574,6 +603,38 @@ describe('ContextSelectionPage', () => {
     await user.click(screen.getByRole('button', { name: /try again/i }));
 
     expect(await screen.findByRole('combobox', { name: /branch/i })).toBeEnabled();
+  });
+
+  it('moves focus off <body> onto the alert when a branch page 5xxs out from under the focused pagination controls', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          branchPage([branch], { hasNext: true, hasPrevious: false, totalItems: 2, totalPages: 2 }),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: 'backend token: secret' }, 500));
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+    const branchPages = await screen.findByRole('navigation', { name: /branch pages/i });
+    await user.click(within(branchPages).getByRole('button', { name: /next/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/couldn.t load branches/i);
+    expect(screen.queryByRole('navigation', { name: /branch pages/i })).not.toBeInTheDocument();
+    // The pagination nav it was focused on is gone; recover focus onto the alert that replaced it
+    // rather than let it fall to <body>.
+    expect(document.activeElement).toBe(alert);
   });
 
   it('shows an actionable empty branch state after an organisation requires branch selection', async () => {

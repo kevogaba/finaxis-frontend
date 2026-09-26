@@ -20,6 +20,7 @@ import { useToast } from '@/components/providers/toast-provider';
 import {
   fetchOrganisations,
   isContextLost,
+  isSessionExpired,
   selectBranchRequest,
   selectOrganisationRequest,
 } from '@/components/context/context-api';
@@ -156,14 +157,25 @@ export function AppSwitcher({
     }
     let pin: 'ok' | 'lost' | 'failed' = step === 'done-branch' ? 'ok' : 'failed';
     if (typeof step === 'object') {
-      // A failed auto-pin still lands at All branches, exactly as closing the context dialog mid
-      // auto-pin does — unless the branch endpoint also cleared the context cookie (403/409), in
-      // which case there is nothing left to land on and the shared layout must send the user to
-      // /select-context instead.
-      pin = await selectBranchRequest(step.autoSelect).then(
-        () => 'ok' as const,
-        (error: unknown) => (isContextLost(error) ? 'lost' : 'failed'),
-      );
+      try {
+        await selectBranchRequest(step.autoSelect);
+        pin = 'ok';
+      } catch (error) {
+        // A 401 here means the session expired, not that the pin failed — that never succeeds on
+        // its own refresh, so send the user straight to login like the dialog and the hook do,
+        // with no toast or push.
+        if (isSessionExpired(error)) {
+          close();
+          setSwitching(false);
+          router.replace('/login?reason=session_expired');
+          return;
+        }
+        // A failed auto-pin still lands at All branches, exactly as closing the context dialog mid
+        // auto-pin does — unless the branch endpoint also cleared the context cookie (403/409), in
+        // which case there is nothing left to land on and the shared layout must send the user to
+        // /select-context instead.
+        pin = isContextLost(error) ? 'lost' : 'failed';
+      }
     }
     close();
     setSwitching(false);

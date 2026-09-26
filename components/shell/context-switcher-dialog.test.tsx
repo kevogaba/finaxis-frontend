@@ -377,7 +377,6 @@ describe('ContextSwitcherDialog', () => {
 
   it.each([
     ['5xxs', () => Promise.resolve(new Response('{}', { status: 500 }))],
-    ['403s', () => Promise.resolve(new Response('{}', { status: 403 }))],
     ['fails with a network error', () => Promise.reject(new Error('network error'))],
   ])(
     'shows a retryable state with no false success when the current organisation re-POST %s',
@@ -411,6 +410,35 @@ describe('ContextSwitcherDialog', () => {
     },
   );
 
+  it('shows access-denied copy, not the retryable one, when the current organisation re-POST 403s — a retry cannot succeed', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [CURRENT_ORG], page: PAGE }))
+      .mockImplementationOnce(() => Promise.resolve(new Response('{}', { status: 403 })))
+      .mockImplementationOnce(() => json(CHOOSE_BRANCH))
+      .mockImplementationOnce(() => json(BRANCHES_PAGE));
+    renderDialog();
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Umoja SACCO/ }));
+
+    await screen.findByText(/you do not have access to this context/i);
+    expect(screen.queryByText(/couldn't update your context/i)).not.toBeInTheDocument();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.refresh).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Branch' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Umoja SACCO/ }));
+    await user.click(await screen.findByRole('combobox', { name: 'Branch' }));
+    await user.click(screen.getByRole('option', { name: /All branches/ }));
+
+    expect(await screen.findByText('Switched to Umoja SACCO · All branches')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it('sends the user to login when the organisations list fails with a session-expired 401', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementationOnce(() =>
       Promise.resolve(new Response('{}', { status: 401 })),
@@ -438,9 +466,9 @@ describe('ContextSwitcherDialog', () => {
   });
 
   it('closes with a refresh but no toast or push when the branch list 403s for a different, already-committed organisation', async () => {
-    // Unlike the fast-path case above, picking a *different* organisation (org-2) commits it via a
-    // real select-organisation POST first (`committed` gets set) — the bug this covers is that a
-    // later 403 must still clear that stale commit, not let Close finish at the committed org.
+    // Picking a *different* organisation (org-2) commits it via a real select-organisation POST
+    // first (`committed` gets set) — the bug this covers is that a later 403 must still clear that
+    // stale commit, not let Close finish at the committed org.
     const user = userEvent.setup();
     vi.spyOn(globalThis, 'fetch')
       .mockImplementationOnce(() => json({ items: [ORG], page: PAGE }))
@@ -459,6 +487,142 @@ describe('ContextSwitcherDialog', () => {
     expect(router.push).not.toHaveBeenCalled();
     expect(router.refresh).toHaveBeenCalled();
     expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
+  });
+
+  it('closes with a refresh but no toast or push when a failed auto-pin (403) loses the just-committed organisation', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [ORG], page: PAGE }))
+      .mockImplementationOnce(() =>
+        json({ branchId: null, requiresBranchSelection: true, assignedBranchIds: ['b-1'] }),
+      )
+      .mockImplementationOnce(() => Promise.resolve(new Response('{}', { status: 403 })));
+    const onClose = renderDialog();
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Imara SACCO/ }));
+    await screen.findByText(/do not have access/i);
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.refresh).toHaveBeenCalled();
+    expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
+  });
+
+  it('closes with a refresh but no toast or push when a user-picked branch (409) loses the just-committed organisation', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [ORG], page: PAGE }))
+      .mockImplementationOnce(() =>
+        json({ branchId: null, requiresBranchSelection: true, assignedBranchIds: ['b-1', 'b-2'] }),
+      )
+      .mockImplementationOnce(() => json(BRANCHES_PAGE))
+      .mockImplementationOnce(() => Promise.resolve(new Response('{}', { status: 409 })));
+    const onClose = renderDialog();
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Imara SACCO/ }));
+    await user.click(await screen.findByRole('combobox', { name: 'Branch' }));
+    await user.click(screen.getByRole('option', { name: /Westlands/ }));
+    await screen.findByText(/saved context is no longer valid/i);
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.refresh).toHaveBeenCalled();
+    expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
+  });
+
+  it('finishes at the committed organisation on Close when a user-picked branch 5xxs instead of being lost', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [ORG], page: PAGE }))
+      .mockImplementationOnce(() =>
+        json({ branchId: null, requiresBranchSelection: true, assignedBranchIds: ['b-1', 'b-2'] }),
+      )
+      .mockImplementationOnce(() => json(BRANCHES_PAGE))
+      .mockImplementationOnce(() => Promise.resolve(new Response('{}', { status: 500 })));
+    const onClose = renderDialog();
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Imara SACCO/ }));
+    await user.click(await screen.findByRole('combobox', { name: 'Branch' }));
+    await user.click(screen.getByRole('option', { name: /Westlands/ }));
+    // A plain 5xx never clears the commit (only 403/409 do), so the Branch select stays put.
+    await screen.findByText(/couldn't update your context/i);
+    expect(screen.getByRole('combobox', { name: 'Branch' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledWith('/admin');
+    expect(router.refresh).toHaveBeenCalled();
+    expect(await screen.findByText(/Imara SACCO · All branches/)).toBeInTheDocument();
+  });
+
+  it('runs a bare reset and refresh, with no second toast or push, when a pending branch request is lost after Close already finished', async () => {
+    const user = userEvent.setup();
+    let resolveBranch!: (response: Response) => void;
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [ORG], page: PAGE }))
+      .mockImplementationOnce(() =>
+        json({ branchId: null, requiresBranchSelection: true, assignedBranchIds: ['b-1', 'b-2'] }),
+      )
+      .mockImplementationOnce(() => json(BRANCHES_PAGE))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveBranch = resolve;
+          }),
+      );
+    const onClose = vi.fn();
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <ApplicationContextProvider
+          value={{
+            module: { id: 'administration', name: 'Administration' },
+            organization: { id: 'org-1', name: 'Umoja SACCO' },
+            branch: { id: 'b-1', name: 'Head Office' },
+          }}
+        >
+          <ContextSwitcherDialog
+            open={open}
+            onClose={() => {
+              onClose();
+              setOpen(false);
+            }}
+            platformOrganisationId="platform"
+          />
+        </ApplicationContextProvider>
+      );
+    }
+    renderWithProviders(<Harness />);
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Imara SACCO/ }));
+    await user.click(await screen.findByRole('combobox', { name: 'Branch' }));
+    await user.click(screen.getByRole('option', { name: /Westlands/ }));
+    await screen.findByText(/saving branch/i);
+    // The organisation is already committed, so Close finishes at All branches immediately —
+    // the pending branch POST is still in flight underneath.
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.refresh).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/Imara SACCO · All branches/)).toBeInTheDocument();
+
+    resolveBranch(new Response('{}', { status: 403 }));
+
+    // onOrganisationLost's closed-dialog arm runs reset() + a bare refresh() — no second onClose,
+    // no second push, and no second (or different) toast.
+    await vi.waitFor(() => {
+      expect(router.refresh).toHaveBeenCalledTimes(2);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText(/Switched to/)).toHaveLength(1);
   });
 
   it('lets the organisations list be retried after a server error', async () => {

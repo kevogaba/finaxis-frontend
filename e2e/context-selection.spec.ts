@@ -109,8 +109,10 @@ test.describe('Authenticated context selection', () => {
     await selectMuiOption(page, 'Organisation', /Greenfield SACCO/);
     expect((await organisationResponse).status()).toBe(403);
 
+    // A 403 here can never succeed on retry, so it gets the access-denied copy, not the generic
+    // "We couldn't update your context" retryable one.
     await expect(
-      page.getByRole('alert').filter({ hasText: "We couldn't update your context" }),
+      page.getByRole('alert').filter({ hasText: 'You do not have access to this context' }),
     ).toBeVisible();
     await expect(page.getByText(/secret|token|membership/i)).toHaveCount(0);
     await expect(page).toHaveURL(/\/select-context$/);
