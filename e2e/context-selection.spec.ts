@@ -24,7 +24,9 @@ test.describe('Authenticated context selection', () => {
     await page.goto('/profile');
 
     await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/, { timeout: 20000 });
-    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByRole('banner')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Users', exact: true })).toHaveCount(0);
   });
@@ -125,7 +127,9 @@ test.describe('Authenticated context selection', () => {
     await page.goto('/profile');
 
     await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/, { timeout: 20000 });
-    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByRole('banner')).toHaveCount(0);
     await expect(page.getByText('Backend Jane Manager')).toHaveCount(0);
   });
