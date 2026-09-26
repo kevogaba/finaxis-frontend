@@ -289,6 +289,54 @@ function longNames(): RunState {
   };
 }
 
+function multiOrg(): RunState {
+  const tenant = greenfieldTenant();
+  const platform = platformOperator();
+  return {
+    ...tenant,
+    organisations: [...tenant.organisations, ...platform.organisations],
+    memberships: [...tenant.memberships, ...platform.memberships],
+    branches: [...tenant.branches, ...platform.branches],
+    branchAssignments: [...tenant.branchAssignments, ...platform.branchAssignments],
+    roles: [...tenant.roles, ...platform.roles],
+    roleAssignments: [...tenant.roleAssignments, ...platform.roleAssignments],
+  };
+}
+
+function duplicateAssignments(): RunState {
+  const state = greenfieldTenant();
+  // HOME and OPERATE at Head Office only: the backend lists the branch twice and doesn't
+  // auto-select (it only auto-selects when exactly one row comes back).
+  return {
+    ...state,
+    branchAssignments: [
+      assignment(
+        'b0000000-0000-4000-8000-000000000011',
+        IDS.greenfield,
+        IDS.jane,
+        IDS.headOffice,
+        'HOME',
+      ),
+      assignment(
+        'b0000000-0000-4000-8000-000000000012',
+        IDS.greenfield,
+        IDS.jane,
+        IDS.headOffice,
+        'OPERATE',
+      ),
+    ],
+  };
+}
+
+function noBranches(): RunState {
+  const state = greenfieldTenant();
+  return {
+    ...state,
+    memberships: state.memberships.map((membership) => ({ ...membership, type: 'AUDITOR' })),
+    branchAssignments: [],
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -297,6 +345,9 @@ const BUILDERS = {
   'selection-forbidden': () => ({ ...greenfieldTenant(), forbidOrganisationSelection: true }),
   'platform-operator': platformOperator,
   'long-names': longNames,
+  'multi-org': multiOrg,
+  'duplicate-assignments': duplicateAssignments,
+  'no-branches': noBranches,
   // Keeps westlands' branch assignment ACTIVE while the branch itself is SUSPENDED, so a route
   // can prove it lists a SUSPENDED branch (or correctly excludes one) without a branch-lifecycle
   // route to reach that state at runtime.
