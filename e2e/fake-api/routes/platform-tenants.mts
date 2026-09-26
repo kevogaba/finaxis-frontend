@@ -1,5 +1,5 @@
 import { requireContext, requirePermission, requirePlatformContext } from '../access.mts';
-import { pageOf, problem, sendJson } from '../http.mts';
+import { pageOf, parseInstantParam, problem, sendJson } from '../http.mts';
 import { route } from '../router.mts';
 import type { Route } from '../router.mts';
 import type { FakeOrganisation } from '../state.mts';
@@ -43,28 +43,6 @@ function detail(tenant: FakeOrganisation) {
     bootstrap_failure_code: tenant.bootstrapFailureCode,
     updated_at: tenant.updatedAt,
   };
-}
-
-/** Contract §A `instant`: ISO-8601 UTC with a literal `Z` — a date-only value is not one. */
-const INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-
-/**
- * Mirrors the backend binding `created_from`/`created_to` as `Instant`: compares by time, not by
- * string, so an inclusive `created_to` on a tenant's exact `createdAt` matches. An absent or blank
- * value means "no filter"; a present value that isn't a valid instant is a 400 (contract §B).
- */
-function parseInstantParam(query: URLSearchParams, name: string): number | undefined {
-  const value = query.get(name);
-  if (!value) {
-    return undefined;
-  }
-  const time = INSTANT_PATTERN.test(value) ? Date.parse(value) : NaN;
-  if (Number.isNaN(time)) {
-    throw problem(400, 'invalid_parameter', `Invalid ${name}.`, [
-      { field: name, code: 'invalid_parameter', message: 'must be an ISO-8601 instant' },
-    ]);
-  }
-  return time;
 }
 
 export const platformTenantRoutes: Route[] = [

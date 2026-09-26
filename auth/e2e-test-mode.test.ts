@@ -32,14 +32,17 @@ describe('e2e test mode', () => {
     expect(getE2eBetterAuthSession(headersWith(session))).toBeNull();
   });
 
-  it('is inert by default: an unset or non-"1" flag stays off even outside production', () => {
-    vi.stubEnv('FINAXIS_E2E_TEST_MODE', '0');
-    vi.stubEnv('NODE_ENV', 'test');
+  it.each([undefined, '0'])(
+    'is inert by default: an unset or non-"1" flag (%s) stays off even outside production',
+    (flagValue) => {
+      vi.stubEnv('FINAXIS_E2E_TEST_MODE', flagValue);
+      vi.stubEnv('NODE_ENV', 'test');
 
-    expect(getE2eAuthenticatedUser(headersWith(session))).toBeNull();
-    expect(getE2eAccessToken(headersWith(session))).toBeNull();
-    expect(getE2eBetterAuthSession(headersWith(session))).toBeNull();
-  });
+      expect(getE2eAuthenticatedUser(headersWith(session))).toBeNull();
+      expect(getE2eAccessToken(headersWith(session))).toBeNull();
+      expect(getE2eBetterAuthSession(headersWith(session))).toBeNull();
+    },
+  );
 
   it('requires the e2e session cookie', () => {
     vi.stubEnv('FINAXIS_E2E_TEST_MODE', '1');

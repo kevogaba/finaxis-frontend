@@ -106,7 +106,7 @@ export const authRoutes: Route[] = [
         candidate.status === 'ACTIVE',
     );
     if (state.forbidOrganisationSelection || !membership) {
-      throw problem(403, 'forbidden', 'Access is denied.');
+      throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
     }
     const assigned = activeAssignmentRows(state, state.actorUserId, organisationId)
       .map((row) => row.branchId)
@@ -153,7 +153,7 @@ export const authRoutes: Route[] = [
       access.claims.organisationId,
     ).some((row) => row.branchId === branchId);
     if (!allowed) {
-      throw problem(403, 'forbidden', 'Access is denied.');
+      throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
     }
     sendJson(context.res, 200, {
       organisation_id: access.claims.organisationId,

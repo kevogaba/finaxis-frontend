@@ -41,9 +41,9 @@ test.describe('fake API', () => {
     expect(await response.json()).toMatchObject({ code: 'resource_not_found' });
   });
 
-  // No route yet exposes user/role state to assert this over HTTP (Task 2+ adds those routes),
-  // so this seeds directly: two independent tokens for the same scenario must never observe each
-  // other's mutations, which requires every seed to own fresh objects/arrays, not shared fixtures.
+  // No route yet exposes user/role state to assert this over HTTP, so this seeds directly: two
+  // independent tokens for the same scenario must never observe each other's mutations, which
+  // requires every seed to own fresh objects/arrays, not shared fixtures.
   test('seeds independent, unshared fixtures for every call', () => {
     const first = seedScenario('default');
     const second = seedScenario('default');
@@ -95,18 +95,24 @@ test.describe('fake API', () => {
       headers: { ...bearer(), 'X-Active-Organisation-Context': 'stale-context-token' },
     });
     expect(response.status()).toBe(403);
-    expect(await response.json()).toMatchObject({ code: 'invalid_active_tenant_context' });
+    expect(await response.json()).toMatchObject({
+      code: 'invalid_active_tenant_context',
+      detail: 'Active tenant context is invalid or unavailable.',
+    });
   });
 
-  // Controller ruling: Task 1 deferred this — an unknown (camelCase) property on the body is
-  // rejected the same way as every other fake-API route, regardless of the field it's shadowing.
+  // An unknown (camelCase) property on the body is rejected the same way as every other fake-API
+  // route, regardless of the field it's shadowing.
   test('rejects an unknown property on select-organisation', async ({ request }) => {
     const response = await request.post(`${FAKE_API_URL}/api/v1/auth/select-organisation`, {
       headers: bearer(),
       data: { organisationId: '11111111-1111-4111-8111-111111111111' },
     });
     expect(response.status()).toBe(400);
-    expect(await response.json()).toMatchObject({ code: 'invalid_json' });
+    expect(await response.json()).toMatchObject({
+      code: 'invalid_json',
+      detail: 'Malformed request body.',
+    });
   });
 
   // Contract §A ("Missing required fields"): a missing organisation_id is validation_failed

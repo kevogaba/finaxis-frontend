@@ -95,18 +95,21 @@ export async function readBody(req: IncomingMessage): Promise<unknown> {
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
   } catch {
-    throw problem(400, 'invalid_json', 'Request body is not valid JSON.');
+    // Mirrors ApiExceptionHandler.invalidJson: every HttpMessageNotReadableException (malformed
+    // JSON, unrecognized/camelCase property, missing/mistyped field) gets this one generic detail
+    // — the backend never discloses which field, only the request_id for log correlation.
+    throw problem(400, 'invalid_json', 'Malformed request body.');
   }
 }
 
 /** Mirrors ApiJsonCodec: a JSON object whose keys are all known snake_case properties. */
 export function objectBody(body: unknown, allowedKeys: readonly string[]): Record<string, unknown> {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    throw problem(400, 'invalid_json', 'A JSON object body is required.');
+    throw problem(400, 'invalid_json', 'Malformed request body.');
   }
   const unknownKey = Object.keys(body).find((key) => !allowedKeys.includes(key));
   if (unknownKey !== undefined) {
-    throw problem(400, 'invalid_json', `Unrecognized field "${unknownKey}".`);
+    throw problem(400, 'invalid_json', 'Malformed request body.');
   }
   return body as Record<string, unknown>;
 }
@@ -119,12 +122,12 @@ export function stringField(
   const value = body[key];
   if (value === undefined || value === null) {
     if (options.required) {
-      throw problem(400, 'invalid_json', `Missing required field "${key}".`);
+      throw problem(400, 'invalid_json', 'Malformed request body.');
     }
     return null;
   }
   if (typeof value !== 'string') {
-    throw problem(400, 'invalid_json', `Field "${key}" must be a string.`);
+    throw problem(400, 'invalid_json', 'Malformed request body.');
   }
   return value;
 }
@@ -153,6 +156,29 @@ function intParam(
   return value;
 }
 
+/** Contract §A `instant`: ISO-8601 UTC with a literal `Z` — a date-only value is not one. */
+const INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+
+/**
+ * Mirrors the backend binding an instant-typed query parameter (e.g. `created_from`/`created_to`,
+ * `occurred_from`/`occurred_to`) as `Instant`: compares by time, not by string, so an inclusive
+ * upper bound on an exact timestamp still matches. An absent or blank value means "no filter"; a
+ * present value that isn't a valid instant is a 400 (contract §B).
+ */
+export function parseInstantParam(query: URLSearchParams, name: string): number | undefined {
+  const value = query.get(name);
+  if (!value) {
+    return undefined;
+  }
+  const time = INSTANT_PATTERN.test(value) ? Date.parse(value) : NaN;
+  if (Number.isNaN(time)) {
+    throw problem(400, 'invalid_parameter', `Invalid ${name}.`, [
+      { field: name, code: 'invalid_parameter', message: 'must be an ISO-8601 instant' },
+    ]);
+  }
+  return time;
+}
+
 export function pageOf<T>(items: readonly T[], query: URLSearchParams) {
   const number = intParam(query, 'page', 0, 0, Number.MAX_SAFE_INTEGER);
   const size = intParam(query, 'size', 25, 1, 100);
@@ -168,4 +194,34 @@ export function pageOf<T>(items: readonly T[], query: URLSearchParams) {
       has_previous: number > 0,
     },
   };
+}
+
+/**
+ * Renders a caught error as the fake API's response. Checks `headersSent` first: a handler that
+ * already wrote its response and then threw must not write headers again — that would throw
+ * ERR_HTTP_HEADERS_SENT and, left unhandled, crash the whole run (every branch below writes
+ * headers, so this has to run before any of them, including the `invalid_token` one).
+ */
+export function respondToError(res: ServerResponse, instance: string, error: unknown): void {
+  if (res.headersSent) {
+    console.error(error);
+    res.end();
+    return;
+  }
+  if (error instanceof ProblemError) {
+    if (error.problem.code === 'invalid_token') {
+      // Invalid/expired JWT: empty 401 body, like the real resource server.
+      res.writeHead(401, { 'WWW-Authenticate': 'Bearer error="invalid_token"' });
+      res.end();
+      return;
+    }
+    sendProblem(res, instance, error.problem);
+    return;
+  }
+  console.error(error);
+  sendProblem(res, instance, {
+    status: 500,
+    code: 'internal_error',
+    detail: 'An unexpected error occurred.',
+  });
 }

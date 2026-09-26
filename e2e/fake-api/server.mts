@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { ProblemError, problem, sendJson, sendProblem } from './http.mts';
+import { problem, respondToError, sendJson } from './http.mts';
 import { matchRoute } from './router.mts';
 import type { Route } from './router.mts';
 import { authRoutes } from './routes/auth.mts';
@@ -35,28 +35,22 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       path: url.pathname,
     });
   } catch (error) {
-    if (error instanceof ProblemError) {
-      if (error.problem.code === 'invalid_token') {
-        // Invalid/expired JWT: empty 401 body, like the real resource server.
-        res.writeHead(401, { 'WWW-Authenticate': 'Bearer error="invalid_token"' });
-        res.end();
-        return;
-      }
-      sendProblem(res, url.pathname, error.problem);
-      return;
-    }
-    console.error(error);
-    sendProblem(res, url.pathname, {
-      status: 500,
-      code: 'internal_error',
-      detail: 'An unexpected error occurred.',
-    });
+    respondToError(res, url.pathname, error);
   }
 }
 
 const port = Number(process.env.FAKE_API_PORT ?? '3199');
 const server = createServer((req, res) => {
-  void handle(req, res);
+  // `handle` catches everything it can attribute to a route, but a rejection can still escape it
+  // (e.g. the URL parse above, or a bug in `respondToError` itself) — left unhandled, that would
+  // throw an unhandledRejection and kill the fake for the whole run, not just this one request.
+  handle(req, res).catch((error: unknown) => {
+    console.error(error);
+    if (!res.headersSent) {
+      res.writeHead(500);
+    }
+    res.end();
+  });
 });
 
 server.listen(port, '127.0.0.1', () => {

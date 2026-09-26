@@ -1,19 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
 import type { BrowserContext, Page, TestInfo } from '@playwright/test';
+import type { ScenarioName } from '../fake-api/scenarios.mts';
 
 export const SESSION_COOKIE_NAME = 'finaxis.session_token';
 export const SESSION_COOKIE_VALUE = 'e2e-authenticated-session';
 export const RUN_COOKIE_NAME = 'finaxis_e2e_run';
-export const CONTEXT_COOKIE_NAME = 'finaxis_context';
+// The app's own cookie name (auth/auth.types.ts has no imports of its own, so it's safe to pull
+// straight into Playwright without going through a `server-only`/`@/`-aliased module).
+export { CONTEXT_COOKIE_NAME } from '../../auth/auth.types';
 
-/** Mirrors `SCENARIOS` in e2e/fake-api/scenarios.mts. */
-export type FakeApiScenario =
-  | 'default'
-  | 'empty-organisations'
-  | 'selection-forbidden'
-  | 'platform-operator'
-  | 'suspended-branch';
+/** Derived from `BUILDERS` in e2e/fake-api/scenarios.mts, so adding a scenario there is enough. */
+export type FakeApiScenario = ScenarioName;
 
 export function baseUrl(testInfo: TestInfo): string {
   const configured = testInfo.project.use.baseURL;

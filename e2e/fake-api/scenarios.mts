@@ -270,7 +270,9 @@ function platformOperator(): RunState {
   };
 }
 
-const BUILDERS: Record<string, () => RunState> = {
+// `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
+// is the real union, not `string` — the annotation would still check each builder the same way.
+const BUILDERS = {
   default: greenfieldTenant,
   'empty-organisations': () => ({ ...greenfieldTenant(), memberships: [] }),
   'selection-forbidden': () => ({ ...greenfieldTenant(), forbidOrganisationSelection: true }),
@@ -287,12 +289,19 @@ const BUILDERS: Record<string, () => RunState> = {
       ),
     };
   },
-};
+} satisfies Record<string, () => RunState>;
+
+/** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */
+export type ScenarioName = keyof typeof BUILDERS;
 
 export const SCENARIOS: readonly string[] = Object.keys(BUILDERS);
 
 export function seedScenario(name: string): RunState {
-  const build = BUILDERS[name];
+  // `BUILDERS` keeps its literal key type (via `satisfies` above) so `ScenarioName` is precise;
+  // indexing it by an arbitrary runtime `string` needs the wider, explicitly-indexed view below
+  // (`noUncheckedIndexedAccess` still leaves `build` as `(() => RunState) | undefined`).
+  const byName: Readonly<Record<string, () => RunState>> = BUILDERS;
+  const build = byName[name];
   if (!build) {
     throw new Error(`Unknown fake API scenario "${name}".`);
   }
