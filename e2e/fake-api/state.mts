@@ -81,6 +81,24 @@ export interface FakeRoleAssignment {
   status: string;
 }
 
+export interface FakeAuditEvent {
+  id: string;
+  organisationId: string;
+  occurredAt: string;
+  actorUserId: string | null;
+  actorType: 'USER' | 'SYSTEM';
+  branchId: string | null;
+  entityType: string;
+  entityId: string | null;
+  action: string;
+  outcome: string;
+  severity: string;
+  reason: string | null;
+  beforeJson: string | null;
+  afterJson: string | null;
+  metadataJson: string;
+}
+
 /** One isolated backend per bearer token (`e2e.<scenario>.<run>`). Later layers add collections. */
 export interface RunState {
   actorUserId: string;
@@ -92,6 +110,7 @@ export interface RunState {
   branchAssignments: FakeBranchAssignment[];
   roles: FakeRole[];
   roleAssignments: FakeRoleAssignment[];
+  auditEvents: FakeAuditEvent[];
 }
 
 const runs = new Map<string, RunState>();
