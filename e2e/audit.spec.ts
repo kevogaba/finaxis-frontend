@@ -62,7 +62,8 @@ test.describe('audit trail', () => {
     await expect(table.getByRole('row').nth(1)).toContainText('10:59');
 
     await selectMuiOption(page, 'Entity type', /^Branch$/);
-    await expect(page).toHaveURL(/entityType=BRANCH/);
+    // The first filter push can land on a cold `next dev` compile (seen right after `pnpm build`).
+    await expect(page).toHaveURL(/entityType=BRANCH/, { timeout: 15000 });
     await expect(page.getByText('6 events')).toBeVisible();
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
