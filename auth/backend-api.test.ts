@@ -117,6 +117,36 @@ describe('backendApi', () => {
     });
   });
 
+  it('falls back to the X-Request-Id header when the problem body has no request_id', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'internal_error' }), {
+        status: 500,
+        headers: { 'x-request-id': 'req-from-header' },
+      }),
+    );
+
+    const error = await backendApi.get('/api/v1/auth/me', requestHeaders).catch((e: unknown) => e);
+
+    expect(error).toMatchObject({
+      status: 500,
+      code: 'internal_error',
+      requestId: 'req-from-header',
+    });
+  });
+
+  it('falls back to the X-Request-Id header for a non-object problem body', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify('oops'), {
+        status: 500,
+        headers: { 'x-request-id': 'req-from-header' },
+      }),
+    );
+
+    const error = await backendApi.get('/api/v1/auth/me', requestHeaders).catch((e: unknown) => e);
+
+    expect(error).toMatchObject({ status: 500, code: null, requestId: 'req-from-header' });
+  });
+
   it('tolerates an empty error body (invalid JWT) and non-JSON errors', async () => {
     fetchMock.mockResolvedValueOnce(new Response('', { status: 401 }));
 
