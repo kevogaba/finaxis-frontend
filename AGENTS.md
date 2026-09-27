@@ -32,8 +32,17 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   `alignItems`/`justifyContent`/`flexWrap` and `Checkbox`/`Radio`'s `inputRef`/`inputProps` moved
   to `sx` / `slotProps.input`). Check `node_modules/@mui/material/package.json` version and the
   installed major's migration guide before assuming an older API shape.
-- Paginate any future data-listing API/UI — this codebase has none yet, but don't introduce an
-  unpaginated list endpoint or view.
+- Every data-listing UI is server-paginated with state in the URL: page sizes come from
+  `lib/api/paging.ts`'s `PAGE_SIZES`, and lists render `TablePaginationBar`
+  (`components/data-display/table-pagination-bar.tsx`) plus, where the list has filters,
+  `ListToolbar`'s `useListNavigation()` for URL updates. Never introduce an unpaginated list
+  endpoint or view.
+- A context-scoped read goes through `lib/api/tenant-api.ts`'s `apiGet(path, schema)`, where
+  `schema` is a snake_case zod schema defined in the domain's own `<domain>-contract.ts` (e.g.
+  `modules/administration/audit/audit-contract.ts`) that transforms the wire shape to camelCase.
+  A page settles the result with `lib/api/load.ts`'s `load()`, which never throws; render its
+  `ErrorState` on the failure branch instead of swallowing it. `lib/api/problem.ts`'s
+  `describeProblem` never echoes backend response text back to the UI.
 - Maintain accessibility: one `h1` per page, visible focus rings, labelled form fields, errors
   associated with their fields, `prefers-reduced-motion` respected, no serious/critical axe
   violations.
