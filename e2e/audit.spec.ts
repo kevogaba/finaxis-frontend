@@ -76,9 +76,13 @@ test.describe('audit trail', () => {
     // query instead of discarding it.
     await page.getByLabel('From', { exact: true }).fill('2026-09-07T00:00');
     await page.getByRole('button', { name: /next page/i }).click();
-    await expect(page).toHaveURL(/occurredFrom=/);
-    await expect(page).toHaveURL(/page=1/);
     await expect(table.getByRole('row')).toHaveCount(11);
+    // One predicate on the settled URL, not two separate `toHaveURL` polls: a transient
+    // `?occurredFrom=…` followed by a stale `?page=1` would satisfy two polls one after another
+    // without proving the final URL carries both params together.
+    await expect(page).toHaveURL(
+      (url) => url.searchParams.has('occurredFrom') && url.searchParams.get('page') === '1',
+    );
   });
 
   test('opens an event with its before/after state and closes it', async ({
@@ -197,59 +201,67 @@ test.describe('audit trail', () => {
     expect(Math.abs(singleLineHeight - 44)).toBeLessThanOrEqual(1);
   });
 
-  // Layer a11y gate: light and dark, both at desktop and 375px. Each case scans the list, then
-  // opens the first event and scans the open drawer.
-  const AXE_VIEWPORTS = [
-    { label: 'desktop', width: 1280, height: 800, scenario: 'default' as const },
-    { label: '375px', width: 375, height: 812, scenario: 'long-names' as const },
-  ];
+  // Layer a11y gate: light and dark, both at desktop and 375px. Each case authenticates, enters,
+  // scans the list, opens the drawer, and scans again — more sequential work than the file's other
+  // tests. Under full-suite worker contention this can exceed the outer describe's 60s budget, like
+  // context.spec's own axe matrix (e2e/context.spec.ts:209-214).
+  test.describe('audit accessibility', () => {
+    test.describe.configure({ timeout: 90000 });
 
-  for (const colorScheme of ['light', 'dark'] as const) {
-    for (const viewport of AXE_VIEWPORTS) {
-      test(`has no serious or critical accessibility violations (${colorScheme}, ${viewport.label})`, async ({
-        context,
-        page,
-      }, testInfo) => {
-        // Set scheme and viewport before navigating, like shell.spec: InitColorSchemeScript reads
-        // matchMedia on load, so a scheme set after goto would scan whatever scheme the page
-        // happened to boot into.
-        await page.emulateMedia({ colorScheme });
-        await page.setViewportSize(viewport);
-        await authenticate(context, testInfo, viewport.scenario);
-        await enter(page);
+    const AXE_VIEWPORTS = [
+      { label: 'desktop', width: 1280, height: 800, scenario: 'default' as const },
+      { label: '375px', width: 375, height: 812, scenario: 'long-names' as const },
+    ];
 
-        await expect(page.locator('html')).toHaveClass(new RegExp(colorScheme));
-        await expect(page).toHaveTitle(/.+/);
+    for (const colorScheme of ['light', 'dark'] as const) {
+      for (const viewport of AXE_VIEWPORTS) {
+        test(`has no serious or critical accessibility violations (${colorScheme}, ${viewport.label})`, async ({
+          context,
+          page,
+        }, testInfo) => {
+          // Set scheme and viewport before navigating, like shell.spec: InitColorSchemeScript reads
+          // matchMedia on load, so a scheme set after goto would scan whatever scheme the page
+          // happened to boot into.
+          await page.emulateMedia({ colorScheme });
+          await page.setViewportSize(viewport);
+          await authenticate(context, testInfo, viewport.scenario);
+          await enter(page);
 
-        if (viewport.label === '375px') {
+          await expect(page.locator('html')).toHaveClass(new RegExp(colorScheme));
+          await expect(page).toHaveTitle(/.+/);
+
+          if (viewport.label === '375px') {
+            expect(
+              await page.evaluate(
+                () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+              ),
+            ).toBe(false);
+          }
+
+          const listResults = await new AxeBuilder({ page }).analyze();
           expect(
-            await page.evaluate(
-              () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            listResults.violations.filter((violation) =>
+              ['serious', 'critical'].includes(violation.impact ?? ''),
             ),
-          ).toBe(false);
-        }
+          ).toEqual([]);
 
-        const listResults = await new AxeBuilder({ page }).analyze();
-        expect(
-          listResults.violations.filter((violation) =>
-            ['serious', 'critical'].includes(violation.impact ?? ''),
-          ),
-        ).toEqual([]);
+          await page
+            .getByRole('link', { name: /view event/i })
+            .first()
+            .click();
+          const drawer = page.getByRole('dialog', { name: /invited user/i });
+          // Bounded: the first drawer open in this worker may still be compiling its client
+          // bundle, like the drawer test's own first open at :98.
+          await expect(drawer).toBeInViewport({ timeout: 15000 });
 
-        await page
-          .getByRole('link', { name: /view event/i })
-          .first()
-          .click();
-        const drawer = page.getByRole('dialog', { name: /invited user/i });
-        await expect(drawer).toBeInViewport();
-
-        const drawerResults = await new AxeBuilder({ page }).analyze();
-        expect(
-          drawerResults.violations.filter((violation) =>
-            ['serious', 'critical'].includes(violation.impact ?? ''),
-          ),
-        ).toEqual([]);
-      });
+          const drawerResults = await new AxeBuilder({ page }).analyze();
+          expect(
+            drawerResults.violations.filter((violation) =>
+              ['serious', 'critical'].includes(violation.impact ?? ''),
+            ),
+          ).toEqual([]);
+        });
+      }
     }
-  }
+  });
 });
