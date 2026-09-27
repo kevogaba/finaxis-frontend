@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { instantSchema, pageSchema, uuidSchema } from './wire';
+import { businessDateSchema, instantSchema, pageSchema, uuidSchema } from './wire';
 
 const envelope = {
   items: [{ id: 'a' }],
@@ -43,5 +43,11 @@ describe('wire helpers', () => {
     expect(instantSchema.safeParse('2026-07-21T10:15:30Z').success).toBe(true);
     expect(instantSchema.safeParse('2026-07-21T10:15:30.123456Z').success).toBe(true);
     expect(instantSchema.safeParse('21-07-2026').success).toBe(false);
+  });
+
+  it('accepts dd-MM-yyyy business dates only', () => {
+    expect(businessDateSchema.safeParse('07-09-2026').success).toBe(true);
+    expect(businessDateSchema.safeParse('2026-09-07').success).toBe(false);
+    expect(businessDateSchema.safeParse('31-02-2026').success).toBe(false);
   });
 });

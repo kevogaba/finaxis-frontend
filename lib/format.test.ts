@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatInstant, shortId } from './format';
+import { formatBusinessDate, formatInstant, shortId } from './format';
 
 describe('format', () => {
   it('formats an instant in the given timezone as a dense date and 24h time', () => {
@@ -15,5 +15,11 @@ describe('format', () => {
 
   it('shortens identifiers for display', () => {
     expect(shortId('0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b')).toBe('0b6f2f3a');
+  });
+
+  it('formats business dates without timezone shifts', () => {
+    expect(formatBusinessDate('07-09-2026', 'short')).toBe('Mon, 7 Sep 2026');
+    expect(formatBusinessDate('07-09-2026', 'long')).toBe('Monday, 7 September 2026');
+    expect(formatBusinessDate('31-12-2026', 'short')).toBe('Thu, 31 Dec 2026');
   });
 });

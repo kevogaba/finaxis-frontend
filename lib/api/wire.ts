@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { businessDateDay } from '@/lib/business-date';
 
 /**
  * Shared wire primitives for backend responses (contract §A–§B). Domain contracts compose these
@@ -39,3 +40,8 @@ export interface Page<T> {
 export function pageSchema<Item extends z.ZodType>(item: Item) {
   return z.object({ items: z.array(item), page: pageMetadataSchema });
 }
+
+/** `dd-MM-yyyy` business date (contract §A). */
+export const businessDateSchema = z
+  .string()
+  .refine((value) => businessDateDay(value) !== null, 'Expected a dd-MM-yyyy business date');
