@@ -145,6 +145,13 @@ test.describe('business date', () => {
     // server-rendered HTML — a client-side navigation never re-hydrates anything.
     await page.reload();
 
+    // Deterministic server-HTML check (belt-and-braces alongside the console/pageerror
+    // listeners above): page.request shares this context's cookies, and before the fix the
+    // Flight payload carries only a client-module reference for the icon, so this needle
+    // appears in the raw response only when SSR actually rendered it.
+    const appBarHtml = await (await page.request.get('/admin/business-date')).text();
+    expect(appBarHtml).toContain('data-testid="EventOutlinedIcon"');
+
     await expect(
       page
         .getByRole('banner')
@@ -158,6 +165,8 @@ test.describe('business date', () => {
     await expect(page.getByRole('dialog')).toBeHidden();
 
     await page.goto('/profile');
+    const profileHtml = await (await page.request.get('/profile')).text();
+    expect(profileHtml).toContain('data-testid="CheckCircleOutlinedIcon"');
     await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible({
       timeout: 15000,
     });
