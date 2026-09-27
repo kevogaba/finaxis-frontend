@@ -1,11 +1,14 @@
 'use client';
 
+import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Drawer from '@mui/material/Drawer';
 import Typography from '@mui/material/Typography';
 import { DescriptionList } from '@/components/data-display/description-list';
+import { useListNavigationContext } from '@/components/data-display/list-navigation-context';
+import { useListNavigationPending } from '@/components/data-display/use-list-navigation';
 
 export interface AuditDrawerDetail {
   title: string;
@@ -64,8 +67,21 @@ export function AuditEventDrawer({
   closeHref: string;
 }) {
   const router = useRouter();
+  // Reuses the toolbar/pagination's shared transition when one is above (page.tsx wraps both the
+  // list and the drawer in one ListNavigationProvider), so closing also flips the shared
+  // `isPending` — otherwise closing the drawer is a full round trip with no feedback at all.
+  const ctx = useListNavigationContext();
+  const [, localStartTransition] = useTransition();
+  const startTransition = ctx?.startTransition ?? localStartTransition;
+  // A `LinearProgress` elsewhere on the page would be behind this modal's own backdrop (and,
+  // while the backdrop is up, `aria-hidden` on the rest of the app hides an aria-busy region from
+  // assistive tech too) — the Close button's own `loading` state is the one place feedback for
+  // closing is actually visible and announced.
+  const isPending = useListNavigationPending();
   const close = () => {
-    router.push(closeHref, { scroll: false });
+    startTransition(() => {
+      router.push(closeHref, { scroll: false });
+    });
   };
 
   return (
@@ -106,7 +122,7 @@ export function AuditEventDrawer({
             {detail.title}
           </Typography>
         </Box>
-        <Button variant="outlined" onClick={close}>
+        <Button variant="outlined" onClick={close} loading={isPending}>
           Close
         </Button>
       </Box>

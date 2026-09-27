@@ -8,6 +8,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import NextLink from '@/components/navigation/next-link';
+import { LinkPendingIndicator } from '@/components/navigation/link-pending-indicator';
 import { StatusChip } from '@/components/data-display/status-chip';
 import { TruncatedText } from '@/components/data-display/truncated-text';
 
@@ -58,9 +59,10 @@ export function AuditEventTable({
                   href={row.detailHref}
                   scroll={false}
                   variant="caption"
-                  aria-label={`View event ${row.date} ${row.time}`}
+                  aria-label={`View event: ${row.actionLabel}, ${row.date} ${row.time}`}
                 >
                   {row.time}
+                  <LinkPendingIndicator />
                 </Link>
               </TableCell>
               <TableCell>
@@ -75,6 +77,7 @@ export function AuditEventTable({
                     sx={{ display: 'block', maxWidth: 200 }}
                   >
                     {row.actorLabel}
+                    <LinkPendingIndicator />
                   </Link>
                 ) : (
                   <TruncatedText value={row.actorLabel} maxWidth={200} />

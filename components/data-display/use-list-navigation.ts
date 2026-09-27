@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useListNavigationContext } from './list-navigation-context';
 
 // Next keeps rendering the old URL until a push commits, and a later push discards a pending one.
 // So a push made while another is in flight (e.g. a pagination click right after a date field's
@@ -14,6 +15,11 @@ export function useListNavigation() {
   const router = useRouter();
   const pathname = usePathname();
   const query = useSearchParams().toString();
+  // No ListNavigationProvider above (e.g. a lone consumer, or a unit test): fall back to a local
+  // transition so isPending still works, just not shared with a sibling list control.
+  const ctx = useListNavigationContext();
+  const [, localStartTransition] = useTransition();
+  const startTransition = ctx?.startTransition ?? localStartTransition;
   // A committed URL change (a push landing, Back/Forward) or a mount ends the in-flight push.
   useEffect(() => {
     pending = null;
@@ -24,6 +30,14 @@ export function useListNavigation() {
     update(params);
     const to = params.toString();
     pending = { from: query, to };
-    router.push(to ? `${pathname}?${to}` : pathname, { scroll: false });
+    startTransition(() => {
+      router.push(to ? `${pathname}?${to}` : pathname, { scroll: false });
+    });
   };
+}
+
+/** Whether a push started through `useListNavigation()` under the nearest
+ * `ListNavigationProvider` is still in flight (false with no provider). */
+export function useListNavigationPending(): boolean {
+  return useListNavigationContext()?.isPending ?? false;
 }

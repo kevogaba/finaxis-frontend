@@ -1,17 +1,24 @@
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 import Paper from '@mui/material/Paper';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { TablePaginationBar } from '@/components/data-display/table-pagination-bar';
+import { ListNavigationProvider } from '@/components/data-display/list-navigation-context';
+import {
+  ListBusyRegion,
+  ListNavigationProgress,
+} from '@/components/data-display/list-pending-indicator';
 import { PageHeader } from '@/components/shell/page-header';
 import { load } from '@/lib/api/load';
 import type { ProblemView } from '@/lib/api/problem';
+import { lastPageIfPastEnd } from '@/lib/api/paging';
 import { getBranchIndex, getOrganisationTimeZone, resolveUserNames } from '@/lib/api/lookups';
 import { formatInstant, shortId } from '@/lib/format';
 import { toSearchParams } from '@/lib/api/query-string';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import { actionLabel, entityTypeLabel } from '@/modules/administration/audit/audit-vocabulary';
-import { parseAuditQuery } from '@/modules/administration/audit/audit-query';
+import { auditApiPath, parseAuditQuery } from '@/modules/administration/audit/audit-query';
 import { getAuditEvent, listAuditEvents } from '@/modules/administration/audit/audit-service';
 import {
   AuditEventDrawer,
@@ -82,12 +89,21 @@ export default async function AuditTrailPage({ searchParams }: AuditPageProps) {
     );
   }
 
+  // Outside load(): a page past the end (e.g. a bookmarked ?page=5 after the result set shrank)
+  // would otherwise show a contradictory empty state next to pagination that still offers a
+  // "previous page", and MUI logs an out-of-range TablePagination warning.
+  const redirectPage = lastPageIfPastEnd(events.value.page);
+  if (redirectPage !== null) {
+    redirect(hrefWith(params, { page: redirectPage === 0 ? null : String(redirectPage) }));
+  }
+
   const userIds = [
     ...events.value.items.flatMap((event) => (event.actorUserId ? [event.actorUserId] : [])),
     ...events.value.items.flatMap((event) =>
       event.entityType === 'USER' && event.entityId ? [event.entityId] : [],
     ),
     ...(query.actorId ? [query.actorId] : []),
+    ...(query.entityId && query.entityType === 'USER' ? [query.entityId] : []),
   ];
   const names = await resolveUserNames(userIds);
 
@@ -177,26 +193,62 @@ export default async function AuditTrailPage({ searchParams }: AuditPageProps) {
         removeParam: 'actorId',
       }
     : null;
+  const entityChip = query.entityId
+    ? {
+        label: `Entity: ${query.entityType ? entityTypeLabel(query.entityType) : 'Unknown'} · ${
+          query.entityType === 'USER'
+            ? (names.get(query.entityId) ?? shortId(query.entityId))
+            : query.entityType === 'BRANCH'
+              ? (branches.get(query.entityId)?.name ?? shortId(query.entityId))
+              : shortId(query.entityId)
+        }`,
+        removeParam: 'entityId',
+      }
+    : null;
+  const hasFilters = Boolean(
+    query.entityType ??
+    query.entityId ??
+    query.actorId ??
+    query.action ??
+    query.occurredFrom ??
+    query.occurredTo,
+  );
 
   return (
     <>
       {header}
-      <Paper sx={{ overflow: 'hidden' }}>
-        <AuditFilters
-          entityType={query.entityType}
-          action={query.action}
-          resultLabel={`${total} ${total === 1 ? 'event' : 'events'}`}
-          actorChip={actorChip}
-        />
-        {detailProblem && <ErrorState problem={detailProblem} />}
-        {rows.length === 0 ? (
-          <EmptyState title="No audit events" description="No events match these filters." />
-        ) : (
-          <AuditEventTable rows={rows} timeZone={timeZone} />
+      <ListNavigationProvider>
+        <Paper sx={{ overflow: 'hidden', position: 'relative' }}>
+          <AuditFilters
+            entityType={query.entityType}
+            action={query.action}
+            resultLabel={`${total} ${total === 1 ? 'event' : 'events'}`}
+            actorChip={actorChip}
+            entityChip={entityChip}
+            timeZone={timeZone}
+          />
+          <ListNavigationProgress />
+          <ListBusyRegion>
+            {detailProblem && <ErrorState problem={detailProblem} />}
+            {rows.length === 0 ? (
+              <EmptyState
+                title="No audit events"
+                description={
+                  hasFilters
+                    ? 'No events match these filters.'
+                    : 'No administrative events have been recorded yet.'
+                }
+              />
+            ) : (
+              <AuditEventTable key={auditApiPath(query)} rows={rows} timeZone={timeZone} />
+            )}
+            <TablePaginationBar page={events.value.page} />
+          </ListBusyRegion>
+        </Paper>
+        {drawer && (
+          <AuditEventDrawer detail={drawer} closeHref={hrefWith(params, { event: null })} />
         )}
-        <TablePaginationBar page={events.value.page} />
-      </Paper>
-      {drawer && <AuditEventDrawer detail={drawer} closeHref={hrefWith(params, { event: null })} />}
+      </ListNavigationProvider>
     </>
   );
 }

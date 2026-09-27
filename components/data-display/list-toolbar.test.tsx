@@ -51,6 +51,9 @@ const FIELDS_WITH_CLEARS = [
 ];
 
 const DATETIME_FIELDS = [{ kind: 'datetime' as const, name: 'occurredFrom', label: 'From' }];
+const END_OF_MINUTE_FIELDS = [
+  { kind: 'datetime' as const, name: 'occurredTo', label: 'To', endOfMinute: true },
+];
 
 const PAGE = {
   number: 0,
@@ -61,6 +64,10 @@ const PAGE = {
   hasPrevious: false,
 };
 
+// vitest.config.ts pins TZ to Africa/Nairobi, matching the org zone used below, so the browser-zone
+// helper text stays hidden unless a test passes a *different* `timeZone`.
+const NAIROBI = 'Africa/Nairobi';
+
 describe('ListToolbar', () => {
   beforeEach(() => {
     push.mockReset();
@@ -69,7 +76,7 @@ describe('ListToolbar', () => {
 
   it('writes a filter to the URL and resets the page', async () => {
     const user = userEvent.setup();
-    renderWithProviders(<ListToolbar fields={FIELDS} resultLabel="41 events" />);
+    renderWithProviders(<ListToolbar fields={FIELDS} resultLabel="41 events" timeZone={NAIROBI} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Entity type' }));
     await user.click(screen.getByRole('option', { name: 'Branch' }));
@@ -79,7 +86,7 @@ describe('ListToolbar', () => {
 
   it('removes a filter when "all" is chosen and clears everything', async () => {
     const user = userEvent.setup();
-    renderWithProviders(<ListToolbar fields={FIELDS} resultLabel="41 events" />);
+    renderWithProviders(<ListToolbar fields={FIELDS} resultLabel="41 events" timeZone={NAIROBI} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Entity type' }));
     await user.click(screen.getByRole('option', { name: 'All entity types' }));
@@ -91,27 +98,64 @@ describe('ListToolbar', () => {
     );
   });
 
-  it('shows the result count and removable chips', async () => {
+  it('falls back to "all" for a URL value that is not among the field options', () => {
+    search = 'entityType=NOPE';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    renderWithProviders(<ListToolbar fields={FIELDS} resultLabel="30 events" timeZone={NAIROBI} />);
+
+    expect(screen.getByRole('combobox', { name: 'Entity type' })).toHaveTextContent(
+      'All entity types',
+    );
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('out-of-range'));
+
+    warn.mockRestore();
+  });
+
+  it('shows the result count as a status region with removable chips', async () => {
     search = 'actorId=0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
     const user = userEvent.setup();
     renderWithProviders(
       <ListToolbar
         fields={FIELDS}
         resultLabel="3 events"
+        timeZone={NAIROBI}
         chips={[{ label: 'Actor: Jane', removeParam: 'actorId' }]}
       />,
     );
 
-    expect(screen.getByText('3 events')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('3 events');
     screen.getByRole('button', { name: 'Actor: Jane' }).focus();
     await user.keyboard('{Delete}');
     expect(push).toHaveBeenCalledWith('/admin/audit', { scroll: false });
   });
 
+  it('removes a chip on Enter/Space and moves focus to Clear filters', async () => {
+    search = 'actorId=0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ListToolbar
+        fields={FIELDS}
+        resultLabel="3 events"
+        timeZone={NAIROBI}
+        chips={[{ label: 'Actor: Jane', removeParam: 'actorId' }]}
+      />,
+    );
+
+    const chip = screen.getByRole('button', { name: 'Actor: Jane' });
+    chip.focus();
+    await user.keyboard('{Enter}');
+
+    expect(push).toHaveBeenCalledWith('/admin/audit', { scroll: false });
+    expect(screen.getByRole('link', { name: 'Clear filters' })).toHaveFocus();
+  });
+
   it('deletes the cleared params in the same navigation when the field changes', async () => {
     search = 'entityType=USER&action=user.invite&page=2';
     const user = userEvent.setup();
-    renderWithProviders(<ListToolbar fields={FIELDS_WITH_CLEARS} resultLabel="1 event" />);
+    renderWithProviders(
+      <ListToolbar fields={FIELDS_WITH_CLEARS} resultLabel="1 event" timeZone={NAIROBI} />,
+    );
 
     await user.click(screen.getByRole('combobox', { name: 'Entity type' }));
     await user.click(screen.getByRole('option', { name: 'Branch' }));
@@ -119,9 +163,29 @@ describe('ListToolbar', () => {
     expect(push).toHaveBeenCalledWith('/admin/audit?entityType=BRANCH', { scroll: false });
   });
 
+  it('shows the browser zone only when it differs from the page timeZone', () => {
+    search = 'page=2';
+    renderWithProviders(
+      <ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" timeZone="UTC" />,
+    );
+
+    expect(screen.getByText('Your local time (Africa/Nairobi)')).toBeInTheDocument();
+  });
+
+  it('shows no zone helper when the browser and page zones match', () => {
+    search = 'page=2';
+    renderWithProviders(
+      <ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" timeZone={NAIROBI} />,
+    );
+
+    expect(screen.queryByText(/Your local time/)).not.toBeInTheDocument();
+  });
+
   it('navigates on datetime blur only when the resulting instant changed', () => {
     search = 'page=2';
-    renderWithProviders(<ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" />);
+    renderWithProviders(
+      <ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" timeZone={NAIROBI} />,
+    );
 
     const field = screen.getByLabelText('From');
     fireEvent.change(field, { target: { value: '2026-09-01T10:00' } });
@@ -141,7 +205,9 @@ describe('ListToolbar', () => {
   it('does not navigate on a datetime blur that leaves the instant unchanged', () => {
     const iso = '2026-09-01T10:00:00.000Z';
     search = new URLSearchParams({ occurredFrom: iso }).toString();
-    renderWithProviders(<ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" />);
+    renderWithProviders(
+      <ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" timeZone={NAIROBI} />,
+    );
 
     // 10:00 UTC is 13:00 in Africa/Nairobi (+03:00): pins that the field shows local time.
     expect(screen.getByLabelText('From')).toHaveValue('2026-09-01T13:00');
@@ -151,12 +217,85 @@ describe('ListToolbar', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it('does not navigate on an unchanged blur even when the URL instant has seconds or no milliseconds', () => {
+    // toLocalInput truncates to the minute, so both of these display as the same "10:00" the user
+    // never edited; comparing local forms (not ISO strings) must skip both, not just an exact
+    // millisecond match.
+    search = new URLSearchParams({ occurredFrom: '2026-09-01T07:00:30Z' }).toString();
+    renderWithProviders(
+      <ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" timeZone={NAIROBI} />,
+    );
+
+    fireEvent.blur(screen.getByLabelText('From'));
+
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('commits on Enter, exactly once', () => {
+    search = 'page=2';
+    renderWithProviders(
+      <ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" timeZone={NAIROBI} />,
+    );
+
+    const field = screen.getByLabelText('From');
+    fireEvent.change(field, { target: { value: '2026-09-01T10:00' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    const expectedParams = new URLSearchParams();
+    expectedParams.set('occurredFrom', '2026-09-01T07:00:00.000Z');
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith(`/admin/audit?${expectedParams.toString()}`, {
+      scroll: false,
+    });
+  });
+
+  it('skips a year the browser accepts but Date cannot parse, instead of throwing', () => {
+    search = 'page=2';
+    renderWithProviders(
+      <ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" timeZone={NAIROBI} />,
+    );
+
+    const field = screen.getByLabelText('From');
+    fireEvent.change(field, { target: { value: '10000-01-01T00:00' } });
+    // jsdom keeps the typed value rather than sanitizing it away — otherwise this would pass for
+    // the wrong reason (an empty value is already a no-op).
+    expect(field).toHaveValue('10000-01-01T00:00');
+
+    // A listener that throws doesn't propagate back through element.dispatchEvent() per the DOM
+    // spec (and React 19 doesn't rethrow it synchronously either) — jsdom instead reports it as a
+    // window 'error' event, so `expect(() => fireEvent.blur(field)).not.toThrow()` would pass
+    // whether or not the RangeError guard exists. This listener is the actual, non-vacuous check.
+    const onError = vi.fn();
+    window.addEventListener('error', onError);
+    fireEvent.blur(field);
+    window.removeEventListener('error', onError);
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('stores the end of the chosen minute for an endOfMinute field', () => {
+    search = '';
+    renderWithProviders(
+      <ListToolbar fields={END_OF_MINUTE_FIELDS} resultLabel="1 event" timeZone={NAIROBI} />,
+    );
+
+    const field = screen.getByLabelText('To');
+    fireEvent.change(field, { target: { value: '2026-09-01T10:00' } });
+    fireEvent.blur(field);
+
+    expect(push).toHaveBeenCalledWith(
+      expect.stringMatching(/occurredTo=2026-09-01T07%3A00%3A59\.999Z$/),
+      { scroll: false },
+    );
+  });
+
   it('builds a click-triggered navigation on the query a still-in-flight blur push produced', async () => {
     const user = userEvent.setup();
     search = '';
     const { rerender } = renderWithProviders(
       <>
-        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" />
+        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" timeZone={NAIROBI} />
         <TablePaginationBar page={PAGE} />
       </>,
     );
@@ -181,14 +320,14 @@ describe('ListToolbar', () => {
     search = 'occurredFrom=2026-09-01T07%3A00%3A00.000Z&page=1';
     rerender(
       <>
-        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" />
+        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" timeZone={NAIROBI} />
         <TablePaginationBar page={PAGE} />
       </>,
     );
     search = '';
     rerender(
       <>
-        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" />
+        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" timeZone={NAIROBI} />
         <TablePaginationBar page={PAGE} />
       </>,
     );
@@ -202,7 +341,7 @@ describe('ListToolbar', () => {
     search = 'entityType=USER';
     rerender(
       <>
-        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" />
+        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" timeZone={NAIROBI} />
         <TablePaginationBar page={PAGE} />
       </>,
     );

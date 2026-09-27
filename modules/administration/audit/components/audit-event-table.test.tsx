@@ -34,14 +34,31 @@ describe('AuditEventTable', () => {
     expect(within(row).getByText('user.invite')).toBeInTheDocument();
     expect(within(row).getByText('New teller for Westlands')).toBeInTheDocument();
     expect(within(row).getByText('Success')).toBeInTheDocument();
-    expect(within(row).getByRole('link', { name: /view event/i })).toHaveAttribute(
-      'href',
-      '/admin/audit?event=e1',
-    );
+    expect(
+      within(row).getByRole('link', { name: 'View event: Invited user, 07 Sep 2026 10:28' }),
+    ).toHaveAttribute('href', '/admin/audit?event=e1');
     expect(within(row).getByRole('link', { name: 'Grace Nduku' })).toHaveAttribute(
       'href',
       '/admin/audit?actorId=u1',
     );
+  });
+
+  it('gives same-minute rows distinct "View event" link names', () => {
+    renderWithProviders(
+      <AuditEventTable
+        rows={[
+          ROW,
+          { ...ROW, id: 'e2', actionLabel: 'Approved user', detailHref: '/admin/audit?event=e2' },
+        ]}
+        timeZone="UTC"
+      />,
+    );
+    expect(
+      screen.getByRole('link', { name: 'View event: Invited user, 07 Sep 2026 10:28' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'View event: Approved user, 07 Sep 2026 10:28' }),
+    ).toBeInTheDocument();
   });
 
   it('keeps very long entity and actor values on one line with the full text available', () => {
@@ -51,7 +68,18 @@ describe('AuditEventTable', () => {
     );
     // The entity cell (TruncatedText) and the linked actor cell both carry the full value in
     // `title`, matched separately since both hold the same long string.
-    expect(screen.getAllByTitle(long)).toHaveLength(2);
+    const titled = screen.getAllByTitle(long);
+    expect(titled).toHaveLength(2);
+    for (const node of titled) {
+      // Asserts the truncation itself, not only that a `title` attribute exists: the actor Link
+      // and the entity TruncatedText both keep the text on one line with an ellipsis.
+      expect(node).toHaveClass('MuiTypography-noWrap');
+      expect(node).toHaveStyle({ whiteSpace: 'nowrap', textOverflow: 'ellipsis' });
+    }
+    const actorLink = titled.find((node) => node.tagName === 'A');
+    const entityCell = titled.find((node) => node.tagName === 'SPAN');
+    if (!actorLink || !entityCell) throw new Error('expected an actor link and an entity span');
+    expect(actorLink).toHaveStyle({ maxWidth: '200px' });
   });
 
   it('truncates a System (unlinked) actor the same way as a linked one', () => {
@@ -62,6 +90,9 @@ describe('AuditEventTable', () => {
         timeZone="UTC"
       />,
     );
-    expect(screen.getByTitle(long)).toBeInTheDocument();
+    const node = screen.getByTitle(long);
+    expect(node).toBeInTheDocument();
+    expect(node).toHaveClass('MuiTypography-noWrap');
+    expect(node).toHaveStyle({ whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '200px' });
   });
 });
