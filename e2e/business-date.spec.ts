@@ -124,6 +124,49 @@ test.describe('business date', () => {
     await expect(hero(page).getByRole('button')).toHaveCount(0);
   });
 
+  test('hydrates the app-bar chip and the profile chips without a mismatch', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo);
+    await enter(page);
+
+    const hydrationErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error' && /hydrat/i.test(message.text())) {
+        hydrationErrors.push(message.text());
+      }
+    });
+    page.on('pageerror', (error) => {
+      if (/hydrat/i.test(error.message)) hydrationErrors.push(error.message);
+    });
+
+    // A full document load, unlike the client navigation enter() ends on, is what hydrates
+    // server-rendered HTML — a client-side navigation never re-hydrates anything.
+    await page.reload();
+
+    await expect(
+      page
+        .getByRole('banner')
+        .getByRole('link', { name: 'Mon, 7 Sep 2026 · Business date · Open' }),
+    ).toBeVisible();
+
+    // Prove hydration actually ran (not just that the server HTML rendered).
+    await hero(page).getByRole('button', { name: 'Start close of business', exact: true }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
+
+    await page.goto('/profile');
+    await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible({
+      timeout: 15000,
+    });
+    await page.getByRole('button', { name: 'Technical details' }).click();
+    await expect(page.getByText(/User ID:/)).toBeVisible();
+
+    expect(hydrationErrors).toEqual([]);
+  });
+
   // Layer a11y gate: light and dark, both at desktop and 375px, like audit.spec's own matrix
   // (e2e/audit.spec.ts:329-387). Each case scans the page, opens the dialog, and scans again.
   test.describe('business date accessibility', () => {

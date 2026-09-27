@@ -9,9 +9,9 @@ import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined';
-import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
 import { PageHeader } from '@/components/shell/page-header';
 import { initialsOf } from '@/components/shell/initials';
+import { SignedInChip } from '@/components/profile/signed-in-chip';
 import type { FinaxisUser } from '@/auth/auth.types';
 
 interface ProfileViewProps {
@@ -52,13 +52,7 @@ export function ProfileView({ user, signedInAt }: ProfileViewProps) {
               </Typography>
             )}
             <Stack direction="row" spacing={1} sx={{ justifyContent: 'center', mt: 2 }}>
-              <Chip
-                icon={<CheckCircleOutlined />}
-                label="Signed in"
-                color="success"
-                size="small"
-                variant="outlined"
-              />
+              <SignedInChip />
               <Chip label="Keycloak" size="small" variant="outlined" />
             </Stack>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>

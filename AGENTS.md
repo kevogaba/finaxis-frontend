@@ -28,6 +28,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   with dotted palette-path strings (e.g. `sx={{ color: 'brand.onNavy' }}`), and route `next/link`
   through `components/navigation/next-link.tsx` when a Server Component needs to pass it as a
   `component` prop.
+- Never pass a pre-built React element from a Server Component into an MUI prop that MUI gates
+  with `isValidElement`/`cloneElement` (e.g. Chip `icon`/`avatar`/`deleteIcon`). React's Flight
+  client can deliver it to SSR as a lazy wrapper, MUI drops it, and hydration fails. Render that
+  component in a small `'use client'` file that builds the element itself and takes only primitive
+  props (see `modules/administration/business-date/components/business-date-chip.tsx`).
 - This is Material UI v9: some props renamed since earlier majors (e.g. `Stack`'s
   `alignItems`/`justifyContent`/`flexWrap` and `Checkbox`/`Radio`'s `inputRef`/`inputProps` moved
   to `sx` / `slotProps.input`). Check `node_modules/@mui/material/package.json` version and the
