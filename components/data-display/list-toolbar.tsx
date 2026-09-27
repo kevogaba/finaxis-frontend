@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import FormControl from '@mui/material/FormControl';
@@ -11,6 +11,7 @@ import Select from '@mui/material/Select';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import NextLink from '@/components/navigation/next-link';
+import { useListNavigation } from './use-list-navigation';
 
 export type ToolbarField =
   | {
@@ -49,16 +50,15 @@ function toLocalInput(iso: string | null): string {
 
 /** Filter bar (prototype `.toolbar`). Every change rewrites the URL and returns to page 0. */
 export function ListToolbar({ fields, resultLabel, chips = [] }: ListToolbarProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const navigateList = useListNavigation();
 
   const navigate = (update: (params: URLSearchParams) => void) => {
-    const params = new URLSearchParams(searchParams.toString());
-    update(params);
-    params.delete('page');
-    const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    navigateList((params) => {
+      update(params);
+      params.delete('page');
+    });
   };
 
   const setParam = (name: string, value: string, clears: readonly string[] = []) => {

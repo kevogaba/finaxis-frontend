@@ -1,9 +1,9 @@
 'use client';
 
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import TablePagination from '@mui/material/TablePagination';
 import { PAGE_SIZES } from '@/lib/api/paging';
 import type { PageMetadata } from '@/lib/api/wire';
+import { useListNavigation } from './use-list-navigation';
 
 interface TablePaginationBarProps {
   page: PageMetadata;
@@ -15,16 +15,7 @@ export function TablePaginationBar({
   page,
   rowsPerPageOptions = PAGE_SIZES,
 }: TablePaginationBarProps) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  const go = (update: (params: URLSearchParams) => void) => {
-    const params = new URLSearchParams(searchParams.toString());
-    update(params);
-    const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  };
+  const go = useListNavigation();
 
   return (
     <TablePagination

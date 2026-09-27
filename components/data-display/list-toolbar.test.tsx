@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { fireEvent, screen } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import { ListToolbar } from './list-toolbar';
+import { TablePaginationBar } from './table-pagination-bar';
 
 // The real Next.js router is memoized; a fresh object per render breaks tests that assert on
 // calls across re-renders. Return one stable router object from vi.hoisted instead.
@@ -50,6 +51,15 @@ const FIELDS_WITH_CLEARS = [
 ];
 
 const DATETIME_FIELDS = [{ kind: 'datetime' as const, name: 'occurredFrom', label: 'From' }];
+
+const PAGE = {
+  number: 0,
+  size: 10,
+  totalItems: 25,
+  totalPages: 3,
+  hasNext: true,
+  hasPrevious: false,
+};
 
 describe('ListToolbar', () => {
   beforeEach(() => {
@@ -117,7 +127,10 @@ describe('ListToolbar', () => {
     fireEvent.change(field, { target: { value: '2026-09-01T10:00' } });
     fireEvent.blur(field);
 
-    const iso = new Date('2026-09-01T10:00').toISOString();
+    // Pinned to Africa/Nairobi (vitest.config.ts): 10:00 local (+03:00) is 07:00 UTC. A literal
+    // (not a computed `new Date(...).toISOString()`) so removing that TZ pin turns this red on a
+    // UTC CI runner instead of silently passing.
+    const iso = '2026-09-01T07:00:00.000Z';
     const expectedParams = new URLSearchParams();
     expectedParams.set('occurredFrom', iso);
     expect(push).toHaveBeenCalledWith(`/admin/audit?${expectedParams.toString()}`, {
@@ -130,8 +143,73 @@ describe('ListToolbar', () => {
     search = new URLSearchParams({ occurredFrom: iso }).toString();
     renderWithProviders(<ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" />);
 
+    // 10:00 UTC is 13:00 in Africa/Nairobi (+03:00): pins that the field shows local time.
+    expect(screen.getByLabelText('From')).toHaveValue('2026-09-01T13:00');
+
     fireEvent.blur(screen.getByLabelText('From'));
 
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('builds a click-triggered navigation on the query a still-in-flight blur push produced', async () => {
+    const user = userEvent.setup();
+    search = '';
+    const { rerender } = renderWithProviders(
+      <>
+        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" />
+        <TablePaginationBar page={PAGE} />
+      </>,
+    );
+
+    const field = screen.getByLabelText('From');
+    fireEvent.change(field, { target: { value: '2026-09-01T10:00' } });
+    fireEvent.blur(field);
+    await user.click(screen.getByRole('button', { name: /next page/i }));
+
+    // The blur's push (occurredFrom, pinned to Africa/Nairobi) hasn't committed — useSearchParams
+    // still reports the pre-blur `search`. The pagination click must build on the pending query,
+    // not on that stale snapshot, or the just-typed filter is lost.
+    expect(push).toHaveBeenLastCalledWith(
+      '/admin/audit?occurredFrom=2026-09-01T07%3A00%3A00.000Z&page=1',
+      { scroll: false },
+    );
+
+    // Simulate that navigation committing, then the user going Back to the pre-blur URL — the
+    // same query the pending record's `from` was keyed on. With no clearing effect, `pending.from
+    // === query` would match again and resurrect the stale occurredFrom filter. The commit's own
+    // render (not a click) is what must clear it.
+    search = 'occurredFrom=2026-09-01T07%3A00%3A00.000Z&page=1';
+    rerender(
+      <>
+        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" />
+        <TablePaginationBar page={PAGE} />
+      </>,
+    );
+    search = '';
+    rerender(
+      <>
+        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" />
+        <TablePaginationBar page={PAGE} />
+      </>,
+    );
+    await user.click(screen.getByRole('button', { name: /next page/i }));
+
+    // The stale pending record was cleared on commit, so this click builds on the real (empty)
+    // query, not the resurrected occurredFrom filter.
+    expect(push).toHaveBeenLastCalledWith('/admin/audit?page=1', { scroll: false });
+
+    // A later click after an unrelated commit builds only on that real URL too.
+    search = 'entityType=USER';
+    rerender(
+      <>
+        <ListToolbar fields={DATETIME_FIELDS} resultLabel="25 events" />
+        <TablePaginationBar page={PAGE} />
+      </>,
+    );
+    await user.click(screen.getByRole('button', { name: /next page/i }));
+
+    expect(push).toHaveBeenLastCalledWith('/admin/audit?entityType=USER&page=1', {
+      scroll: false,
+    });
   });
 });
