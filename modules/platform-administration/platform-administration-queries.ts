@@ -23,14 +23,6 @@ function optionalText(value: string | null | undefined): string | undefined {
   return trimmed?.length ? trimmed : undefined;
 }
 
-function queryFromParams(params: URLSearchParams): URLSearchParams {
-  const result = new URLSearchParams();
-  for (const [key, value] of params) {
-    if (value !== '') result.set(key, value);
-  }
-  return result;
-}
-
 export function parseTenantListQuery(params: URLSearchParams): TenantListQuery {
   return {
     q: optionalText(params.get('q')),
@@ -80,14 +72,4 @@ export function parseBranchListQuery(params: URLSearchParams): BranchListQuery {
   };
 }
 
-export function toQueryString(query: Record<string, string | number | undefined>): string {
-  const params = queryFromParams(
-    new URLSearchParams(
-      Object.entries(query)
-        .filter((entry): entry is [string, string | number] => entry[1] !== undefined)
-        .map(([key, value]) => [key, String(value)]),
-    ),
-  );
-  const value = params.toString();
-  return value ? `?${value}` : '';
-}
+export { toQueryString } from '@/lib/api/query-string';
