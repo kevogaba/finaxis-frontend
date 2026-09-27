@@ -45,8 +45,9 @@ phrase), `status`, `detail` (safe message), `instance` (path, no query), `code`,
 `user_id`, `occurred_from`). `code` — `NotBlank`, `Email`, `Pattern`, `Size`, `NotNull`, `invalid`,
 `invalid_parameter`, `missing_parameter`. `message` — DTO message or validator default.
 Nested list-element fields are non-null, so a missing element field yields `invalid_json`, not a
-violation. Bad paging on `/auth/organisations` and `/auth/branches` yields `validation_failed` with
-`violations: null`.
+violation. Bad paging (`size` outside 1–100) yields `400 invalid_parameter` with `violations: null`
+on every paged route observed; only `/auth/organisations` (size=0, 101) and `/platform/tenants`
+(size=0) were probed live.
 
 ## C. Response types
 

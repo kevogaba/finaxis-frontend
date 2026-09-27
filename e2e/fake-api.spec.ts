@@ -129,16 +129,17 @@ test.describe('fake API', () => {
     });
   });
 
-  // Contract §B: bad paging on the auth list routes is validation_failed with no violations,
-  // unlike every other route's pageOf failure (which keeps a field-level violations array).
-  test('rejects bad paging on /auth/organisations as validation_failed with no violations', async ({
+  // Contract §B (L0 live finding): bad paging (page/size out of range) is `invalid_parameter`
+  // with no violations on every paged route — http.mts's `intParam` throws this directly, so
+  // there's no auth-only quirk left to carve out.
+  test('rejects bad paging on /auth/organisations as invalid_parameter with no violations', async ({
     request,
   }) => {
     const response = await request.get(`${FAKE_API_URL}/api/v1/auth/organisations?size=0`, {
       headers: bearer(),
     });
     expect(response.status()).toBe(400);
-    expect(await response.json()).toMatchObject({ code: 'validation_failed', violations: null });
+    expect(await response.json()).toMatchObject({ code: 'invalid_parameter', violations: null });
   });
 
   // Contract §C: /me's branches[] is "per ACTIVE assignment ... may include SUSPENDED branches",

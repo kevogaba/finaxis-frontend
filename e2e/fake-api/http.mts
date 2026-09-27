@@ -145,13 +145,9 @@ function intParam(
   }
   const value = Number(raw);
   if (!Number.isInteger(value) || value < min || value > max) {
-    throw problem(400, 'validation_failed', `Invalid ${name}.`, [
-      {
-        field: name,
-        code: 'invalid',
-        message: `must be between ${String(min)} and ${String(max)}`,
-      },
-    ]);
+    // L0 (live finding): bad paging is `invalid_parameter` with no violations on every paged
+    // route, not the auth-only `validation_failed` quirk the fake used to carve out.
+    throw problem(400, 'invalid_parameter', `Invalid ${name}.`);
   }
   return value;
 }
