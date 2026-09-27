@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
+import TablePagination from '@mui/material/TablePagination';
 import TextField from '@mui/material/TextField';
 import { renderWithProviders } from '@/test/test-utils';
 import { createFinaxisTheme } from './create-finaxis-theme';
@@ -80,6 +81,34 @@ function effectiveDeclaration(
     }
   }
   return value;
+}
+
+/** The full selector and declarations of the last emitted rule whose selector ends in the
+ * literal, stable `suffix` text (e.g. `.MuiTablePagination-select:focus-visible`) — for a
+ * component whose own emotion hash class lands on an ancestor node (TablePagination's InputBase
+ * wrapper), not on the focusable element itself, so `hashClassOf`/`effectiveDeclaration` (keyed
+ * off the target element's own hash class) can't find it. */
+function ruleEndingIn(css: string, suffix: string): { selector: string; declarations: string } {
+  const escaped = suffix.replace(/[.:#]/g, '\\$&');
+  const pattern = new RegExp(`([^{}]*${escaped})\\{([^}]*)\\}`, 'g');
+  let found: { selector: string; declarations: string } | undefined;
+  for (const match of css.matchAll(pattern)) {
+    found = { selector: match[1] ?? '', declarations: match[2] ?? '' };
+  }
+  if (!found) {
+    throw new Error(`No rule found ending in ${suffix}`);
+  }
+  return found;
+}
+
+function propertyValue(declarations: string, property: string): string | undefined {
+  for (const declaration of declarations.split(';')) {
+    const colon = declaration.indexOf(':');
+    if (colon > 0 && declaration.slice(0, colon).trim() === property) {
+      return declaration.slice(colon + 1).trim();
+    }
+  }
+  return undefined;
 }
 
 describe('MuiIconButton colour (finding 1)', () => {
@@ -262,5 +291,43 @@ describe('focus ring (MUI focusVisible; deferred from layer 02)', () => {
     expect(
       varName(effectiveDeclaration(css, hash, '\\.Mui-focusVisible', 'outline-color') ?? ''),
     ).toBe(varName(theme.vars.palette.focus));
+  });
+});
+
+describe('TablePagination rows-per-page select focus ring (layer 07b gate finding 1)', () => {
+  it('gives the keyboard-focused select the house ring: outset, in the focus colour', () => {
+    const { getByRole } = renderWithProviders(
+      <TablePagination
+        component="div"
+        count={25}
+        page={0}
+        rowsPerPage={10}
+        onPageChange={vi.fn()}
+        onRowsPerPageChange={vi.fn()}
+      />,
+    );
+    const css = allEmittedCss();
+
+    // The combobox div's own emotion hash class lands on an ancestor (the InputBase wrapper),
+    // so read the rule off the stable `.MuiTablePagination-select` class instead.
+    const { selector, declarations } = ruleEndingIn(
+      css,
+      '.MuiTablePagination-select:focus-visible',
+    );
+
+    // Prove the rule actually reaches the rendered combobox, not just that some rule with this
+    // literal text exists: `matches()` resolves the full (ancestor-hash-prefixed) selector
+    // against the real document tree.
+    const combobox = getByRole('combobox', { name: /rows per page/i });
+    expect(combobox.matches(selector.replace(':focus-visible', ''))).toBe(true);
+
+    expect(varName(propertyValue(declarations, 'outline-color') ?? '')).toBe(
+      varName(theme.vars.palette.focus),
+    );
+    // Same house ring as an ordinary button: outset (the `--_focusVisible-offset` default of 1),
+    // not the inset Tab/rail variants.
+    expect(propertyValue(declarations, 'outline-offset')).toMatch(
+      /^calc\(var\(--_focusVisible-offset/,
+    );
   });
 });

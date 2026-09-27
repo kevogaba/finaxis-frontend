@@ -400,6 +400,16 @@ export function createFinaxisTheme() {
           // resolves to `& .MuiTablePagination-actions` on the toolbar (not inert, unlike
           // `notchedOutline` above).
           actions: { '& .MuiIconButton-root': { width: 32, height: 32 } },
+          // Rows-per-page (layer 07b gate finding 1). This div is a bare Select display, not a
+          // ButtonBase, so it never gets the theme-wide `.Mui-focusVisible` ring (a JS class
+          // ButtonBase/Tab/etc. add themselves) — MUI's own built-in style for it is only a
+          // ~12%-opacity `background-color` on `:focus` (TablePagination.js's
+          // `TablePaginationInputBase`), which reads as almost no cue at all (WCAG 2.4.7). Spread
+          // the same resolved ring `theme.focusVisible` (not a hand copy) so it stays one place to
+          // tune (Ruling 5) and keeps the house look: outset +2px, `palette.focus`.
+          select: ({ theme }) => ({
+            '&:focus-visible': theme.focusVisible === false ? undefined : theme.focusVisible,
+          }),
         },
       },
       MuiTabs: {
