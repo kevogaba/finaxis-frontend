@@ -1,6 +1,6 @@
 import 'server-only';
 import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { redirect, unstable_rethrow } from 'next/navigation';
 import { BackendApiError } from '@/auth/backend-api';
 import { contextSelectionRedirectPath } from '@/auth/context-selection-redirect';
 import { describeProblem, type ProblemView } from './problem';
@@ -21,6 +21,10 @@ export async function load<T>(promise: Promise<T>): Promise<Loaded<T>> {
   try {
     return { ok: true, value: await promise };
   } catch (error) {
+    // A Next.js control-flow error (redirect()/notFound()/permanentRedirect(), including a
+    // dynamic-rendering bail-out) must keep propagating, never turn into a swallowed, logged
+    // "Something went wrong" — describeProblem has no way to tell those apart from a real failure.
+    unstable_rethrow(error);
     redirectIfSessionLost(error, await headers());
     return { ok: false, problem: describeProblem(error) };
   }

@@ -47,6 +47,7 @@ export default defineConfig({
         'auth/**/*.ts',
         'config/**/*.ts',
         'modules/**/*.ts',
+        'lib/**/*.ts',
       ],
       exclude: [
         '**/*.d.ts',

@@ -43,6 +43,15 @@ const GENERIC = {
 export function describeProblem(error: unknown): ProblemView {
   if (error instanceof BackendApiError) {
     const known = BY_STATUS[error.status] ?? GENERIC;
+    // A 5xx with no backend request id (a network failure, or a backend that didn't send one)
+    // otherwise leaves the user with no support reference and the server with no log at all.
+    if (error.status >= 500 && error.requestId === null) {
+      const requestId = crypto.randomUUID();
+      console.error(
+        `Backend request failed with no request id (support reference ${requestId}): status ${error.status}`,
+      );
+      return { ...known, code: error.code, requestId };
+    }
     return { ...known, code: error.code, requestId: error.requestId };
   }
 
