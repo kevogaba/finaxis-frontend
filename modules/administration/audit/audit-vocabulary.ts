@@ -90,10 +90,22 @@ export function actionLabel(action: string): string {
   return verb ? `${humanizeEnum(subject)}: ${verb.replace(/_/g, ' ')}` : humanizeEnum(subject);
 }
 
-export function actionsForEntityType(entityType: string | undefined) {
-  return entityType
+/**
+ * Action options for the Action select, narrowed to `entityType`. `selected` is the parsed
+ * `AuditQuery.action` (never the raw URL value; parseAuditQuery owns validation). It is appended
+ * when the narrowed list lacks it (an unlisted §G transition, or `membership.suspend`/`reactivate`
+ * recorded under MEMBERSHIP), so the Select names an applied filter instead of rendering blank.
+ */
+export function actionsForEntityType(
+  entityType?: string,
+  selected?: string,
+): readonly { value: string; label: string }[] {
+  const actions = entityType
     ? AUDIT_ACTIONS.filter((action) => action.entityType === entityType)
-    : [...AUDIT_ACTIONS];
+    : AUDIT_ACTIONS;
+  return selected && !actions.some((action) => action.value === selected)
+    ? [...actions, { value: selected, label: actionLabel(selected) }]
+    : actions;
 }
 
 export function entityTypeLabel(entityType: string): string {

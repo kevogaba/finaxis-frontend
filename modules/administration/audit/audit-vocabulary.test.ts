@@ -39,4 +39,18 @@ describe('audit vocabulary', () => {
     const values = AUDIT_ACTIONS.map((action) => action.value);
     expect(new Set(values).size).toBe(values.length);
   });
+
+  it('appends a selected action the narrowed list lacks, without duplicating a listed one', () => {
+    expect(actionsForEntityType('MEMBERSHIP', 'membership.suspend')).toContainEqual({
+      value: 'membership.suspend',
+      label: 'Suspended membership',
+    });
+    expect(actionsForEntityType(undefined, 'user_account.invite')).toContainEqual({
+      value: 'user_account.invite',
+      label: 'User account: invite',
+    });
+    expect(actionsForEntityType('ROLE', 'role.create')).toHaveLength(
+      actionsForEntityType('ROLE').length,
+    );
+  });
 });
