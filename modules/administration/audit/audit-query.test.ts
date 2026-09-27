@@ -33,4 +33,28 @@ describe('audit query', () => {
       '/api/v1/tenant/audit-events?entity_type=BRANCH&page=1&size=20',
     );
   });
+
+  it('maps every filter to its snake_case wire name', () => {
+    expect(
+      auditApiPath({
+        entityType: 'USER',
+        entityId: 'e1111111-1111-4111-8111-111111111111',
+        actorId: 'a2222222-2222-4222-8222-222222222222',
+        action: 'user.invite',
+        occurredFrom: '2026-09-01T00:00:00.000Z',
+        occurredTo: '2026-09-02T00:00:00.000Z',
+        page: 1,
+        size: 20,
+      }),
+    ).toBe(
+      '/api/v1/tenant/audit-events' +
+        '?entity_type=USER' +
+        '&entity_id=e1111111-1111-4111-8111-111111111111' +
+        '&actor_id=a2222222-2222-4222-8222-222222222222' +
+        '&action=user.invite' +
+        '&occurred_from=2026-09-01T00%3A00%3A00.000Z' +
+        '&occurred_to=2026-09-02T00%3A00%3A00.000Z' +
+        '&page=1&size=20',
+    );
+  });
 });

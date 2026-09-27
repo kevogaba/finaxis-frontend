@@ -166,7 +166,8 @@ lib/
 ├── api/                        # Context-scoped backend reads: tenant-api.ts's `apiGet`, paging
 │                                # (paging.ts), wire schemas (wire.ts), problem mapping and
 │                                # `load()` (problem.ts, load.ts), bounded name/branch lookups
-│                                # (lookups.ts)
+│                                # (lookups.ts), URL query-string helpers (query-string.ts's
+│                                # `toQueryString`/`toSearchParams`)
 └── format.ts                    # Shared display formatting: `formatInstant` (organisation
                                    # timezone, else UTC with a label), `shortId`
 modules/
@@ -279,20 +280,29 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   `modules/administration/administration-navigation.ts`.
 - The Audit trail (`/admin/audit`, `modules/administration/audit/`) reads
   `GET /tenant/audit-events` and `GET /tenant/audit-events/{id}` and renders them with pagination,
-  a detail drawer (before/after JSON, actor/entity/branch facts), and a removable actor chip. Known
-  limits:
-  - Only structured filters exist (entity type, action, actor, date range) — no free-text,
-    outcome, severity, branch, or event-type filter, because the backend doesn't expose one yet
-    (`docs/backend-gaps.md` BG-16).
+  a detail drawer (before/after JSON, actor/entity/branch facts), and removable actor/entity chips
+  (`?actorId=`/`?entityId=`, the latter reachable only via a hand-edited or shared link today).
+  Known limits:
+  - Only structured filters exist (entity type, entity, action, actor, date range) — no
+    free-text, outcome, severity, branch, or event-type filter, because the backend doesn't
+    expose one yet (`docs/backend-gaps.md` BG-16).
   - An actor is filtered by clicking their name on a visible row, not by a search box, until a
     users directory ships a picker.
   - Actor and entity names are resolved only for the IDs on the current page (deduplicated,
     bounded lookups); an actor or entity not resolvable falls back to their id.
   - The branch lookup used to label rows is bounded to the first 500 branches in the tenant.
-  - The table shows short IDs; the drawer shows the full actor/entity/request/correlation IDs as
+  - The Branch column shows the branch stamped on the _request's_ selected context, not
+    necessarily the branch the action was performed on (wire contract §E.4, `docs/backend-gaps.md`
+    BG-16); relabelling this in the UI is left to a later visual pass.
+  - The table shows short IDs. The drawer's Actor fact shows the resolved name when one is
+    available, else the full actor user ID (with the actor's external subject in parentheses when
+    it has one); the drawer's entity, request, and correlation IDs always render as full IDs — all
     selectable text (no copy affordance yet).
   - Times render in the organisation's timezone (labelled, e.g. `Africa/Nairobi`), falling back to
-    UTC when the organisation's timezone isn't one `Intl` recognizes.
+    UTC — and branches to short IDs — whenever `/tenant` or `/branches` isn't readable in the
+    current context, which is the more common fallback case (e.g. the backend seed's IAM_ADMIN
+    role, which holds `audit.view` without `tenant.view` or `branch.view`); a timezone value
+    `Intl` itself rejects falls back the same way, but that is rarer.
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) reads live, paginated data from the
   backend — tenant directory and tenant detail — through

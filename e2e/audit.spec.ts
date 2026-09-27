@@ -137,6 +137,99 @@ test.describe('audit trail', () => {
     await expect(page.getByText('25 events')).toBeVisible();
   });
 
+  test('shows the rail link with audit.view, a not-found detail, an empty filtered state, and redirects a page past the end', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo);
+    // Positive control for the gating test below: the "hides ... without audit.view" test's
+    // `toHaveCount(0)` only proves something with the label doesn't exist without permission —
+    // this proves it exists (and is findable by that same query) with it.
+    await enter(page, '/admin');
+    await expect(page.getByRole('link', { name: 'Audit trail' })).toBeVisible();
+
+    // An unknown but well-formed event id 404s on the detail read; the list stays usable next to
+    // the inline error (Ruling 39), never a `notFound()` full-page replacement.
+    await page.goto('/admin/audit?event=00000000-0000-4000-8000-000000000000');
+    await expect(page.getByRole('heading', { level: 1, name: 'Audit trail' })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page.getByRole('alert').filter({ hasText: 'Not found' })).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Audit events' })).toBeVisible();
+
+    // No seed carries entityType ORGANISATION: the filter narrows to zero, with the *filtered*
+    // empty copy (a filter is set), not the "nothing recorded yet" one.
+    // After a hard `page.goto()` reload, a hidden duplicate with the *same* text as the real
+    // (visible) one has been observed here — for both this result count and the empty-state copy
+    // below — and it has outlived at least one full 5s assertion retry, so it is not a one-paint
+    // artifact a short wait would reliably clear. The mechanism is unconfirmed (see the report's
+    // concerns); both queries below use `visible`/`getByRole` to exclude it regardless of cause,
+    // the same way this file's existing `getByRole('alert').filter(...)` on :157 excludes the
+    // unrelated route announcer. The result count is exact-matched, since '0 events' is a
+    // substring of '30 events'.
+    await page.goto('/admin/audit?entityType=ORGANISATION');
+    await expect(page.getByRole('status').filter({ hasText: /^0 events$/ })).toBeVisible();
+    await expect(
+      page.getByText('No events match these filters.').filter({ visible: true }),
+    ).toBeVisible();
+
+    // 30 events at the default size 20 gives 2 pages (0, 1); a bookmarked ?page=5 redirects to
+    // the last one instead of showing an empty page next to "previous page" pagination. Bounded
+    // at 15000, not the 5000 default: the redirect target re-runs the full list+tenant+branches
+    // round trip a second time (once for ?page=5, once more for the redirected ?page=1).
+    await page.goto('/admin/audit?page=5');
+    await expect(page).toHaveURL((url) => url.searchParams.get('page') === '1', {
+      timeout: 15000,
+    });
+    await expect(page.getByRole('status').filter({ hasText: /^30 events$/ })).toBeVisible();
+  });
+
+  test('shows a pending indicator while a filter push or a link navigation is in flight', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo);
+    await enter(page);
+
+    // Slows only the next matching request so the pending state has time to render — installed
+    // after enter() so it never touches the context-selection round trip.
+    await page.route('**/admin/audit*', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      await route.continue();
+    });
+
+    await selectMuiOption(page, 'Entity type', /^Branch$/);
+    await expect(page.locator('[aria-busy="true"]')).toHaveCount(1);
+    await expect(page.getByRole('progressbar', { name: 'Loading' })).toBeVisible();
+    await expect(page).toHaveURL(/entityType=BRANCH/, { timeout: 15000 });
+    await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+
+    // Back to the unfiltered list (still through the delayed route) so the newest seed
+    // (user.invite) is the first row again for the link check below.
+    await page.getByRole('link', { name: 'Clear filters' }).click();
+    await expect(page.getByText('30 events')).toBeVisible({ timeout: 15000 });
+
+    const timeLink = page.getByRole('link', { name: /view event/i }).first();
+    await timeLink.click();
+    // Decorative (aria-hidden), so it's found by its MUI class, not a role.
+    await expect(timeLink.locator('.MuiCircularProgress-root')).toBeVisible();
+    const drawer = page.getByRole('dialog', { name: /invited user/i });
+    await expect(drawer).toBeVisible({ timeout: 15000 });
+
+    // Closing goes through the same delayed route: the LinearProgress/aria-busy pair is dimmed
+    // behind the modal's own backdrop and hidden from assistive tech (MUI's Modal marks the rest
+    // of the app aria-hidden while open), so the Close button's own `loading` state — MUI sets
+    // `disabled` for it (Button.d.ts) — is the one place this is actually visible/announced.
+    const closeButton = drawer.getByRole('button', { name: 'Close' });
+    await closeButton.click();
+    await expect(closeButton).toBeDisabled();
+    // Lets the close actually land (past the 800ms delay) before unroute() — otherwise the route
+    // handler's `route.continue()` can fire after the test (and the page) is already gone.
+    await expect(page).not.toHaveURL(/event=/, { timeout: 15000 });
+
+    await page.unroute('**/admin/audit*');
+  });
+
   test('hides the audit trail without audit.view', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'no-audit-permission');
     await enter(page, '/admin');
@@ -199,6 +292,33 @@ test.describe('audit trail', () => {
       return clone.getBoundingClientRect().height;
     });
     expect(Math.abs(singleLineHeight - 44)).toBeLessThanOrEqual(1);
+  });
+
+  // L06-I1: the host running this suite is Africa/Nairobi, same as the seed org, so the helper
+  // text never renders there — a UTC browser is the only way to prove it renders at all, and that
+  // the helper text under From/To doesn't drag those inputs out of line with Entity type's.
+  test.describe('with a browser timezone that differs from the organisation', () => {
+    test.use({ timezoneId: 'UTC' });
+
+    test('shows the local-time helper and keeps the toolbar inputs aligned', async ({
+      context,
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await authenticate(context, testInfo);
+      await enter(page);
+
+      // Both From and To show it.
+      await expect(page.getByText('Your local time (UTC)')).toHaveCount(2);
+
+      const entityTypeBox = requireBox(
+        await page.getByRole('combobox', { name: 'Entity type' }).locator('..').boundingBox(),
+      );
+      const fromBox = requireBox(
+        await page.getByLabel('From', { exact: true }).locator('..').boundingBox(),
+      );
+      expect(Math.abs(entityTypeBox.y - fromBox.y)).toBeLessThanOrEqual(1);
+    });
   });
 
   // Layer a11y gate: light and dark, both at desktop and 375px. Each case authenticates, enters,
