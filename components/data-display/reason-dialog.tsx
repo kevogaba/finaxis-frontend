@@ -24,7 +24,7 @@ interface ReasonDialogProps {
   onClose: () => void;
   onSuccess: () => void;
   /** Extra fields rendered above the reason (e.g. the advance date). */
-  fields?: (fieldErrors: FieldErrors) => ReactNode;
+  fields?: (fieldErrors: Partial<Record<string, string>>) => ReactNode;
 }
 
 const REASON_MAX = 500;
