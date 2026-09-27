@@ -9,6 +9,7 @@ import type { ProblemView } from '@/lib/api/problem';
 import { getBranchIndex, getOrganisationTimeZone, resolveUserNames } from '@/lib/api/lookups';
 import { formatInstant, shortId } from '@/lib/format';
 import { toSearchParams } from '@/lib/api/query-string';
+import { humanizeEnum } from '@/components/data-display/status-chip';
 import { actionLabel, entityTypeLabel } from '@/modules/administration/audit/audit-vocabulary';
 import { parseAuditQuery } from '@/modules/administration/audit/audit-query';
 import { getAuditEvent, listAuditEvents } from '@/modules/administration/audit/audit-service';
@@ -137,7 +138,7 @@ export default async function AuditTrailPage({ searchParams }: AuditPageProps) {
       const d = detail.value;
       const when = formatInstant(d.occurredAt, timeZone);
       const actor = d.actorUserId
-        ? ((await resolveUserNames([d.actorUserId])).get(d.actorUserId) ?? shortId(d.actorUserId))
+        ? ((await resolveUserNames([d.actorUserId])).get(d.actorUserId) ?? d.actorUserId)
         : 'System';
       drawer = {
         title: actionLabel(d.action),
@@ -153,8 +154,8 @@ export default async function AuditTrailPage({ searchParams }: AuditPageProps) {
             label: 'Branch',
             value: d.branchId ? (branches.get(d.branchId)?.name ?? d.branchId) : '—',
           },
-          { label: 'Outcome', value: d.outcome },
-          { label: 'Severity', value: d.severity },
+          { label: 'Outcome', value: humanizeEnum(d.outcome) },
+          { label: 'Severity', value: humanizeEnum(d.severity) },
           { label: 'Reason', value: d.reason ?? '—' },
           { label: 'Request ID', value: d.requestId ?? '—' },
           { label: 'Correlation ID', value: d.correlationId ?? '—' },
