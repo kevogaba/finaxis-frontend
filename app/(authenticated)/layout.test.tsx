@@ -13,6 +13,7 @@ const { profileToFinaxisUser, renderedShell } = vi.hoisted(() => ({
       image: undefined,
       name: profile.full_name,
       organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
+      permissions: (profile.permissions as string[] | undefined) ?? [],
       roles: ['Branch Teller'],
       username: undefined,
     };
@@ -47,6 +48,10 @@ vi.mock('@/auth/context-service', () => ({
     profileToFinaxisUser(profile, fallbackUser) as unknown,
 }));
 
+vi.mock('@/modules/administration/business-date/components/business-date-indicator', () => ({
+  BusinessDateIndicator: () => null,
+}));
+
 vi.mock('@/components/shell/app-shell', () => ({
   AppShell: ({
     children,
@@ -54,14 +59,25 @@ vi.mock('@/components/shell/app-shell', () => ({
     initialNavCollapsed,
     platformOrganisationId,
     user,
+    businessDate,
+    notifications,
   }: {
     children: React.ReactNode;
     context: unknown;
     initialNavCollapsed: boolean;
     platformOrganisationId: unknown;
     user: unknown;
+    businessDate: unknown;
+    notifications: unknown;
   }) => {
-    renderedShell({ context, initialNavCollapsed, platformOrganisationId, user });
+    renderedShell({
+      context,
+      initialNavCollapsed,
+      platformOrganisationId,
+      user,
+      businessDate,
+      notifications,
+    });
     return children;
   },
 }));
@@ -129,11 +145,52 @@ describe('AuthenticatedLayout', () => {
         image: undefined,
         name: 'Jane Backend',
         organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
+        permissions: [],
         roles: ['Branch Teller'],
         username: undefined,
       },
+      businessDate: null,
+      notifications: expect.objectContaining({
+        administration: expect.anything(),
+        'platform-administration': expect.anything(),
+      }),
     });
     expect(profileToFinaxisUser).toHaveBeenCalledWith(profile, user);
+  });
+
+  it.each([
+    ['administration', ['business_date.view'], true],
+    ['administration', [], false],
+    ['platform-administration', ['business_date.view'], false],
+  ])('module %s with %j shows the business date: %s', async (moduleId, permissions, shown) => {
+    getAuthenticatedUser.mockResolvedValueOnce({
+      id: 'user-1',
+      name: 'Jane Muthoni',
+      email: 'jane.muthoni@finaxis.test',
+      roles: [],
+      branches: [],
+    });
+    getCurrentContextProfile.mockResolvedValueOnce({
+      kind: 'resolved',
+      context: {
+        branch: null,
+        module: { id: moduleId, name: 'Workspace' },
+        organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
+      },
+      profile: {
+        user_id: 'u',
+        full_name: 'Jane',
+        email: 'j@x',
+        branches: [],
+        roles: [],
+        permissions,
+      },
+    });
+
+    render(await AuthenticatedLayout({ children: <div /> }));
+
+    const props = renderedShell.mock.calls[0]?.[0] as { businessDate: unknown };
+    expect(props.businessDate !== null).toBe(shown);
   });
 
   it('redirects to /login with reason=session_expired when there is no session', async () => {

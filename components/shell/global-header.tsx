@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -21,6 +22,10 @@ interface GlobalHeaderProps {
   platformOrganisationId: string;
   onOpenNavigation: () => void;
   onOpenContextSwitcher: () => void;
+  /** App-bar business date chip (spec §8); absent when the workspace or permission excludes it. */
+  businessDate?: ReactNode;
+  /** Workspace-specific notifications slot (spec §8), populated by later PRs. */
+  notifications?: ReactNode;
 }
 
 /** 68 px app bar (prototype `.topbar`): workspace, context, then global controls. */
@@ -29,6 +34,8 @@ export function GlobalHeader({
   platformOrganisationId,
   onOpenNavigation,
   onOpenContextSwitcher,
+  businessDate,
+  notifications,
 }: GlobalHeaderProps) {
   const { module, organization, branch } = useApplicationContext();
 
@@ -93,6 +100,12 @@ export function GlobalHeader({
 
         <Box sx={{ flexGrow: 1 }} />
 
+        {/* Hides below `lg`; the chip's own label ellipsis (maxWidth: 100%) shrinks it first.
+            ponytail: the prototype's icon-only band (≤ 1180 px) is deferred to the visual pass. */}
+        {businessDate && (
+          <Box sx={{ display: { xs: 'none', lg: 'flex' }, minWidth: 0 }}>{businessDate}</Box>
+        )}
+
         <Stack direction="row" sx={{ alignItems: 'center', gap: 0.75, flexShrink: 0 }}>
           <AppSwitcher
             trigger="icon"
@@ -100,6 +113,7 @@ export function GlobalHeader({
             platformOrganisationId={platformOrganisationId}
             onOpenContextSwitcher={onOpenContextSwitcher}
           />
+          {notifications}
           <ThemeModeMenu />
           <UserMenu user={user} />
         </Stack>

@@ -27,6 +27,10 @@ interface AppShellProps {
   initialNavCollapsed: boolean;
   platformOrganisationId: string;
   children: ReactNode;
+  /** App-bar business date chip (spec §8); the layout supplies it per workspace and permission. */
+  businessDate?: ReactNode;
+  /** Workspace notifications, keyed like `NAVIGATION` — each workspace shows only its own slot. */
+  notifications?: Partial<Record<ApplicationContext['module']['id'], ReactNode>>;
 }
 
 /**
@@ -39,6 +43,8 @@ export function AppShell({
   initialNavCollapsed,
   platformOrganisationId,
   children,
+  businessDate,
+  notifications,
 }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(initialNavCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -84,6 +90,8 @@ export function AppShell({
             onOpenContextSwitcher={() => {
               setContextOpen(true);
             }}
+            businessDate={businessDate}
+            notifications={notifications?.[context.module.id]}
           />
           <Box component="main" sx={{ flexGrow: 1, px: { xs: 3.5, md: 6 }, pt: 5, pb: 4 }}>
             {children}

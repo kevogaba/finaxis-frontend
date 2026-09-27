@@ -100,4 +100,34 @@ describe('GlobalHeader', () => {
       screen.getByRole('button', { name: /switch organisation or branch.*all branches/i }),
     ).toBeInTheDocument();
   });
+
+  it('renders the business date slot', () => {
+    renderWithProviders(
+      <ApplicationContextProvider value={CONTEXT}>
+        <GlobalHeader
+          user={USER}
+          platformOrganisationId="platform"
+          onOpenNavigation={vi.fn()}
+          onOpenContextSwitcher={vi.fn()}
+          businessDate={<span>Business date slot</span>}
+        />
+      </ApplicationContextProvider>,
+    );
+    expect(screen.getByText('Business date slot')).toBeInTheDocument();
+  });
+
+  it('renders the notifications slot', () => {
+    renderWithProviders(
+      <ApplicationContextProvider value={CONTEXT}>
+        <GlobalHeader
+          user={USER}
+          platformOrganisationId="platform"
+          onOpenNavigation={vi.fn()}
+          onOpenContextSwitcher={vi.fn()}
+          notifications={<span>Notifications slot</span>}
+        />
+      </ApplicationContextProvider>,
+    );
+    expect(screen.getByText('Notifications slot')).toBeInTheDocument();
+  });
 });
