@@ -130,10 +130,11 @@ app/
 ├── (public)/login/page.tsx  # Split-screen login page (Better Auth Keycloak sign-in)
 ├── (authenticated)/          # Server-guarded routes: layout.tsx validates session + context
 │   ├── layout.tsx             # Authoritative auth guard for /admin, /profile, /platform-admin
-│   ├── admin/                 # Overview and Audit trail pages; later layers add Approval queue,
-│   │                            # Users & access, Branches, Roles & permissions, Settings, and
-│   │                            # Business date as their own nav items (spec §8)
+│   ├── admin/                 # Overview, Business date, and Audit trail pages; later layers add
+│   │                            # Approval queue, Users & access, Branches, Roles & permissions,
+│   │                            # and Settings as their own nav items (spec §8)
 │   │   ├── layout.tsx           # Redirects a platform context to /platform-admin
+│   │   ├── business-date/page.tsx # Current date/status hero, close-of-business actions, history
 │   │   └── audit/page.tsx       # Audit trail: entity/action/date filters, pagination, an event
 │   │                              # detail drawer with before/after JSON
 │   ├── platform-admin/         # Read-only workspace, gated to the platform organisation's context
@@ -170,10 +171,15 @@ lib/
 │                                # `load()` (problem.ts, load.ts), bounded name/branch lookups
 │                                # (lookups.ts), URL query-string helpers (query-string.ts's
 │                                # `toQueryString`/`toSearchParams`)
+├── business-date.ts             # `dd-MM-yyyy` business date parsing/compare/convert
+                                   # (`businessDateDay`, `isoToBusinessDate`, `nextBusinessDateIso`)
 └── format.ts                    # Shared display formatting: `formatInstant` (organisation
-                                   # timezone, else UTC with a label), `shortId`
+                                   # timezone, else UTC with a label), `shortId`,
+                                   # `formatBusinessDate` (short/long, no timezone shift)
 modules/
-├── administration/            # Administration module + navigation registration; audit/ holds
+├── administration/            # Administration module + navigation registration; business-date/
+│                                # holds the business date contract, service, rules, and Server
+│                                # Actions (modules/administration/business-date/); audit/ holds
 │                                # the audit trail's contract, query parsing, service, and
 │                                # vocabulary (modules/administration/audit/)
 └── platform-administration/   # Platform module: read-only tenant backend integration
@@ -185,12 +191,16 @@ components/
 │                                # PaginationControls
 ├── data-display/               # Reusable list building blocks: ListToolbar, TablePaginationBar,
 │                                # StatusChip, DescriptionList, TruncatedText, EmptyState,
-│                                # ErrorState, useListNavigation
+│                                # ErrorState, useListNavigation, SectionCard (bordered surface with
+│                                # a header row), ReasonDialog (one reusable confirm/reason dialog
+│                                # per mutation, a client-generated idempotency key per opening)
 ├── navigation/                 # next/link client re-export (Next.js 16 RSC boundary workaround)
 ├── profile/                   # Profile view
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle, ToastProvider
 └── shell/                      # AppShell, header, drawer, context switcher dialog, app switcher,
-                                 # user menu, workspace navigation
+                                 # user menu, workspace navigation, tenant-/platform-notifications
+                                 # (app-bar notification slot stubs, spec §8; both render null until
+                                 # a later PR populates them)
 theme/
 ├── create-finaxis-theme.ts   # Single theme, light/dark colorSchemes, component defaults
 ├── theme.types.ts              # Palette module augmentation (brand.* tokens)
@@ -201,7 +211,9 @@ proxy.ts                        # Optimistic cookie-presence redirect (not a tru
 test/                           # Vitest setup + renderWithProviders
 e2e/
 ├── fake-api/                   # Standalone fake backend (plain Node, `.mts`; `routes/` handlers,
-│                                # `scenarios.mts` seed data, `state.mts` run state)
+│                                # `scenarios.mts` seed data, `state.mts` run state,
+│                                # `idempotency.mts`'s `sendIdempotent` (Idempotency-Key replay/
+│                                # reuse), `audit-log.mts`'s `recordAuditEvent`)
 ├── support/                     # Shared spec helpers (`auth.ts`)
 └── *.spec.ts                    # Playwright specs
 docs/authentication/            # Architecture, Keycloak setup, security, session-model docs
@@ -276,10 +288,21 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   backend stays the authority. The rail's collapsed/expanded preference persists in a
   `finaxis_nav` cookie read server-side (`app/(authenticated)/layout.tsx`) so first paint already
   renders the right rail width.
-- Administration currently ships the Overview and Audit trail pages; Approval queue, Users &
-  access, Branches, Roles & permissions, Settings, and Business date are built out (with real
+- Administration currently ships the Overview, Business date, and Audit trail pages; Approval
+  queue, Users & access, Branches, Roles & permissions, and Settings are built out (with real
   data, not placeholders) as their own layers land, each registering its own item in
   `modules/administration/administration-navigation.ts`.
+- Business date (`/admin/business-date`, `modules/administration/business-date/`) reads
+  `GET /tenant/business-date` and `GET /tenant/business-date/history` and renders the current date,
+  status, and a paginated history table, plus an app-bar chip (spec §8) linking back to the page.
+  Every mutation (start/complete close of business, reopen, advance) is a Server Action behind a
+  shared `ReasonDialog`, gated on its own permission code and `business_date.view`
+  (`docs/backend-gaps.md` BG-31), and a 409 lock-timeout response surfaces as a retryable "another
+  change is in progress" error without losing the request's idempotency key. Known limits:
+  - No close-of-business readiness checks (the prototype's checklist) — the backend doesn't expose
+    one yet (`docs/backend-gaps.md` BG-21).
+  - Advancing the date has no upper bound beyond "later than today"; the prototype's calendar
+    picker and reason-length affordances are a later visual pass.
 - The Audit trail (`/admin/audit`, `modules/administration/audit/`) reads
   `GET /tenant/audit-events` and `GET /tenant/audit-events/{id}` and renders them with pagination,
   a detail drawer (before/after JSON, actor/entity/branch facts), and removable actor/entity chips
@@ -323,8 +346,7 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
 1. Add Keycloak claim mappers and enforce authorization/permissions server-side, instead of
    treating UI-shown roles as informational only.
 2. Build out Administration's remaining pages (Approval queue, Users & access, Branches,
-   Roles & permissions, Settings, Business date) against real data, each registering its own
-   navigation item.
+   Roles & permissions, Settings) against real data, each registering its own navigation item.
 3. Extend Platform Administration's live reads to branches and users, and design a write-action
    model (with audit logging) before enabling any mutations there.
 4. Replace the temporary `FinaxisLogo` mark with the official brand asset.
