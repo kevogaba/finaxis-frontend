@@ -31,9 +31,13 @@ export interface AuditRow {
 export function AuditEventTable({
   rows,
   timeZone,
+  scrollOnNavigate = false,
 }: {
   rows: readonly AuditRow[];
   timeZone: string;
+  /** `true` when the links leave the page (a record Audit tab). `/admin/audit` opens its drawer
+   * in place, so it keeps the scroll position. */
+  scrollOnNavigate?: boolean;
 }) {
   return (
     <TableContainer sx={{ maxHeight: { md: 'calc(100dvh - 300px)' }, minHeight: 240 }}>
@@ -57,7 +61,7 @@ export function AuditEventTable({
                 <Link
                   component={NextLink}
                   href={row.detailHref}
-                  scroll={false}
+                  scroll={scrollOnNavigate}
                   variant="caption"
                   aria-label={`View event: ${row.actionLabel}, ${row.date} ${row.time}`}
                 >
@@ -70,7 +74,7 @@ export function AuditEventTable({
                   <Link
                     component={NextLink}
                     href={row.actorFilterHref}
-                    scroll={false}
+                    scroll={scrollOnNavigate}
                     variant="body2"
                     noWrap
                     title={row.actorLabel}

@@ -19,15 +19,17 @@ import { toSearchParams } from '@/lib/api/query-string';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import { actionLabel, entityTypeLabel } from '@/modules/administration/audit/audit-vocabulary';
 import { auditApiPath, parseAuditQuery } from '@/modules/administration/audit/audit-query';
+import {
+  auditEntityName,
+  auditUserIds,
+  toAuditRows,
+} from '@/modules/administration/audit/audit-rows';
 import { getAuditEvent, listAuditEvents } from '@/modules/administration/audit/audit-service';
 import {
   AuditEventDrawer,
   type AuditDrawerDetail,
 } from '@/modules/administration/audit/components/audit-event-drawer';
-import {
-  AuditEventTable,
-  type AuditRow,
-} from '@/modules/administration/audit/components/audit-event-table';
+import { AuditEventTable } from '@/modules/administration/audit/components/audit-event-table';
 import { AuditFilters } from '@/modules/administration/audit/components/audit-filters';
 import { UUID_PATTERN } from '@/lib/api/wire';
 
@@ -98,47 +100,16 @@ export default async function AuditTrailPage({ searchParams }: AuditPageProps) {
   }
 
   const userIds = [
-    ...events.value.items.flatMap((event) => (event.actorUserId ? [event.actorUserId] : [])),
-    ...events.value.items.flatMap((event) =>
-      event.entityType === 'USER' && event.entityId ? [event.entityId] : [],
-    ),
+    ...auditUserIds(events.value.items),
     ...(query.actorId ? [query.actorId] : []),
     ...(query.entityId && query.entityType === 'USER' ? [query.entityId] : []),
   ];
   const names = await resolveUserNames(userIds);
+  const lookups = { names, branches, timeZone };
 
-  const rows: AuditRow[] = events.value.items.map((event) => {
-    const when = formatInstant(event.occurredAt, timeZone);
-    const actorName = event.actorUserId
-      ? (names.get(event.actorUserId) ?? shortId(event.actorUserId))
-      : 'System';
-    const entityName =
-      event.entityId === null
-        ? '—'
-        : event.entityType === 'USER'
-          ? (names.get(event.entityId) ?? shortId(event.entityId))
-          : event.entityType === 'BRANCH'
-            ? (branches.get(event.entityId)?.name ?? shortId(event.entityId))
-            : shortId(event.entityId);
-    return {
-      id: event.id,
-      date: when.date,
-      time: when.time,
-      actorLabel: actorName,
-      actorFilterHref: event.actorUserId
-        ? hrefWith(params, { actorId: event.actorUserId, page: null, event: null })
-        : null,
-      actionLabel: actionLabel(event.action),
-      action: event.action,
-      reason: event.reason,
-      entityLabel: `${entityTypeLabel(event.entityType)} · ${entityName}`,
-      branchLabel: event.branchId
-        ? (branches.get(event.branchId)?.name ?? shortId(event.branchId))
-        : '—',
-      outcome: event.outcome,
-      severity: event.severity,
-      detailHref: hrefWith(params, { event: event.id }),
-    };
+  const rows = toAuditRows(events.value.items, lookups, {
+    detail: (eventId) => hrefWith(params, { event: eventId }),
+    actor: (actorId) => hrefWith(params, { actorId, page: null, event: null }),
   });
 
   // A failed detail load renders inline between the toolbar and the table; the list stays
@@ -195,13 +166,11 @@ export default async function AuditTrailPage({ searchParams }: AuditPageProps) {
     : null;
   const entityChip = query.entityId
     ? {
-        label: `Entity: ${query.entityType ? entityTypeLabel(query.entityType) : 'Unknown'} · ${
-          query.entityType === 'USER'
-            ? (names.get(query.entityId) ?? shortId(query.entityId))
-            : query.entityType === 'BRANCH'
-              ? (branches.get(query.entityId)?.name ?? shortId(query.entityId))
-              : shortId(query.entityId)
-        }`,
+        label: `Entity: ${query.entityType ? entityTypeLabel(query.entityType) : 'Unknown'} · ${auditEntityName(
+          query.entityType ?? '',
+          query.entityId,
+          lookups,
+        )}`,
         removeParam: 'entityId',
       }
     : null;
