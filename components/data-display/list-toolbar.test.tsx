@@ -110,7 +110,7 @@ describe('ListToolbar', () => {
   });
 
   it('navigates on datetime blur only when the resulting instant changed', () => {
-    search = '';
+    search = 'page=2';
     renderWithProviders(<ListToolbar fields={DATETIME_FIELDS} resultLabel="1 event" />);
 
     const field = screen.getByLabelText('From');
