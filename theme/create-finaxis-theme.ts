@@ -338,7 +338,13 @@ export function createFinaxisTheme() {
           // no size branch — checked in node_modules/@mui/material/InputBase/InputBase.js), so
           // reach the actual input element the same way the notched-outline override does above:
           // a nested selector on its stable class, not a (nonexistent) `inputSizeSmall` key.
-          sizeSmall: { '& .MuiOutlinedInput-input': { paddingBlock: 9.5 } },
+          // Density target: 40px (spec §7.2/MASTER.md). `9.5` measured ≈ 38px; solve the padding
+          // from the input's own line-height instead of a fixed px number, since `em` resolves
+          // against the input's computed font-size (13px body text). Covers Select's displayed
+          // value too — it shares this `.MuiOutlinedInput-input` class.
+          sizeSmall: {
+            '& .MuiOutlinedInput-input': { paddingBlock: 'calc((40px - 1.4375em) / 2)' },
+          },
         },
       },
       MuiFormHelperText: {
@@ -354,6 +360,12 @@ export function createFinaxisTheme() {
             fontSize: '0.78125rem',
           }),
           sizeSmall: { paddingBlock: 8, paddingInline: 14 },
+          // Density target: 44px single-line rows (spec §7.2/MASTER.md). Scoped to `body` (not
+          // `root`/`sizeSmall`) so the head cell (an explicit 39px `height`, checked separately)
+          // and TablePagination's own cell (rendered outside any Table context, so it gets no
+          // `variant` at all) are unaffected. Every audit row is two-line, so this is a theme
+          // minimum: unmeasured by this layer's E2E, exercised once a single-line list ships.
+          body: { minHeight: 44 },
           head: ({ theme }) => ({
             height: 39,
             paddingBlock: 0,
@@ -379,6 +391,13 @@ export function createFinaxisTheme() {
           toolbar: { minHeight: 52 },
           selectLabel: { fontSize: '0.75rem' },
           displayedRows: { fontSize: '0.75rem' },
+          // Density target: 32px arrow buttons (spec §7.2/MASTER.md). The buttons are plain
+          // IconButtons (root 42px) with no `size` prop, so reach them through the `actions`
+          // wrapper's stable class instead of a `sizeSmall` IconButton variant they never opt
+          // into — verified against TablePaginationActions.js/tablePaginationClasses.js: `actions`
+          // resolves to `& .MuiTablePagination-actions` on the toolbar (not inert, unlike
+          // `notchedOutline` above).
+          actions: { '& .MuiIconButton-root': { width: 32, height: 32 } },
         },
       },
       MuiTabs: {
