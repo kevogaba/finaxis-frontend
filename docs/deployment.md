@@ -85,16 +85,18 @@ them.
    this `node:alpine`-based image deliberately doesn't include.
 5. **Environment variables** — Coolify's dashboard lets each variable be marked "Build + Runtime"
    (default), "Build only", or "Runtime only". Set every variable below as **Runtime only** except
-   `KEYCLOAK_ISSUER`, which needs **Build + Runtime** (see its row below, and "Build" above). None
-   of the rest are needed at build time (`config/env.server.ts`'s Zod schema validates lazily, on
-   first property access), so keeping them out of the build phase means they're never at risk of
-   being baked into an image layer. See `.env.example` for the full annotated list:
+   `KEYCLOAK_ISSUER` and, when set, `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`, which need
+   **Build + Runtime** (see their rows below, and "Build" above). None of the rest are needed at
+   build time (`config/env.server.ts`'s Zod schema validates lazily, on first property access), so
+   keeping them out of the build phase means they're never at risk of being baked into an image
+   layer. See `.env.example` for the full annotated list:
 
    | Variable                                        | Notes                                                                                                                                                                                                                                                                                             |
    | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
    | `BETTER_AUTH_URL`                               | Exact `https://` production origin.                                                                                                                                                                                                                                                               |
    | `BETTER_AUTH_SECRET`                            | ≥32 chars.                                                                                                                                                                                                                                                                                        |
    | `PLATFORM_ORGANISATION_ID`                      | UUID.                                                                                                                                                                                                                                                                                             |
+   | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`            | Only when running more than one instance. Base64 AES key (`openssl rand -base64 32`), identical on every instance. **Build + Runtime**: Next.js embeds it in the build output.                                                                                                                    |
    | `KEYCLOAK_ISSUER`                               | `https://<keycloak-domain>/realms/finaxis` — the already-running Keycloak instance. **Mark this one Build + Runtime**: `next.config.ts` bakes it into the CSP at build time (see "Build" above), so rotating it later needs a rebuild, not just a restart. See `docs/authentication/security.md`. |
    | `KEYCLOAK_CLIENT_ID` / `KEYCLOAK_CLIENT_SECRET` |                                                                                                                                                                                                                                                                                                   |
    | `AUTH_TRUSTED_ORIGINS`                          | Exact origin(s), comma-separated, no wildcards.                                                                                                                                                                                                                                                   |

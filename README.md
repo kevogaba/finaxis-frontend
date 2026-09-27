@@ -163,7 +163,9 @@ config/
 ├── application-context.ts    # Typed module/organisation/branch context value
 └── env.server.ts              # Validated server environment variables
 lib/
-├── api/                        # Context-scoped backend reads: tenant-api.ts's `apiGet`, paging
+├── api/                        # Context-scoped backend reads and mutations: tenant-api.ts's
+│                                # `apiGet`/`apiPost`/`apiPut`/`apiPatch`/`apiDelete`, the Server
+│                                # Action pipeline (action-result.ts's `runServerAction`), paging
 │                                # (paging.ts), wire schemas (wire.ts), problem mapping and
 │                                # `load()` (problem.ts, load.ts), bounded name/branch lookups
 │                                # (lookups.ts), URL query-string helpers (query-string.ts's

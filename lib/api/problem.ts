@@ -39,10 +39,28 @@ const GENERIC = {
   message: "The platform didn't respond as expected. Try again in a moment.",
 };
 
+/** Codes whose remedy differs from their status's generic advice (contract §I). */
+const BY_CODE: Record<string, Pick<ProblemView, 'title' | 'message'>> = {
+  'lifecycle.business_date_lock_timeout': {
+    title: 'Busy — try again',
+    message: 'Another business date change is in progress. Try again in a moment.',
+  },
+  IDEMPOTENCY_REQUEST_IN_PROGRESS: {
+    title: 'Still processing',
+    message: 'This request is still being processed. Wait a moment, then refresh the page.',
+  },
+  IDEMPOTENCY_KEY_REUSED: {
+    title: 'Already submitted',
+    message:
+      'This request was already submitted with different details. Close this and start again.',
+  },
+};
+
 /** Safe, user-facing description of any failure; never echoes server or exception messages. */
 export function describeProblem(error: unknown): ProblemView {
   if (error instanceof BackendApiError) {
-    const known = BY_STATUS[error.status] ?? GENERIC;
+    const known =
+      (error.code ? BY_CODE[error.code] : undefined) ?? BY_STATUS[error.status] ?? GENERIC;
     // A 5xx with no backend request id (a network failure, or a backend that didn't send one)
     // otherwise leaves the user with no support reference and the server with no log at all.
     if (error.status >= 500 && error.requestId === null) {

@@ -32,6 +32,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   `alignItems`/`justifyContent`/`flexWrap` and `Checkbox`/`Radio`'s `inputRef`/`inputProps` moved
   to `sx` / `slotProps.input`). Check `node_modules/@mui/material/package.json` version and the
   installed major's migration guide before assuming an older API shape.
+- Mutations are Server Actions built on `runServerAction` (`lib/api/action-result.ts`), which calls
+  through `apiPost`/`apiPut`/`apiPatch`/`apiDelete` (`lib/api/tenant-api.ts`). Forward the
+  idempotency key the form minted when it opened (`ReasonDialog` does this) — never generate one
+  per request — so a retry after a failure replays instead of repeating the change.
 - Every tenant-workspace data-listing UI (new lists especially) is server-paginated with state in
   the URL: page sizes come from `lib/api/paging.ts`'s `PAGE_SIZES`, and lists render
   `TablePaginationBar` (`components/data-display/table-pagination-bar.tsx`) plus, where the list
