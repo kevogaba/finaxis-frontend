@@ -360,12 +360,16 @@ export function createFinaxisTheme() {
             fontSize: '0.78125rem',
           }),
           sizeSmall: { paddingBlock: 8, paddingInline: 14 },
-          // Density target: 44px single-line rows (spec §7.2/MASTER.md). Scoped to `body` (not
+          // Density target: 44px single-line rows (spec §7.2/MASTER.md). Uses `height`, not
+          // `minHeight` — browsers ignore `min-height` on `display: table-cell` (measured: a
+          // probe cell rendered ~34px with `min-height: 44px`, the same as with no rule at all).
+          // `height` on a table cell acts as a minimum instead, so a two-line row still grows past
+          // it. Cells are border-box here (CssBaseline's `* { box-sizing: inherit }`), so the 44
+          // already includes the 8+8px padding and the 1px bottom border. Scoped to `body` (not
           // `root`/`sizeSmall`) so the head cell (an explicit 39px `height`, checked separately)
           // and TablePagination's own cell (rendered outside any Table context, so it gets no
-          // `variant` at all) are unaffected. Every audit row is two-line, so this is a theme
-          // minimum: unmeasured by this layer's E2E, exercised once a single-line list ships.
-          body: { minHeight: 44 },
+          // `variant` at all) are unaffected.
+          body: { height: 44 },
           head: ({ theme }) => ({
             height: 39,
             paddingBlock: 0,

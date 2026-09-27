@@ -172,16 +172,29 @@ test.describe('audit trail', () => {
     expect(Math.abs(nextButtonBox.width - 32)).toBeLessThanOrEqual(1);
     expect(Math.abs(nextButtonBox.height - 32)).toBeLessThanOrEqual(1);
 
-    // Every audit row is two-line, so the 44px single-line row minimum (a theme minimum) can't
-    // be measured here. Report the actual two-line height instead of asserting it.
+    // Every audit row is two-line, so this can't stand in for the single-line 44px target below.
+    // Report it, don't assert it.
     const firstBodyRow = page.getByRole('table', { name: 'Audit events' }).getByRole('row').nth(1);
     const rowBox = await firstBodyRow.boundingBox();
     testInfo.annotations.push({
       type: 'density-two-line-row-height',
       description: rowBox
-        ? `${String(rowBox.height)}px (unmeasured minimum, theme sets 44px)`
+        ? `${String(rowBox.height)}px (two-line row; not asserted)`
         : 'unmeasured',
     });
+
+    // No audit row is single-line, so clone a real body row (same MUI classes, same theme CSS)
+    // with one short token per cell and measure the clone against the 44px single-line target.
+    const singleLineHeight = await firstBodyRow.evaluate((row) => {
+      if (!(row instanceof HTMLTableRowElement)) {
+        throw new Error('expected a table row element');
+      }
+      const clone = row.cloneNode(true) as HTMLTableRowElement;
+      for (const cell of Array.from(clone.cells)) cell.textContent = '—';
+      row.parentElement?.append(clone);
+      return clone.getBoundingClientRect().height;
+    });
+    expect(Math.abs(singleLineHeight - 44)).toBeLessThanOrEqual(1);
   });
 
   // Layer a11y gate: light and dark, both at desktop and 375px. Each case scans the list, then
