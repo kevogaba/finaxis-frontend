@@ -66,15 +66,12 @@ export function toAuditRows(
   });
 }
 
-// A `type` alias here (not `interface`) so it keeps an implicit index signature: TS only infers
-// one for object type aliases, never for interfaces, and `toQueryString` needs it below.
-// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
-export type AuditTrailFilter = {
-  entityType?: string;
-  entityId?: string;
-  actorId?: string;
-  event?: string;
-};
+// A mapped-type alias (not an object-literal `type`, and not an `interface`) so it keeps an
+// implicit index signature: TS never infers one for an `interface`, and `toQueryString` below
+// needs it.
+export type AuditTrailFilter = Partial<
+  Record<'entityType' | 'entityId' | 'actorId' | 'event', string>
+>;
 
 /** `/admin/audit` narrowed to one view, optionally with an event's drawer open. */
 export function auditTrailHref(filter: AuditTrailFilter): string {
