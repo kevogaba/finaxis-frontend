@@ -48,6 +48,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   reducer must wrap its call in `try/catch`, call `unstable_rethrow(error)` first so a
   redirect/`notFound()` keeps propagating, and only then return a safe synthesized failure — an
   escaped rejection reaches `app/error.tsx` and loses the dialog's typed input and idempotency key.
+- Multi-field forms use React Hook Form with the zod resolver and merge a Server Action's
+  `fieldErrors` back with `applyFieldErrors` (`lib/apply-field-errors.ts`). Dialogs with one or
+  two fields keep `useActionState` + native constraints. Name specific guard failures (a 409/403
+  with a known cause) in the action, never with a raw backend message.
 - Every tenant-workspace data-listing UI (new lists especially) is server-paginated with state in
   the URL: page sizes come from `lib/api/paging.ts`'s `PAGE_SIZES`, and lists render
   `TablePaginationBar` (`components/data-display/table-pagination-bar.tsx`) plus, where the list
