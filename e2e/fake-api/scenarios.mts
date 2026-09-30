@@ -493,6 +493,149 @@ function profileRoles(): RunState {
   };
 }
 
+/** Layer 08 seed IDs (lane rules §5). */
+export const BRANCH_SCENARIO_IDS = {
+  mary: '08000000-0000-4000-8000-000000000001',
+  peter: '08000000-0000-4000-8000-000000000002',
+  maryMembership: '08000000-0000-4000-8000-000000000003',
+  peterMembership: '08000000-0000-4000-8000-000000000004',
+  karen: '08000000-0000-4000-8000-000000000005',
+  thikaRoad: '08000000-0000-4000-8000-000000000006',
+  kisumu: '08000000-0000-4000-8000-000000000007',
+  oldTown: '08000000-0000-4000-8000-000000000008',
+  maryAtWestlands: '08000000-0000-4000-8000-000000000009',
+  peterAtWestlands: '08000000-0000-4000-8000-00000000000a',
+  peterAtHeadOffice: '08000000-0000-4000-8000-00000000000b',
+  thikaRoadDraftEvent: '08000000-0000-4000-8000-00000000000c',
+  karenDraftEvent: '08000000-0000-4000-8000-00000000000d',
+} as const;
+
+/** Real TENANT_ADMIN codes (contract §J), granted only in this scenario so `default` stays the
+ * read-only gating scenario (e2e/branches.spec.ts "offers no mutations without the permissions"). */
+const BRANCH_ADMIN_CODES = [
+  'branch.create',
+  'branch.activate',
+  'branch.suspend',
+  'branch.reactivate',
+  'branch.close',
+  'user.assign_branch',
+  'user.revoke_branch',
+];
+
+function branchDraftEvent(
+  id: string,
+  branchId: string,
+  actorUserId: string,
+  occurredAt: string,
+): FakeAuditEvent {
+  return {
+    id,
+    organisationId: IDS.greenfield,
+    occurredAt,
+    actorUserId,
+    actorType: 'USER',
+    branchId: null,
+    entityType: 'BRANCH',
+    entityId: branchId,
+    action: 'branch.create_draft',
+    outcome: 'SUCCESS',
+    severity: 'INFO',
+    reason: null,
+    beforeJson: null,
+    afterJson: '{"status":"DRAFT"}',
+    metadataJson: '{}',
+  };
+}
+
+/**
+ * Layer 08: a copy of `default` plus two staff members, one branch per lifecycle state, and
+ * Westlands assignments — Mary's HOME is her only one (the last-assignment 409), Peter also holds
+ * Head Office. Thika Road was drafted by Mary (so Jane may activate it); Karen by Jane.
+ */
+function branchesScenario(): RunState {
+  const state = greenfieldTenant();
+  const ids = BRANCH_SCENARIO_IDS;
+  const person = (id: string, username: string, displayName: string): FakeUser => ({
+    id,
+    username,
+    email: `${username}@greenfield.example`,
+    displayName,
+    status: 'ACTIVE',
+    keycloakSubject: `e2e-${username}`,
+  });
+  const staff = (id: string, userId: string): FakeMembership => ({
+    ...membership(id, IDS.greenfield, userId),
+    type: 'STAFF',
+  });
+  const extra = (
+    id: string,
+    code: string,
+    name: string,
+    overrides: Partial<FakeBranch>,
+  ): FakeBranch => ({
+    ...branch(id, IDS.greenfield, code, name, 'OPERATIONS'),
+    ...overrides,
+  });
+  return {
+    ...state,
+    users: [
+      ...state.users,
+      person(ids.mary, 'mary.wanjiku', 'Mary Wanjiku'),
+      person(ids.peter, 'peter.otieno', 'Peter Otieno'),
+    ],
+    memberships: [
+      ...state.memberships,
+      staff(ids.maryMembership, ids.mary),
+      staff(ids.peterMembership, ids.peter),
+    ],
+    branches: [
+      ...state.branches,
+      extra(ids.karen, 'KAREN', 'Karen Branch', {
+        status: 'DRAFT',
+        draftedBy: IDS.jane,
+        createdAt: '2026-09-01T08:00:00Z',
+      }),
+      extra(ids.thikaRoad, 'THIKA_ROAD', 'Thika Road Branch', {
+        status: 'PENDING_APPROVAL',
+        draftedBy: ids.mary,
+        parentBranchId: IDS.headOffice,
+        createdAt: '2026-09-02T08:00:00Z',
+      }),
+      extra(ids.kisumu, 'KISUMU', 'Kisumu Branch', {
+        status: 'SUSPENDED',
+        statusReason: 'Cash audit in progress',
+        createdAt: '2026-08-01T08:00:00Z',
+      }),
+      // A long name: the 375 px a11y cases prove it never scrolls the page (index item 4).
+      extra(
+        ids.oldTown,
+        'OLD_TOWN',
+        'Old Town Branch — Moi Avenue, Tom Mboya Street and River Road Customer Service Centre',
+        {
+          status: 'CLOSED',
+          statusReason: 'Merged into Westlands',
+          createdAt: '2026-07-15T08:00:00Z',
+        },
+      ),
+    ],
+    branchAssignments: [
+      ...state.branchAssignments,
+      assignment(ids.maryAtWestlands, IDS.greenfield, ids.mary, IDS.westlands, 'HOME'),
+      assignment(ids.peterAtWestlands, IDS.greenfield, ids.peter, IDS.westlands, 'OPERATE'),
+      assignment(ids.peterAtHeadOffice, IDS.greenfield, ids.peter, IDS.headOffice, 'HOME'),
+    ],
+    roles: state.roles.map((candidate) => ({
+      ...candidate,
+      permissions: [...candidate.permissions, ...BRANCH_ADMIN_CODES],
+    })),
+    auditEvents: [
+      ...state.auditEvents,
+      branchDraftEvent(ids.thikaRoadDraftEvent, ids.thikaRoad, ids.mary, '2026-09-02T08:00:00Z'),
+      branchDraftEvent(ids.karenDraftEvent, ids.karen, IDS.jane, '2026-09-01T08:00:00Z'),
+    ],
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -540,6 +683,7 @@ const BUILDERS = {
       })),
     };
   },
+  branches: branchesScenario,
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */

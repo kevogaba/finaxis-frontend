@@ -47,6 +47,8 @@ export interface FakeBranch {
   statusReason: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Maker-checker only (activate ≠ drafter); the real API keeps the drafter in the audit log. */
+  draftedBy?: string;
 }
 
 export interface FakeBranchAssignment {
