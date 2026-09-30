@@ -1,6 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { IDS } from './fake-api/scenarios.mts';
-import { enterAdmin } from './support/admin';
+import {
+  A11Y_CASES,
+  applyA11yCase,
+  enterAdmin,
+  expectA11yCaseApplied,
+  expectNoSeriousOrCriticalViolations,
+} from './support/admin';
 import { addCookie, authenticate, CONTEXT_COOKIE_NAME, selectMuiOption } from './support/auth';
 
 const main = (page: Page) => page.getByRole('main');
@@ -153,4 +159,107 @@ test.describe('profile', () => {
     await expect(accountLink).toHaveAttribute('target', '_blank');
     await expect(accountLink).toHaveAttribute('rel', 'noopener noreferrer');
   });
+
+  test('activity: my own audit events, linking into the audit trail', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo);
+    await enterAdmin(page, '/profile/activity', { heading: 'My profile' });
+
+    const activity = main(page).getByRole('region', { name: 'Activity' });
+    // The frozen default seed: 25 of its 30 events are Jane's.
+    await expect(activity.getByText(/1–20 of 25/)).toBeVisible();
+    await expect(activity.getByRole('group', { name: 'Audit view' })).toHaveCount(0);
+    await expect(activity.getByRole('link', { name: /^View event:/ }).first()).toHaveAttribute(
+      'href',
+      new RegExp(`^/admin/audit\\?actorId=${IDS.jane}&event=`),
+    );
+  });
+
+  test('activity: hidden without audit.view, and a direct link explains why', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'no-audit-permission');
+    await enterAdmin(page, '/profile', { heading: 'My profile' });
+    await expect(tab(page, 'Security')).toBeVisible();
+    await expect(tab(page, 'Activity')).toHaveCount(0);
+
+    await page.goto('/profile/activity');
+    await expect(main(page).getByText("You don't have permission")).toBeVisible({ timeout: 15000 });
+    await expect(main(page).getByText(/needs the audit permission \(audit\.view\)/)).toBeVisible();
+    // The kit's record root matches only its own path (6110b09), so nothing claims the hidden
+    // tab's path.
+    await expect(
+      page.getByRole('navigation', { name: 'Profile sections' }).locator('[aria-current]'),
+    ).toHaveCount(0);
+  });
+
+  test('activity: hidden in the platform workspace even with audit.view', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'platform-audit-viewer');
+    await enterAdmin(page, '/profile', {
+      heading: 'My profile',
+      organisation: /Platform/,
+      branch: null,
+    });
+    await expect(main(page).getByRole('link', { name: 'Back to overview' })).toHaveAttribute(
+      'href',
+      '/platform-admin',
+    );
+    await expect(tab(page, 'Security')).toBeVisible();
+    await expect(tab(page, 'Activity')).toHaveCount(0);
+
+    await page.goto('/profile/activity');
+    await expect(
+      main(page).getByText("Activity isn't available in the platform workspace"),
+    ).toBeVisible({ timeout: 15000 });
+    // No request was made: an ungated read would render the 403 ErrorState (an alert) instead.
+    await expect(main(page).getByRole('alert')).toHaveCount(0);
+    await expect(
+      page.getByRole('navigation', { name: 'Profile sections' }).locator('[aria-current]'),
+    ).toHaveCount(0);
+  });
+});
+
+const TABS = [
+  { name: 'Overview', path: '/profile', region: 'Identity' },
+  { name: 'Contexts', path: '/profile/contexts', region: 'Organisations' },
+  { name: 'Roles & permissions', path: '/profile/roles', region: 'Roles' },
+  { name: 'Security', path: '/profile/security', region: 'Sign-in and security' },
+  { name: 'Activity', path: '/profile/activity', region: 'Activity' },
+] as const;
+
+// Layer a11y gate: light and dark, desktop and 375 px (long values at 375 px), every tab.
+test.describe('profile accessibility', () => {
+  // Five tab navigations and five scans per case, each tab possibly a cold compile.
+  test.describe.configure({ timeout: 120000 });
+
+  for (const a11yCase of A11Y_CASES) {
+    test(`every tab has no serious or critical violations (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
+      context,
+      page,
+    }, testInfo) => {
+      await applyA11yCase(page, a11yCase);
+      await authenticate(context, testInfo, a11yCase.width < 768 ? 'long-names' : 'default');
+      await enterAdmin(page, '/profile', { heading: 'My profile' });
+
+      for (const profileTab of TABS) {
+        if (profileTab.path !== '/profile') {
+          await tab(page, profileTab.name).click();
+          await expect(page).toHaveURL((url) => url.pathname === profileTab.path, {
+            timeout: 15000,
+          });
+        }
+        await expect(
+          main(page).getByRole('region', { name: profileTab.region, exact: true }),
+        ).toBeVisible({ timeout: 15000 });
+        await expectA11yCaseApplied(page, a11yCase);
+        await expectNoSeriousOrCriticalViolations(page);
+      }
+    });
+  }
 });

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { RecordHero } from '@/components/data-display/record-hero';
 import { RecordTabs, type RecordTab } from '@/components/data-display/record-tabs';
 import { StatusChip } from '@/components/data-display/status-chip';
-import { workspaceHome } from '@/modules/profile/profile-rules';
+import { canViewActivity, workspaceHome } from '@/modules/profile/profile-rules';
 import { requireProfile } from '@/modules/profile/profile-service';
 
 /**
@@ -16,6 +16,9 @@ export default async function ProfileLayout({ children }: { children: ReactNode 
     { href: '/profile/contexts', label: 'Contexts' },
     { href: '/profile/roles', label: 'Roles & permissions' },
     { href: '/profile/security', label: 'Security' },
+    ...(canViewActivity(user, context.module.id)
+      ? [{ href: '/profile/activity', label: 'Activity' }]
+      : []),
   ];
 
   return (

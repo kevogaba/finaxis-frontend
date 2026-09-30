@@ -140,7 +140,8 @@ app/
 │   ├── platform-admin/         # Read-only workspace, gated to the platform organisation's context
 │   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
 │   │   └── tenants/             # Live tenant directory + tenant detail (dynamic route)
-│   └── profile/page.tsx
+│   └── profile/                # Account profile: layout.tsx (hero + tabs) and the Overview,
+│                                # Contexts, Roles & permissions, Security and Activity tabs
 ├── api/auth/                 # Better Auth route handlers (`[...all]`, `logout`)
 ├── api/context/               # Same-origin context discovery/selection routes
 ├── globals.css               # CSS layers, Tailwind import, MUI/Tailwind bridge, restrained defaults
@@ -182,7 +183,9 @@ modules/
 │                                # Actions (modules/administration/business-date/); audit/ holds
 │                                # the audit trail's contract, query parsing, service, and
 │                                # vocabulary (modules/administration/audit/)
-└── platform-administration/   # Platform module: read-only tenant backend integration
+├── platform-administration/   # Platform module: read-only tenant backend integration
+└── profile/                   # Account profile: profile-rules, the cached profile-service, and
+                                 # the tab components (modules/profile/components/)
 components/
 ├── auth/                     # Keycloak sign-in button, login status alert
 ├── branding/                  # FinaxisLogo, ProductFeature
@@ -195,7 +198,6 @@ components/
 │                                # a header row), ReasonDialog (one reusable confirm/reason dialog
 │                                # per mutation, a client-generated idempotency key per opening)
 ├── navigation/                 # next/link client re-export (Next.js 16 RSC boundary workaround)
-├── profile/                   # Profile view
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle, ToastProvider
 └── shell/                      # AppShell, header, drawer, context switcher dialog, app switcher,
                                  # user menu, workspace navigation, tenant-/platform-notifications
