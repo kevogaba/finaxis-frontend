@@ -301,8 +301,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   change is in progress" error without losing the request's idempotency key. Known limits:
   - No close-of-business readiness checks (the prototype's checklist) — the backend doesn't expose
     one yet (`docs/backend-gaps.md` BG-21).
-  - Advancing the date has no upper bound beyond "later than today"; the prototype's calendar
-    picker and reason-length affordances are a later visual pass.
+  - Advancing the date has no upper bound beyond the new date being later than the current
+    business date (days can be skipped); the prototype's calendar picker and reason-length
+    affordances are a later visual pass.
 - The Audit trail (`/admin/audit`, `modules/administration/audit/`) reads
   `GET /tenant/audit-events` and `GET /tenant/audit-events/{id}` and renders them with pagination,
   a detail drawer (before/after JSON, actor/entity/branch facts), and removable actor/entity chips

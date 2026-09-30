@@ -65,9 +65,14 @@ export function BusinessDateHistoryTable({
                   {change(entry.fromBusinessDate, entry.toBusinessDate, shortDate)}
                 </TableCell>
                 <TableCell>
-                  {entry.actorUserId
-                    ? (actorNames.get(entry.actorUserId) ?? shortId(entry.actorUserId))
-                    : 'System'}
+                  {entry.actorUserId ? (
+                    <TruncatedText
+                      value={actorNames.get(entry.actorUserId) ?? shortId(entry.actorUserId)}
+                      maxWidth={200}
+                    />
+                  ) : (
+                    'System'
+                  )}
                 </TableCell>
                 <TableCell>
                   {entry.reason ? <TruncatedText value={entry.reason} maxWidth={280} /> : '—'}

@@ -1,3 +1,4 @@
+import { Component, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
@@ -6,6 +7,17 @@ import { renderWithProviders } from '@/test/test-utils';
 import { UUID_PATTERN } from '@/lib/api/wire';
 import type { ActionResult } from '@/lib/api/action-result';
 import { ReasonDialog } from './reason-dialog';
+
+/** A rejected action must never escape to this boundary (I1) — today it does. */
+class TestErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  override state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  override render() {
+    return this.state.hasError ? <div>boundary caught an error</div> : this.props.children;
+  }
+}
 
 const BUSY: ActionResult = {
   ok: false,
@@ -162,6 +174,97 @@ describe('ReasonDialog', () => {
     expect(screen.getByRole('textbox', { name: 'Reason' })).toBeRequired();
   });
 
+  it('recovers from a rejected action with safe copy, keeps the reason, and retries with the same key (I1)', async () => {
+    const user = userEvent.setup();
+    const action = vi
+      .fn((_previous: ActionResult | null, _formData: FormData) =>
+        Promise.resolve<ActionResult>({ ok: true }),
+      )
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const onSuccess = vi.fn();
+    renderWithProviders(
+      <TestErrorBoundary>
+        <ReasonDialog
+          open
+          title="Start close of business?"
+          description="The business date moves to Closing."
+          confirmLabel="Start close of business"
+          reason="optional"
+          action={action}
+          onClose={vi.fn()}
+          onSuccess={onSuccess}
+        />
+      </TestErrorBoundary>,
+    );
+
+    await user.type(screen.getByRole('textbox', { name: 'Reason (optional)' }), 'End of day');
+    await user.click(screen.getByRole('button', { name: 'Start close of business' }));
+
+    // Today the rejection escapes ReasonForm's reducer to this boundary instead of the alert.
+    expect(await screen.findByRole('alert')).toHaveTextContent("couldn't confirm this change");
+    expect(screen.queryByText('boundary caught an error')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Reason (optional)' })).toHaveValue('End of day');
+
+    await user.click(screen.getByRole('button', { name: 'Start close of business' }));
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
+    expect(keyOf(action.mock.calls[1]?.[1])).toBe(keyOf(action.mock.calls[0]?.[1]));
+  });
+
+  it('moves focus to the invalid field after a failed submit with field errors (M01)', async () => {
+    const user = userEvent.setup();
+    const fieldFailure: ActionResult = {
+      ok: false,
+      formError: 'Check the highlighted fields and try again.',
+      fieldErrors: { reason: 'Keep it under 500 characters.' },
+      code: 'validation_failed',
+      requestId: null,
+    };
+    const action = vi
+      .fn((_previous: ActionResult | null, _formData: FormData) =>
+        Promise.resolve<ActionResult>({ ok: true }),
+      )
+      .mockResolvedValueOnce(fieldFailure);
+    setup(action);
+
+    await user.click(screen.getByRole('button', { name: 'Start close of business' }));
+    await screen.findByRole('alert');
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Reason (optional)' })).toHaveFocus();
+    });
+  });
+
+  it('links the description to the dialog for assistive tech (M14)', () => {
+    setup(() => Promise.resolve<ActionResult>({ ok: true }));
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+      'The business date moves to Closing.',
+    );
+  });
+
+  it('carries the rendered organisation id as a hidden field when provided (I2)', () => {
+    renderWithProviders(
+      <ReasonDialog
+        open
+        title="Start close of business?"
+        description="The business date moves to Closing."
+        confirmLabel="Start close of business"
+        reason="optional"
+        action={() => Promise.resolve<ActionResult>({ ok: true })}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+        contextOrganisationId="org-1"
+      />,
+    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[name="contextOrganisationId"]')?.value,
+    ).toBe('org-1');
+  });
+
+  // Last: its action never settles, so it leaves a permanently pending promise behind — harmless
+  // once unmounted, but only once nothing after it in this file still awaits a settled action.
   it('cannot be closed or submitted again while the action is pending', async () => {
     const user = userEvent.setup();
     const action = vi.fn(

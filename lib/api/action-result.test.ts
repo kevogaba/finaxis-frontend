@@ -4,6 +4,7 @@ import { BackendApiError } from '@/auth/backend-api';
 
 const refresh = vi.fn();
 const getAuthenticatedUser = vi.fn();
+const getCurrentContextProfile = vi.fn();
 vi.mock('next/cache', () => ({ refresh: () => refresh() as unknown }));
 vi.mock('next/headers', () => ({
   headers: vi.fn(() =>
@@ -20,6 +21,9 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('@/auth/get-authenticated-user', () => ({
   getAuthenticatedUser: () => getAuthenticatedUser() as unknown,
+}));
+vi.mock('@/auth/context-service', () => ({
+  getCurrentContextProfile: () => getCurrentContextProfile() as unknown,
 }));
 
 const { runServerAction } = await import('./action-result');
@@ -84,6 +88,55 @@ describe('runServerAction', () => {
       requestId: 'req-7',
     });
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('returns a context_changed failure without calling the backend when the organisation changed in another tab (I2)', async () => {
+    getCurrentContextProfile.mockResolvedValueOnce({
+      kind: 'resolved',
+      context: { organization: { id: 'org-2' } },
+    });
+    const run = vi.fn();
+
+    const result = await runServerAction(
+      schema,
+      form({ idempotencyKey: KEY, reason: 'ok', contextOrganisationId: 'org-1' }),
+      run,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      formError: 'You switched organisation in another tab. Reload this page and try again.',
+      fieldErrors: {},
+      code: 'context_changed',
+      requestId: null,
+    });
+    expect(run).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('runs normally when the rendered organisation still matches (I2)', async () => {
+    getCurrentContextProfile.mockResolvedValueOnce({
+      kind: 'resolved',
+      context: { organization: { id: 'org-1' } },
+    });
+    const run = vi.fn(() => Promise.resolve());
+
+    await expect(
+      runServerAction(
+        schema,
+        form({ idempotencyKey: KEY, reason: 'ok', contextOrganisationId: 'org-1' }),
+        run,
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('rethrows a Next.js control-flow error instead of swallowing it as a form failure (M20)', async () => {
+    await expect(
+      runServerAction(schema, form({ idempotencyKey: KEY, reason: 'ok' }), () =>
+        Promise.reject(new Error('NEXT_REDIRECT:/x')),
+      ),
+    ).rejects.toThrow('NEXT_REDIRECT:/x');
   });
 
   it('redirects an expired session and a stale context', async () => {

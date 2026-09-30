@@ -4,8 +4,12 @@ import { headers } from 'next/headers';
 import { redirect, unstable_rethrow } from 'next/navigation';
 import type { z } from 'zod';
 import { getAuthenticatedUser } from '@/auth/get-authenticated-user';
+import { getCurrentContextProfile } from '@/auth/context-service';
 import { redirectIfSessionLost } from './load';
 import { describeProblem } from './problem';
+
+const CONTEXT_CHANGED_MESSAGE =
+  'You switched organisation in another tab. Reload this page and try again.';
 
 export type ActionResult =
   | { ok: true }
@@ -53,6 +57,26 @@ export async function runServerAction<S extends z.ZodType>(
   }
 
   try {
+    // I2: a mutation must run against the organisation the page rendered, not whatever context
+    // cookie the browser holds at submit time — the field is present only when the caller (the
+    // kit dialogs) renders it, and getCurrentContextProfile() is called here, inside the try, so
+    // a failed /auth/me read maps through the same safe-failure path below instead of rejecting.
+    const contextOrganisationId = formData.get('contextOrganisationId');
+    if (typeof contextOrganisationId === 'string' && contextOrganisationId) {
+      const profile = await getCurrentContextProfile();
+      const renderedOrganisationId =
+        profile.kind === 'resolved' ? profile.context.organization.id : null;
+      if (renderedOrganisationId !== contextOrganisationId) {
+        return {
+          ok: false,
+          formError: CONTEXT_CHANGED_MESSAGE,
+          fieldErrors: {},
+          code: 'context_changed',
+          requestId: null,
+        };
+      }
+    }
+
     await run(parsed.data);
   } catch (error) {
     unstable_rethrow(error);

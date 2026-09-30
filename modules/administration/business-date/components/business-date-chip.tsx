@@ -37,7 +37,7 @@ export function BusinessDateChip({ dateLabel, statusLabel, color }: BusinessDate
             component="span"
             sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           >
-            {`${dateLabel} · `}
+            {`${dateLabel} ·`}
           </Box>
           <Box component="span" sx={{ flexShrink: 0 }}>
             {statusLabel}
@@ -49,8 +49,12 @@ export function BusinessDateChip({ dateLabel, statusLabel, color }: BusinessDate
       // part that truncates — the layer-07 visual pass found the plain-string label losing
       // Open/Closing/Closed first at common widths (1280/1366), leaving colour as the only signal
       // (WCAG 1.4.1). An icon-only band (the option this replaces) would have the same defect: one
-      // Chip colour with no status text.
-      slotProps={{ label: { sx: { display: 'flex', alignItems: 'center', minWidth: 0 } } }}
+      // Chip colour with no status text. The gap between the two spans comes from `columnGap`, not
+      // a trailing space character in the first span's text (M04): a browser collapses trailing
+      // whitespace at a flex item's own edge, so "· " read as "·" with nothing after it.
+      slotProps={{
+        label: { sx: { display: 'flex', alignItems: 'center', minWidth: 0, columnGap: '0.25em' } },
+      }}
       sx={{ maxWidth: '100%' }}
     />
   );

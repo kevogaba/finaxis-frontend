@@ -22,7 +22,10 @@ import {
   getBusinessDate,
   listBusinessDateHistory,
 } from '@/modules/administration/business-date/business-date-service';
-import { BusinessDateActions } from '@/modules/administration/business-date/components/business-date-actions';
+import {
+  BUSINESS_DATE_FOCUS_FALLBACK_ID,
+  BusinessDateActions,
+} from '@/modules/administration/business-date/components/business-date-actions';
 import { BusinessDateHistoryTable } from '@/modules/administration/business-date/components/business-date-history-table';
 
 export const metadata: Metadata = { title: 'Business date' };
@@ -65,6 +68,9 @@ export default async function BusinessDatePage({ searchParams }: BusinessDatePag
   }
 
   const permissions = selected.kind === 'resolved' ? selected.profile.permissions : [];
+  // I2: lets a Server Action refuse a stale submit if the user switched organisation elsewhere.
+  const contextOrganisationId =
+    selected.kind === 'resolved' ? selected.context.organization.id : undefined;
   const actorNames = history.ok
     ? await resolveUserNames(
         history.value.items.flatMap((entry) => (entry.actorUserId ? [entry.actorUserId] : [])),
@@ -86,6 +92,7 @@ export default async function BusinessDatePage({ searchParams }: BusinessDatePag
               <BusinessDateActions
                 actions={availableBusinessDateActions(current.value.status, { permissions })}
                 currentDate={current.value.date}
+                contextOrganisationId={contextOrganisationId}
               />
             }
           >
@@ -93,7 +100,12 @@ export default async function BusinessDatePage({ searchParams }: BusinessDatePag
               sx={{ px: 4, py: 5, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 3 }}
             >
               <EventOutlined color="primary" aria-hidden="true" />
-              <Typography component="p" variant="h3">
+              <Typography
+                id={BUSINESS_DATE_FOCUS_FALLBACK_ID}
+                component="p"
+                variant="h3"
+                tabIndex={-1}
+              >
                 {formatBusinessDate(current.value.date, 'long')}
               </Typography>
               <StatusChip value={current.value.status} />

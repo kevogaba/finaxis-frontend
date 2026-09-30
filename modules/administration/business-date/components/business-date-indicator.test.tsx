@@ -1,6 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { notFound } from 'next/navigation';
 import { screen, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
+
+/** A real `notFound()` throw, outside `next/navigation`'s mocks: it carries the digest shape
+ * `unstable_rethrow` (real, unmocked here) recognizes and forwards (M20). */
+function capturedNotFoundError(): unknown {
+  try {
+    notFound();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('notFound() did not throw');
+}
 
 const getBusinessDate = vi.fn();
 vi.mock('../business-date-service', () => ({
@@ -28,5 +40,12 @@ describe('BusinessDateIndicator', () => {
     renderWithProviders(<>{await BusinessDateIndicator()}</>);
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('rethrows a Next.js control-flow error instead of swallowing it as a failed read (M20)', async () => {
+    const notFoundError = capturedNotFoundError();
+    getBusinessDate.mockRejectedValueOnce(notFoundError);
+
+    await expect(BusinessDateIndicator()).rejects.toBe(notFoundError);
   });
 });

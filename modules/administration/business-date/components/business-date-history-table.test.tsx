@@ -47,6 +47,19 @@ describe('BusinessDateHistoryTable', () => {
     expect(screen.getByTitle('x'.repeat(300))).toBeInTheDocument();
   });
 
+  it('truncates a long actor name, keeping the full value available (Review Focus 4 / M02)', () => {
+    const longName = 'A'.repeat(91);
+    renderWithProviders(
+      <BusinessDateHistoryTable
+        entries={[COMPLETED]}
+        actorNames={new Map([['u1', longName]])}
+        timeZone="Africa/Nairobi"
+      />,
+    );
+
+    expect(screen.getByTitle(longName)).toBeInTheDocument();
+  });
+
   it('gives the history region a keyboard-focusable, labelled scroll container', () => {
     renderWithProviders(
       <BusinessDateHistoryTable
