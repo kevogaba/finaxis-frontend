@@ -11,7 +11,12 @@ import { requireProfile } from '@/modules/profile/profile-service';
  */
 export default async function ProfileLayout({ children }: { children: ReactNode }) {
   const { user, context } = await requireProfile();
-  const tabs: RecordTab[] = [{ href: '/profile', label: 'Overview' }];
+  const tabs: RecordTab[] = [
+    { href: '/profile', label: 'Overview' },
+    { href: '/profile/contexts', label: 'Contexts' },
+    { href: '/profile/roles', label: 'Roles & permissions' },
+    { href: '/profile/security', label: 'Security' },
+  ];
 
   return (
     <>
