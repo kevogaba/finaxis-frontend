@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import TextField from '@mui/material/TextField';
 import { renderWithProviders } from '@/test/test-utils';
 import { UUID_PATTERN } from '@/lib/api/wire';
 import type { ActionResult } from '@/lib/api/action-result';
@@ -99,6 +100,50 @@ describe('ReasonDialog', () => {
     });
 
     expect(keyOf(action.mock.calls[1]?.[1])).not.toBe(keyOf(action.mock.calls[0]?.[1]));
+  });
+
+  it('keeps the reason and any extra field after a failed submit (D2: no lost input on retry)', async () => {
+    const user = userEvent.setup();
+    const action = vi
+      .fn((_previous: ActionResult | null, _formData: FormData) =>
+        Promise.resolve<ActionResult>({ ok: true }),
+      )
+      .mockResolvedValueOnce(BUSY);
+    const onSuccess = vi.fn();
+    renderWithProviders(
+      <ReasonDialog
+        open
+        title="Advance the business date"
+        description="Choose a later date."
+        confirmLabel="Advance date"
+        reason="optional"
+        action={action}
+        onClose={vi.fn()}
+        onSuccess={onSuccess}
+        fields={() => <TextField name="newBusinessDate" label="New business date" />}
+      />,
+    );
+
+    await user.type(screen.getByRole('textbox', { name: 'New business date' }), '2026-09-08');
+    await user.type(screen.getByRole('textbox', { name: 'Reason (optional)' }), 'End of day');
+    await user.click(screen.getByRole('button', { name: 'Advance date' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Another business date change is in progress',
+    );
+    // React 19's <form action> auto-resets every uncontrolled field on every submit outcome
+    // (requestFormReset); both the reason and the `fields` slot must survive it.
+    expect(screen.getByRole('textbox', { name: 'New business date' })).toHaveValue('2026-09-08');
+    expect(screen.getByRole('textbox', { name: 'Reason (optional)' })).toHaveValue('End of day');
+
+    await user.click(screen.getByRole('button', { name: 'Advance date' }));
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
+    const secondFormData = action.mock.calls[1]?.[1];
+    expect(secondFormData?.get('newBusinessDate')).toBe('2026-09-08');
+    expect(secondFormData?.get('reason')).toBe('End of day');
+    expect(keyOf(secondFormData)).toBe(keyOf(action.mock.calls[0]?.[1]));
   });
 
   it('marks a required reason as required', () => {

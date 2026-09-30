@@ -1,6 +1,13 @@
 'use client';
 
-import { useActionState, useEffect, useState, type ReactNode } from 'react';
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useState,
+  type ReactNode,
+  type SyntheticEvent,
+} from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -73,8 +80,22 @@ function ReasonForm({
   const failure = state && !state.ok ? state : null;
   const fieldErrors = failure?.fieldErrors ?? NO_ERRORS;
 
+  // `<form action={formAction}>` makes React reset every uncontrolled field (reason, and
+  // whatever `fields` renders) via requestFormReset on every submit, success or failure
+  // (react-dom's startHostTransition calls it before running the action). Dispatching
+  // `formAction` ourselves from onSubmit never goes through that DOM-action-prop wiring, so a
+  // retry after a failure keeps what the user typed; native constraint validation still runs
+  // before `submit` fires.
+  const handleSubmit = (event: SyntheticEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => {
+      formAction(formData);
+    });
+  };
+
   return (
-    <Box component="form" action={formAction}>
+    <Box component="form" onSubmit={handleSubmit}>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 3 }}>
         <DialogContentText>{description}</DialogContentText>
