@@ -144,8 +144,20 @@ describe('RecordAuditTab', () => {
     expect(screen.getByText('No audit events')).toBeInTheDocument();
   });
 
-  it('keeps the section and shows a safe error when the list fails', async () => {
+  it('keeps the section and shows a forbidden state for a 403', async () => {
     listAuditEvents.mockRejectedValueOnce(new BackendApiError(403, { code: 'forbidden' }));
+
+    renderWithProviders(
+      await RecordAuditTab({ views: VIEWS, params: new URLSearchParams(), path: PATH }),
+    );
+
+    expect(screen.getByRole('region', { name: 'Audit trail' })).toBeInTheDocument();
+    expect(screen.getByText("You don't have permission")).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('keeps the section and shows a safe error for a 500', async () => {
+    listAuditEvents.mockRejectedValueOnce(new BackendApiError(500, { requestId: 'req-1' }));
 
     renderWithProviders(
       await RecordAuditTab({ views: VIEWS, params: new URLSearchParams(), path: PATH }),

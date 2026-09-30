@@ -91,7 +91,7 @@ export function RecordHero({
           >
             {person ? initialsOf(avatar.name) : avatar.icon}
           </Avatar>
-          <Box sx={{ minWidth: 0, flex: '1 1 240px' }}>
+          <Box sx={{ minWidth: 0, flex: '1 1 160px' }}>
             <Typography variant="overline" component="p" color="text.secondary">
               {eyebrow}
             </Typography>

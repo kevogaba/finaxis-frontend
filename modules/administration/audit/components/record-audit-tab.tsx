@@ -4,6 +4,7 @@ import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
+import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { ListNavigationProvider } from '@/components/data-display/list-navigation-context';
 import {
   ListBusyRegion,
@@ -16,11 +17,13 @@ import { lastPageIfPastEnd, parsePaging } from '@/lib/api/paging';
 import { toQueryString } from '@/lib/api/query-string';
 import { DEFAULT_AUDIT_PAGE_SIZE, auditApiPath, type AuditQuery } from '../audit-query';
 import { auditTrailHref, auditUserIds, toAuditRows } from '../audit-rows';
+import type { AuditEntityType } from '../audit-vocabulary';
 import { listAuditEvents } from '../audit-service';
 import { AuditEventTable } from './audit-event-table';
 import { AuditViewToggle } from './audit-view-toggle';
 
-export type RecordAuditFilter = { entityType: string; entityId: string } | { actorId: string };
+export type RecordAuditFilter =
+  { entityType: AuditEntityType; entityId: string } | { actorId: string };
 
 export interface RecordAuditView {
   /** The URL's `view` value, e.g. `membership`. */
@@ -112,10 +115,23 @@ export async function RecordAuditTab({
   // it after 07 integrates is an internal change.
   if (!events.ok) {
     return (
-      <Paper component="section" aria-labelledby={HEADING_ID} sx={{ overflow: 'hidden' }}>
-        {header}
-        <ErrorState problem={events.problem} />
-      </Paper>
+      // The header may render AuditViewToggle (several views), which calls useListNavigation()
+      // and expects the shared provider, same as the success branch below.
+      <ListNavigationProvider>
+        <Paper
+          component="section"
+          aria-labelledby={HEADING_ID}
+          sx={{ overflow: 'hidden', position: 'relative' }}
+        >
+          {header}
+          <ListNavigationProgress />
+          {events.problem.code === 'forbidden' ? (
+            <ForbiddenState />
+          ) : (
+            <ErrorState problem={events.problem} />
+          )}
+        </Paper>
+      </ListNavigationProvider>
     );
   }
 

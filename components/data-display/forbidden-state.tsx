@@ -64,7 +64,7 @@ export function BranchContextState({ allBranchesAvailable = true }: BranchContex
   return (
     <ForbiddenState
       title="Switch to All branches to manage this branch"
-      description="With a branch selected, you can only reach that branch. At All branches (institution level) you can manage every branch, including drafts and branches awaiting approval."
+      description="With a branch selected, you can only reach that branch. Switch to All branches (institution level) to reach other branches, including drafts and branches awaiting approval, if your role allows it."
       action={<SwitchToAllBranchesButton />}
     />
   );

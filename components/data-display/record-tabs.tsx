@@ -13,16 +13,18 @@ export interface RecordTab {
 }
 
 interface RecordTabsProps {
-  /** Names the navigation landmark and its tab list, e.g. `Westlands Branch sections`. */
+  /** Names the navigation landmark, e.g. `Westlands Branch sections`. */
   label: string;
   tabs: readonly RecordTab[];
 }
 
 /** The deepest tab whose href is the current path or an ancestor of it (sub-routes keep their
- * tab; the record root only matches Overview). */
-function activeTab(tabs: readonly RecordTab[], pathname: string): string | false {
+ * tab; the record root — tabs[0], Overview — only matches its own exact path, never an unlisted
+ * or hidden sub-route below it). */
+function activeTab([root, ...rest]: readonly RecordTab[], pathname: string): string | false {
+  if (pathname === root?.href) return root.href;
   let active: string | false = false;
-  for (const tab of tabs) {
+  for (const tab of rest) {
     const matches = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
     if (matches && (active === false || tab.href.length > active.length)) active = tab.href;
   }
@@ -39,13 +41,7 @@ export function RecordTabs({ label, tabs }: RecordTabsProps) {
   const active = activeTab(tabs, pathname);
   return (
     <Box component="nav" aria-label={label} sx={{ mt: 3.5, mb: 4 }}>
-      <Tabs
-        value={active}
-        aria-label={label}
-        variant="scrollable"
-        scrollButtons="auto"
-        allowScrollButtonsMobile
-      >
+      <Tabs value={active} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>
         {tabs.map((tab) => (
           <Tab
             key={tab.href}

@@ -42,4 +42,20 @@ describe('RecordTabs', () => {
     renderWithProviders(<RecordTabs label="Sections" tabs={TABS} />);
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   });
+
+  it('selects no tab on an unlisted or hidden sub-route below the record root', () => {
+    pathname = '/admin/branches/b1/audit';
+    renderWithProviders(
+      <RecordTabs
+        label="Sections"
+        tabs={[
+          { href: '/admin/branches/b1', label: 'Overview' },
+          { href: '/admin/branches/b1/users', label: 'Users' },
+        ]}
+      />,
+    );
+    for (const tab of screen.getAllByRole('tab')) {
+      expect(tab).toHaveAttribute('aria-selected', 'false');
+    }
+  });
 });
