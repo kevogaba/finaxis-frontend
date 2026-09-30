@@ -113,6 +113,52 @@ describe('ConfirmDialog', () => {
     expect(keyOf(action.mock.calls[1]?.[1])).not.toBe(keyOf(action.mock.calls[0]?.[1]));
   });
 
+  it('marks a destructive confirmation with the error colour', () => {
+    setup(() => Promise.resolve<FullResult>({ ok: true }), 'error');
+    expect(screen.getByRole('button', { name: 'Submit for approval' })).toHaveClass(
+      'MuiButton-colorError',
+    );
+  });
+
+  it('links the description to the dialog for assistive tech', () => {
+    setup(() => Promise.resolve<FullResult>({ ok: true }));
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+      'A second administrator must activate it.',
+    );
+  });
+
+  it('marks a destructive confirmation as an alert dialog', () => {
+    setup(() => Promise.resolve<FullResult>({ ok: true }), 'error');
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('recovers from a rejected action with fixed copy, stays open, and retries with the same key', async () => {
+    const user = userEvent.setup();
+    const action = vi
+      .fn((_previous: FullResult | null, _formData: FormData) =>
+        Promise.resolve<FullResult>({ ok: true }),
+      )
+      .mockRejectedValueOnce(new Error('network'));
+    const { onSuccess } = setup(action);
+
+    await user.click(screen.getByRole('button', { name: 'Submit for approval' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+    // Never the raw rejection message: a network drop, timeout or deploy skew isn't safe to show.
+    expect(screen.getByRole('alert')).not.toHaveTextContent('network');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Submit for approval' }));
+    // The stale failure isn't re-announced while the retry is in flight (it would otherwise sit
+    // there unchanged, as if nothing happened).
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
+    expect(keyOf(action.mock.calls[1]?.[1])).toBe(keyOf(action.mock.calls[0]?.[1]));
+  });
+
+  // Last: its action never settles, so it leaves a permanently pending promise behind — harmless
+  // once unmounted, but only once nothing after it in this file still awaits a settled action.
   it('cannot be closed or submitted again while the action is pending', async () => {
     const user = userEvent.setup();
     // Never settles: the request is still in flight for the rest of the test.
@@ -142,12 +188,5 @@ describe('ConfirmDialog', () => {
     expect(action).toHaveBeenCalledTimes(1);
     expect(key).toMatch(UUID_PATTERN);
     expect(keyOf(action.mock.calls[0]?.[1])).toBe(key);
-  });
-
-  it('marks a destructive confirmation with the error colour', () => {
-    setup(() => Promise.resolve<FullResult>({ ok: true }), 'error');
-    expect(screen.getByRole('button', { name: 'Submit for approval' })).toHaveClass(
-      'MuiButton-colorError',
-    );
   });
 });

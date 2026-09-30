@@ -1,6 +1,7 @@
 'use client';
 
-import { useActionState, useEffect, useState, type ReactNode } from 'react';
+import { useActionState, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { unstable_rethrow } from 'next/navigation';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -9,6 +10,8 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
+
+const ACTION_FAILED = 'Something went wrong. Please try again.';
 
 /** The least a confirm action returns. PR 07's `ActionResult` fits; its extra failure fields are
  * ignored here. */
@@ -43,9 +46,24 @@ export function ConfirmDialog<Result extends ConfirmOutcome>({
   // Lifted from ConfirmForm: while the action is pending, Escape and a backdrop click must not
   // unmount the form, which would discard its idempotency key (spec §6.4).
   const [pending, setPending] = useState(false);
+  // MUI's Dialog only wires aria-labelledby (from DialogTitle) on its own; a description needs an
+  // explicit aria-describedby, and a destructive confirmation needs `role="alertdialog"`.
+  const descriptionId = useId();
   return (
-    <Dialog open={open} onClose={pending ? undefined : onClose} fullWidth maxWidth="xs">
-      <ConfirmForm {...form} onClose={onClose} onPendingChange={setPending} />
+    <Dialog
+      open={open}
+      onClose={pending ? undefined : onClose}
+      fullWidth
+      maxWidth="xs"
+      aria-describedby={descriptionId}
+      role={form.tone === 'error' ? 'alertdialog' : undefined}
+    >
+      <ConfirmForm
+        {...form}
+        onClose={onClose}
+        onPendingChange={setPending}
+        descriptionId={descriptionId}
+      />
     </Dialog>
   );
 }
@@ -64,14 +82,33 @@ function ConfirmForm<Result extends ConfirmOutcome>({
   onClose,
   onSuccess,
   onPendingChange,
+  descriptionId,
   children,
-}: Omit<ConfirmDialogProps<Result>, 'open'> & { onPendingChange: (pending: boolean) => void }) {
+}: Omit<ConfirmDialogProps<Result>, 'open'> & {
+  onPendingChange: (pending: boolean) => void;
+  descriptionId: string;
+}) {
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const [state, formAction, pending] = useActionState<Result | null, FormData>(
-    async (previous, formData) => {
-      const result = await action(previous, formData);
-      if (result.ok) onSuccess();
-      return result;
+  // The last real `Result` the action returned — never a synthesized failure — so a retry after a
+  // rejected `action` (a network drop, a timeout, deploy skew) still passes the caller a `Result`,
+  // never a bare `ConfirmOutcome` cast back with `as Result` (banned).
+  const lastResult = useRef<Result | null>(null);
+  const [state, formAction, pending] = useActionState<ConfirmOutcome | null, FormData>(
+    async (_previous, formData) => {
+      try {
+        const result = await action(lastResult.current, formData);
+        lastResult.current = result;
+        if (result.ok) onSuccess();
+        return result;
+      } catch (caught) {
+        // A harmless guard: Next's own control-flow errors (redirect()/notFound()) must keep
+        // propagating rather than being swallowed as a form failure. A Server Action's redirect()
+        // itself does a client-side navigation and never rejects here.
+        unstable_rethrow(caught);
+        // Never `caught.message`: an unhandled rejection (a network drop, a timeout, a server
+        // restart, deploy skew) may carry backend or stack detail that isn't safe to show.
+        return { ok: false, formError: ACTION_FAILED };
+      }
     },
     null,
   );
@@ -81,16 +118,14 @@ function ConfirmForm<Result extends ConfirmOutcome>({
   useEffect(() => {
     onPendingChange(pending);
   }, [pending, onPendingChange]);
-  // Narrow through the concrete union: a generic `Result` doesn't narrow on `ok`.
-  const outcome: ConfirmOutcome | null = state;
-  const failure = outcome && !outcome.ok ? outcome : null;
+  const failure = state && !state.ok ? state : null;
 
   return (
     <Box component="form" action={formAction}>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 3 }}>
-        <DialogContentText>{description}</DialogContentText>
-        {failure && (
+        <DialogContentText id={descriptionId}>{description}</DialogContentText>
+        {failure && !pending && (
           <Alert severity="error">
             {failure.formError}
             {failure.requestId && ` Reference: ${failure.requestId}`}
