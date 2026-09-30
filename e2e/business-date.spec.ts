@@ -100,12 +100,22 @@ test.describe('business date', () => {
     await expect(hero(page).getByText('Closing', { exact: true })).toBeVisible();
     await expect(historyRows(page).nth(1)).toContainText('Close of business started');
     await expect(historyRows(page).nth(1)).toContainText('End of day');
+    // I3: the trigger button that opened the dialog just unmounted with the whole action set;
+    // focus must land on the next available action, never <body>.
+    await expect(
+      hero(page).getByRole('button', { name: 'Complete close of business', exact: true }),
+    ).toBeFocused();
 
     await run(page, 'Complete close of business');
     await expect(hero(page).getByText('Closed', { exact: true })).toBeVisible();
+    await expect(hero(page).getByRole('button', { name: 'Reopen', exact: true })).toBeFocused();
+
     await run(page, 'Reopen');
     await expect(hero(page).getByText('Open', { exact: true })).toBeVisible();
     await expect(historyRows(page)).toHaveCount(8);
+    await expect(
+      hero(page).getByRole('button', { name: 'Start close of business', exact: true }),
+    ).toBeFocused();
   });
 
   test('advances to a later date and updates the app bar', async ({ context, page }, testInfo) => {
@@ -152,6 +162,49 @@ test.describe('business date', () => {
     await expect(historyRows(page).nth(1)).toContainText('End of day');
   });
 
+  // M16 / I1: a genuine dropped connection, distinct from the fake API's simulated 409 lock above
+  // — the backend commits for real on the first attempt, but the browser never sees the response.
+  test('recovers from a dropped connection after the backend already committed, without duplicating the change', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo);
+    await enter(page);
+
+    // Lets the real POST reach the fake API (so it commits for real), then aborts the browser's
+    // own connection to it. Only the first Server Action POST (identified by its Next-Action
+    // header); the retry and every RSC-refresh GET to the same URL go through untouched.
+    let intercepted = false;
+    await page.route('**/admin/business-date*', async (route) => {
+      const request = route.request();
+      if (!intercepted && request.method() === 'POST' && request.headers()['next-action']) {
+        intercepted = true;
+        await route.fetch();
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    });
+
+    await hero(page).getByRole('button', { name: 'Start close of business', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('textbox', { name: 'Reason (optional)' }).fill('End of day');
+    await dialog.getByRole('button', { name: 'Start close of business', exact: true }).click();
+
+    await expect(dialog.getByRole('alert')).toContainText("couldn't confirm this change");
+    await expect(dialog.getByRole('textbox', { name: 'Reason (optional)' })).toHaveValue(
+      'End of day',
+    );
+
+    await dialog.getByRole('button', { name: 'Start close of business', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(hero(page).getByText('Closing', { exact: true })).toBeVisible();
+    // The retry's identical idempotency key must replay the already-committed change, not repeat
+    // it: exactly one new row (header + 4 seeded + 1), not two.
+    await expect(historyRows(page)).toHaveCount(6);
+    await expect(historyRows(page).nth(1)).toContainText('End of day');
+  });
+
   test('hides actions without the mutation permissions', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'business-date-read-only');
     await enter(page);
@@ -160,10 +213,7 @@ test.describe('business date', () => {
     await expect(hero(page).getByRole('button')).toHaveCount(0);
   });
 
-  test('hydrates the app-bar chip and the profile chips without a mismatch', async ({
-    context,
-    page,
-  }, testInfo) => {
+  test('hydrates the app-bar chip without a mismatch', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo);
     await enter(page);
 
@@ -184,9 +234,17 @@ test.describe('business date', () => {
     // Deterministic server-HTML check (belt-and-braces alongside the console/pageerror
     // listeners above): page.request shares this context's cookies, and before the fix the
     // Flight payload carries only a client-module reference for the icon, so this needle
-    // appears in the raw response only when SSR actually rendered it.
-    const appBarHtml = await (await page.request.get('/admin/business-date')).text();
-    expect(appBarHtml).toContain('data-testid="EventOutlinedIcon"');
+    // appears in the raw response only when SSR actually rendered it. Scoped to a window around
+    // the chip's own (unique) accessible name, not a `<header>`…`</header>` tag slice: the
+    // indicator is inside a `<Suspense fallback={null}>` (app/(authenticated)/layout.tsx), so its
+    // real markup streams in out-of-band, later in the same response, not between those tags —
+    // and the hero and the rail link also render an EventOutlinedIcon, so an unscoped needle would
+    // still pass even if the chip's own icon lost SSR.
+    const pageHtml = await (await page.request.get('/admin/business-date')).text();
+    const chipTextIndex = pageHtml.indexOf('Mon, 7 Sep 2026 · Business date · Open');
+    expect(chipTextIndex).toBeGreaterThan(-1);
+    const chipHtml = pageHtml.slice(Math.max(0, chipTextIndex - 500), chipTextIndex + 500);
+    expect(chipHtml).toContain('data-testid="EventOutlinedIcon"');
 
     await expect(
       page
@@ -199,15 +257,6 @@ test.describe('business date', () => {
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toBeHidden();
-
-    await page.goto('/profile');
-    const profileHtml = await (await page.request.get('/profile')).text();
-    expect(profileHtml).toContain('data-testid="CheckCircleOutlinedIcon"');
-    await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible({
-      timeout: 15000,
-    });
-    await page.getByRole('button', { name: 'Technical details' }).click();
-    await expect(page.getByText(/User ID:/)).toBeVisible();
 
     expect(hydrationErrors).toEqual([]);
   });

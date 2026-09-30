@@ -312,9 +312,12 @@ test.describe('fake API', () => {
     };
 
     let calls = 0;
+    // M17: a non-empty return value proves the 204 path drops it (a broken implementation that
+    // serialized `produce()`'s return as JSON couldn't pass this — the old `undefined` return let
+    // it pass either way).
     const produce = () => {
       calls += 1;
-      return undefined;
+      return { ignored: true };
     };
 
     sendIdempotent(context, {}, produce, 204);
@@ -324,10 +327,12 @@ test.describe('fake API', () => {
     expect(written).toHaveLength(2);
     expect(written[0]).toMatchObject({ status: 204, body: undefined });
     expect(written[0]?.headers).toMatchObject({ 'Idempotency-Key': key });
+    expect(written[0]?.headers['Content-Type']).toBeUndefined();
     expect(written[1]).toMatchObject({ status: 204, body: undefined });
     expect(written[1]?.headers).toMatchObject({
       'Idempotency-Key': key,
       'Idempotency-Replayed': 'true',
     });
+    expect(written[1]?.headers['Content-Type']).toBeUndefined();
   });
 });
