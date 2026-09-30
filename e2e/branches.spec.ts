@@ -33,7 +33,17 @@ async function lifecycle(page: Page, label: string, reason?: string) {
   return dialog;
 }
 
-const statusChip = (page: Page, value: string) => page.getByText(value, { exact: true }).first();
+// Scoped to `main`: an unscoped page.getByText can catch a transient hidden duplicate of the
+// route's streamed content (app/loading.tsx's root Suspense boundary), which is what produced a
+// strict-mode violation in the "guides a branch context" test below. `getByRole('main')` excludes
+// a hidden duplicate landmark from resolution, so a chained getByText only ever searches the one
+// rendered, visible `<main>`.
+const mainText = (page: Page, value: string | RegExp, options?: { exact?: boolean }) =>
+  page.getByRole('main').getByText(value, options);
+// The Overview tab renders the branch status twice by design (the hero chip, then the
+// description-list row), both visible, so `.first()` is load-bearing here, not a leftover: it
+// picks the hero's copy, which every caller renders ahead of the description list in the DOM.
+const statusChip = (page: Page, value: string) => mainText(page, value, { exact: true }).first();
 const rowsOf = (page: Page, table: string) =>
   page.getByRole('table', { name: table }).getByRole('row');
 
@@ -48,7 +58,7 @@ test.describe('branches', () => {
     await authenticate(context, testInfo, 'branches');
     await openDirectory(page);
 
-    await expect(page.getByText('6 branches')).toBeVisible();
+    await expect(mainText(page, '6 branches')).toBeVisible();
     await expect(rowsOf(page, 'Branches')).toHaveCount(7);
 
     await page.getByRole('searchbox', { name: 'Search' }).fill('west');
@@ -59,13 +69,13 @@ test.describe('branches', () => {
     // Wait for each cleared render (as audit.spec does): the next push builds on the rendered
     // query, and the sort headers' hrefs are server-built from it.
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(page.getByText('6 branches')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '6 branches')).toBeVisible({ timeout: 15000 });
     await selectMuiOption(page, 'Status', /^Suspended$/);
     await expect(page).toHaveURL(/status=SUSPENDED/, { timeout: 15000 });
     await expect(rowsOf(page, 'Branches').nth(1)).toContainText('Kisumu Branch');
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(page.getByText('6 branches')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '6 branches')).toBeVisible({ timeout: 15000 });
     const byName = page.getByRole('columnheader', { name: 'Branch', exact: true });
     await byName.getByRole('link').click();
     await expect(page).toHaveURL(/sortBy=branchName&sortDir=ASC/, { timeout: 15000 });
@@ -90,7 +100,7 @@ test.describe('branches', () => {
     await page.getByRole('textbox', { name: 'Branch code' }).fill('nairobi cbd');
     await page.getByRole('button', { name: 'Create draft' }).click();
     await expect(
-      page.getByText('Use 2–20 capital letters, digits, underscores or hyphens.'),
+      mainText(page, 'Use 2–20 capital letters, digits, underscores or hyphens.'),
     ).toBeVisible();
 
     await page.getByRole('textbox', { name: 'Branch code' }).fill('NAIROBI_CBD');
@@ -110,7 +120,7 @@ test.describe('branches', () => {
     ).toBeVisible();
     await expect(statusChip(page, 'Pending approval')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Activate', exact: true })).toBeDisabled();
-    await expect(page.getByText(MAKER_CHECKER)).toBeVisible();
+    await expect(mainText(page, MAKER_CHECKER)).toBeVisible();
   });
 
   test('activates a branch another administrator drafted and shows it in the audit tab', async ({
@@ -146,7 +156,7 @@ test.describe('branches', () => {
     // first rung — the same action's replacement is still on offer).
     await expect(page.getByRole('button', { name: 'Reactivate', exact: true })).toBeFocused();
     await expect(statusChip(page, 'Suspended')).toBeVisible();
-    await expect(page.getByText('Cash count')).toBeVisible();
+    await expect(mainText(page, 'Cash count')).toBeVisible();
 
     await lifecycle(page, 'Reactivate');
     await expect(page.getByRole('dialog')).toBeHidden();
@@ -224,7 +234,7 @@ test.describe('branches', () => {
     await openDirectory(page, /Head Office/);
 
     await page.goto(`/admin/branches/${BRANCH_SCENARIO_IDS.thikaRoad}`);
-    await expect(page.getByText('Switch to All branches to manage this branch')).toBeVisible({
+    await expect(mainText(page, 'Switch to All branches to manage this branch')).toBeVisible({
       timeout: 15000,
     });
     await page.getByRole('button', { name: 'Switch to All branches' }).click();
@@ -269,10 +279,13 @@ test.describe('branches', () => {
 
     await page.goto('/admin/branches/new');
     // Scoped to `main`: on one run this matched two nodes (a strict-mode violation) with only one
-    // inside `main`. It didn't reproduce on a repeat of this test alone, so it reads as `next dev`
-    // (Fast Refresh/streaming) transient duplication rather than a component rendering the message
-    // twice (`ForbiddenState` has exactly one call site here) — scoping to `main` is deterministic
-    // either way and matches what a user/screen-reader perceives as the page's content.
+    // inside `main` (`ForbiddenState` has exactly one call site here, so it isn't a double render).
+    // Confirmed mechanism (the same class later hit the "guides a branch context" test's
+    // assertion, see `mainText` above): app/loading.tsx puts the route under a root Suspense
+    // boundary, so the streamed content can briefly exist as a hidden duplicate segment next to
+    // the rendered one. `getByRole('main')` excludes a hidden duplicate landmark from resolution,
+    // so scoping to it is deterministic either way and matches what a user/screen-reader perceives
+    // as the page's content.
     await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible({
       timeout: 15000,
     });
