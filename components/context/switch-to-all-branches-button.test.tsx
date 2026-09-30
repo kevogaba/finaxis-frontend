@@ -6,12 +6,14 @@ import { ApplicationContextProvider } from '@/components/shell/organization-cont
 import { ALL_BRANCHES_UNAVAILABLE } from './all-branches-copy';
 import { SwitchToAllBranchesButton } from './switch-to-all-branches-button';
 
-const { router, selectOrganisationRequest, selectBranchRequest, EXPIRED } = vi.hoisted(() => ({
-  router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
-  selectOrganisationRequest: vi.fn(),
-  selectBranchRequest: vi.fn(),
-  EXPIRED: new Error('session expired'),
-}));
+const { router, selectOrganisationRequest, selectBranchRequest, EXPIRED, CONTEXT_LOST } =
+  vi.hoisted(() => ({
+    router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
+    selectOrganisationRequest: vi.fn(),
+    selectBranchRequest: vi.fn(),
+    EXPIRED: new Error('session expired'),
+    CONTEXT_LOST: (status: 403 | 409) => Object.assign(new Error('context lost'), { status }),
+  }));
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
   return { ...actual, useRouter: () => router };
@@ -24,6 +26,11 @@ vi.mock('./context-api', async (importOriginal) => {
       selectOrganisationRequest(...args) as unknown,
     selectBranchRequest: (...args: unknown[]) => selectBranchRequest(...args) as unknown,
     isSessionExpired: (error: unknown) => error === EXPIRED,
+    isContextLost: (error: unknown) =>
+      typeof error === 'object' &&
+      error !== null &&
+      'status' in error &&
+      (error.status === 403 || error.status === 409),
   };
 });
 
@@ -58,6 +65,23 @@ describe('SwitchToAllBranchesButton', () => {
     await user.click(renderButton());
 
     expect(selectOrganisationRequest).toHaveBeenCalledWith('org-1');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Switched to Greenfield SACCO · All branches',
+    );
+    expect(router.refresh).toHaveBeenCalledTimes(1);
+    expect(selectBranchRequest).not.toHaveBeenCalled();
+  });
+
+  it('reports success for a done-institution response (already at institution level)', async () => {
+    const user = userEvent.setup();
+    selectOrganisationRequest.mockResolvedValueOnce({
+      branchId: null,
+      requiresBranchSelection: false,
+      assignedBranchIds: [],
+    });
+
+    await user.click(renderButton());
+
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Switched to Greenfield SACCO · All branches',
     );
@@ -115,6 +139,23 @@ describe('SwitchToAllBranchesButton', () => {
     expect(failure).toHaveClass('MuiAlert-colorError');
     // The header and page must re-read the context the server now holds.
     expect(router.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains a lost context (403/409) from the organisation POST and refreshes', async () => {
+    const user = userEvent.setup();
+    selectOrganisationRequest.mockRejectedValueOnce(CONTEXT_LOST(403));
+    const button = renderButton();
+
+    await user.click(button);
+    const denied = await screen.findByRole('alert');
+    expect(denied).toHaveTextContent('You do not have access to this context.');
+    expect(router.refresh).toHaveBeenCalledTimes(1);
+
+    selectOrganisationRequest.mockRejectedValueOnce(CONTEXT_LOST(409));
+    await user.click(button);
+    const stale = await screen.findByRole('alert');
+    expect(stale).toHaveTextContent('Your saved context is no longer valid');
+    expect(router.refresh).toHaveBeenCalledTimes(2);
   });
 
   it('sends an expired session to login and explains any other failure', async () => {

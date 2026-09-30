@@ -26,5 +26,7 @@ describe('CopyIdButton', () => {
     await user.click(screen.getByRole('button', { name: 'Copy ID' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't copy the ID");
+    // The toast tells the user to select and copy it themselves, so the full value must be shown.
+    expect(screen.getByText(ID)).toBeInTheDocument();
   });
 });

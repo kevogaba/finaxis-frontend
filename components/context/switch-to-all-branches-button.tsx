@@ -8,10 +8,17 @@ import Button from '@mui/material/Button';
 import { useToast } from '@/components/providers/toast-provider';
 import { useApplicationContext } from '@/components/shell/organization-context';
 import { ALL_BRANCHES_UNAVAILABLE } from './all-branches-copy';
-import { isSessionExpired, selectBranchRequest, selectOrganisationRequest } from './context-api';
+import {
+  isContextLost,
+  isSessionExpired,
+  selectBranchRequest,
+  selectOrganisationRequest,
+} from './context-api';
 import { nextStepAfterOrganisation } from './use-context-selection';
 
 const SWITCH_FAILED = "We couldn't switch to All branches. Please try again.";
+const CONTEXT_ACCESS_DENIED = 'You do not have access to this context.';
+const STALE_CONTEXT = 'Your saved context is no longer valid. Select an organisation again.';
 
 /** `info` when All branches is unavailable (informational), `error` when the switch failed. */
 interface SwitchMessage {
@@ -57,8 +64,20 @@ export function SwitchToAllBranchesButton() {
         router.replace('/login?reason=session_expired');
         return;
       }
+      // The backend clears the context cookie server-side on a lost context (403/409): whichever
+      // call hit it, there is nothing left to retry against, so refresh and explain it precisely
+      // rather than the generic failure below.
+      if (isContextLost(caught)) {
+        setMessage({
+          severity: 'error',
+          text: caught.status === 403 ? CONTEXT_ACCESS_DENIED : STALE_CONTEXT,
+        });
+        router.refresh();
+        return;
+      }
       // As use-context-selection.ts does: the header and the page re-read the context that the
-      // server now holds, whether the re-pin failed with a lost context (403/409) or anything else.
+      // server now holds, whether the re-pin failed with anything else or the organisation POST
+      // never committed at all.
       if (committed) router.refresh();
       setMessage({ severity: 'error', text: SWITCH_FAILED });
     } finally {

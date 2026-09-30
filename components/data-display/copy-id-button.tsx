@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
@@ -17,6 +18,9 @@ interface CopyIdButtonProps {
 /** A shortened ID with a copy affordance (spec §9); the full value stays in `title`. */
 export function CopyIdButton({ value, label = 'ID' }: CopyIdButtonProps) {
   const notify = useToast();
+  // The toast tells the user to select and copy the value themselves, so the full value (not just
+  // the shortened one normally shown) has to actually be on screen for that to be true.
+  const [revealed, setRevealed] = useState(false);
 
   const copy = async () => {
     try {
@@ -24,14 +28,15 @@ export function CopyIdButton({ value, label = 'ID' }: CopyIdButtonProps) {
       await navigator.clipboard.writeText(value);
       notify(`${label} copied`);
     } catch {
-      notify(`Couldn't copy the ${label}. Select it and copy it instead.`, 'error');
+      setRevealed(true);
+      notify(`Couldn't copy the ${label}. Select it below and copy it instead.`, 'error');
     }
   };
 
   return (
     <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
       <Typography component="span" variant="body2" title={value} sx={{ fontFamily: 'monospace' }}>
-        {shortId(value)}
+        {revealed ? value : shortId(value)}
       </Typography>
       <Tooltip title={`Copy ${label}`}>
         <IconButton

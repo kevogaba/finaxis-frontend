@@ -49,4 +49,38 @@ describe('AuditViewToggle', () => {
 
     expect(router.push).not.toHaveBeenCalled();
   });
+
+  it('keeps every button its own bordered, rounded pill so a wrapped row never reads as a broken group', () => {
+    // MUI assigns the grouped-middle/last styling (no left border, square inner corners) by child
+    // position, not by visual row, so a 4th button already carries it in jsdom without real wrap.
+    renderWithProviders(
+      <AuditViewToggle
+        views={[
+          { value: 'user', label: 'User record' },
+          { value: 'account', label: 'Account' },
+          { value: 'membership', label: 'Membership' },
+          { value: 'performed', label: 'Performed by' },
+        ]}
+        value="user"
+      />,
+    );
+    const last = getComputedStyle(screen.getByRole('button', { name: 'Performed by' }));
+    expect(last.marginLeft).toBe('0px');
+
+    // The radius/border-color reset is expressed through this theme's CSS custom properties (so
+    // it still tracks dark mode), and jsdom's computed style doesn't resolve `var()` inside a
+    // shorthand (a jsdom limitation the theme render test works around the same way) — so read
+    // the generated rule directly and prove it wins the group's own corner/border override by
+    // outright higher specificity (a doubled root class), not just stylesheet order.
+    const css = [...document.querySelectorAll('style')].map((el) => el.textContent).join('\n');
+    const doubled =
+      /\.(css-[\w-]+-MuiToggleButtonGroup-root)\.\1 \.MuiToggleButtonGroup-grouped\{([^}]*)\}/.exec(
+        css,
+      );
+    if (!doubled) throw new Error('expected a doubled-root override rule for .grouped');
+    const [, , overrideBody] = doubled;
+    expect(overrideBody).toContain('margin:0');
+    expect(overrideBody).toContain('border-left:1px solid');
+    expect(overrideBody).toMatch(/border-radius:/);
+  });
 });
