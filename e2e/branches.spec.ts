@@ -33,16 +33,20 @@ async function lifecycle(page: Page, label: string, reason?: string) {
   return dialog;
 }
 
-// Scoped to `main`: an unscoped page.getByText can catch a transient hidden duplicate of the
-// route's streamed content (app/loading.tsx's root Suspense boundary), which is what produced a
-// strict-mode violation in the "guides a branch context" test below. `getByRole('main')` excludes
-// a hidden duplicate landmark from resolution, so a chained getByText only ever searches the one
-// rendered, visible `<main>`.
+// Scoped to `main`: in an observed failure, an unscoped page.getByText resolved to two elements
+// for the "guides a branch context" test below -- one hidden and outside `main`, one inside it (the
+// layout has a single BranchContextState call site, so it wasn't a double render). The likely cause
+// (not reproduced in this session) is app/loading.tsx's root Suspense boundary letting the streamed
+// content briefly exist as a hidden duplicate segment. Whatever the actual cause, `getByRole('main')`
+// excludes a hidden `<main>` from resolution, so a chained getByText only ever searches the one
+// rendered, visible `<main>` -- deterministic regardless of the mechanism.
 const mainText = (page: Page, value: string | RegExp, options?: { exact?: boolean }) =>
   page.getByRole('main').getByText(value, options);
 // The Overview tab renders the branch status twice by design (the hero chip, then the
-// description-list row), both visible, so `.first()` is load-bearing here, not a leftover: it
-// picks the hero's copy, which every caller renders ahead of the description list in the DOM.
+// description-list row), both visible, so `.first()` is load-bearing here, not a leftover: without
+// it this assertion would be a two-match strict-mode violation on every run. It does not pin the
+// check to the hero specifically -- if only one copy carried the asserted value, `.first()` would
+// resolve to whichever one does (pre-existing deferred minor, progress.md "Task 8: …spec.ts:36").
 const statusChip = (page: Page, value: string) => mainText(page, value, { exact: true }).first();
 const rowsOf = (page: Page, table: string) =>
   page.getByRole('table', { name: table }).getByRole('row');
@@ -280,12 +284,12 @@ test.describe('branches', () => {
     await page.goto('/admin/branches/new');
     // Scoped to `main`: on one run this matched two nodes (a strict-mode violation) with only one
     // inside `main` (`ForbiddenState` has exactly one call site here, so it isn't a double render).
-    // Confirmed mechanism (the same class later hit the "guides a branch context" test's
-    // assertion, see `mainText` above): app/loading.tsx puts the route under a root Suspense
-    // boundary, so the streamed content can briefly exist as a hidden duplicate segment next to
-    // the rendered one. `getByRole('main')` excludes a hidden duplicate landmark from resolution,
-    // so scoping to it is deterministic either way and matches what a user/screen-reader perceives
-    // as the page's content.
+    // Likely the same class as the "guides a branch context" test above (see `mainText`'s comment;
+    // not reproduced in this session either): app/loading.tsx's root Suspense boundary can let the
+    // streamed route briefly exist as a hidden duplicate segment next to the rendered one. Whatever
+    // the actual cause, `getByRole('main')` excludes a hidden duplicate landmark from resolution, so
+    // scoping to it is deterministic either way and matches what a user/screen-reader perceives as
+    // the page's content.
     await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible({
       timeout: 15000,
     });
