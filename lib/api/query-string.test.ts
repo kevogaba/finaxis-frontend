@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toQueryString, toSearchParams } from './query-string';
+import { hrefWith, toQueryString, toSearchParams } from './query-string';
 
 describe('toQueryString', () => {
   it('drops undefined and empty values and encodes the rest', () => {
@@ -18,5 +18,19 @@ describe('toSearchParams', () => {
     expect(
       toSearchParams({ page: '2', status: ['ACTIVE', 'DRAFT'], q: '', size: undefined }).toString(),
     ).toBe('page=2&status=ACTIVE');
+  });
+});
+
+describe('hrefWith', () => {
+  it('sets, replaces, and deletes params on a path', () => {
+    expect(
+      hrefWith('/admin/branches', new URLSearchParams('q=west&page=2'), {
+        sortBy: 'branchName',
+        page: null,
+      }),
+    ).toBe('/admin/branches?q=west&sortBy=branchName');
+    expect(hrefWith('/admin/branches', new URLSearchParams('page=1'), { page: null })).toBe(
+      '/admin/branches',
+    );
   });
 });

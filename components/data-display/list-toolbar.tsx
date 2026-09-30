@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useSyncExternalStore } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
@@ -25,6 +25,12 @@ export type ToolbarField =
       /** Params to delete in the same navigation when this field changes (e.g. a stale
        * dependent filter that would otherwise leave an out-of-range Select value). */
       clears?: readonly string[];
+    }
+  | {
+      kind: 'search';
+      name: string;
+      label: string;
+      placeholder?: string;
     }
   | {
       kind: 'datetime';
@@ -104,6 +110,56 @@ function commitDatetime(
     ? new Date(parsed.getTime() + 59_999).toISOString()
     : parsed.toISOString();
   setParam(field.name, iso);
+}
+
+/**
+ * Free-text search, committed (trimmed) on Enter or blur — not per keystroke, so a commit never
+ * races the text still being typed. Every URL change (a commit landing, "Clear filters",
+ * Back/Forward) resets the draft to the URL value — React's "previous prop" pattern, so a cleared
+ * URL never shows (or re-commits on blur) the old text.
+ * ponytail: characters typed while a commit is in flight are replaced by the committed value;
+ * add a debounce with a pending-commit guard if users expect live filtering.
+ */
+function SearchField({
+  field,
+  current,
+  onCommit,
+}: {
+  field: Extract<ToolbarField, { kind: 'search' }>;
+  current: string;
+  onCommit: (value: string) => void;
+}) {
+  const [seen, setSeen] = useState(current);
+  const [draft, setDraft] = useState(current);
+  if (current !== seen) {
+    setSeen(current);
+    setDraft(current);
+  }
+  const commit = (raw: string) => {
+    const next = raw.trim();
+    if (next !== current) onCommit(next);
+  };
+  return (
+    <TextField
+      type="search"
+      label={field.label}
+      placeholder={field.placeholder}
+      value={draft}
+      sx={{ width: { xs: '100%', sm: 260 } }}
+      slotProps={{ htmlInput: { maxLength: 100 } }}
+      onChange={(event) => {
+        setDraft(event.target.value);
+      }}
+      onBlur={(event) => {
+        commit(event.target.value);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        commit(draft);
+      }}
+    />
+  );
 }
 
 /** Filter bar (prototype `.toolbar`). Every change rewrites the URL and returns to page 0. */
@@ -190,6 +246,18 @@ export function ListToolbar({ fields, resultLabel, chips = [], timeZone }: ListT
                 ))}
               </Select>
             </FormControl>
+          );
+        }
+        if (field.kind === 'search') {
+          return (
+            <SearchField
+              key={field.name}
+              field={field}
+              current={searchParams.get(field.name) ?? ''}
+              onCommit={(value) => {
+                setParam(field.name, value);
+              }}
+            />
           );
         }
         const current = searchParams.get(field.name) ?? '';
