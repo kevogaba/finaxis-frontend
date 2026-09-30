@@ -24,7 +24,7 @@ export default async function ProfileLayout({ children }: { children: ReactNode 
   return (
     <>
       <RecordHero
-        back={{ href: workspaceHome(context.module.id), label: 'Back to overview' }}
+        back={{ href: workspaceHome(context.module.id), label: `Back to ${context.module.name}` }}
         avatar={{ kind: 'person', name: user.name }}
         eyebrow={`${context.module.name} · Account profile`}
         title="My profile"

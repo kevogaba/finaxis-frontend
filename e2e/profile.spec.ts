@@ -29,7 +29,7 @@ test.describe('profile', () => {
     await expect(
       main(page).getByText('Backend Jane Manager · backend.jane@greenfield.example'),
     ).toBeVisible();
-    await expect(main(page).getByRole('link', { name: 'Back to overview' })).toHaveAttribute(
+    await expect(main(page).getByRole('link', { name: 'Back to Administration' })).toHaveAttribute(
       'href',
       '/admin',
     );
@@ -76,7 +76,7 @@ test.describe('profile', () => {
       'Current',
     );
     await expect(organisations.getByRole('row', { name: /Platform/ })).not.toContainText('Current');
-    const branches = main(page).getByRole('table', { name: 'Branches in Greenfield SACCO' });
+    const branches = main(page).getByRole('table', { name: 'Branches' });
     await expect(branches.getByRole('row', { name: /Head Office/ })).toContainText('Current');
 
     await main(page).getByRole('button', { name: 'Switch context' }).click();
@@ -108,7 +108,7 @@ test.describe('profile', () => {
     // One distinct branch: context selection auto-pins it, so there's no branch step.
     await enterAdmin(page, '/profile/contexts', { heading: 'My profile', branch: null });
 
-    const branches = main(page).getByRole('table', { name: 'Branches in Greenfield SACCO' });
+    const branches = main(page).getByRole('table', { name: 'Branches' });
     await expect(branches.getByRole('row', { name: /Head Office/ })).toHaveCount(1);
   });
 
@@ -120,7 +120,7 @@ test.describe('profile', () => {
     // Westlands is SUSPENDED, so Head Office is the only selectable branch and gets auto-pinned.
     await enterAdmin(page, '/profile/contexts', { heading: 'My profile', branch: null });
 
-    const branches = main(page).getByRole('table', { name: 'Branches in Greenfield SACCO' });
+    const branches = main(page).getByRole('table', { name: 'Branches' });
     await expect(branches.getByRole('row', { name: /Westlands Branch/ })).toContainText(
       'Suspended',
     );
@@ -206,10 +206,9 @@ test.describe('profile', () => {
       organisation: /Platform/,
       branch: null,
     });
-    await expect(main(page).getByRole('link', { name: 'Back to overview' })).toHaveAttribute(
-      'href',
-      '/platform-admin',
-    );
+    await expect(
+      main(page).getByRole('link', { name: 'Back to Platform Administration' }),
+    ).toHaveAttribute('href', '/platform-admin');
     await expect(tab(page, 'Security')).toBeVisible();
     await expect(tab(page, 'Activity')).toHaveCount(0);
 

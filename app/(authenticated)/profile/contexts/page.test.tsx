@@ -95,10 +95,14 @@ describe('ProfileContextsPage', () => {
     expect(
       within(organisations).getByRole('row', { name: /Lakeside SACCO/ }),
     ).not.toHaveTextContent('Current');
-    const branches = screen.getByRole('table', { name: 'Branches in Greenfield SACCO' });
+    const branches = screen.getByRole('table', { name: 'Branches' });
     expect(within(branches).getByRole('row', { name: /Head Office/ })).toHaveTextContent('Current');
     expect(within(branches).getByRole('row', { name: /Westlands Branch/ })).not.toHaveTextContent(
       'Current',
+    );
+    const branchesSection = screen.getByRole('region', { name: 'Branches' });
+    expect(branchesSection).toHaveTextContent(
+      "You're working at Head Office in Greenfield SACCO. Use Switch context above to change branch; only active branches can be chosen.",
     );
   });
 
@@ -110,7 +114,7 @@ describe('ProfileContextsPage', () => {
     const organisations = screen.getByRole('region', { name: 'Organisations' });
     expect(within(organisations).getByRole('alert')).toHaveTextContent('req-1');
     // Branches come from /auth/me, not this read, so they still render.
-    expect(screen.getByRole('table', { name: 'Branches in Greenfield SACCO' })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Branches' })).toBeInTheDocument();
   });
 
   it('sends a page past the end to the last page, keeping the size', async () => {

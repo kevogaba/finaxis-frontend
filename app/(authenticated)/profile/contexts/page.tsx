@@ -54,7 +54,7 @@ export default async function ProfileContextsPage({ searchParams }: ProfileConte
   }
 
   const branchLabel = context.branch?.name ?? 'All branches (institution level)';
-  const branchesTitle = `Branches in ${user.organization.name}`;
+  const branchesTitle = 'Branches';
 
   return (
     <Stack spacing={4}>
@@ -113,7 +113,7 @@ export default async function ProfileContextsPage({ searchParams }: ProfileConte
 
       <ProfileSection
         title={branchesTitle}
-        description={`You're working at ${branchLabel}. Only active branches can be selected.`}
+        description={`You're working at ${branchLabel} in ${user.organization.name}. Use Switch context above to change branch; only active branches can be chosen.`}
       >
         {user.branches.length === 0 ? (
           <EmptyState
