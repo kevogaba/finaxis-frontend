@@ -177,6 +177,32 @@ test.describe('profile', () => {
     );
   });
 
+  test('the selected tab stays visible after a full page load at 375px', async ({
+    context,
+    page,
+  }, testInfo) => {
+    // Regression: at 375px, MUI's Tabs scrolls the selected tab into view before deciding it needs
+    // its two 40px scroll buttons, which can then push an already-visible tab back out (kit gate
+    // finding, record-tabs.tsx). A full page load — not a client-side tab switch — is what shows it.
+    await page.setViewportSize({ width: 375, height: 812 });
+    await authenticate(context, testInfo);
+
+    await enterAdmin(page, '/profile/roles', { heading: 'My profile' });
+    await expect(tab(page, 'Roles & permissions')).toBeInViewport({ ratio: 0.95 });
+
+    await page.goto('/profile/security');
+    await expect(page.getByRole('heading', { level: 1, name: 'My profile' })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(tab(page, 'Security')).toBeInViewport({ ratio: 0.95 });
+
+    await page.goto('/profile/activity');
+    await expect(page.getByRole('heading', { level: 1, name: 'My profile' })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(tab(page, 'Activity')).toBeInViewport({ ratio: 0.95 });
+  });
+
   test('activity: hidden without audit.view, and a direct link explains why', async ({
     context,
     page,

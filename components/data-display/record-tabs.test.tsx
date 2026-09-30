@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
+import { tabsClasses } from '@mui/material/Tabs';
 import { renderWithProviders } from '@/test/test-utils';
 import { RecordTabs } from './record-tabs';
 
@@ -57,5 +58,49 @@ describe('RecordTabs', () => {
     for (const tab of screen.getAllByRole('tab')) {
       expect(tab).toHaveAttribute('aria-selected', 'false');
     }
+  });
+
+  it("nudges the selected tab back into view once the scroller's own size settles", () => {
+    // Regression for the scroll-buttons-arrive-late bug (index item 1, 375px full page load): MUI
+    // scrolls the selected tab into view before `scrollButtons="auto"` decides to add its two 40px
+    // buttons, which can then push an already-visible tab back out. jsdom has neither
+    // `ResizeObserver` nor `scrollIntoView`, so both are stubbed to observe the wiring. Tabs itself
+    // also observes each tab child with its own ResizeObserver once one exists, so the fake tracks
+    // every instance and picks out ours by what it observes, rather than assuming there's only one.
+    pathname = '/admin/branches/b1/audit';
+    const instances: { callback: () => void; observe: ReturnType<typeof vi.fn> }[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        callback: () => void;
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+        constructor(callback: () => void) {
+          this.callback = callback;
+          instances.push(this);
+        }
+      },
+    );
+    // jsdom has no scrollIntoView implementation at all (unlike the DOM lib types, which declare it
+    // unconditionally), so it needs a stub before it can be spied on below.
+    Element.prototype.scrollIntoView = () => undefined;
+
+    renderWithProviders(<RecordTabs label="Sections" tabs={TABS} />);
+
+    const ours = instances.find((instance) => {
+      const target = instance.observe.mock.calls[0]?.[0] as HTMLElement | undefined;
+      return target?.classList.contains(tabsClasses.scroller) === true;
+    });
+    expect(ours).toBeDefined();
+
+    const audit = screen.getByRole('tab', { name: 'Audit' });
+    const scrollIntoView = vi.spyOn(audit, 'scrollIntoView');
+    ours?.callback();
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ inline: 'nearest', block: 'nearest' });
+
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
   });
 });
