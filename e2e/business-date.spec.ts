@@ -57,6 +57,35 @@ test.describe('business date', () => {
     ).toBeVisible();
   });
 
+  // Layer-07 visual-pass finding: at common back-office widths the chip's plain-string label
+  // ellipsized the status word first, leaving colour as the only signal (WCAG 1.4.1). The status
+  // must stay fully rendered (not clipped by the label's overflow:hidden ellipsis) at every width
+  // where the chip itself is shown (it hides below the `lg` breakpoint, 1200px).
+  for (const width of [1200, 1280]) {
+    test(`app-bar chip keeps its status word fully visible at ${width}px`, async ({
+      context,
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 800 });
+      await authenticate(context, testInfo);
+      await enter(page);
+
+      const chip = page
+        .getByRole('banner')
+        .getByRole('link', { name: 'Mon, 7 Sep 2026 · Business date · Open' });
+      await expect(chip).toBeVisible();
+      const status = chip.getByText('Open', { exact: true });
+      await expect(status).toBeVisible();
+
+      const chipBox = await chip.boundingBox();
+      const statusBox = await status.boundingBox();
+      if (!chipBox || !statusBox) {
+        throw new Error('expected bounding boxes for the chip and its status span');
+      }
+      expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(chipBox.x + chipBox.width + 1);
+    });
+  }
+
   test('runs close of business and reopens, each with a fresh request', async ({
     context,
     page,
@@ -105,15 +134,22 @@ test.describe('business date', () => {
 
     await hero(page).getByRole('button', { name: 'Start close of business', exact: true }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByRole('textbox', { name: 'Reason (optional)' }).fill('End of day');
     await dialog.getByRole('button', { name: 'Start close of business', exact: true }).click();
     await expect(dialog.getByRole('alert')).toContainText(
       'Another business date change is in progress',
+    );
+    // D2: React 19's <form action> auto-resets every uncontrolled field on every submit outcome
+    // (requestFormReset) — the retry below must reuse this typed reason, not a blank one.
+    await expect(dialog.getByRole('textbox', { name: 'Reason (optional)' })).toHaveValue(
+      'End of day',
     );
 
     await dialog.getByRole('button', { name: 'Start close of business', exact: true }).click();
     await expect(dialog).toBeHidden();
     await expect(hero(page).getByText('Closing', { exact: true })).toBeVisible();
     await expect(historyRows(page)).toHaveCount(6);
+    await expect(historyRows(page).nth(1)).toContainText('End of day');
   });
 
   test('hides actions without the mutation permissions', async ({ context, page }, testInfo) => {

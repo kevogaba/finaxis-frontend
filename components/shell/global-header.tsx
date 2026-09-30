@@ -100,8 +100,9 @@ export function GlobalHeader({
 
         <Box sx={{ flexGrow: 1 }} />
 
-        {/* Hides below `lg`; the chip's own label ellipsis (maxWidth: 100%) shrinks it first.
-            ponytail: the prototype's icon-only band (≤ 1180 px) is deferred to the visual pass. */}
+        {/* Hides below `lg`. Above it, the chip's own label ellipsizes the date/"Business date"
+            prefix first and keeps the status word (Open/Closing/Closed) fully visible — see
+            business-date-chip.tsx (layer-07 visual pass, WCAG 1.4.1). */}
         {businessDate && (
           <Box sx={{ display: { xs: 'none', lg: 'flex' }, minWidth: 0 }}>{businessDate}</Box>
         )}

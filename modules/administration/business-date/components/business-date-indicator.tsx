@@ -15,7 +15,8 @@ export async function BusinessDateIndicator() {
   if (!current) return null;
   return (
     <BusinessDateChip
-      label={`${formatBusinessDate(current.date, 'short')} · Business date · ${humanizeEnum(current.status)}`}
+      dateLabel={`${formatBusinessDate(current.date, 'short')} · Business date`}
+      statusLabel={humanizeEnum(current.status)}
       color={statusTone(current.status)}
     />
   );
