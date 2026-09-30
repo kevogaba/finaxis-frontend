@@ -345,7 +345,7 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     role, which holds `audit.view` without `tenant.view` or `branch.view`); a timezone value
     `Intl` itself rejects falls back the same way, but that is rarer.
 - Branches (`/admin/branches`, `modules/administration/branches/`) lists and searches branches
-  (code/name search, status and type filters, five sortable columns) from `GET /tenant/branches`,
+  (code/name search, status and type filters, five sortable columns) from `GET /branches`,
   creates a draft, and drives the lifecycle (submit, activate, suspend, reactivate, close) and user
   assignments (assign/revoke) as Server Actions behind `ReasonDialog`/`ConfirmDialog`/
   `AssignmentDrawer`. The record page (`RecordHero` + `RecordTabs`) renders Overview, Users, and

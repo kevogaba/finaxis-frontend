@@ -268,9 +268,11 @@ test.describe('branches', () => {
     await expect(page.getByRole('button', { name: /^Revoke/ })).toHaveCount(0);
 
     await page.goto('/admin/branches/new');
-    // Scoped to `main`: `next dev` can leave a second, non-accessible copy of the route's text
-    // elsewhere in the document (its own dev-tools chrome), which a page-wide getByText would
-    // also match.
+    // Scoped to `main`: on one run this matched two nodes (a strict-mode violation) with only one
+    // inside `main`. It didn't reproduce on a repeat of this test alone, so it reads as `next dev`
+    // (Fast Refresh/streaming) transient duplication rather than a component rendering the message
+    // twice (`ForbiddenState` has exactly one call site here) — scoping to `main` is deterministic
+    // either way and matches what a user/screen-reader perceives as the page's content.
     await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible({
       timeout: 15000,
     });
