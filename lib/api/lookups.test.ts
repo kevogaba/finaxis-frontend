@@ -165,4 +165,27 @@ describe('lookups', () => {
     apiGet.mockRejectedValueOnce(new BackendApiError(403));
     await expect(getRoleIndex()).resolves.toEqual(new Map());
   });
+
+  it('leaves the role index empty when a later page fails', async () => {
+    apiGet
+      .mockImplementationOnce(
+        wire({
+          items: [
+            {
+              id: 'r1',
+              role_code: 'TELLER',
+              role_name: 'Teller',
+              system_role: false,
+              status: 'ACTIVE',
+            },
+          ],
+          page: envelope(0, true),
+        }),
+      )
+      .mockRejectedValueOnce(new BackendApiError(503));
+
+    await expect(getRoleIndex()).resolves.toEqual(new Map());
+    // Page 1 was read: the failure came after page 0 had filled the index.
+    expect(apiGet).toHaveBeenCalledTimes(2);
+  });
 });

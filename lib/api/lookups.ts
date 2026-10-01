@@ -96,7 +96,8 @@ const ROLE_PAGE_SIZE = 100;
 const ROLE_PAGE_CEILING = 5;
 
 /** Every role by id (spec §6.3), sorted by name. It serves role names for 10's and 12's assignment
- * lists, and the ACTIVE roles for 10's and 11's role pickers. Empty without `role.view`. */
+ * lists, and the ACTIVE roles for 10's and 11's role pickers. Empty, never partial, on any failure
+ * (for example without `role.view`). */
 export const getRoleIndex = cache(async (): Promise<ReadonlyMap<string, RoleIndexEntry>> => {
   const index = new Map<string, RoleIndexEntry>();
   try {
@@ -111,7 +112,9 @@ export const getRoleIndex = cache(async (): Promise<ReadonlyMap<string, RoleInde
       if (!result.page.hasNext) break;
     }
   } catch {
-    // Without role.view the index stays empty; callers fall back to short IDs.
+    // Empty, never partial, when any page fails (e.g. without role.view); callers fall back to
+    // short IDs.
+    index.clear();
   }
   return index;
 });
