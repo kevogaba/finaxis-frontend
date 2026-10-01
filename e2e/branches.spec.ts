@@ -24,10 +24,12 @@ async function openRecord(page: Page, name: string) {
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible({ timeout: 15000 });
 }
 
-/** A hero lifecycle action through its dialog; the caller asserts the outcome. */
+/** A hero lifecycle action through its dialog; the caller asserts the outcome.
+ * Close renders its ReasonDialog with `role="alertdialog"` (V3's destructive tone); every other
+ * action keeps the plain `role="dialog"`, so this matches whichever one is actually open. */
 async function lifecycle(page: Page, label: string, reason?: string) {
   await page.getByRole('button', { name: label, exact: true }).click();
-  const dialog = page.getByRole('dialog');
+  const dialog = page.getByRole('dialog').or(page.getByRole('alertdialog'));
   if (reason) await dialog.getByRole('textbox', { name: /^Reason/ }).fill(reason);
   await dialog.getByRole('button', { name: label, exact: true }).click();
   return dialog;

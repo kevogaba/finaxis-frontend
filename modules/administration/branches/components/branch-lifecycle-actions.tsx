@@ -173,12 +173,18 @@ export function BranchLifecycleActions({
         // blocked caption's flexBasis:100% with no justify-content set, so the button landed at
         // this box's left edge instead of the hero's right edge. This nested flex context gets
         // its own explicit flex-end, independent of the (frozen) kit box around it.
+        // RecordHero's own box shares its row's width across its *direct* children at 375px
+        // (`'& > *': { flexGrow: { xs: 1, md: 0 } }`, prototype ≤ md); this Box is now that only
+        // direct child, so it re-applies the same rule to its own children (the buttons and the
+        // caption) to keep that mobile sharing — the caption's flexBasis:100% already makes
+        // flexGrow a no-op for it either way.
         sx={{
           display: 'flex',
           flexWrap: 'wrap',
           alignItems: 'center',
           justifyContent: 'flex-end',
           gap: 2,
+          '& > *': { flexGrow: { xs: 1, md: 0 } },
         }}
       >
         {actions.map((id, index) => (
