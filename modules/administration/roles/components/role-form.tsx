@@ -80,7 +80,9 @@ export function RoleForm({ role, contextOrganisationId }: RoleFormProps) {
   useEffect(() => {
     if (failure) applyFieldErrors(setError, failure.fieldErrors, FIELDS);
   }, [failure, setError]);
-  const invalid = FIELDS.filter((name) => errors[name]);
+  // Spec §9: the summary lists only the resolver's own errors. applyFieldErrors tags server field
+  // errors `type: 'server'`, and the failure Alert already covers them (BranchDraftForm's V2).
+  const invalid = FIELDS.filter((name) => errors[name] && errors[name].type !== 'server');
 
   const onValid = (values: RoleDraftValues) => {
     const formData = new FormData();
@@ -104,16 +106,14 @@ export function RoleForm({ role, contextOrganisationId }: RoleFormProps) {
       }}
       sx={{ p: 4.5, maxWidth: 640, display: 'grid', gap: 4 }}
     >
-      {failure ? (
+      {failure && (
         <Alert severity="error">
           {failure.formError}
           {failure.requestId && ` Reference: ${failure.requestId}`}
         </Alert>
-      ) : (
-        invalid.length > 0 && (
-          // Spec §9: errors on the fields plus a summary (08's fix wave V2 adds the same there).
-          <Alert severity="error">Check {invalid.map((name) => LABELS[name]).join(', ')}.</Alert>
-        )
+      )}
+      {invalid.length > 0 && (
+        <Alert severity="error">Check {invalid.map((name) => LABELS[name]).join(', ')}.</Alert>
       )}
       <TextField
         label="Role code"
