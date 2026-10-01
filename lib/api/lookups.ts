@@ -65,6 +65,57 @@ export const getBranchIndex = cache(
   },
 );
 
+const roleIndexSchema = z
+  .object({
+    id: z.string(),
+    role_code: z.string(),
+    role_name: z.string(),
+    system_role: z.boolean(),
+    // A plain string: a lookup tolerates a status it doesn't know (the role directory doesn't).
+    status: z.string(),
+  })
+  .transform((role) => ({
+    id: role.id,
+    entry: {
+      name: role.role_name,
+      code: role.role_code,
+      status: role.status,
+      systemRole: role.system_role,
+    },
+  }));
+
+export interface RoleIndexEntry {
+  name: string;
+  code: string;
+  status: string;
+  systemRole: boolean;
+}
+
+const ROLE_PAGE_SIZE = 100;
+// ponytail: name-resolution index capped at 500 roles (spec §6.3); beyond that IDs render short.
+const ROLE_PAGE_CEILING = 5;
+
+/** Every role by id (spec §6.3), sorted by name. It serves role names for 10's and 12's assignment
+ * lists, and the ACTIVE roles for 10's and 11's role pickers. Empty without `role.view`. */
+export const getRoleIndex = cache(async (): Promise<ReadonlyMap<string, RoleIndexEntry>> => {
+  const index = new Map<string, RoleIndexEntry>();
+  try {
+    for (let page = 0; page < ROLE_PAGE_CEILING; page += 1) {
+      const result = await apiGet(
+        `/api/v1/tenant/roles?page=${page}&size=${ROLE_PAGE_SIZE}&sort_by=roleName&sort_dir=ASC`,
+        pageSchema(roleIndexSchema),
+      );
+      result.items.forEach(({ id, entry }) => {
+        index.set(id, entry);
+      });
+      if (!result.page.hasNext) break;
+    }
+  } catch {
+    // Without role.view the index stays empty; callers fall back to short IDs.
+  }
+  return index;
+});
+
 export const getOrganisationTimeZone = cache(async (): Promise<string> => {
   try {
     const { timezone } = await apiGet('/api/v1/tenant', tenantTimeZoneSchema);
