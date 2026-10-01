@@ -128,4 +128,29 @@ describe('RoleLifecycleActions', () => {
       expect(screen.getByRole('heading', { name: 'Teller' })).toHaveFocus();
     });
   });
+
+  // T4-G4: refresh() swaps the action while the closed dialog is still fading out.
+  it('never repaints the closing dialog as the other action', async () => {
+    const user = userEvent.setup();
+    deactivateRole.mockResolvedValueOnce({ ok: true });
+    const actions = (action: 'activate' | 'deactivate') => (
+      <main>
+        <h1>Teller</h1>
+        <RoleLifecycleActions roleId={ROLE} roleName="Teller" action={action} heldByMe={false} />
+      </main>
+    );
+    const { rerender } = renderWithProviders(actions('deactivate'));
+
+    await user.click(screen.getByRole('button', { name: 'Deactivate' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Deactivate Teller?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Deactivate' }));
+    // `hidden`: the page stays aria-hidden until the exit fade ends. The toast commits together
+    // with `open=false` (both in onSuccess), so the dialog is closed but still mounted here.
+    expect(await screen.findByRole('alert', { hidden: true })).toHaveTextContent(
+      'Role deactivated',
+    );
+
+    rerender(actions('activate'));
+    expect(screen.queryByText('Activate Teller?')).not.toBeInTheDocument();
+  });
 });
