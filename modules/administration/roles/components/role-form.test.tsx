@@ -76,6 +76,49 @@ describe('RoleForm', () => {
     );
   });
 
+  it('still shows the summary when a client-invalid submit follows a server failure (spec §9)', async () => {
+    const user = userEvent.setup();
+    createRole.mockResolvedValueOnce(CONFLICT);
+    renderWithProviders(<RoleForm />);
+
+    await user.type(field('Role code'), 'CREDIT_CLERK');
+    await user.type(field('Role name'), 'Credit clerk');
+    await user.click(screen.getByRole('button', { name: 'Create role' }));
+    expect(await screen.findByText('This code may already be in use.')).toBeInTheDocument();
+
+    await user.clear(field('Role code'));
+    await user.type(field('Role code'), 'CREDIT_OFFICER');
+    await user.clear(field('Role name'));
+    await user.click(screen.getByRole('button', { name: 'Create role' }));
+
+    expect(await screen.findByText('Check Role name.')).toBeInTheDocument();
+    expect(createRole).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers from a rejected action with safe copy, keeps the typed values, and retries with the same key', async () => {
+    const user = userEvent.setup();
+    createRole
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ ok: true });
+    renderWithProviders(<RoleForm />);
+
+    await user.type(field('Role code'), 'CREDIT_CLERK');
+    await user.type(field('Role name'), 'Credit clerk');
+    await user.click(screen.getByRole('button', { name: 'Create role' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("couldn't confirm this change");
+    expect(field('Role code')).toHaveValue('CREDIT_CLERK');
+    expect(field('Role name')).toHaveValue('Credit clerk');
+
+    await user.click(screen.getByRole('button', { name: 'Create role' }));
+    await waitFor(() => {
+      expect(createRole).toHaveBeenCalledTimes(2);
+    });
+    expect(sent(createRole, 1)?.get('idempotencyKey')).toBe(
+      sent(createRole, 0)?.get('idempotencyKey'),
+    );
+  });
+
   it('edits a role: the code is read-only and never sent', async () => {
     const user = userEvent.setup();
     updateRole.mockResolvedValueOnce({ ok: true });
