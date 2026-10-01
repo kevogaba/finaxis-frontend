@@ -211,6 +211,61 @@ describe('GrantPermissionsButton', () => {
     expect(retry.get('permissionCodes')).toBe('cob.start,role.view');
     expect(retry.get('idempotencyKey')).toBe(key);
   });
+
+  // Not in the brief: the checklist is the one place the server's `permissionCodes` error shows.
+  it('shows the server error on the checklist when nothing is selected', async () => {
+    const user = userEvent.setup();
+    grantPermissions.mockResolvedValueOnce({
+      ok: false,
+      formError: 'Check the highlighted fields and try again.',
+      fieldErrors: { permissionCodes: 'Choose at least one permission.' },
+      code: 'validation_failed',
+      requestId: null,
+    });
+    renderWithProviders(
+      <GrantPermissionsButton
+        roleId={ROLE}
+        roleName="Operations supervisor"
+        available={CATALOGUE}
+        truncated={false}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Grant permissions' }));
+    const drawer = screen.getByRole('dialog', { name: 'Grant permissions' });
+    await user.click(within(drawer).getByRole('button', { name: 'Grant permissions' }));
+
+    expect(await within(drawer).findByText('Choose at least one permission.')).toBeInTheDocument();
+    // The field travels empty, not absent, so the server's own message is the one that comes back.
+    const formData = grantPermissions.mock.calls[0]?.[1] as FormData;
+    expect(formData.get('permissionCodes')).toBe('');
+  });
+
+  // Not in the brief (Ruling 6): a partial failure's refresh() shrinks `available`, but the open
+  // drawer keeps the list it opened with, so a checked row is still there for the replay.
+  it('keeps the options it opened with when the available list shrinks', async () => {
+    const user = userEvent.setup();
+    const button = (available: readonly Permission[]) => (
+      <GrantPermissionsButton
+        roleId={ROLE}
+        roleName="Operations supervisor"
+        available={available}
+        truncated={false}
+      />
+    );
+    const { rerender } = renderWithProviders(button(CATALOGUE));
+
+    await user.click(screen.getByRole('button', { name: 'Grant permissions' }));
+    const drawer = screen.getByRole('dialog', { name: 'Grant permissions' });
+    await user.click(within(drawer).getByRole('checkbox', { name: /^Start close of business/ }));
+
+    rerender(button(CATALOGUE.filter((entry) => entry.code !== 'cob.start')));
+
+    expect(
+      within(drawer).getByRole('checkbox', { name: /^Start close of business/ }),
+    ).toBeChecked();
+    expect(codesField()?.value).toBe('cob.start');
+  });
 });
 
 describe('RemovePermissionButton', () => {
