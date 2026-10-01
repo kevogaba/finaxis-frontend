@@ -83,6 +83,9 @@ export function RoleLifecycleActions({
             {label}
           </Button>
           <ConfirmDialog
+            // One dialog per action (08's per-action dialogs): when refresh() swaps the action, the
+            // closing dialog unmounts instead of repainting mid-fade with the other action's copy.
+            key={action}
             open={open}
             tone={deactivate ? 'error' : 'primary'}
             title={`${label} ${roleName}?`}
