@@ -54,6 +54,36 @@ describe('BranchDraftForm', () => {
     expect(createBranchDraft).not.toHaveBeenCalled();
   });
 
+  it('shows an error summary naming every invalid field on a client validation failure (V2)', async () => {
+    const user = userEvent.setup();
+    const { code, create } = renderForm();
+
+    // Code fails the regex and name is left blank (fails min-length): two client errors.
+    await user.type(code, 'nairobi cbd');
+    await user.click(create);
+
+    const summary = await screen.findByRole('alert');
+    expect(summary).toHaveTextContent('Branch code');
+    expect(summary).toHaveTextContent('Branch name');
+    expect(code).toHaveFocus();
+    expect(createBranchDraft).not.toHaveBeenCalled();
+  });
+
+  it('never duplicates the summary for a server-side field failure (V2)', async () => {
+    const user = userEvent.setup();
+    createBranchDraft.mockResolvedValueOnce(CONFLICT);
+    const { code, name, create } = renderForm();
+
+    await user.type(code, 'NAIROBI_CBD');
+    await user.type(name, 'Nairobi CBD Branch');
+    await user.click(create);
+
+    // Only the server-failure Alert renders: CONFLICT's fieldErrors are applied with
+    // `type: 'server'`, which the client-only summary above must not pick up.
+    expect(await screen.findByText('This code may already be in use.')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('req-3');
+  });
+
   it('sends the fields with one key, shows server field errors, and retries with the same key', async () => {
     const user = userEvent.setup();
     createBranchDraft.mockResolvedValueOnce(CONFLICT).mockResolvedValueOnce({ ok: true });

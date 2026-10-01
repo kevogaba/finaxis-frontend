@@ -65,7 +65,7 @@ export function BranchDirectoryTable({
         </TableHead>
         <TableBody>
           {branches.map((branch) => (
-            <TableRow key={branch.id} hover>
+            <TableRow key={branch.id}>
               <TableCell>
                 <Link
                   component={NextLink}
@@ -90,7 +90,9 @@ export function BranchDirectoryTable({
               <TableCell>
                 <StatusChip value={branch.status} />
               </TableCell>
-              <TableCell>{formatInstant(branch.createdAt, timeZone).date}</TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                {formatInstant(branch.createdAt, timeZone).date}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>

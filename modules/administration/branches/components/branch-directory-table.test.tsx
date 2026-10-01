@@ -60,4 +60,19 @@ describe('BranchDirectoryTable', () => {
     expect(screen.getByText('Suspended')).toBeInTheDocument();
     expect(screen.getByText('01 Jul 2026')).toBeInTheDocument();
   });
+
+  it('keeps the Created date on one line and drops the misleading row hover (V5, V8)', () => {
+    renderWithProviders(
+      <BranchDirectoryTable
+        branches={BRANCHES}
+        sort={{ by: 'branchName', dir: 'ASC' }}
+        sortHref={(field) => `/sort/${field}`}
+        timeZone="Africa/Nairobi"
+      />,
+    );
+
+    expect(screen.getByText('01 Jul 2026')).toHaveStyle({ whiteSpace: 'nowrap' });
+    const row = screen.getByRole('link', { name: 'Westlands Branch' }).closest('tr');
+    expect(row).not.toHaveClass('MuiTableRow-hover');
+  });
 });

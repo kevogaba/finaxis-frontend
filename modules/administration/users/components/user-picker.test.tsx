@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import { UserPicker } from './user-picker';
 
@@ -53,5 +53,46 @@ describe('UserPicker', () => {
     await user.type(screen.getByRole('combobox', { name: 'User' }), 'pet');
 
     expect(await screen.findByText("Couldn't search users. Try again.")).toBeInTheDocument();
+  });
+
+  it('names the specific reason for a 403 (C4)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(respond({ message: 'forbidden' }, 403));
+    const user = userEvent.setup();
+    renderWithProviders(<UserPicker name="userId" label="User" />);
+
+    await user.type(screen.getByRole('combobox', { name: 'User' }), 'pet');
+
+    expect(await screen.findByText("You can't search users in this context.")).toBeInTheDocument();
+  });
+
+  it('clears a stale failure as soon as a new search starts (C5)', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(respond({ message: 'down' }, 502))
+      .mockImplementationOnce(respond({ items: [PETER] }));
+    const user = userEvent.setup();
+    renderWithProviders(<UserPicker name="userId" label="User" />);
+    const combobox = screen.getByRole('combobox', { name: 'User' });
+
+    await user.type(combobox, 'pet');
+    expect(await screen.findByText("Couldn't search users. Try again.")).toBeInTheDocument();
+
+    await user.type(combobox, 'er');
+    // The stale failure must disappear the moment a new search starts, not only once the new
+    // search resolves — otherwise a screen-reader user hears outdated text while it's in flight.
+    await waitFor(() => {
+      expect(screen.queryByText("Couldn't search users. Try again.")).not.toBeInTheDocument();
+    });
+    expect(await screen.findByRole('option', { name: /Peter Otieno/ })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('seeds the initial selection from defaultValue (C1)', () => {
+    const { container } = renderWithProviders(
+      <UserPicker name="userId" label="User" defaultValue={PETER} />,
+    );
+
+    expect(screen.getByRole('combobox', { name: 'User' })).toHaveValue(PETER.displayName);
+    expect(container.querySelector('input[name="userId"]')).toHaveValue(PETER.id);
   });
 });

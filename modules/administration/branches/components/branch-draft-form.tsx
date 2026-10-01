@@ -18,6 +18,14 @@ import { branchDraftSchema, type BranchDraftValues } from '../branch-rules';
 
 const FIELDS = ['branchCode', 'branchName', 'branchType', 'parentBranchId', 'timezone'] as const;
 
+const FIELD_LABELS: Record<(typeof FIELDS)[number], string> = {
+  branchCode: 'Branch code',
+  branchName: 'Branch name',
+  branchType: 'Branch type',
+  parentBranchId: 'Parent branch',
+  timezone: 'Timezone',
+};
+
 // Mirrors ReasonDialog's own I1 catch (components/data-display/reason-dialog.tsx): never
 // `caught.message` (a network drop, a proxy's non-RSC 502/504, or a stale deployment's
 // UnrecognizedActionError may carry detail unsafe to show).
@@ -88,6 +96,10 @@ export function BranchDraftForm({
     null,
   );
   const failure = state && !state.ok ? state : null;
+  // Server-applied field errors (applyFieldErrors below) carry `type: 'server'`; only the
+  // zod-resolver's own errors belong in the client-side summary (spec line ~417), so a server
+  // failure's own Alert (above) is never duplicated by this one.
+  const clientErrorFields = FIELDS.filter((name) => errors[name] && errors[name].type !== 'server');
   // Applied from an effect, not inline in the reducer above: react-hook-form's `setError` runs
   // through `useSyncExternalStore`, which (by design) commits immediately rather than joining the
   // action's own transition-scheduled commit — inline, the field error and the Alert above landed
@@ -120,6 +132,12 @@ export function BranchDraftForm({
         <Alert severity="error">
           {failure.formError}
           {failure.requestId && ` Reference: ${failure.requestId}`}
+        </Alert>
+      )}
+      {clientErrorFields.length > 0 && (
+        <Alert severity="error">
+          Check the highlighted fields:{' '}
+          {clientErrorFields.map((name) => FIELD_LABELS[name]).join(', ')}.
         </Alert>
       )}
       <TextField

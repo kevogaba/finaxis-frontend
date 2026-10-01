@@ -37,6 +37,30 @@ describe('BranchLifecycleActions', () => {
     const activate = screen.getByRole('button', { name: 'Activate' });
     expect(activate).toBeDisabled();
     expect(activate).toHaveAccessibleDescription(MAKER_CHECKER_BLOCKED);
+
+    // V6: an explicit flex-end on this nested wrapper keeps Activate at the hero's right edge
+    // even once the caption's flexBasis:100% below widens the box RecordHero sizes around it.
+    expect(activate.parentElement).toHaveStyle({ justifyContent: 'flex-end' });
+    expect(screen.getByText(MAKER_CHECKER_BLOCKED)).toHaveStyle({ textAlign: 'right' });
+  });
+
+  it("opens Close's confirmation as an alertdialog with an error-toned button (V3)", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <BranchLifecycleActions
+        branchId={ID}
+        branchName="Westlands Branch"
+        actions={['suspend', 'close']}
+        activateBlocked={false}
+        selectedHere={false}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Close branch' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Close Westlands Branch?' });
+    expect(within(dialog).getByRole('button', { name: 'Close branch' })).toHaveClass(
+      'MuiButton-colorError',
+    );
   });
 
   it(

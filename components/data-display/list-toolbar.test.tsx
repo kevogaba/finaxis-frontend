@@ -387,6 +387,23 @@ describe('ListToolbar', () => {
     expect(push).toHaveBeenCalledWith('/admin/audit', { scroll: false });
   });
 
+  it('commits the moment the native clear (x) empties the box, without waiting for blur (V9)', async () => {
+    search = 'q=west';
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ListToolbar fields={SEARCH_FIELDS} resultLabel="1 branch" timeZone={NAIROBI} />,
+    );
+    const field = screen.getByRole('searchbox', { name: 'Search' });
+    expect(field).toHaveValue('west');
+
+    await user.clear(field);
+
+    // No blur/tab here: the commit must already have happened on the clearing change itself, or
+    // the box (now empty) and the still-filtered results would disagree (gate finding V9).
+    expect(push).toHaveBeenCalledWith('/admin/audit', { scroll: false });
+    expect(field).toHaveFocus();
+  });
+
   it('resets the search box on every URL change, including back to empty (Clear filters)', () => {
     search = '';
     const { rerender } = renderWithProviders(

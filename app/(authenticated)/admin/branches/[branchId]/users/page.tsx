@@ -38,6 +38,7 @@ export default async function BranchUsersPage({ params, searchParams }: BranchUs
   if (!branch.ok) return null; // the layout renders the failure or the guided state
   const record = branch.value;
   const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
+  const canAssign = canAssignUsers(record.status, holder);
   // I2: the organisation this page rendered with, carried by every mutation surface below.
   const contextOrganisationId =
     selected.kind === 'resolved' ? selected.context.organization.id : undefined;
@@ -47,7 +48,7 @@ export default async function BranchUsersPage({ params, searchParams }: BranchUs
       title="Branch users"
       description="Active assignments at this branch. Assignment types are labels; roles grant permissions."
       actions={
-        canAssignUsers(record.status, holder) ? (
+        canAssign ? (
           <AssignBranchUserButton
             branchId={branchId}
             branchName={record.branchName}
@@ -89,7 +90,11 @@ export default async function BranchUsersPage({ params, searchParams }: BranchUs
     assignments.value.items.length === 0 ? (
       <EmptyState
         title="No users assigned"
-        description="Assign users so they can work in this branch."
+        description={
+          canAssign
+            ? 'Assign users so they can work in this branch.'
+            : 'No users are assigned to this branch.'
+        }
       />
     ) : (
       <>

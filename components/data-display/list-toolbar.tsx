@@ -148,7 +148,12 @@ function SearchField({
       sx={{ width: { xs: '100%', sm: 260 } }}
       slotProps={{ htmlInput: { maxLength: 100 } }}
       onChange={(event) => {
-        setDraft(event.target.value);
+        const next = event.target.value;
+        setDraft(next);
+        // The native `type="search"` clear (×) fires this same event with an empty value — commit
+        // it immediately rather than waiting for blur, or the (now empty) box and the still-filtered
+        // results disagree (gate finding V9). `commit` itself still no-ops when already empty.
+        if (next === '') commit(next);
       }}
       onBlur={(event) => {
         commit(event.target.value);

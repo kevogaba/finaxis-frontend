@@ -39,7 +39,7 @@ export function BranchUsersTable({
         </TableHead>
         <TableBody>
           {rows.map((row) => (
-            <TableRow key={row.assignmentId} hover>
+            <TableRow key={row.assignmentId}>
               <TableCell>
                 <TruncatedText value={row.name} maxWidth={280} />
                 {row.email && (

@@ -15,6 +15,8 @@ interface UserPickerProps {
   error?: string;
   helperText?: string;
   onChange?: (user: TenantUserOption | null) => void;
+  /** Seeds the initial selection (uncontrolled): an edit form pre-filling an existing user. */
+  defaultValue?: TenantUserOption | null;
 }
 
 class SearchFailed extends Error {
@@ -42,9 +44,13 @@ export function UserPicker({
   error,
   helperText,
   onChange,
+  defaultValue,
 }: UserPickerProps) {
   const [open, setOpen] = useState(false);
-  const [value, setValue] = useState<TenantUserOption | null>(null);
+  // Autocomplete itself seeds its displayed input text from this same `value` prop at mount
+  // (useAutocomplete.js: `initialInputValue = getInputValue(defaultValue ?? valueProp, ...)`), so
+  // seeding this state is the whole fix — no separate input-text state to sync.
+  const [value, setValue] = useState<TenantUserOption | null>(defaultValue ?? null);
   const [input, setInput] = useState('');
   const [options, setOptions] = useState<readonly TenantUserOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -55,6 +61,7 @@ export function UserPicker({
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true);
+      setFailure(null);
       searchUsers(input.trim(), controller.signal)
         .then((items) => {
           setOptions(items);
@@ -66,7 +73,9 @@ export function UserPicker({
           setFailure(
             caught instanceof SearchFailed && caught.status === 401
               ? 'Your session has expired. Sign in again.'
-              : "Couldn't search users. Try again.",
+              : caught instanceof SearchFailed && caught.status === 403
+                ? "You can't search users in this context."
+                : "Couldn't search users. Try again.",
           );
         })
         .finally(() => {

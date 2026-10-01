@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import { ReasonDialog } from '@/components/data-display/reason-dialog';
@@ -167,34 +168,48 @@ export function BranchLifecycleActions({
 
   return (
     <>
-      {actions.map((id, index) => (
-        <Button
-          key={id}
-          ref={(node) => {
-            buttonRefs.current.set(id, node);
-          }}
-          variant={index === 0 ? 'contained' : 'outlined'}
-          color={id === 'close' ? 'error' : 'primary'}
-          disabled={id === 'activate' && blocked}
-          aria-describedby={id === 'activate' && blocked ? BLOCKED_ID : undefined}
-          onClick={() => {
-            setOpen(id);
-          }}
-        >
-          {copyFor(id, branchName, selectedHere).label}
-        </Button>
-      ))}
-      {blocked && (
-        // Visible text, not a tooltip: a disabled button can't take focus to reveal one.
-        <Typography
-          id={BLOCKED_ID}
-          variant="caption"
-          color="text.secondary"
-          sx={{ flexBasis: '100%' }}
-        >
-          {MAKER_CHECKER_BLOCKED}
-        </Typography>
-      )}
+      <Box
+        // V6: a bare Fragment here left RecordHero's own actions box sizing itself around the
+        // blocked caption's flexBasis:100% with no justify-content set, so the button landed at
+        // this box's left edge instead of the hero's right edge. This nested flex context gets
+        // its own explicit flex-end, independent of the (frozen) kit box around it.
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: 2,
+        }}
+      >
+        {actions.map((id, index) => (
+          <Button
+            key={id}
+            ref={(node) => {
+              buttonRefs.current.set(id, node);
+            }}
+            variant={index === 0 ? 'contained' : 'outlined'}
+            color={id === 'close' ? 'error' : 'primary'}
+            disabled={id === 'activate' && blocked}
+            aria-describedby={id === 'activate' && blocked ? BLOCKED_ID : undefined}
+            onClick={() => {
+              setOpen(id);
+            }}
+          >
+            {copyFor(id, branchName, selectedHere).label}
+          </Button>
+        ))}
+        {blocked && (
+          // Visible text, not a tooltip: a disabled button can't take focus to reveal one.
+          <Typography
+            id={BLOCKED_ID}
+            variant="caption"
+            color="text.secondary"
+            sx={{ flexBasis: '100%', textAlign: 'right' }}
+          >
+            {MAKER_CHECKER_BLOCKED}
+          </Typography>
+        )}
+      </Box>
       {actions.map((id) => {
         const copy = copyFor(id, branchName, selectedHere);
         return (
@@ -206,6 +221,7 @@ export function BranchLifecycleActions({
             confirmLabel={copy.label}
             reason={copy.reason}
             action={copy.action}
+            tone={id === 'close' ? 'error' : 'default'}
             contextOrganisationId={contextOrganisationId}
             onClose={() => {
               setOpen(null);
