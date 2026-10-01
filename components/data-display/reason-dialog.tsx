@@ -40,6 +40,9 @@ interface ReasonDialogProps {
    * refuse a stale submit after the user switched organisation in another tab (I2).
    */
   contextOrganisationId?: string;
+  /** `error` for a destructive or irreversible action (e.g. Close): colours the confirm button
+   * and marks the dialog `role="alertdialog"`, matching ConfirmDialog's own `tone`. */
+  tone?: 'default' | 'error';
 }
 
 const REASON_MAX = 500;
@@ -61,6 +64,7 @@ export function ReasonDialog({ open, onClose, ...form }: ReasonDialogProps) {
       fullWidth
       maxWidth="xs"
       aria-describedby={descriptionId}
+      role={form.tone === 'error' ? 'alertdialog' : undefined}
     >
       <ReasonForm
         {...form}
@@ -86,6 +90,7 @@ function ReasonForm({
   onSuccess,
   fields,
   contextOrganisationId,
+  tone = 'default',
   onPendingChange,
   descriptionId,
 }: Omit<ReasonDialogProps, 'open'> & {
@@ -191,6 +196,7 @@ function ReasonForm({
         <Button
           type="submit"
           variant="contained"
+          color={tone === 'error' ? 'error' : 'primary'}
           loading={pending}
           ref={submitRef}
           sx={{ whiteSpace: 'nowrap' }}
