@@ -7,6 +7,7 @@ import type {
   FakeOrganisation,
   FakeRole,
   FakeRoleAssignment,
+  FakeTenantSetting,
   FakeUser,
   RunState,
 } from './state.mts';
@@ -47,6 +48,7 @@ export const TENANT_ADMIN_PERMISSIONS = [
   'business_date.reopen',
   'cob.start',
   'cob.complete',
+  'settings.update',
 ];
 
 export const PLATFORM_ADMIN_PERMISSIONS = [
@@ -255,6 +257,28 @@ function seedBusinessDateHistory(): FakeBusinessDateEvent[] {
   ];
 }
 
+/** A fresh array per seed (fake-api.spec pins unshared fixtures). No IDs: rows are keyed by `key`. */
+function seedTenantSettings(organisationId: string): FakeTenantSetting[] {
+  const row = (key: string, value: string, valueType: string): FakeTenantSetting => ({
+    organisationId,
+    key,
+    value,
+    valueType,
+    sensitive: false,
+  });
+  return [
+    row('default_timezone', 'Africa/Nairobi', 'TIMEZONE'),
+    row('base_currency', 'KES', 'CURRENCY'),
+    // Stored keys outside the catalogue, as on dev (contract §H); one long value for 375 px.
+    row('business-date.timezone', 'Africa/Nairobi', 'STRING'),
+    row(
+      'settings.operational',
+      '{"cash_limit_per_teller":"250000","end_of_day_cutoff":"17:30","statement_numbering":"GF-{branch}-{yyyy}-{seq}"}',
+      'STRING',
+    ),
+  ];
+}
+
 function greenfieldTenant(): RunState {
   return {
     actorUserId: IDS.jane,
@@ -306,6 +330,8 @@ function greenfieldTenant(): RunState {
     businessDateHistory: seedBusinessDateHistory(),
     idempotency: new Map(),
     lockTimeoutsRemaining: 0,
+    tenantSettings: seedTenantSettings(IDS.greenfield),
+    baseCurrencyFrozen: false,
   };
 }
 
@@ -364,6 +390,8 @@ function platformOperator(): RunState {
     businessDateHistory: [],
     idempotency: new Map(),
     lockTimeoutsRemaining: 0,
+    tenantSettings: [],
+    baseCurrencyFrozen: false,
   };
 }
 
@@ -697,6 +725,10 @@ const BUILDERS = {
     };
   },
   branches: branchesScenario,
+  'settings-read-only': () => withoutPermission(greenfieldTenant(), 'settings.update'),
+  'settings-currency-frozen': () => ({ ...greenfieldTenant(), baseCurrencyFrozen: true }),
+  'no-settings-permission': () =>
+    withoutPermission(greenfieldTenant(), 'settings.view', 'settings.update'),
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */

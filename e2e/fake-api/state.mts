@@ -119,6 +119,14 @@ export interface FakeAuditEvent {
   metadataJson: string;
 }
 
+export interface FakeTenantSetting {
+  organisationId: string;
+  key: string;
+  value: string;
+  valueType: string;
+  sensitive: boolean;
+}
+
 /** One isolated backend per bearer token (`e2e.<scenario>.<run>`). Later layers add collections. */
 export interface RunState {
   actorUserId: string;
@@ -138,6 +146,10 @@ export interface RunState {
   idempotency: Map<string, { fingerprint: string; status: number; body: unknown }>;
   /** Mutations that fail with a lock timeout before one succeeds. */
   lockTimeoutsRemaining: number;
+  /** Stored tenant settings only; an unset catalogue key shows its default (contract §H). */
+  tenantSettings: FakeTenantSetting[];
+  /** The tenant has posted a journal, so `base_currency` can't change (409). */
+  baseCurrencyFrozen: boolean;
 }
 
 const runs = new Map<string, RunState>();

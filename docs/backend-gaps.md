@@ -112,8 +112,9 @@ tackled separately in the platform repository.
   `500 internal_error`, and rolls back the write, audit, and event. `TenantSettingsControllerTests`
   (a `@WebMvcTest` without the idempotency aspect) doesn't catch it. Found by source reading; to be
   confirmed live. `DELETE` (204, no body) is unaffected.
-- **Frontend handling:** the settings slice verifies live; if confirmed, editing ships disabled with an
-  explanation and reset-to-default stays available.
+- **Frontend handling:** editing ships disabled behind `SETTINGS_EDIT_ENABLED`
+  (`modules/administration/settings/settings-flags.ts`), with the reason shown on the Locale &
+  currency card. Reset to default (`DELETE`, 204) works. Flip the flag when this closes.
 - **Suggested change:** exempt the settings response (or the specific `key` property) from the
   replay-safety filter, and cover the endpoint with an integration test including the aspect.
 
