@@ -139,6 +139,46 @@ test.describe('roles', () => {
     await expect(rowsOf(page, 'Granted permissions')).toHaveCount(3);
   });
 
+  test('keeps keyboard focus clear of the grant drawer footer (WCAG 2.4.11)', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'roles');
+    // Operations supervisor holds three codes, so the drawer lists the rest of the catalogue: far
+    // more rows than one screenful, which is what lets a Tab stop land under the sticky footer.
+    await enterAdmin(page, `/admin/roles/${ROLE_SCENARIO_IDS.opsSupervisor}/permissions`, {
+      heading: 'Operations supervisor',
+    });
+    await page.getByRole('button', { name: 'Grant permissions' }).click();
+    const drawer = page.getByRole('dialog', { name: 'Grant permissions' });
+    await expect(drawer).toBeVisible();
+    // The sticky action bar: the parent of Cancel and the submit button.
+    const footer = drawer.getByRole('button', { name: 'Cancel' }).locator('xpath=..');
+    await drawer.getByRole('searchbox', { name: 'Search permissions' }).focus();
+
+    let checkboxes = 0;
+    for (let press = 0; press < 80; press += 1) {
+      await page.keyboard.press('Tab');
+      // Pixels between the focused checkbox's bottom edge and the footer's top edge; null when
+      // focus is not on a checkbox (the Risk select before the list, Cancel after it).
+      const clearance = await footer.evaluate((bar) => {
+        const focused = document.activeElement;
+        if (!(focused instanceof HTMLInputElement) || focused.type !== 'checkbox') return null;
+        return bar.getBoundingClientRect().top - focused.getBoundingClientRect().bottom;
+      });
+      if (clearance === null) {
+        if (checkboxes > 0) break; // focus left the list
+        continue;
+      }
+      checkboxes += 1;
+      expect(clearance, `checkbox ${checkboxes} is covered by the footer`).toBeGreaterThanOrEqual(
+        0,
+      );
+    }
+    // A long list is what makes the check meaningful.
+    expect(checkboxes).toBeGreaterThanOrEqual(40);
+  });
+
   test('edits a custom role, toggles its status, and keeps a system role read-only', async ({
     context,
     page,
