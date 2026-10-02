@@ -18,11 +18,6 @@ export const metadata: Metadata = { title: 'Select context' };
 const ALLOWED_DESTINATIONS: readonly ContextSelectionDestination[] = [
   '/profile',
   '/admin',
-  '/admin/audit',
-  '/admin/branches',
-  '/admin/roles',
-  '/admin/settings',
-  '/admin/users',
   '/platform-admin',
   '/platform-admin/tenants',
 ];

@@ -10,7 +10,7 @@ import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
-import { SectionHeading } from '@/components/shell/section-heading';
+import { PageHeader } from '@/components/shell/page-header';
 import { initialsOf } from '@/components/shell/initials';
 import type { FinaxisUser } from '@/auth/auth.types';
 
@@ -22,10 +22,9 @@ interface ProfileViewProps {
 export function ProfileView({ user, signedInAt }: ProfileViewProps) {
   return (
     <>
-      <SectionHeading
-        parentLabel="Finaxis"
-        parentHref="/admin"
-        label="Profile"
+      <PageHeader
+        eyebrow="Account"
+        title="Profile"
         description="Your signed-in identity and workspace assignments."
       />
       <Grid container spacing={3}>

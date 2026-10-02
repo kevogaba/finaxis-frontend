@@ -24,15 +24,22 @@ test.describe('Real Keycloak authentication (requires the platform docker compos
     await page.getByRole('button', { name: /sign in/i }).click();
 
     await expect(page).toHaveURL(/\/admin$/);
-    await expect(page.getByRole('banner').getByText('Administration')).toBeVisible();
-    await expect(page.getByText(/greenfield sacco/i)).toBeVisible();
+    const banner = page.getByRole('banner');
+    await expect(banner.getByText('Administration')).toBeVisible();
+    // Scoped to the banner: the org name also renders in the rail's footer (and the mobile
+    // drawer's keepMounted copy), which would otherwise make this a strict-mode violation.
+    await expect(banner.getByText(/greenfield sacco/i)).toBeVisible();
 
-    await page.getByRole('button', { name: /switch application/i }).click();
+    await page.getByRole('button', { name: 'Switch application' }).click();
     await expect(page.getByRole('menuitem', { name: /administration/i })).toBeVisible();
     await page.keyboard.press('Escape');
 
-    await page.getByRole('link', { name: 'Users', exact: true }).click();
-    await expect(page).toHaveURL(/\/admin\/users$/);
+    // The Users page no longer exists until PR 10; assert the rail's Overview link instead.
+    await expect(
+      page.getByRole('navigation', { name: 'Administration' }).getByRole('link', {
+        name: 'Overview',
+      }),
+    ).toBeVisible();
 
     await page.goto('/profile');
     await expect(page.getByText('No branches assigned')).toBeVisible();

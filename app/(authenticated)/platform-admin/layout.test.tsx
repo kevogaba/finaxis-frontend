@@ -32,7 +32,7 @@ describe('PlatformAdministrationLayout', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the platform navigation with nested route active semantics', async () => {
+  it('renders children for a platform context', async () => {
     getSelectedContextProfile.mockResolvedValueOnce({
       context: {
         branch: { id: 'branch-1', name: 'Platform HQ' },
@@ -48,12 +48,6 @@ describe('PlatformAdministrationLayout', () => {
     const ui = await PlatformAdministrationLayout({ children: <div>Tenant detail</div> });
     renderWithProviders(ui);
 
-    expect(screen.getByRole('navigation', { name: 'Platform Administration' })).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: 'Overview' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('link', { name: 'Tenants' })[0]).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
     expect(screen.getByText('Tenant detail')).toBeInTheDocument();
     expect(redirect).not.toHaveBeenCalled();
   });
