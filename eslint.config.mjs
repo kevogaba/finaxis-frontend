@@ -75,6 +75,8 @@ const eslintConfig = defineConfig([
     'node_modules/**',
     // Git worktrees (local development only):
     '.claude/worktrees/**',
+    '.remember/**',
+    '.agents/**',
   ]),
 ]);
 
