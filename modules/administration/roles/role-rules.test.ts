@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Permission } from './role-contract';
 import {
+  assignmentsDescription,
   canAssignRole,
   canCreateRole,
   canEditRole,
@@ -8,6 +9,7 @@ import {
   canRemovePermissions,
   canRevokeRoleAssignments,
   groupByModule,
+  isAssignmentRevocable,
   moduleLabel,
   roleDraftSchema,
   roleStatusAction,
@@ -81,6 +83,31 @@ describe('role rules', () => {
       canRevokeRoleAssignments({ permissions: ['user.revoke_role', 'role_assignment.view'] }),
     ).toBe(true);
     expect([scopeLabel('TENANT'), scopeLabel('BRANCH')]).toEqual(['Institution', 'Branch']);
+  });
+
+  it('offers no revoke for a branch assignment elsewhere in a branch context (§E.4: 404)', () => {
+    const here = { scopeType: 'BRANCH', branchId: 'branch-a' } as const;
+    const elsewhere = { scopeType: 'BRANCH', branchId: 'branch-b' } as const;
+    const everywhere = { scopeType: 'TENANT', branchId: null } as const;
+    // Institution level reaches every assignment.
+    expect(isAssignmentRevocable(here, null)).toBe(true);
+    expect(isAssignmentRevocable(elsewhere, null)).toBe(true);
+    // A branch context reaches its own branch and the institution-wide rows, nothing else.
+    expect(isAssignmentRevocable(here, 'branch-a')).toBe(true);
+    expect(isAssignmentRevocable(everywhere, 'branch-a')).toBe(true);
+    expect(isAssignmentRevocable(elsewhere, 'branch-a')).toBe(false);
+  });
+
+  it('tells an assigner to activate an inactive role, and nobody else', () => {
+    const assigner = { permissions: ['user.assign_role', 'user.view'] };
+    const activate = 'Activate this role to assign it.';
+    expect(assignmentsDescription({ status: 'DISABLED' }, assigner)).toBe(activate);
+    expect(assignmentsDescription({ status: 'ARCHIVED' }, assigner)).toBe(activate);
+    // An ACTIVE role, or a viewer who couldn't assign it anyway, gets the ordinary description.
+    expect(assignmentsDescription({ status: 'ACTIVE' }, assigner)).toMatch(/^Who holds this role/);
+    expect(assignmentsDescription({ status: 'DISABLED' }, { permissions: ['user.view'] })).toMatch(
+      /^Who holds this role/,
+    );
   });
 
   it('groups the catalogue by module label, permissions by code', () => {

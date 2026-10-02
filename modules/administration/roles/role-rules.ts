@@ -58,6 +58,30 @@ export function canRevokeRoleAssignments(holder: PermissionHolder): boolean {
   return canAll(holder, ['user.revoke_role', 'role_assignment.view']);
 }
 
+/** From a branch-selected context, revoking a BRANCH assignment at another branch is a 404
+ * (contract §E.4), so its Revoke is hidden rather than a dead end. `null` is institution level. */
+export function isAssignmentRevocable(
+  assignment: { scopeType: RoleScopeType; branchId: string | null },
+  selectedBranchId: string | null,
+): boolean {
+  return (
+    selectedBranchId === null ||
+    assignment.scopeType !== 'BRANCH' ||
+    assignment.branchId === selectedBranchId
+  );
+}
+
+/** The Assignments card's description. An assigner looking at an inactive role is told why Assign
+ * is missing (Ruling 10: a DISABLED role grants nothing). */
+export function assignmentsDescription(
+  role: Pick<RoleShape, 'status'>,
+  holder: PermissionHolder,
+): string {
+  return role.status !== 'ACTIVE' && canAll(holder, ['user.assign_role', 'user.view'])
+    ? 'Activate this role to assign it.'
+    : 'Who holds this role. Institution scope applies everywhere; branch scope only while that branch is selected.';
+}
+
 export function scopeLabel(scopeType: RoleScopeType): string {
   return scopeType === 'TENANT' ? 'Institution' : 'Branch';
 }
