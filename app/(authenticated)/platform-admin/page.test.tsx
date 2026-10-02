@@ -72,10 +72,6 @@ describe('PlatformOverviewPage', () => {
       'href',
       '/platform-admin/tenants',
     );
-    expect(screen.getByRole('link', { name: 'Open audit event directory' })).toHaveAttribute(
-      'href',
-      '/platform-admin/audit',
-    );
     expect(screen.getByText(/1 tenant is available from the live directory/i)).toBeInTheDocument();
   });
 
@@ -112,9 +108,9 @@ describe('PlatformOverviewPage', () => {
 
     expect(screen.getByText(/live tenant data is temporarily unavailable/i)).toBeInTheDocument();
     expect(screen.getByText('Upstream platform service unavailable.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open audit event directory' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open tenant directory' })).toHaveAttribute(
       'href',
-      '/platform-admin/audit',
+      '/platform-admin/tenants',
     );
   });
 

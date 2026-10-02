@@ -54,7 +54,6 @@ describe('PlatformAdministrationLayout', () => {
       'aria-current',
       'page',
     );
-    expect(screen.getAllByRole('link', { name: 'Audit Events' }).length).toBeGreaterThan(0);
     expect(screen.getByText('Tenant detail')).toBeInTheDocument();
     expect(redirect).not.toHaveBeenCalled();
   });

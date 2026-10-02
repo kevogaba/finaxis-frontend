@@ -95,7 +95,7 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
       description="Confirm the active platform context and move into the live read-only workspaces."
     >
       <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
               <Stack spacing={1}>
@@ -122,7 +122,7 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
           </Card>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
               <Stack spacing={1.25}>
@@ -152,30 +152,6 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
             <CardActions>
               <Button component={NextLink} href="/platform-admin/tenants" size="small">
                 Open tenant directory
-              </Button>
-            </CardActions>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card variant="outlined" sx={{ height: '100%' }}>
-            <CardContent>
-              <Stack spacing={1}>
-                <Typography variant="overline" color="text.secondary">
-                  Audit visibility
-                </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                  Audit event review
-                </Typography>
-                <Typography color="text.secondary" variant="body2">
-                  Review live audit events through the dedicated directory without enabling write
-                  actions in this stage.
-                </Typography>
-              </Stack>
-            </CardContent>
-            <CardActions>
-              <Button component={NextLink} href="/platform-admin/audit" size="small">
-                Open audit event directory
               </Button>
             </CardActions>
           </Card>

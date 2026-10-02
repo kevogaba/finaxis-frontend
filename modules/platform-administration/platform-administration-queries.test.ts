@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  parseAuditListQuery,
   parseBranchListQuery,
   parseTenantListQuery,
   parseUserListQuery,
@@ -39,15 +38,6 @@ describe('platform administration query parsing', () => {
       page: 0,
       size: 10,
     });
-  });
-
-  it('validates audit UUID filters and rejects malformed values', () => {
-    expect(() => parseAuditListQuery(new URLSearchParams('actorId=not-a-uuid'))).toThrow();
-    expect(
-      parseAuditListQuery(
-        new URLSearchParams('actorId=11111111-1111-1111-1111-111111111111&entityType=TENANT'),
-      ),
-    ).toMatchObject({ actorId: '11111111-1111-1111-1111-111111111111', entityType: 'TENANT' });
   });
 
   it('encodes query values and omits undefined values', () => {

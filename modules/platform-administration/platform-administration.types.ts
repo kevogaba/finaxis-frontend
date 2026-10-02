@@ -66,33 +66,6 @@ export interface BranchDetail {
 
 export type BranchSummary = BranchDetail;
 
-export interface AuditEvent {
-  id: string;
-  organisationId: string;
-  occurredAt: string;
-  actorUserId: string | null;
-  actorType: string;
-  eventType: string;
-  entityType: string;
-  entityId: string | null;
-  action: string;
-  outcome: string;
-  severity: string;
-}
-
-export interface AuditEventDetail extends AuditEvent {
-  actorExternalSubject: string | null;
-  branchId: string | null;
-  ipAddress: string | null;
-  userAgent: string | null;
-  correlationId: string | null;
-  requestId: string | null;
-  beforeJson: string | null;
-  afterJson: string | null;
-  metadataJson: string;
-  reason: string | null;
-}
-
 export interface TenantListQuery {
   q?: string;
   status?: string;
@@ -121,15 +94,4 @@ export interface BranchListQuery {
   size?: number;
   sortBy?: string;
   sortDir?: 'asc' | 'desc';
-}
-
-export interface AuditListQuery {
-  entityType?: string;
-  entityId?: string;
-  actorId?: string;
-  action?: string;
-  occurredFrom?: string;
-  occurredTo?: string;
-  page?: number;
-  size?: number;
 }

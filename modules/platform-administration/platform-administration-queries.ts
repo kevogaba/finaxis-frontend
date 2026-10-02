@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import type {
-  AuditListQuery,
   BranchListQuery,
   TenantListQuery,
   UserListQuery,
@@ -8,9 +7,6 @@ import type {
 
 const pageSchema = z.number().int().min(0).default(0);
 const sizeSchema = z.number().int().min(1).max(100).default(25);
-const uuidSchema = z
-  .string()
-  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
 export function parsePage(value: string | null | undefined): number {
   const parsed = Number(value ?? 0);
@@ -25,11 +21,6 @@ export function parseSize(value: string | null | undefined): number {
 function optionalText(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed?.length ? trimmed : undefined;
-}
-
-function optionalUuid(value: string | null | undefined): string | undefined {
-  const candidate = optionalText(value);
-  return candidate ? uuidSchema.parse(candidate) : undefined;
 }
 
 function queryFromParams(params: URLSearchParams): URLSearchParams {
@@ -87,28 +78,6 @@ export function parseBranchListQuery(params: URLSearchParams): BranchListQuery {
     sortBy: optionalText(params.get('sortBy')),
     sortDir: params.get('sortDir') === 'desc' ? 'desc' : 'asc',
   };
-}
-
-export function parseAuditListQuery(params: URLSearchParams): AuditListQuery {
-  return {
-    entityType: optionalText(params.get('entityType')),
-    entityId: optionalUuid(params.get('entityId')),
-    actorId: optionalUuid(params.get('actorId')),
-    action: optionalText(params.get('action')),
-    occurredFrom: optionalText(params.get('occurredFrom')),
-    occurredTo: optionalText(params.get('occurredTo')),
-    page: parsePage(params.get('page')),
-    size: parseSize(params.get('size')),
-  };
-}
-
-/** See safeParseTenantListQuery — same rationale, for the audit event list. */
-export function safeParseAuditListQuery(params: URLSearchParams): AuditListQuery | null {
-  try {
-    return parseAuditListQuery(params);
-  } catch {
-    return null;
-  }
 }
 
 export function toQueryString(query: Record<string, string | number | undefined>): string {
