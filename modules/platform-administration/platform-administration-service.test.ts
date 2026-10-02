@@ -39,16 +39,12 @@ describe('platformAdministrationService', () => {
     );
   });
 
-  it('reads related tenant resources and audit detail with the context token', async () => {
+  it('reads related tenant resources with the context token', async () => {
     await platformAdministrationService.getTenant(headers, '11111111-1111-1111-1111-111111111111');
     await platformAdministrationService.listTenantUsers(
       headers,
       '11111111-1111-1111-1111-111111111111',
       { q: 'smith', userStatus: 'ACTIVE', page: 1, size: 10, membershipStatus: 'ACTIVE' },
-    );
-    await platformAdministrationService.getAuditEvent(
-      headers,
-      '22222222-2222-2222-2222-222222222222',
     );
 
     expect(backendApi.get).toHaveBeenNthCalledWith(
@@ -63,15 +59,9 @@ describe('platformAdministrationService', () => {
       headers,
       'signed-context',
     );
-    expect(backendApi.get).toHaveBeenNthCalledWith(
-      3,
-      '/api/v1/tenant/audit-events/22222222-2222-2222-2222-222222222222',
-      headers,
-      'signed-context',
-    );
   });
 
-  it('covers branch, user detail, and audit list read paths', async () => {
+  it('covers branch and user detail read paths', async () => {
     const tenantId = '11111111-1111-1111-1111-111111111111';
     const resourceId = '22222222-2222-2222-2222-222222222222';
     await platformAdministrationService.getTenantUser(headers, tenantId, resourceId);
@@ -85,16 +75,6 @@ describe('platformAdministrationService', () => {
       sortDir: 'desc',
     });
     await platformAdministrationService.getTenantBranch(headers, tenantId, resourceId);
-    await platformAdministrationService.listAuditEvents(headers, {
-      actorId: resourceId,
-      entityType: 'TENANT',
-      entityId: resourceId,
-      action: 'UPDATE',
-      occurredFrom: '2026-07-01T00:00:00Z',
-      occurredTo: '2026-07-26T23:59:59Z',
-      page: 1,
-      size: 10,
-    });
 
     expect(backendApi.get).toHaveBeenNthCalledWith(
       1,
@@ -111,12 +91,6 @@ describe('platformAdministrationService', () => {
     expect(backendApi.get).toHaveBeenNthCalledWith(
       3,
       `/api/v1/platform/tenants/${tenantId}/branches/${resourceId}`,
-      headers,
-      'signed-context',
-    );
-    expect(backendApi.get).toHaveBeenNthCalledWith(
-      4,
-      `/api/v1/tenant/audit-events?entity_type=TENANT&entity_id=${resourceId}&actor_id=${resourceId}&action=UPDATE&occurred_from=2026-07-01T00%3A00%3A00Z&occurred_to=2026-07-26T23%3A59%3A59Z&page=1&size=10`,
       headers,
       'signed-context',
     );
@@ -166,17 +140,14 @@ describe('platformAdministrationService', () => {
         'not-a-uuid',
       ),
     ).toThrow();
-    expect(() => platformAdministrationService.getAuditEvent(headers, 'not-a-uuid')).toThrow();
     expect(backendApi.get).not.toHaveBeenCalled();
   });
 
   it('exposes only read methods for Stage 1', () => {
     expect(Object.keys(platformAdministrationService).sort()).toEqual([
-      'getAuditEvent',
       'getTenant',
       'getTenantBranch',
       'getTenantUser',
-      'listAuditEvents',
       'listTenantBranches',
       'listTenantUsers',
       'listTenants',

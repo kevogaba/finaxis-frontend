@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  mapAuditDetail,
-  mapAuditPage,
   mapBranch,
   mapBranchPage,
   mapTenantDetail,
@@ -59,39 +57,6 @@ describe('platform administration response mappers', () => {
     });
   });
 
-  it('maps audit detail sensitive fields without changing their string contents', () => {
-    expect(
-      mapAuditDetail({
-        id: 'event-id',
-        organisation_id: 'org-id',
-        occurred_at: '2026-07-26T00:00:00Z',
-        actor_user_id: null,
-        actor_type: 'SYSTEM',
-        event_type: 'TENANT_UPDATED',
-        entity_type: 'TENANT',
-        entity_id: null,
-        action: 'UPDATE',
-        outcome: 'SUCCESS',
-        severity: 'INFO',
-        actor_external_subject: null,
-        branch_id: null,
-        ip_address: null,
-        user_agent: null,
-        correlation_id: 'correlation',
-        request_id: 'request',
-        before_json: '{"status":"DRAFT"}',
-        after_json: '{"status":"ACTIVE"}',
-        metadata_json: '{}',
-        reason: null,
-      }),
-    ).toMatchObject({
-      organisationId: 'org-id',
-      correlationId: 'correlation',
-      beforeJson: '{"status":"DRAFT"}',
-      afterJson: '{"status":"ACTIVE"}',
-    });
-  });
-
   it('covers each resource mapper used by the read service', () => {
     const user = {
       id: 'user-id',
@@ -117,20 +82,6 @@ describe('platform administration response mappers', () => {
       created_at: '2026-07-26T00:00:00Z',
       updated_at: '2026-07-26T00:00:00Z',
     };
-    const audit = {
-      id: 'event-id',
-      organisation_id: 'org-id',
-      occurred_at: '2026-07-26T00:00:00Z',
-      actor_user_id: null,
-      actor_type: 'SYSTEM',
-      event_type: 'READ',
-      entity_type: 'TENANT',
-      entity_id: null,
-      action: 'READ',
-      outcome: 'SUCCESS',
-      severity: 'INFO',
-    };
-
     expect(
       mapTenantDetail({
         id: 'tenant-id',
@@ -159,19 +110,6 @@ describe('platform administration response mappers', () => {
     expect(
       mapBranchPage({
         items: [branch],
-        page: {
-          number: 0,
-          size: 25,
-          total_items: 1,
-          total_pages: 1,
-          has_next: false,
-          has_previous: false,
-        },
-      }).items,
-    ).toHaveLength(1);
-    expect(
-      mapAuditPage({
-        items: [audit],
         page: {
           number: 0,
           size: 25,

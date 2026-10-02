@@ -53,6 +53,7 @@ Open [http://localhost:3000](http://localhost:3000) — the root route redirects
 | `pnpm test:e2e`                | Playwright end-to-end tests (Keycloak-independent)                |
 | `pnpm test:e2e:ui`             | Playwright UI mode                                                |
 | `pnpm test:e2e:keycloak`       | Real-Keycloak smoke test (manual; requires a live local Keycloak) |
+| `pnpm fake-api`                | Run the E2E fake backend alone (port 3199)                        |
 | `pnpm check`                   | format:check + lint + typecheck + unit tests                      |
 | `pnpm verify`                  | `check` + coverage + build (full pre-merge gate)                  |
 
@@ -76,11 +77,17 @@ catching a bug beats a reviewer catching it.
 - **Unit/component**: `pnpm test:run` (or `pnpm test:coverage` for coverage). Tests live next to
   the code they cover (e.g. `components/auth/continue-with-keycloak-button.test.tsx`) and query
   the DOM by role and accessible name rather than implementation details.
-- **End-to-end**: `pnpm test:e2e`. Playwright starts the dev server automatically, covers the
-  root redirect, the Keycloak sign-in action, error/expired-session/logged-out status messages,
-  keyboard navigation, both color schemes, both viewport classes, and an axe accessibility scan.
-  Chromium is the required project; install the browser once with
-  `pnpm exec playwright install chromium`. This suite never talks to a real Keycloak.
+- **End-to-end**: `pnpm test:e2e`. Playwright starts two servers: the standalone fake platform API
+  (`e2e/fake-api/`, plain `node` with type stripping, zero dependencies) and the Next dev server
+  pointed at it. Locally it reuses servers already listening on ports 3100/3199
+  (`reuseExistingServer`) instead of starting its own, so stop any `pnpm dev`/`pnpm fake-api` you
+  have running first — otherwise the suite runs against whatever is already there. Tests that need
+  a signed-in session call `authenticate(context, testInfo, scenario)` from
+  `e2e/support/auth.ts`, which gives each test its own scenario-seeded fake backend; unauthenticated and fake-API smoke specs don't.
+  The fake mirrors the real API's wire behaviour (snake_case, problem+json, context tokens, permissions — see
+  `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`). Run it alone with
+  `pnpm fake-api`. Chromium is the required project; install it once with
+  `pnpm exec playwright install chromium`. This suite never talks to a real Keycloak or backend.
 - **Real-Keycloak smoke test**: `pnpm test:e2e:keycloak` (`e2e/keycloak-smoke.spec.ts`,
   `playwright.keycloak.config.ts`). A separate, manually invoked test that requires a live local
   Keycloak + Postgres (e.g. `docker compose up -d postgres keycloak` in the platform repo) and
@@ -128,8 +135,7 @@ app/
 │   ├── admin/                 # Users, Branches, Roles & Permissions, Settings, Audit Logs
 │   ├── platform-admin/         # Read-only workspace, gated to the platform organisation's context
 │   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
-│   │   ├── tenants/             # Live tenant directory + tenant detail (dynamic route)
-│   │   └── audit/               # Live audit event directory
+│   │   └── tenants/             # Live tenant directory + tenant detail (dynamic route)
 │   └── profile/page.tsx
 ├── api/auth/                 # Better Auth route handlers (`[...all]`, `logout`)
 ├── api/context/               # Same-origin context discovery/selection routes
@@ -152,7 +158,7 @@ config/
 └── env.server.ts              # Validated server environment variables
 modules/
 ├── administration/            # Administration module + navigation registration
-└── platform-administration/   # Platform module: read-only tenant/audit backend integration
+└── platform-administration/   # Platform module: read-only tenant backend integration
 components/
 ├── auth/                     # Keycloak sign-in button, login status alert
 ├── branding/                  # FinaxisLogo, ProductFeature
@@ -171,7 +177,11 @@ proxy.ts                        # Optimistic cookie-presence redirect (not a tru
                                  # forwards the requested pathname so context selection can return
                                  # the user to it afterwards
 test/                           # Vitest setup + renderWithProviders
-e2e/                             # Playwright specs
+e2e/
+├── fake-api/                   # Standalone fake backend (plain Node, `.mts`; `routes/` handlers,
+│                                # `scenarios.mts` seed data, `state.mts` run state)
+├── support/                     # Shared spec helpers (`auth.ts`)
+└── *.spec.ts                    # Playwright specs
 docs/authentication/            # Architecture, Keycloak setup, security, session-model docs
 docs/deployment.md               # VPS/Coolify deployment
 Dockerfile                      # Multi-stage build for the standalone Next.js output
@@ -216,7 +226,7 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   placeholders, not connected to real data.
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) reads live, paginated data from the
-  backend — tenant directory, tenant detail, and audit events — through
+  backend — tenant directory and tenant detail — through
   `modules/platform-administration/platform-administration-service.ts`. It is read-only: no
   create/update/delete actions are exposed in this stage.
 - Beyond context discovery/selection, profile retrieval, and the platform read endpoints above,

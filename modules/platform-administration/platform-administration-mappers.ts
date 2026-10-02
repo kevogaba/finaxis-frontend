@@ -1,8 +1,6 @@
 import type {
   ApiPage,
   ApiPageMetadata,
-  AuditEvent,
-  AuditEventDetail,
   BranchDetail,
   TenantDetail,
   TenantSummary,
@@ -61,33 +59,6 @@ interface RawBranch {
   status_reason: string | null;
   created_at: string;
   updated_at: string;
-}
-
-interface RawAuditEvent {
-  id: string;
-  organisation_id: string;
-  occurred_at: string;
-  actor_user_id: string | null;
-  actor_type: string;
-  event_type: string;
-  entity_type: string;
-  entity_id: string | null;
-  action: string;
-  outcome: string;
-  severity: string;
-}
-
-interface RawAuditEventDetail extends RawAuditEvent {
-  actor_external_subject: string | null;
-  branch_id: string | null;
-  ip_address: string | null;
-  user_agent: string | null;
-  correlation_id: string | null;
-  request_id: string | null;
-  before_json: string | null;
-  after_json: string | null;
-  metadata_json: string;
-  reason: string | null;
 }
 
 export function mapPageMetadata(raw: RawPageMetadata): ApiPageMetadata {
@@ -160,40 +131,4 @@ export function mapBranch(raw: RawBranch): BranchDetail {
 
 export function mapBranchPage(raw: RawPage<RawBranch>): ApiPage<BranchDetail> {
   return { items: raw.items.map(mapBranch), page: mapPageMetadata(raw.page) };
-}
-
-export function mapAuditEvent(raw: RawAuditEvent): AuditEvent {
-  return {
-    id: raw.id,
-    organisationId: raw.organisation_id,
-    occurredAt: raw.occurred_at,
-    actorUserId: raw.actor_user_id,
-    actorType: raw.actor_type,
-    eventType: raw.event_type,
-    entityType: raw.entity_type,
-    entityId: raw.entity_id,
-    action: raw.action,
-    outcome: raw.outcome,
-    severity: raw.severity,
-  };
-}
-
-export function mapAuditPage(raw: RawPage<RawAuditEvent>): ApiPage<AuditEvent> {
-  return { items: raw.items.map(mapAuditEvent), page: mapPageMetadata(raw.page) };
-}
-
-export function mapAuditDetail(raw: RawAuditEventDetail): AuditEventDetail {
-  return {
-    ...mapAuditEvent(raw),
-    actorExternalSubject: raw.actor_external_subject,
-    branchId: raw.branch_id,
-    ipAddress: raw.ip_address,
-    userAgent: raw.user_agent,
-    correlationId: raw.correlation_id,
-    requestId: raw.request_id,
-    beforeJson: raw.before_json,
-    afterJson: raw.after_json,
-    metadataJson: raw.metadata_json,
-    reason: raw.reason,
-  };
 }

@@ -1,7 +1,7 @@
 import 'server-only';
 import { auth } from '@/auth/auth';
 import { serverEnv } from '@/config/env.server';
-import { getE2eAccessToken, getE2eBackendResult } from '@/auth/e2e-test-mode';
+import { getE2eAccessToken } from '@/auth/e2e-test-mode';
 
 const CONTEXT_HEADER = 'X-Active-Organisation-Context';
 const UNAUTHENTICATED_STATUS = 401;
@@ -70,14 +70,6 @@ async function request<T>(
   init: RequestInit,
   contextToken?: string,
 ): Promise<T> {
-  const e2eResult = getE2eBackendResult<T>(path, headers, init, contextToken);
-  if (e2eResult.kind === 'success') {
-    return e2eResult.body;
-  }
-  if (e2eResult.kind === 'error') {
-    throw new BackendApiError(e2eResult.status);
-  }
-
   const accessToken = await getKeycloakAccessToken(headers);
   const backendHeaders = new Headers(init.headers);
   backendHeaders.set('Authorization', `Bearer ${accessToken}`);
