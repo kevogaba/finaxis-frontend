@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
+import { isPlatformOrganisation } from '@/config/application-context';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiPatch, apiPost } from '@/lib/api/tenant-api';
@@ -19,6 +20,8 @@ import { tenantCodeTaken } from './tenant-service';
 
 const BASE = '/api/v1/platform/tenants';
 const idempotencyKey = z.uuid();
+/** BG-29: the reserved platform organisation is no institution, so no action can target it. */
+const tenantId = uuidSchema.refine((id) => !isPlatformOrganisation(id), 'Choose an institution.');
 /** A frontend-only problem code for create's pre-check (BG-07: the backend's answer is a 500). */
 const TENANT_CODE_TAKEN = 'tenant_code_taken';
 
@@ -94,7 +97,7 @@ export async function amendTenantDraft(
   formData: FormData,
 ): Promise<ActionResult> {
   const result = await runServerAction(
-    tenantAmendSchema.extend({ idempotencyKey, tenantId: uuidSchema }),
+    tenantAmendSchema.extend({ idempotencyKey, tenantId }),
     formData,
     async (input) => {
       // A full replacement (contract §D). Settings and the business date are ignored, so not sent.
@@ -109,7 +112,7 @@ export async function amendTenantDraft(
   );
 }
 
-const tenantInput = z.object({ idempotencyKey, tenantId: uuidSchema });
+const tenantInput = z.object({ idempotencyKey, tenantId });
 
 /** Submit, approve and bootstrap retry take no body (contract §E.2). `apiPost` always sends JSON,
  * so the body is `{}`, which the backend never reads; a reason is never forwarded. */
@@ -123,7 +126,7 @@ const optionalReasonInput = tenantInput.extend({ reason: optionalReason });
 const requiredReasonInput = tenantInput.extend({ reason: requiredReason });
 // CRITICAL (spec §11.2): the tenant code typed back. A UX guard; the permission is the gate.
 const deprovisionInput = requiredReasonInput
-  .extend({ tenantCode: z.string(), confirmCode: z.string().trim() })
+  .extend({ tenantCode: z.string().min(1), confirmCode: z.string().trim() })
   .refine((input) => input.confirmCode === input.tenantCode, {
     path: ['confirmCode'],
     error: 'Type the tenant code exactly as shown.',

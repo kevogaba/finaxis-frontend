@@ -26,11 +26,16 @@ vi.mock('@/lib/api/action-result', () => ({
 vi.mock('./tenant-service', () => ({
   tenantCodeTaken: (code: string) => tenantCodeTaken(code),
 }));
+// The reserved platform organisation (BG-29), by the id the tests below use for it.
+vi.mock('@/config/application-context', () => ({
+  isPlatformOrganisation: (id: string) => id === '00000000-0000-0000-0000-000000000000',
+}));
 
 const actions = await import('./tenant-actions');
 
 const KEY = '0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
 const TENANT = '16000000-0000-4000-8000-000000000001';
+const PLATFORM = '00000000-0000-0000-0000-000000000000';
 const FIELDS = {
   tenantCode: 'tujenge-traders',
   displayName: 'Tujenge Traders SACCO',
@@ -318,5 +323,60 @@ describe('tenant actions', () => {
       { reason: 'Merged into Harambee' },
       KEY,
     );
+  });
+
+  it('refuses a deprovision whose tenant code and typed code are both empty', async () => {
+    const result = await actions.deprovisionTenant(
+      null,
+      form({
+        idempotencyKey: KEY,
+        tenantId: TENANT,
+        tenantCode: '',
+        confirmCode: '',
+        reason: 'Merged into Harambee',
+      }),
+    );
+    expect(result).toMatchObject({ ok: false, code: 'validation_failed' });
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'submitTenant',
+    'approveTenant',
+    'rejectTenant',
+    'suspendTenant',
+    'reactivateTenant',
+    'deprovisionTenant',
+    'retryTenantBootstrap',
+  ] as const)("%s refuses the platform organisation's id before any backend call", async (name) => {
+    const result = await actions[name](
+      null,
+      form({
+        idempotencyKey: KEY,
+        tenantId: PLATFORM,
+        reason: 'Compliance review',
+        tenantCode: 'platform',
+        confirmCode: 'platform',
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'validation_failed',
+      fieldErrors: { tenantId: 'Choose an institution.' },
+    });
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  it("refuses to amend the platform organisation's id before any backend call", async () => {
+    const result = await actions.amendTenantDraft(
+      null,
+      form({ ...FIELDS, idempotencyKey: KEY, tenantId: PLATFORM }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'validation_failed',
+      fieldErrors: { tenantId: 'Choose an institution.' },
+    });
+    expect(apiPatch).not.toHaveBeenCalled();
   });
 });
