@@ -2,6 +2,7 @@ import { headers } from 'next/headers';
 import type { Metadata } from 'next';
 import { ZodError } from 'zod';
 import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Grid from '@mui/material/Grid';
@@ -81,50 +82,52 @@ export default async function TenantDetailPage({ params }: TenantDetailPageProps
   const title = result.kind === 'success' ? result.tenant.displayName : 'Tenant detail';
 
   return (
-    <PlatformPageShell
-      title={title}
-      description="Inspect a single tenant's identity, lifecycle, and locale metadata through the live read-only platform API."
-      breadcrumbs={[
-        { href: '/platform-admin', label: 'Overview' },
-        { href: '/platform-admin/tenants', label: 'Tenant directory' },
-        { label: title },
-      ]}
-    >
-      {result.kind === 'not-found' ? (
-        <Alert severity="warning">This tenant could not be found in the live directory.</Alert>
-      ) : result.kind === 'error' ? (
-        <Alert severity="error">
-          <Stack spacing={0.5}>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              Tenant detail is temporarily unavailable.
-            </Typography>
-            <Typography variant="body2">{result.error}</Typography>
-          </Stack>
-        </Alert>
-      ) : (
-        <Card variant="outlined">
-          <CardContent>
-            <Stack spacing={2.5}>
-              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                  {result.tenant.displayName}
-                </Typography>
-                <PlatformStatusChip status={result.tenant.status} />
-              </Stack>
-              <Grid container spacing={2}>
-                {detailFields(result.tenant).map((field) => (
-                  <Grid key={field.label} size={{ xs: 12, sm: 6, md: 4 }}>
-                    <Typography variant="overline" color="text.secondary">
-                      {field.label}
-                    </Typography>
-                    <Typography variant="body2">{field.value}</Typography>
-                  </Grid>
-                ))}
-              </Grid>
+    <Box sx={{ maxWidth: 1480, mx: 'auto' }}>
+      <PlatformPageShell
+        title={title}
+        description="Inspect a single tenant's identity, lifecycle, and locale metadata through the live read-only platform API."
+        breadcrumbs={[
+          { href: '/platform-admin', label: 'Overview' },
+          { href: '/platform-admin/tenants', label: 'Tenant directory' },
+          { label: title },
+        ]}
+      >
+        {result.kind === 'not-found' ? (
+          <Alert severity="warning">This tenant could not be found in the live directory.</Alert>
+        ) : result.kind === 'error' ? (
+          <Alert severity="error">
+            <Stack spacing={0.5}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Tenant detail is temporarily unavailable.
+              </Typography>
+              <Typography variant="body2">{result.error}</Typography>
             </Stack>
-          </CardContent>
-        </Card>
-      )}
-    </PlatformPageShell>
+          </Alert>
+        ) : (
+          <Card variant="outlined">
+            <CardContent>
+              <Stack spacing={2.5}>
+                <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                    {result.tenant.displayName}
+                  </Typography>
+                  <PlatformStatusChip status={result.tenant.status} />
+                </Stack>
+                <Grid container spacing={2}>
+                  {detailFields(result.tenant).map((field) => (
+                    <Grid key={field.label} size={{ xs: 12, sm: 6, md: 4 }}>
+                      <Typography variant="overline" color="text.secondary">
+                        {field.label}
+                      </Typography>
+                      <Typography variant="body2">{field.value}</Typography>
+                    </Grid>
+                  ))}
+                </Grid>
+              </Stack>
+            </CardContent>
+          </Card>
+        )}
+      </PlatformPageShell>
+    </Box>
   );
 }

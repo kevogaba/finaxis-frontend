@@ -77,7 +77,7 @@ describe('SelectContextPage', () => {
     });
 
     const ui = await SelectContextPage({
-      searchParams: Promise.resolve({ next: '/admin/users', page: '3' }),
+      searchParams: Promise.resolve({ next: '/admin', page: '3' }),
     });
     render(ui);
 
@@ -85,7 +85,7 @@ describe('SelectContextPage', () => {
     expect(getAuthenticatedUser).toHaveBeenCalledWith(requestHeaders);
     expect(discoverOrganisations).toHaveBeenCalledWith(requestHeaders, 3);
     expect(renderedSelection).toHaveBeenCalledWith({
-      destination: '/admin/users',
+      destination: '/admin',
       organisations: {
         items: [
           {
@@ -114,7 +114,7 @@ describe('SelectContextPage', () => {
     getAuthenticatedUser.mockResolvedValueOnce(null);
 
     await expect(
-      SelectContextPage({ searchParams: Promise.resolve({ next: '/admin/users', page: '3' }) }),
+      SelectContextPage({ searchParams: Promise.resolve({ next: '/admin', page: '3' }) }),
     ).rejects.toThrow('NEXT_REDIRECT');
 
     expect(redirect).toHaveBeenCalledWith('/login?reason=session_expired');

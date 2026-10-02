@@ -42,7 +42,7 @@ describe('TenantDetailPage', () => {
     const ui = await TenantDetailPage({
       params: Promise.resolve({ tenantId: tenant.id }),
     });
-    renderWithProviders(ui);
+    const { container } = renderWithProviders(ui);
 
     expect(getTenant).toHaveBeenCalledWith(requestHeaders, tenant.id);
     expect(screen.getAllByRole('heading', { name: 'Acme SACCO' }).length).toBeGreaterThan(0);
@@ -54,6 +54,9 @@ describe('TenantDetailPage', () => {
       'href',
       '/platform-admin/tenants',
     );
+    // Prototype parity: `.record-page { max-width: 1480px; margin: 0 auto }` (src/styles.css) —
+    // this record page's outermost element carries the same cap, header included.
+    expect(getComputedStyle(container.firstChild as Element).maxWidth).toBe('1480px');
   });
 
   it('renders a not-found state for an unknown tenant id instead of a broken page', async () => {

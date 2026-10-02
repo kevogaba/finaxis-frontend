@@ -270,6 +270,25 @@ function platformOperator(): RunState {
   };
 }
 
+function longNames(): RunState {
+  const state = greenfieldTenant();
+  const longUser = {
+    ...jane,
+    displayName:
+      'Wanjiru Njeri Kamau-Otieno Achieng Muthoni Wambui Chebet Jepkosgei Nyambura Akinyi Atieno',
+    email: 'wanjiru.njeri.kamau-otieno.achieng.muthoni.wambui@greenfield-teachers-sacco.example',
+  };
+  return {
+    ...state,
+    users: [longUser],
+    organisations: state.organisations.map((organisation) => ({
+      ...organisation,
+      displayName:
+        'Greenfield Teachers and Public Service Employees Savings and Credit Co-operative Society',
+    })),
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -289,6 +308,7 @@ const BUILDERS = {
     };
   },
   'platform-operator': platformOperator,
+  'long-names': longNames,
   // Keeps westlands' branch assignment ACTIVE while the branch itself is SUSPENDED, so a route
   // can prove it lists a SUSPENDED branch (or correctly excludes one) without a branch-lifecycle
   // route to reach that state at runtime.

@@ -23,6 +23,7 @@ describe('PlatformPageShell', () => {
     expect(
       screen.getByText('Inspect the selected tenant without performing write actions.'),
     ).toBeInTheDocument();
+    expect(screen.getByText('Platform administration')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute(
       'href',
       '/platform-admin',
