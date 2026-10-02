@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import Autocomplete from '@mui/material/Autocomplete';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
@@ -7,6 +8,7 @@ import Tabs from '@mui/material/Tabs';
 import TablePagination from '@mui/material/TablePagination';
 import TextField from '@mui/material/TextField';
 import DialogActions from '@mui/material/DialogActions';
+import Typography from '@mui/material/Typography';
 import { renderWithProviders } from '@/test/test-utils';
 import { createFinaxisTheme } from './create-finaxis-theme';
 
@@ -375,5 +377,59 @@ describe('TablePagination rows-per-page select focus ring (layer 07b gate findin
     expect(propertyValue(declarations, 'outline-offset')).toMatch(
       /^calc\(var\(--_focusVisible-offset/,
     );
+  });
+});
+
+describe('Typography focus-visible ring (gate finding V7: record-title focus fallback)', () => {
+  it('gives a programmatically focused heading the house ring, not the browser default', () => {
+    // `focusRecordTitle` (branch-lifecycle-actions.tsx) sets `tabIndex = -1` and calls `.focus()`
+    // on a plain `<h1>` — the same "non-ButtonBase element needs the shared ring" situation as
+    // TablePagination's rows-per-page select above, fixed the same way: spread `theme.focusVisible`
+    // under `&:focus-visible` from a `styleOverrides.root`, here on MuiTypography.
+    const { getByText } = renderWithProviders(
+      <Typography component="h1" tabIndex={-1}>
+        Westlands Branch
+      </Typography>,
+    );
+    const hash = hashClassOf(getByText('Westlands Branch'));
+    const css = allEmittedCss();
+
+    expect(varName(effectiveDeclaration(css, hash, ':focus-visible', 'outline-color') ?? '')).toBe(
+      varName(theme.vars.palette.focus),
+    );
+    expect(effectiveDeclaration(css, hash, ':focus-visible', 'outline-offset')).toMatch(
+      /^calc\(var\(--_focusVisible-offset/,
+    );
+  });
+});
+
+describe('MuiAutocomplete small-size density (gate finding V4)', () => {
+  it('matches the 40px small-input target beside it, not its own narrower built-in padding', () => {
+    const { container } = renderWithProviders(
+      <Autocomplete
+        size="small"
+        options={['HEAD_OFFICE', 'OPERATIONS']}
+        renderInput={(params) => <TextField {...params} label="Branch type" />}
+      />,
+    );
+    const root = container.querySelector('.MuiAutocomplete-root');
+    if (!root) throw new Error('Autocomplete root not found');
+    const hash = hashClassOf(root);
+    const css = allEmittedCss();
+
+    // Autocomplete.js's own small-size rule (`.MuiOutlinedInput-root.MuiInputBase-sizeSmall`,
+    // scoped under this same root hash) sets the *input*'s own vertical padding to 2.5px on top
+    // of the root's fixed 6px — 35.7px total measured, against the 40px every other small input
+    // in this theme resolves to. The fix re-solves just the input's share of that 40px the same
+    // way MuiOutlinedInput's own sizeSmall override does (paddingBlock from the line-height).
+    const declaration = effectiveDeclaration(
+      css,
+      hash,
+      ' .MuiAutocomplete-inputRoot.MuiInputBase-sizeSmall .MuiAutocomplete-input',
+      'padding-block',
+    );
+    expect(declaration).toBeDefined();
+    expect(declaration).toContain('40px');
+    expect(declaration).not.toBe('2.5px');
   });
 });

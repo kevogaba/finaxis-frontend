@@ -132,13 +132,16 @@ app/
 ├── (public)/login/page.tsx  # Split-screen login page (Better Auth Keycloak sign-in)
 ├── (authenticated)/          # Server-guarded routes: layout.tsx validates session + context
 │   ├── layout.tsx             # Authoritative auth guard for /admin, /profile, /platform-admin
-│   ├── admin/                 # Overview, Business date, and Audit trail pages; later layers add
-│   │                            # Approval queue, Users & access, Branches, Roles & permissions,
+│   ├── admin/                 # Overview, Business date, Audit trail, and Branches pages; later
+│   │                            # layers add Approval queue, Users & access, Roles & permissions,
 │   │                            # and Settings as their own nav items (spec §8)
 │   │   ├── layout.tsx           # Redirects a platform context to /platform-admin
 │   │   ├── business-date/page.tsx # Current date/status hero, close-of-business actions, history
-│   │   └── audit/page.tsx       # Audit trail: entity/action/date filters, pagination, an event
-│   │                              # detail drawer with before/after JSON
+│   │   ├── audit/page.tsx       # Audit trail: entity/action/date filters, pagination, an event
+│   │   │                          # detail drawer with before/after JSON
+│   │   └── branches/            # Branch directory (search, status/type filters, sortable headers),
+│   │                              # create draft (new/), and the record ([branchId]/: layout hero +
+│   │                              # lifecycle actions; Overview, Users, and Audit tabs)
 │   ├── platform-admin/         # Read-only workspace, gated to the platform organisation's context
 │   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
 │   │   └── tenants/             # Live tenant directory + tenant detail (dynamic route)
@@ -146,6 +149,7 @@ app/
 │                                # Contexts, Roles & permissions, Security and Activity tabs
 ├── api/auth/                 # Better Auth route handlers (`[...all]`, `logout`)
 ├── api/context/               # Same-origin context discovery/selection routes
+├── api/tenant/users/          # Same-origin user search for UserPicker (first page only)
 ├── globals.css               # CSS layers, Tailwind import, MUI/Tailwind bridge, restrained defaults
 ├── layout.tsx                 # Root layout: fonts, AppRouterCacheProvider, AppProviders
 ├── loading.tsx / not-found.tsx
@@ -173,7 +177,9 @@ lib/
 │                                # (paging.ts), wire schemas (wire.ts), problem mapping and
 │                                # `load()` (problem.ts, load.ts), bounded name/branch lookups
 │                                # (lookups.ts), URL query-string helpers (query-string.ts's
-│                                # `toQueryString`/`toSearchParams`)
+│                                # `toQueryString`/`toSearchParams`/`hrefWith`), and the URL sort
+│                                # allow-list (list-sort.ts's `parseListSort`/`sortQuery`)
+├── apply-field-errors.ts        # Server Action `fieldErrors` → React Hook Form field errors
 ├── business-date.ts             # `dd-MM-yyyy` business date parsing/compare/convert
                                    # (`businessDateDay`, `isoToBusinessDate`, `nextBusinessDateIso`)
 └── format.ts                    # Shared display formatting: `formatInstant` (organisation
@@ -183,8 +189,13 @@ modules/
 ├── administration/            # Administration module + navigation registration; business-date/
 │                                # holds the business date contract, service, rules, and Server
 │                                # Actions (modules/administration/business-date/); audit/ holds
-│                                # the audit trail's contract, query parsing, service, and
-│                                # vocabulary (modules/administration/audit/)
+│                                # the audit trail's contract, query parsing, service, vocabulary,
+│                                # and the record kit's RecordAuditTab/AuditViewToggle/
+│                                # audit-rows.ts (modules/administration/audit/); branches/ holds
+│                                # the branch contract, list query, lifecycle rules, service,
+│                                # Server Actions, and components (modules/administration/branches/);
+│                                # users/ holds tenant user search for pickers
+│                                # (modules/administration/users/)
 ├── platform-administration/   # Platform module: read-only tenant backend integration
 └── profile/                   # Account profile: profile-rules, the cached profile-service, and
                                  # the tab components (modules/profile/components/)
@@ -193,12 +204,14 @@ components/
 ├── branding/                  # FinaxisLogo, ProductFeature
 ├── context/                    # Shared organisation/branch selection: ContextSelectionPage,
 │                                # ContextSelectionForm, useContextSelection, context-api,
-│                                # PaginationControls
-├── data-display/               # Reusable list building blocks: ListToolbar, TablePaginationBar,
-│                                # StatusChip, DescriptionList, TruncatedText, EmptyState,
-│                                # ErrorState, useListNavigation, SectionCard (bordered surface with
-│                                # a header row), ReasonDialog (one reusable confirm/reason dialog
-│                                # per mutation, a client-generated idempotency key per opening)
+│                                # PaginationControls, SwitchToAllBranchesButton
+├── data-display/               # Reusable list and record building blocks: ListToolbar
+│                                # (search/select/datetime), TablePaginationBar, StatusChip,
+│                                # DescriptionList, TruncatedText, EmptyState, ErrorState,
+│                                # useListNavigation; the record kit (layer 07b) RecordHero,
+│                                # RecordTabs (link tabs as nested routes), CopyIdButton,
+│                                # ForbiddenState/BranchContextState, ConfirmDialog; SectionCard and
+│                                # ReasonDialog (07); AssignmentDrawer (08)
 ├── navigation/                 # next/link client re-export (Next.js 16 RSC boundary workaround)
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle, ToastProvider
 └── shell/                      # AppShell, header, drawer, context switcher dialog, app switcher,
@@ -220,7 +233,7 @@ e2e/
 │                                # `scenarios.mts` seed data, `state.mts` run state,
 │                                # `idempotency.mts`'s `sendIdempotent` (Idempotency-Key replay/
 │                                # reuse), `audit-log.mts`'s `recordAuditEvent`)
-├── support/                     # Shared spec helpers (`auth.ts`)
+├── support/                     # Shared spec helpers (`auth.ts`, `admin.ts`)
 └── *.spec.ts                    # Playwright specs
 docs/authentication/            # Architecture, Keycloak setup, security, session-model docs
 docs/deployment.md               # VPS/Coolify deployment
@@ -294,8 +307,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   backend stays the authority. The rail's collapsed/expanded preference persists in a
   `finaxis_nav` cookie read server-side (`app/(authenticated)/layout.tsx`) so first paint already
   renders the right rail width.
-- Administration currently ships the Overview, Business date, and Audit trail pages; Approval
-  queue, Users & access, Branches, Roles & permissions, and Settings are built out (with real
+- Administration currently ships the Overview, Business date, Audit trail, and Branches pages;
+  Approval queue, Users & access, Roles & permissions, and Settings are built out (with real
   data, not placeholders) as their own layers land, each registering its own item in
   `modules/administration/administration-navigation.ts`.
 - Business date (`/admin/business-date`, `modules/administration/business-date/`) reads
@@ -335,13 +348,31 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     current context, which is the more common fallback case (e.g. the backend seed's IAM_ADMIN
     role, which holds `audit.view` without `tenant.view` or `branch.view`); a timezone value
     `Intl` itself rejects falls back the same way, but that is rarer.
+- Branches (`/admin/branches`, `modules/administration/branches/`) lists and searches branches
+  (code/name search, status and type filters, five sortable columns) from `GET /branches`,
+  creates a draft, and drives the lifecycle (submit, activate, suspend, reactivate, close) and user
+  assignments (assign/revoke) as Server Actions behind `ReasonDialog`/`ConfirmDialog`/
+  `AssignmentDrawer`. The record page (`RecordHero` + `RecordTabs`) renders Overview, Users, and
+  Audit tabs. Known limits:
+  - No address, edit, or opened/closed-date fields (`docs/backend-gaps.md` BG-13).
+  - The maker-checker lookup (who drafted a pending branch) needs `audit.view`
+    (`docs/backend-gaps.md` BG-08); Activate is never disabled for an unknown maker.
+  - A branch the selected branch context can't reach shows a guided "Switch to All branches"
+    state instead of a raw 404 (`docs/backend-gaps.md` BG-03).
+  - No draft delete or reject — a live-created draft is permanent (`docs/backend-gaps.md` BG-01).
+  - The directory's Type filter offers only the two platform types (`HEAD_OFFICE`, `OPERATIONS`);
+    a tenant-defined type filters only through a hand-edited `?type=` URL.
+  - The toolbar search commits on Enter or blur, not as you type.
+  - The Users tab resolves each visible assignment's user name with its own read, since assignment
+    rows carry no name (`docs/backend-gaps.md` BG-09).
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) reads live, paginated data from the
   backend — tenant directory and tenant detail — through
   `modules/platform-administration/platform-administration-service.ts`. It is read-only: no
   create/update/delete actions are exposed in this stage.
-- Beyond context discovery/selection, profile retrieval, and the platform read endpoints above,
-  other domain API modules (e.g. Administration's branches/users/roles) are not connected yet.
+- Beyond context discovery/selection, profile retrieval, the platform read endpoints, and
+  Administration's Branches above, other domain API modules (e.g. Users & access, Roles &
+  permissions) are not connected yet.
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
   `/forgot-password` are placeholders; the first three routes resolve to the app's `not-found`
   page until real content exists.

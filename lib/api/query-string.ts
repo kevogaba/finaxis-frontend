@@ -29,3 +29,18 @@ export function toSearchParams(
   });
   return params;
 }
+
+/** `pathname` with `params` plus `changes` applied (`null` deletes a key). */
+export function hrefWith(
+  pathname: string,
+  params: URLSearchParams,
+  changes: Record<string, string | null>,
+): string {
+  const next = new URLSearchParams(params);
+  Object.entries(changes).forEach(([key, value]) => {
+    if (value === null) next.delete(key);
+    else next.set(key, value);
+  });
+  const query = next.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}

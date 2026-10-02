@@ -97,4 +97,40 @@ export const tenantReadRoutes: Route[] = [
       ),
     );
   }),
+
+  route('GET', '/api/v1/tenant/users', (context) => {
+    const access = requireContext(context);
+    requireTenantContext(access);
+    requirePermission(access, 'user.view');
+    const { query, state } = context;
+    const q = query.get('q')?.toLowerCase();
+    const userStatus = query.get('user_status');
+    const membershipStatus = query.get('membership_status');
+    const rows = state.memberships
+      .filter((membership) => membership.organisationId === access.organisation.id)
+      .flatMap((membership) => {
+        const user = state.users.find((candidate) => candidate.id === membership.userId);
+        return user ? [{ user, membership }] : [];
+      })
+      .filter(
+        ({ user, membership }) =>
+          (!q ||
+            [user.username, user.email, user.displayName].some((value) =>
+              value.toLowerCase().includes(q),
+            )) &&
+          (!userStatus || user.status === userStatus) &&
+          (!membershipStatus || membership.status === membershipStatus),
+      )
+      // ponytail: "newest user first" = reverse seed order; the fake keeps no user creation time.
+      .reverse()
+      .map(({ user, membership }) => ({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        display_name: user.displayName,
+        user_status: user.status,
+        membership_status: membership.status,
+      }));
+    sendJson(context.res, 200, pageOf(rows, query));
+  }),
 ];

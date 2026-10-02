@@ -352,6 +352,22 @@ export function createFinaxisTheme() {
           },
         },
       },
+      // Autocomplete.js's own small-size CSS re-declares the outlined root's padding (6px) and,
+      // within it, `.MuiAutocomplete-input`'s own padding (2.5px) — same specificity as the
+      // `MuiOutlinedInput` sizeSmall override above (both are a theme-engine `styleOverrides` rule
+      // scoped under this root's hash), so whichever is emitted last wins; the `inputRoot` override
+      // key below nests under `.MuiAutocomplete-inputRoot`, i.e. after Autocomplete's own rule.
+      // Keep the root's own 6px top/bottom and re-solve only the input's share of the 40px target
+      // the same way: from the input's own line-height, not a fixed px number.
+      MuiAutocomplete: {
+        styleOverrides: {
+          inputRoot: {
+            '&.MuiInputBase-sizeSmall .MuiAutocomplete-input': {
+              paddingBlock: 'calc((40px - 12px - 1.4375em) / 2)',
+            },
+          },
+        },
+      },
       MuiFormHelperText: {
         styleOverrides: { root: { marginInline: 0, fontSize: '0.6875rem' } },
       },
@@ -415,6 +431,17 @@ export function createFinaxisTheme() {
           // the same resolved ring `theme.focusVisible` (not a hand copy) so it stays one place to
           // tune (Ruling 5) and keeps the house look: outset +2px, `palette.focus`.
           select: ({ theme }) => ({
+            '&:focus-visible': theme.focusVisible === false ? undefined : theme.focusVisible,
+          }),
+        },
+      },
+      // A record's title is focused programmatically when a lifecycle transition leaves no other
+      // control behind (branch-lifecycle-actions.tsx's `focusRecordTitle`, PF6/V7) — Typography
+      // isn't a ButtonBase, so it never gets the theme-wide `.Mui-focusVisible` ring either; spread
+      // the same resolved ring as the TablePagination select above instead of the browser default.
+      MuiTypography: {
+        styleOverrides: {
+          root: ({ theme }) => ({
             '&:focus-visible': theme.focusVisible === false ? undefined : theme.focusVisible,
           }),
         },
