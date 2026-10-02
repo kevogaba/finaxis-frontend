@@ -146,9 +146,12 @@ app/
 │   │                              # create (new/), and the record ([roleId]/: hero + Edit and
 │   │                              # Activate/Deactivate; Overview, Permissions, Assignments, and
 │   │                              # Audit tabs; edit/)
-│   ├── platform-admin/         # Read-only workspace, gated to the platform organisation's context
+│   ├── platform-admin/         # Platform workspace, gated to the platform organisation's context
 │   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
-│   │   └── tenants/             # Live tenant directory + tenant detail (dynamic route)
+│   │   └── tenants/             # SACCO institutions: directory (search, status/country/created
+│   │                              # filters, sortable headers), create wizard (new/), the record
+│   │                              # ([tenantId]/(record)/: hero lifecycle; Overview and
+│   │                              # Provisioning tabs), and amend ([tenantId]/amend/)
 │   └── profile/                # Account profile: layout.tsx (hero + tabs) and the Overview,
 │                                # Contexts, Roles & permissions, Security and Activity tabs
 ├── api/auth/                 # Better Auth route handlers (`[...all]`, `logout`)
@@ -202,7 +205,10 @@ modules/
 │                                # contract, list query, rules, service, Server Actions, and
 │                                # components (modules/administration/roles/); users/ holds tenant
 │                                # user search for pickers (modules/administration/users/)
-├── platform-administration/   # Platform module: read-only tenant backend integration
+├── platform-administration/   # Platform module + navigation; tenants/ holds the institution
+│                                # contract, directory query, lifecycle rules, service, Server
+│                                # Actions, and components (modules/platform-administration/tenants/);
+│                                # the root keeps the tenant branch and user reads for layer 17
 └── profile/                   # Account profile: profile-rules, the cached profile-service, and
                                  # the tab components (modules/profile/components/)
 components/
@@ -217,7 +223,8 @@ components/
 │                                # useListNavigation; the record kit (layer 07b) RecordHero,
 │                                # RecordTabs (link tabs as nested routes), CopyIdButton,
 │                                # ForbiddenState/BranchContextState, ConfirmDialog; SectionCard and
-│                                # ReasonDialog (07); AssignmentDrawer (08); focusRecordTitle (09)
+│                                # ReasonDialog (07); AssignmentDrawer (08); focusRecordTitle (09);
+│                                # WizardForm and its Stepper theme (16)
 ├── navigation/                 # next/link client re-export (Next.js 16 RSC boundary workaround)
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle, ToastProvider
 └── shell/                      # AppShell, header, drawer, context switcher dialog, app switcher,
@@ -397,11 +404,22 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - The Audit tab shows the role's own changes. Assignment changes are audited per assignment
     (BG-16).
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
-  context's organisation is the platform organisation) reads live, paginated data from the
-  backend — tenant directory and tenant detail — through
-  `modules/platform-administration/platform-administration-service.ts`. It is read-only: no
-  create/update/delete actions are exposed in this stage.
-- Beyond context discovery/selection, profile retrieval, the platform read endpoints, and
+  context's organisation is the platform organisation) manages SACCO institutions through
+  `modules/platform-administration/tenants/`: the directory, the create-draft wizard, amend, the
+  record's lifecycle (submit, approve, reject, suspend, reactivate, deprovision) and bootstrap
+  retry. Times show in UTC.
+  - The reserved platform organisation is hidden from the directory and its record URL is a 404;
+    a filtered count can read one high (`docs/backend-gaps.md` BG-29).
+  - A tenant code is checked before the create call, because a duplicate is a backend 500
+    (BG-07); the check reads one page of 100 matches.
+  - Approve stays on offer for its maker: the platform context can't read who created or
+    submitted a request, so a refusal is explained as permission or maker-checker (BG-08).
+  - Amend re-asks the legal name, registration number and first administrator, which the
+    platform never returns (BG-14). There are no Settings or Audit tabs (BG-12, BG-06).
+  - The toolbar search commits on Enter or blur, not as you type.
+  - The overview, and the tenant branch and user reads in `platform-administration-service.ts`,
+    are layer 17's.
+- Beyond context discovery/selection, profile retrieval, Platform Administration's institutions, and
   Administration's Branches and Roles & permissions above, other domain API modules (e.g. Users &
   access) are not connected yet.
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
@@ -416,7 +434,7 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
    treating UI-shown roles as informational only.
 2. Build out Administration's remaining pages (Approval queue, Users & access) against real data,
    each registering its own navigation item.
-3. Extend Platform Administration's live reads to branches and users, and design a write-action
-   model (with audit logging) before enabling any mutations there.
+3. Extend Platform Administration with tenant branches and users, platform users, and the KPI
+   overview (layer 17).
 4. Replace the temporary `FinaxisLogo` mark with the official brand asset.
 5. Expand the theme's component defaults only as real screens demand them.

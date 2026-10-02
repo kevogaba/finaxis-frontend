@@ -237,7 +237,8 @@ tackled separately in the platform repository.
   details and `status_reason` can't be read either. PATCH replaces every field, so an amend without
   re-entering legal name / registration number nulls them; `initial_settings` and `business_date` are
   ignored on amend.
-- **Frontend handling:** amend form asks for those fields to be re-entered and says why.
+- **Frontend handling:** the amend wizard asks for those fields and the first administrator to be
+  re-entered, says why, and sends no settings or business date.
 - **Suggested change:** return them (and admin draft details, status reason) on tenant detail; make
   PATCH a partial update.
 
@@ -347,8 +348,10 @@ reuse/release of rejected codes.
 
 ### BG-29 — PLATFORM organisation in tenant search · P2
 
-`GET /platform/tenants` includes the reserved PLATFORM organisation. The frontend filters it out
-(page sizes can then show one fewer row). Suggested: exclude it server-side.
+`GET /platform/tenants` includes the reserved PLATFORM organisation. The frontend filters it out,
+so a page can show one fewer row. The result count subtracts it whenever it is known to be included
+(always when unfiltered, and when its row is on the page), so a filtered count can read one high;
+its record URL is a 404. Suggested: exclude it server-side.
 
 ### BG-30 — Error envelope inconsistencies · P2
 
