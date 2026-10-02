@@ -68,6 +68,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   which has no paging and includes SUSPENDED branches that the paginated `/auth/branches` omits —
   bounded by one user's assignments, so it is no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-09-27-admin-parity-15-profile.md`).
+  The settings catalogue (`modules/administration/settings`) is a fourth, named exception: it is a
+  bounded form, not a data-listing directory — the fixed catalogue plus the tenant's stored keys,
+  read in one request with a bounded page size (`?size=100`, the backend maximum) — so it is no
+  licence for an unbounded list (plan
+  `docs/superpowers/plans/2026-09-27-admin-parity-13-settings.md`, Ruling 6).
 - A context-scoped read goes through `lib/api/tenant-api.ts`'s `apiGet(path, schema)`, where
   `schema` is a snake_case zod schema defined in the domain's own `<domain>-contract.ts` (e.g.
   `modules/administration/audit/audit-contract.ts`) that transforms the wire shape to camelCase.
