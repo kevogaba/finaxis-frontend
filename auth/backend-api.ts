@@ -37,17 +37,22 @@ function toBackendApiError(status: number): BackendApiError {
 async function problemDetails(
   response: Response,
 ): Promise<{ code: string | null; requestId: string | null }> {
+  // Falls back to the response header whenever the body itself doesn't carry a request id —
+  // a non-object body, an object body missing `request_id`, or one that fails to parse at all.
+  const headerRequestId = response.headers.get('x-request-id');
   try {
     const body = (await response.json()) as unknown;
     if (typeof body !== 'object' || body === null) {
-      return { code: null, requestId: null };
+      return { code: null, requestId: headerRequestId };
     }
     const code = 'code' in body && typeof body.code === 'string' ? body.code : null;
     const requestId =
-      'request_id' in body && typeof body.request_id === 'string' ? body.request_id : null;
+      'request_id' in body && typeof body.request_id === 'string'
+        ? body.request_id
+        : headerRequestId;
     return { code, requestId };
   } catch {
-    return { code: null, requestId: response.headers.get('x-request-id') };
+    return { code: null, requestId: headerRequestId };
   }
 }
 

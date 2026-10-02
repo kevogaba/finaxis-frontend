@@ -343,8 +343,14 @@ export function createFinaxisTheme() {
           // no size branch — checked in node_modules/@mui/material/InputBase/InputBase.js), so
           // reach the actual input element the same way the notched-outline override does above:
           // a nested selector on its stable class, not a (nonexistent) `inputSizeSmall` key.
+          // Density target: 40px (spec §7.2/MASTER.md). `9.5` measured ≈ 38px; solve the padding
+          // from the input's own line-height instead of a fixed px number, since `em` resolves
+          // against the input's computed font-size (13px body text). Covers Select's displayed
+          // value too — it shares this `.MuiOutlinedInput-input` class.
           sizeSmall: {
-            '& .MuiOutlinedInput-input:not(textarea)': { paddingBlock: 9.5 },
+            '& .MuiOutlinedInput-input:not(textarea)': {
+              paddingBlock: 'calc((40px - 1.4375em) / 2)',
+            },
           },
         },
       },
@@ -361,6 +367,16 @@ export function createFinaxisTheme() {
             fontSize: '0.78125rem',
           }),
           sizeSmall: { paddingBlock: 8, paddingInline: 14 },
+          // Density target: 44px single-line rows (spec §7.2/MASTER.md). Uses `height`, not
+          // `minHeight` — browsers ignore `min-height` on `display: table-cell` (measured: a
+          // probe cell rendered ~34px with `min-height: 44px`, the same as with no rule at all).
+          // `height` on a table cell acts as a minimum instead, so a two-line row still grows past
+          // it. Cells are border-box here (CssBaseline's `* { box-sizing: inherit }`), so the 44
+          // already includes the 8+8px padding and the 1px bottom border. Scoped to `body` (not
+          // `root`/`sizeSmall`) so the head cell (an explicit 39px `height`, checked separately)
+          // and TablePagination's own cell (rendered outside any Table context, so it gets no
+          // `variant` at all) are unaffected.
+          body: { height: 44 },
           head: ({ theme }) => ({
             height: 39,
             paddingBlock: 0,
@@ -386,6 +402,13 @@ export function createFinaxisTheme() {
           toolbar: { minHeight: 52 },
           selectLabel: { fontSize: '0.75rem' },
           displayedRows: { fontSize: '0.75rem' },
+          // Density target: 32px arrow buttons (spec §7.2/MASTER.md). The buttons are plain
+          // IconButtons (root 42px) with no `size` prop, so reach them through the `actions`
+          // wrapper's stable class instead of a `sizeSmall` IconButton variant they never opt
+          // into — verified against TablePaginationActions.js/tablePaginationClasses.js: `actions`
+          // resolves to `& .MuiTablePagination-actions` on the toolbar (not inert, unlike
+          // `notchedOutline` above).
+          actions: { '& .MuiIconButton-root': { width: 32, height: 32 } },
         },
       },
       MuiTabs: {

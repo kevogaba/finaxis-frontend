@@ -14,7 +14,11 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // One worker locally too, as on CI. Measured in layer 06 (Task 6): at the default 4 workers
+  // every spec slowed (median click 1.1-1.7 s), the full suite took 6.6-10.1 min and audit.spec
+  // timed out; on one worker it ran 76/76 in 3.0 min.
+  // ponytail: serial by default; re-measure before raising it on another machine.
+  workers: 1,
   reporter: [['html', { open: 'never' }]],
   use: {
     baseURL,

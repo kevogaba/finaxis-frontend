@@ -2,6 +2,12 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
+// CI's ubuntu-latest runners are UTC, where local-time parsing coincides with UTC parsing, so a
+// datetime-local → ISO regression (e.g. treating the typed value as UTC, or UTC getters in
+// toLocalInput) would still pass there. Pin a fixed non-UTC, non-DST zone instead — forked
+// vitest workers inherit this env var.
+process.env.TZ = 'Africa/Nairobi';
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -41,6 +47,7 @@ export default defineConfig({
         'auth/**/*.ts',
         'config/**/*.ts',
         'modules/**/*.ts',
+        'lib/**/*.ts',
       ],
       exclude: [
         '**/*.d.ts',

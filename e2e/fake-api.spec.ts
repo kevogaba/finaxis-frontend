@@ -227,4 +227,31 @@ test.describe('fake API', () => {
       violations: [{ field: 'created_to', code: 'invalid_parameter' }],
     });
   });
+
+  // Contract §A/§B (audit): occurred_from/occurred_to are instants, compared by time and
+  // inclusive — the UI writes toISOString() (`…:00.000Z`) while seeds are stored as `…:00Z`; a
+  // string compare would sort `Z` above `.` and silently drop this exact-boundary event. The
+  // org-level token (no branch selected) is still valid for audit — audit is never
+  // branch-restricted (contract §E.4).
+  test('includes the exact-boundary event on occurred_to for audit events', async ({ request }) => {
+    const headers = bearer('default');
+    const selection = await request.post(`${FAKE_API_URL}/api/v1/auth/select-organisation`, {
+      headers,
+      data: { organisation_id: '11111111-1111-4111-8111-111111111111' },
+    });
+    const { context_token: contextToken } = (await selection.json()) as { context_token: string };
+    const contextHeaders = { ...headers, 'X-Active-Organisation-Context': contextToken };
+
+    const response = await request.get(
+      `${FAKE_API_URL}/api/v1/tenant/audit-events?occurred_to=2026-09-07T07:59:00.000Z`,
+      { headers: contextHeaders },
+    );
+    expect(response.status()).toBe(200);
+    const body = (await response.json()) as {
+      items: { occurred_at: string }[];
+      page: { total_items: number };
+    };
+    expect(body.page.total_items).toBe(30);
+    expect(body.items.map((item) => item.occurred_at)).toContain('2026-09-07T07:59:00Z');
+  });
 });

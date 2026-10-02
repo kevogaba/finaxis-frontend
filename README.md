@@ -132,10 +132,12 @@ app/
 ├── (public)/login/page.tsx  # Split-screen login page (Better Auth Keycloak sign-in)
 ├── (authenticated)/          # Server-guarded routes: layout.tsx validates session + context
 │   ├── layout.tsx             # Authoritative auth guard for /admin, /profile, /platform-admin
-│   ├── admin/                 # Overview page; later layers add Approval queue, Users & access,
-│   │                            # Branches, Roles & permissions, Settings, Business date, and
-│   │                            # Audit trail as their own nav items (spec §8)
-│   │   └── layout.tsx           # Redirects a platform context to /platform-admin
+│   ├── admin/                 # Overview and Audit trail pages; later layers add Approval queue,
+│   │                            # Users & access, Branches, Roles & permissions, Settings, and
+│   │                            # Business date as their own nav items (spec §8)
+│   │   ├── layout.tsx           # Redirects a platform context to /platform-admin
+│   │   └── audit/page.tsx       # Audit trail: entity/action/date filters, pagination, an event
+│   │                              # detail drawer with before/after JSON
 │   ├── platform-admin/         # Read-only workspace, gated to the platform organisation's context
 │   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
 │   │   └── tenants/             # Live tenant directory + tenant detail (dynamic route)
@@ -162,8 +164,18 @@ auth/
 config/
 ├── application-context.ts    # Typed module/organisation/branch context value
 └── env.server.ts              # Validated server environment variables
+lib/
+├── api/                        # Context-scoped backend reads: tenant-api.ts's `apiGet`, paging
+│                                # (paging.ts), wire schemas (wire.ts), problem mapping and
+│                                # `load()` (problem.ts, load.ts), bounded name/branch lookups
+│                                # (lookups.ts), URL query-string helpers (query-string.ts's
+│                                # `toQueryString`/`toSearchParams`)
+└── format.ts                    # Shared display formatting: `formatInstant` (organisation
+                                   # timezone, else UTC with a label), `shortId`
 modules/
-├── administration/            # Administration module + navigation registration
+├── administration/            # Administration module + navigation registration; audit/ holds
+│                                # the audit trail's contract, query parsing, service, and
+│                                # vocabulary (modules/administration/audit/)
 └── platform-administration/   # Platform module: read-only tenant backend integration
 components/
 ├── auth/                     # Keycloak sign-in button, login status alert
@@ -171,6 +183,9 @@ components/
 ├── context/                    # Shared organisation/branch selection: ContextSelectionPage,
 │                                # ContextSelectionForm, useContextSelection, context-api,
 │                                # PaginationControls
+├── data-display/               # Reusable list building blocks: ListToolbar, TablePaginationBar,
+│                                # StatusChip, DescriptionList, TruncatedText, EmptyState,
+│                                # ErrorState, useListNavigation
 ├── navigation/                 # next/link client re-export (Next.js 16 RSC boundary workaround)
 ├── profile/                   # Profile view
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle, ToastProvider
@@ -263,10 +278,35 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   backend stays the authority. The rail's collapsed/expanded preference persists in a
   `finaxis_nav` cookie read server-side (`app/(authenticated)/layout.tsx`) so first paint already
   renders the right rail width.
-- Administration currently ships only the Overview page; Approval queue, Users & access, Branches,
-  Roles & permissions, Settings, Business date, and Audit trail are built out (with real data, not
-  placeholders) as their own layers land, each registering its own item in
+- Administration currently ships the Overview and Audit trail pages; Approval queue, Users &
+  access, Branches, Roles & permissions, Settings, and Business date are built out (with real
+  data, not placeholders) as their own layers land, each registering its own item in
   `modules/administration/administration-navigation.ts`.
+- The Audit trail (`/admin/audit`, `modules/administration/audit/`) reads
+  `GET /tenant/audit-events` and `GET /tenant/audit-events/{id}` and renders them with pagination,
+  a detail drawer (before/after JSON, actor/entity/branch facts), and removable actor/entity chips
+  (`?actorId=`/`?entityId=`, the latter reachable only via a hand-edited or shared link today).
+  Known limits:
+  - Only structured filters exist (entity type, entity, action, actor, date range) — no
+    free-text, outcome, severity, branch, or event-type filter, because the backend doesn't
+    expose one yet (`docs/backend-gaps.md` BG-16).
+  - An actor is filtered by clicking their name on a visible row, not by a search box, until a
+    users directory ships a picker.
+  - Actor and entity names are resolved only for the IDs on the current page (deduplicated,
+    bounded lookups); an actor or entity not resolvable falls back to their id.
+  - The branch lookup used to label rows is bounded to the first 500 branches in the tenant.
+  - The Branch column shows the branch stamped on the _request's_ selected context, not
+    necessarily the branch the action was performed on (wire contract §E.4, `docs/backend-gaps.md`
+    BG-16); relabelling this in the UI is left to a later visual pass.
+  - The table shows short IDs. The drawer's Actor fact shows the resolved name when one is
+    available, else the full actor user ID (with the actor's external subject in parentheses when
+    it has one); the drawer's entity, request, and correlation IDs always render as full IDs — all
+    selectable text (no copy affordance yet).
+  - Times render in the organisation's timezone (labelled, e.g. `Africa/Nairobi`), falling back to
+    UTC — and branches to short IDs — whenever `/tenant` or `/branches` isn't readable in the
+    current context, which is the more common fallback case (e.g. the backend seed's IAM_ADMIN
+    role, which holds `audit.view` without `tenant.view` or `branch.view`); a timezone value
+    `Intl` itself rejects falls back the same way, but that is rarer.
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) reads live, paginated data from the
   backend — tenant directory and tenant detail — through
@@ -285,8 +325,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
 1. Add Keycloak claim mappers and enforce authorization/permissions server-side, instead of
    treating UI-shown roles as informational only.
 2. Build out Administration's remaining pages (Approval queue, Users & access, Branches,
-   Roles & permissions, Settings, Business date, Audit trail) against real data, each registering
-   its own navigation item.
+   Roles & permissions, Settings, Business date) against real data, each registering its own
+   navigation item.
 3. Extend Platform Administration's live reads to branches and users, and design a write-action
    model (with audit logging) before enabling any mutations there.
 4. Replace the temporary `FinaxisLogo` mark with the official brand asset.
