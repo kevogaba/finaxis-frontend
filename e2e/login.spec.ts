@@ -36,6 +36,15 @@ test.describe('Login page', () => {
     await expect(page.getByRole('status')).toContainText(/signed out/i);
   });
 
+  test('renders the page title at the h1 type size', async ({ page }) => {
+    const heading = page.getByRole('heading', { level: 1, name: 'Welcome back' });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/login');
+    await expect(heading).toHaveCSS('font-size', '28px');
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(heading).toHaveCSS('font-size', '25px');
+  });
+
   test('works at mobile viewport widths without horizontal scroll', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/login');
@@ -65,14 +74,34 @@ test.describe('Login page', () => {
     await expect(page.locator('html')).toHaveClass(/dark/);
   });
 
-  test('has no serious or critical accessibility violations', async ({ page }) => {
-    await page.goto('/login');
-    const results = await new AxeBuilder({ page }).analyze();
+  const colorSchemes = ['light', 'dark'] as const;
+  const viewports = [
+    { width: 1280, height: 800 },
+    { width: 375, height: 812 },
+  ];
 
-    const seriousOrCritical = results.violations.filter((violation) =>
-      ['serious', 'critical'].includes(violation.impact ?? ''),
-    );
+  for (const colorScheme of colorSchemes) {
+    for (const viewport of viewports) {
+      test(`has no serious or critical accessibility violations (${colorScheme}, ${viewport.width}px)`, async ({
+        page,
+      }) => {
+        // Set both before navigating: InitColorSchemeScript reads `matchMedia` on load, so a
+        // scheme set after `goto` would scan whatever scheme the page happened to boot into.
+        await page.emulateMedia({ colorScheme });
+        await page.setViewportSize(viewport);
+        await page.goto('/login');
 
-    expect(seriousOrCritical).toEqual([]);
-  });
+        // Confirm the emulated scheme actually took before trusting the scan below — otherwise
+        // a "dark" run that silently rendered light would report a false pass.
+        await expect(page.locator('html')).toHaveClass(new RegExp(colorScheme));
+
+        const results = await new AxeBuilder({ page }).analyze();
+        const seriousOrCritical = results.violations.filter((violation) =>
+          ['serious', 'critical'].includes(violation.impact ?? ''),
+        );
+
+        expect(seriousOrCritical).toEqual([]);
+      });
+    }
+  }
 });

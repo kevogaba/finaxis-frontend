@@ -116,7 +116,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </Box>
 
         <Box sx={{ width: '100%', maxWidth: 440 }}>
-          <Typography component="h1" variant="h4" sx={{ fontWeight: 700 }}>
+          <Typography component="h1" variant="h1">
             Welcome back
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mt: 1, mb: 4 }}>

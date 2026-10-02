@@ -1,12 +1,10 @@
 import { ImageResponse } from 'next/og';
+import { BRAND, MARK_GRADIENT } from '@/theme/tokens';
 
 export const size = { width: 32, height: 32 };
 export const contentType = 'image/png';
 
-/**
- * Generated from the same bar motif as `FinaxisLogo` — a temporary mark until
- * the official logo asset replaces it.
- */
+/** Favicon rendered from the same geometry as `FinaxisLogo` on the navy brand tile. */
 export default function Icon() {
   return new ImageResponse(
     <div
@@ -14,17 +12,37 @@ export default function Icon() {
         width: '100%',
         height: '100%',
         display: 'flex',
-        alignItems: 'flex-end',
-        justifyContent: 'center',
-        gap: 3,
-        background: '#0F1F3D',
+        background: BRAND.navy,
         borderRadius: 8,
-        padding: 6,
       }}
     >
-      <div style={{ width: 5, height: 12, background: '#F8FAFC', borderRadius: 2 }} />
-      <div style={{ width: 5, height: 20, background: '#F8FAFC', borderRadius: 2 }} />
-      <div style={{ width: 5, height: 16, background: '#F8FAFC', borderRadius: 2 }} />
+      <svg width="32" height="32" viewBox="0 0 40 40">
+        <defs>
+          <linearGradient id="mark" x1="8" y1="36" x2="32" y2="4" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor={MARK_GRADIENT[0]} />
+            <stop offset="0.55" stopColor={MARK_GRADIENT[1]} />
+            <stop offset="1" stopColor={MARK_GRADIENT[2]} />
+          </linearGradient>
+        </defs>
+        <rect
+          x="11"
+          y="3"
+          width="8"
+          height="26"
+          rx="4"
+          transform="rotate(35 15 16)"
+          fill="url(#mark)"
+        />
+        <rect
+          x="21"
+          y="11"
+          width="8"
+          height="26"
+          rx="4"
+          transform="rotate(35 25 24)"
+          fill="url(#mark)"
+        />
+      </svg>
     </div>,
     { ...size },
   );

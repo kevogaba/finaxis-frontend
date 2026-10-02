@@ -16,8 +16,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   disabling rules to silence a warning). Fix the underlying issue.
 - Do not add another UI/component framework (Chakra, Ant Design, shadcn/ui, styled-components,
   Bootstrap, etc.) or a global state library. MUI + Tailwind (layout only) is the whole stack.
-- Use MUI theme tokens instead of raw colors — extend `theme/create-finaxis-theme.ts` /
-  `theme/theme.types.ts` rather than hardcoding hex/rgba values in components.
+- Use MUI theme tokens instead of raw colors — add values to `theme/tokens.ts` (and their types to
+  `theme/theme.types.ts`, wiring them in `theme/create-finaxis-theme.ts`) rather than hardcoding
+  hex/rgba values in components; the contrast gate in `theme/tokens.test.ts` covers new pairs.
 - Tailwind is for layout composition only (flex, grid, gap, width/height, positioning,
   visibility). It must never override MUI component internals; MUI owns component visuals,
   typography, and semantic color.
