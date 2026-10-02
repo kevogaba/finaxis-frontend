@@ -15,7 +15,7 @@ export default function NotFound() {
         <Typography variant="overline" color="text.secondary">
           Error 404
         </Typography>
-        <Typography component="h1" variant="h4" sx={{ fontWeight: 700 }}>
+        <Typography component="h1" variant="h1">
           We couldn&apos;t find that page
         </Typography>
         <Typography variant="body1" color="text.secondary">

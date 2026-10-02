@@ -25,7 +25,7 @@ export function SectionHeading({
         </MuiLink>
         <Typography color="text.primary">{label}</Typography>
       </Breadcrumbs>
-      <Typography component="h1" variant="h4" sx={{ fontWeight: 700 }}>
+      <Typography component="h1" variant="h1">
         {label}
       </Typography>
       <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>

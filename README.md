@@ -98,10 +98,12 @@ Finaxis color schemes via `colorSchemes` + `cssVariables` (prefix `finaxis`, sel
 to avoid an SSR flash, and the `ThemeModeToggle` component reads/writes it through MUI's
 `useColorScheme` hook — no custom theme context or storage was written.
 
-Brand-specific tokens that sit outside MUI's standard palette (the fixed navy brand-panel
-background and its on-navy text/border/surface tones) are added via TypeScript module
-augmentation in `theme/theme.types.ts` and consumed as ordinary palette paths, e.g.
-`sx={{ color: 'brand.onNavy' }}`.
+`theme/tokens.ts` is the single source of raw token values (`LIGHT`, `DARK`, the scheme-independent
+`BRAND` navy tones, `MARK_GRADIENT`); `create-finaxis-theme.ts` maps them into the palette and
+component overrides. Tokens outside MUI's standard palette (brand, surfaces, status, avatar,
+focus) are typed via module augmentation in `theme/theme.types.ts` and consumed as ordinary
+palette paths, e.g. `sx={{ color: 'brand.onNavy' }}`. `theme/tokens.test.ts` (with
+`theme/contrast.ts`) gates every text pair at WCAG AA 4.5:1 and non-text pairs at 3:1.
 
 ## MUI and Tailwind responsibility boundary
 
@@ -160,8 +162,10 @@ components/
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle
 └── shell/                      # AppShell, header, drawer, user menu, workspace navigation
 theme/
+├── tokens.ts                   # Raw token values (LIGHT/DARK/BRAND) — the source of truth
 ├── create-finaxis-theme.ts   # Single theme, light/dark colorSchemes, component defaults
-├── theme.types.ts              # Palette module augmentation (brand.* tokens)
+├── theme.types.ts              # Palette module augmentation (brand.*, status.*, … tokens)
+├── contrast.ts                 # WCAG contrast ratio, used by the tokens.test.ts gate
 └── index.ts                    # Public exports
 proxy.ts                        # Optimistic cookie-presence redirect (not a trust boundary);
                                  # forwards the requested pathname so context selection can return

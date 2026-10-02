@@ -352,7 +352,7 @@ export function ContextSelectionPage({
       >
         <Stack spacing={3}>
           <Box>
-            <Typography component="h1" variant="h4" sx={{ fontWeight: 700 }}>
+            <Typography component="h1" variant="h1">
               Select your context
             </Typography>
             <Typography color="text.secondary" sx={{ mt: 1 }}>
