@@ -41,8 +41,9 @@ test.describe('Real Keycloak authentication (requires the platform docker compos
       }),
     ).toBeVisible();
 
-    await page.goto('/profile');
+    await page.goto('/profile/contexts');
     await expect(page.getByText('No branches assigned')).toBeVisible();
+    await page.goto('/profile/roles');
     await expect(page.getByText('No application roles assigned')).toBeVisible();
 
     await page.goto('/admin');

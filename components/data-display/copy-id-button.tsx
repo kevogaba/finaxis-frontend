@@ -29,7 +29,10 @@ export function CopyIdButton({ value, label = 'ID' }: CopyIdButtonProps) {
       notify(`${label} copied`);
     } catch {
       setRevealed(true);
-      notify(`Couldn't copy the ${label}. Select it below and copy it instead.`, 'error');
+      notify(
+        `Couldn't copy the ${label}. The full ID is now shown. Select it and copy it.`,
+        'error',
+      );
     }
   };
 
