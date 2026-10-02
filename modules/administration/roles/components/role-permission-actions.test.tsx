@@ -236,6 +236,13 @@ describe('GrantPermissionsButton', () => {
     await user.click(within(drawer).getByRole('button', { name: 'Grant permissions' }));
 
     expect(await within(drawer).findByText('Choose at least one permission.')).toBeInTheDocument();
+    // The error is tied to its controls: every group, and the search box when filters hide them all.
+    expect(within(drawer).getByRole('group', { name: 'IAM' })).toHaveAccessibleDescription(
+      'Choose at least one permission.',
+    );
+    expect(
+      within(drawer).getByRole('searchbox', { name: 'Search permissions' }),
+    ).toHaveAccessibleDescription('Choose at least one permission.');
     // The field travels empty, not absent, so the server's own message is the one that comes back.
     const formData = grantPermissions.mock.calls[0]?.[1] as FormData;
     expect(formData.get('permissionCodes')).toBe('');

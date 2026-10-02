@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -8,6 +8,7 @@ import Checkbox from '@mui/material/Checkbox';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormGroup from '@mui/material/FormGroup';
+import FormHelperText from '@mui/material/FormHelperText';
 import FormLabel from '@mui/material/FormLabel';
 import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
@@ -44,6 +45,7 @@ interface PermissionChecklistProps {
  * the retry (Ruling 6).
  */
 export function PermissionChecklist({ permissions, truncated, error }: PermissionChecklistProps) {
+  const errorId = useId();
   const [options] = useState(permissions);
   const [search, setSearch] = useState('');
   const [risk, setRisk] = useState<PermissionRiskLevel | ''>('');
@@ -76,7 +78,11 @@ export function PermissionChecklist({ permissions, truncated, error }: Permissio
           label="Search permissions"
           value={search}
           sx={{ flex: '1 1 200px' }}
-          slotProps={{ htmlInput: { maxLength: 100 } }}
+          slotProps={{
+            // The search box also carries the error, so it has a control when the filters hide
+            // every group.
+            htmlInput: { maxLength: 100, 'aria-describedby': error ? errorId : undefined },
+          }}
           onChange={(event) => {
             setSearch(event.target.value);
           }}
@@ -113,9 +119,9 @@ export function PermissionChecklist({ permissions, truncated, error }: Permissio
         {full ? ` — up to ${MAX_GRANTS_PER_SUBMIT} at a time` : ''}
       </Typography>
       {error && (
-        <Typography variant="body2" color="error">
+        <FormHelperText id={errorId} error>
           {error}
-        </Typography>
+        </FormHelperText>
       )}
       {truncated && (
         <Alert severity="info">Only the first 100 catalogue permissions are listed.</Alert>
@@ -128,7 +134,13 @@ export function PermissionChecklist({ permissions, truncated, error }: Permissio
         </Typography>
       ) : (
         groups.map((group) => (
-          <FormControl key={group.module} component="fieldset" variant="standard">
+          <FormControl
+            key={group.module}
+            component="fieldset"
+            variant="standard"
+            error={Boolean(error)}
+            aria-describedby={error ? errorId : undefined}
+          >
             <FormLabel component="legend">{group.label}</FormLabel>
             <FormGroup>
               {group.permissions.map((permission) => {
