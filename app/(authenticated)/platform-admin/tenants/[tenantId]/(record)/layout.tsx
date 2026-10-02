@@ -10,10 +10,9 @@ import { RecordHero } from '@/components/data-display/record-hero';
 import { RecordTabs } from '@/components/data-display/record-tabs';
 import { StatusChip } from '@/components/data-display/status-chip';
 import { PageHeader } from '@/components/shell/page-header';
-import { isPlatformOrganisation } from '@/config/application-context';
 import { load } from '@/lib/api/load';
-import { UUID_PATTERN } from '@/lib/api/wire';
 import { TenantLifecycleActions } from '@/modules/platform-administration/tenants/components/tenant-lifecycle-actions';
+import { isInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
 import {
   availableTenantActions,
   countryName,
@@ -33,7 +32,7 @@ interface TenantRecordLayoutProps {
 export default async function TenantRecordLayout({ children, params }: TenantRecordLayoutProps) {
   const { tenantId } = await params;
   // BG-29: the reserved platform organisation is no institution, so nothing can target it here.
-  if (!UUID_PATTERN.test(tenantId) || isPlatformOrganisation(tenantId)) notFound();
+  if (!isInstitutionId(tenantId)) notFound();
 
   const [tenant, selected] = await Promise.all([
     load(getTenant(tenantId)),

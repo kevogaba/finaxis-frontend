@@ -26,16 +26,18 @@ vi.mock('@/lib/api/action-result', () => ({
 vi.mock('./tenant-service', () => ({
   tenantCodeTaken: (code: string) => tenantCodeTaken(code),
 }));
-// The reserved platform organisation (BG-29), by the id the tests below use for it.
-vi.mock('@/config/application-context', () => ({
-  isPlatformOrganisation: (id: string) => id === '00000000-0000-0000-0000-000000000000',
+// The reserved platform organisation (BG-29), by the id the tests below use for it. The real
+// isPlatformOrganisation runs against this env, so the case-insensitive comparison is exercised.
+vi.mock('@/config/env.server', () => ({
+  serverEnv: { PLATFORM_ORGANISATION_ID: 'abcdef01-2345-4678-89ab-cdef01234567' },
 }));
 
 const actions = await import('./tenant-actions');
 
 const KEY = '0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
 const TENANT = '16000000-0000-4000-8000-000000000001';
-const PLATFORM = '00000000-0000-0000-0000-000000000000';
+// Lettered, so its upper-case form differs from it (the nil UUID has no letters to change).
+const PLATFORM = 'abcdef01-2345-4678-89ab-cdef01234567';
 const FIELDS = {
   tenantCode: 'tujenge-traders',
   displayName: 'Tujenge Traders SACCO',
@@ -367,35 +369,69 @@ describe('tenant actions', () => {
     'reactivateTenant',
     'deprovisionTenant',
     'retryTenantBootstrap',
-  ] as const)("%s refuses the platform organisation's id before any backend call", async (name) => {
-    const result = await actions[name](
-      null,
-      form({
-        idempotencyKey: KEY,
-        tenantId: PLATFORM,
-        reason: 'Compliance review',
-        tenantCode: 'platform',
-        confirmCode: 'platform',
-      }),
-    );
-    expect(result).toMatchObject({
-      ok: false,
-      code: 'validation_failed',
-      fieldErrors: { tenantId: 'Choose an institution.' },
-    });
-    expect(apiPost).not.toHaveBeenCalled();
-  });
+  ] as const)(
+    "%s refuses the platform organisation's id, in any letter case, before any backend call",
+    async (name) => {
+      for (const id of [PLATFORM, PLATFORM.toUpperCase()]) {
+        const result = await actions[name](
+          null,
+          form({
+            idempotencyKey: KEY,
+            tenantId: id,
+            reason: 'Compliance review',
+            tenantCode: 'platform',
+            confirmCode: 'platform',
+          }),
+        );
+        expect(result).toMatchObject({
+          ok: false,
+          code: 'validation_failed',
+          fieldErrors: { tenantId: 'Choose an institution.' },
+        });
+      }
+      expect(apiPost).not.toHaveBeenCalled();
+    },
+  );
 
-  it("refuses to amend the platform organisation's id before any backend call", async () => {
-    const result = await actions.amendTenantDraft(
-      null,
-      form({ ...FIELDS, idempotencyKey: KEY, tenantId: PLATFORM }),
-    );
-    expect(result).toMatchObject({
-      ok: false,
-      code: 'validation_failed',
-      fieldErrors: { tenantId: 'Choose an institution.' },
-    });
-    expect(apiPatch).not.toHaveBeenCalled();
-  });
+  it.each([PLATFORM, PLATFORM.toUpperCase()])(
+    "refuses to amend the platform organisation's id (%s) before any backend call",
+    async (id) => {
+      const result = await actions.amendTenantDraft(
+        null,
+        form({ ...FIELDS, idempotencyKey: KEY, tenantId: id }),
+      );
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'validation_failed',
+        fieldErrors: { tenantId: 'Choose an institution.' },
+      });
+      expect(apiPatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['../x', 'not-a-uuid', ''])(
+    'refuses a malformed tenant id (%j) before any backend call',
+    async (id) => {
+      const lifecycle = await actions.submitTenant(
+        null,
+        form({ idempotencyKey: KEY, tenantId: id }),
+      );
+      expect(lifecycle).toMatchObject({
+        ok: false,
+        code: 'validation_failed',
+        fieldErrors: { tenantId: 'Choose an institution.' },
+      });
+      const amend = await actions.amendTenantDraft(
+        null,
+        form({ ...FIELDS, idempotencyKey: KEY, tenantId: id }),
+      );
+      expect(amend).toMatchObject({
+        ok: false,
+        code: 'validation_failed',
+        fieldErrors: { tenantId: 'Choose an institution.' },
+      });
+      expect(apiPost).not.toHaveBeenCalled();
+      expect(apiPatch).not.toHaveBeenCalled();
+    },
+  );
 });

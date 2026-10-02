@@ -1,9 +1,11 @@
+import { notFound } from 'next/navigation';
 import { CopyIdButton } from '@/components/data-display/copy-id-button';
 import { DescriptionList, type DescriptionItem } from '@/components/data-display/description-list';
 import { SectionCard } from '@/components/data-display/section-card';
 import { StatusChip } from '@/components/data-display/status-chip';
 import { load } from '@/lib/api/load';
 import { formatInstant } from '@/lib/format';
+import { isInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
 import { countryName, currencyLabel } from '@/modules/platform-administration/tenants/tenant-rules';
 import { getTenant } from '@/modules/platform-administration/tenants/tenant-service';
 
@@ -19,6 +21,8 @@ function utc(iso: string): string {
 
 export default async function TenantOverviewPage({ params }: TenantOverviewPageProps) {
   const { tenantId } = await params;
+  // The layout answers not-found too, but it renders in parallel: refuse before any fetch.
+  if (!isInstitutionId(tenantId)) notFound();
   const tenant = await load(getTenant(tenantId)); // cached: the layout's read
   if (!tenant.ok) return null; // the layout renders the failure
 

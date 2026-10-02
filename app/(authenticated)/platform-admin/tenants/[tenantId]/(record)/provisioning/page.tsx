@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { getCurrentContextProfile } from '@/auth/context-service';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { SectionCard } from '@/components/data-display/section-card';
 import { load } from '@/lib/api/load';
 import { ProvisioningTimeline } from '@/modules/platform-administration/tenants/components/provisioning-timeline';
 import { RetryBootstrapButton } from '@/modules/platform-administration/tenants/components/retry-bootstrap-button';
+import { isInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
 import {
   canRetryBootstrap,
   provisioningTimeline,
@@ -19,6 +21,8 @@ interface TenantProvisioningPageProps {
 
 export default async function TenantProvisioningPage({ params }: TenantProvisioningPageProps) {
   const { tenantId } = await params;
+  // The layout answers not-found too, but it renders in parallel: refuse before any fetch.
+  if (!isInstitutionId(tenantId)) notFound();
   const [tenant, selected] = await Promise.all([
     load(getTenant(tenantId)), // cached: the layout's read
     getCurrentContextProfile(),

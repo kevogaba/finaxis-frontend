@@ -8,10 +8,9 @@ import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import NextLink from '@/components/navigation/next-link';
 import { PageHeader } from '@/components/shell/page-header';
-import { isPlatformOrganisation } from '@/config/application-context';
 import { load } from '@/lib/api/load';
-import { UUID_PATTERN } from '@/lib/api/wire';
 import { TenantDraftWizard } from '@/modules/platform-administration/tenants/components/tenant-draft-wizard';
+import { isInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
 import {
   EMPTY_TENANT_DRAFT,
   tenantFormOptions,
@@ -28,7 +27,7 @@ interface AmendTenantPageProps {
 
 export default async function AmendTenantPage({ params }: AmendTenantPageProps) {
   const { tenantId } = await params;
-  if (!UUID_PATTERN.test(tenantId) || isPlatformOrganisation(tenantId)) notFound();
+  if (!isInstitutionId(tenantId)) notFound();
 
   const [tenant, selected] = await Promise.all([
     load(getTenant(tenantId)),

@@ -3,12 +3,11 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
-import { isPlatformOrganisation } from '@/config/application-context';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiPatch, apiPost } from '@/lib/api/tenant-api';
-import { uuidSchema } from '@/lib/api/wire';
 import { isoToBusinessDate } from '@/lib/business-date';
+import { isInstitutionId } from './institution-id';
 import { tenantDraftResultSchema } from './tenant-contract';
 import {
   initialSettings,
@@ -20,8 +19,9 @@ import { tenantCodeTaken } from './tenant-service';
 
 const BASE = '/api/v1/platform/tenants';
 const idempotencyKey = z.uuid();
-/** BG-29: the reserved platform organisation is no institution, so no action can target it. */
-const tenantId = uuidSchema.refine((id) => !isPlatformOrganisation(id), 'Choose an institution.');
+/** BG-29: the reserved platform organisation is no institution, so no action can target it (in any
+ * letter case: isInstitutionId). A malformed id gets the same refusal. */
+const tenantId = z.string().refine(isInstitutionId, 'Choose an institution.');
 /** A frontend-only problem code for create's pre-check (BG-07: the backend's answer is a 500). */
 const TENANT_CODE_TAKEN = 'tenant_code_taken';
 
