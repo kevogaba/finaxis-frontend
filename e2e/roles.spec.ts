@@ -207,6 +207,13 @@ test.describe('roles', () => {
     // The hero chip and the Overview's Status row both say so.
     await expect(mainText(page, 'Disabled', { exact: true }).first()).toBeVisible();
 
+    // The Audit tab lists the deactivation, which pins its ROLE / role-id filter.
+    await openTab(page, 'Audit');
+    await expect(page.getByRole('table', { name: 'Audit events' })).toContainText(
+      'Deactivated role',
+      { timeout: 15000 },
+    );
+
     await page.getByRole('link', { name: 'Back to roles' }).click();
     await openRecord(page, 'Tenant admin');
     await expect(mainText(page, 'TENANT_ADMIN · System role')).toBeVisible();
@@ -225,8 +232,10 @@ test.describe('roles', () => {
     await authenticate(context, testInfo, 'roles');
     await openDirectory(page);
     await openRecord(page, 'Teller');
-    // The Overview's assignment count is the positive control for the `roles-limited` case.
+    // The Overview's assignment count and the Audit tab are the positive controls for the
+    // `roles-limited` case.
     await expect(mainText(page, 'Active assignments')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('tab', { name: 'Audit' })).toBeVisible();
     await openTab(page, 'Assignments');
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(3, { timeout: 15000 }); // header + 2
 
@@ -250,7 +259,7 @@ test.describe('roles', () => {
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(4);
 
     await page
-      .getByRole('button', { name: "Revoke Tom Kiprop's institution-wide assignment" })
+      .getByRole('button', { name: "Revoke Tom Kiprop's Teller assignment (institution-wide)" })
       .click();
     await page.getByRole('alertdialog').getByRole('button', { name: 'Revoke' }).click();
     await expect(page.getByRole('alertdialog')).toBeHidden();
@@ -269,7 +278,9 @@ test.describe('roles', () => {
     await openTab(page, 'Assignments');
 
     await page
-      .getByRole('button', { name: "Revoke Backend Jane Manager's institution-wide assignment" })
+      .getByRole('button', {
+        name: `Revoke Backend Jane Manager's ${COMPLIANCE} assignment (institution-wide)`,
+      })
       .click();
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toContainText('This is your own assignment');
@@ -290,7 +301,7 @@ test.describe('roles', () => {
     await openTab(page, 'Assignments');
 
     await page
-      .getByRole('button', { name: "Revoke Tom Kiprop's institution-wide assignment" })
+      .getByRole('button', { name: "Revoke Tom Kiprop's Teller assignment (institution-wide)" })
       .click();
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toContainText('Tom Kiprop loses Teller (institution-wide) immediately.');
@@ -331,7 +342,9 @@ test.describe('roles', () => {
     await expect(page.getByRole('row', { name: /Grace Achieng/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /^Revoke Grace Achieng/ })).toHaveCount(0);
     await expect(
-      page.getByRole('button', { name: "Revoke Tom Kiprop's institution-wide assignment" }),
+      page.getByRole('button', {
+        name: "Revoke Tom Kiprop's Teller assignment (institution-wide)",
+      }),
     ).toBeVisible();
   });
 
@@ -346,10 +359,14 @@ test.describe('roles', () => {
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(3, { timeout: 15000 }); // header + 2
 
     await expect(
-      page.getByRole('button', { name: "Revoke Grace Achieng's Westlands Branch assignment" }),
+      page.getByRole('button', {
+        name: "Revoke Grace Achieng's Teller assignment (Westlands Branch)",
+      }),
     ).toBeVisible();
     await expect(
-      page.getByRole('button', { name: "Revoke Tom Kiprop's institution-wide assignment" }),
+      page.getByRole('button', {
+        name: "Revoke Tom Kiprop's Teller assignment (institution-wide)",
+      }),
     ).toBeVisible();
   });
 
@@ -379,7 +396,7 @@ test.describe('roles', () => {
     await openRecord(page, 'Tenant admin');
     await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
     await openTab(page, 'Permissions');
-    // Default TENANT_ADMIN holds 18 codes: page 1 of 2 at the default size of 10.
+    // Default TENANT_ADMIN holds 19 codes: page 1 of 2 at the default size of 10.
     await expect(rowsOf(page, 'Granted permissions')).toHaveCount(11, { timeout: 15000 });
     await expect(page.getByRole('button', { name: /^Remove / })).toHaveCount(0);
     await openTab(page, 'Assignments');

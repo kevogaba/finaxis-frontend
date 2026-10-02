@@ -67,7 +67,7 @@ export function RoleDirectoryTable({ roles, sort, sortHref }: RoleDirectoryTable
                   variant="body2"
                   noWrap
                   title={role.roleName}
-                  sx={{ display: 'block', maxWidth: 360, fontWeight: 700 }}
+                  sx={{ display: 'block', maxWidth: 320, fontWeight: 700 }}
                 >
                   {role.roleName}
                   <LinkPendingIndicator />

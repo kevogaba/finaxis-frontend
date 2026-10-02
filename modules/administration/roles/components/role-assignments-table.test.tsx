@@ -54,8 +54,16 @@ describe('RoleAssignmentsTable', () => {
     const table = screen.getByRole('table', { name: 'Role assignments' });
     expect(table).toHaveTextContent('grace@example.test');
     expect(table).toHaveTextContent('Westlands Branch');
+    // The name carries user, role and scope, so one user's rows stay distinguishable in 10.
+    expect(
+      screen.getByRole('button', {
+        name: "Revoke Peter Otieno's Teller assignment (Westlands Branch)",
+      }),
+    ).toBeInTheDocument();
     await user.click(
-      screen.getByRole('button', { name: "Revoke Grace Achieng's institution-wide assignment" }),
+      screen.getByRole('button', {
+        name: "Revoke Grace Achieng's Teller assignment (institution-wide)",
+      }),
     );
     const dialog = screen.getByRole('alertdialog', {
       name: "Revoke Grace Achieng's Teller assignment?",
@@ -80,7 +88,9 @@ describe('RoleAssignmentsTable', () => {
     );
 
     expect(
-      screen.getByRole('button', { name: "Revoke Grace Achieng's institution-wide assignment" }),
+      screen.getByRole('button', {
+        name: "Revoke Grace Achieng's Teller assignment (institution-wide)",
+      }),
     ).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /^Revoke/ })).toHaveLength(1);
     expect(screen.getByRole('table', { name: 'Role assignments' })).toHaveTextContent(

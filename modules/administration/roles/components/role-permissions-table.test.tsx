@@ -32,22 +32,31 @@ const grant = (risk: RolePermissionRow['risk']): RolePermissionRow => ({
 
 describe('RolePermissionsTable', () => {
   // Ruling 7: a CRITICAL grant, or one of unknown risk (the catalogue is unreadable), confirms as
-  // an alert dialog with the critical warning; every other grant as a plain dialog.
+  // an alert dialog; every other grant as a plain dialog. Only a CRITICAL grant is *called*
+  // critical: an unknown one says its risk can't be confirmed.
   it.each([
     {
       title: 'a critical grant',
       risk: 'CRITICAL',
       dialog: 'alertdialog',
       copy: 'is a critical permission',
+      absent: "can't be confirmed",
     },
     {
       title: 'a grant of unknown risk',
       risk: null,
       dialog: 'alertdialog',
-      copy: 'is a critical permission',
+      copy: "Its risk can't be confirmed, so treat it as critical.",
+      absent: 'is a critical permission',
     },
-    { title: 'a low-risk grant', risk: 'LOW', dialog: 'dialog', copy: `loses ${NAME} immediately` },
-  ] as const)('confirms $title as a $dialog', async ({ risk, dialog, copy }) => {
+    {
+      title: 'a low-risk grant',
+      risk: 'LOW',
+      dialog: 'dialog',
+      copy: `loses ${NAME} immediately`,
+      absent: 'critical',
+    },
+  ] as const)('confirms $title as a $dialog', async ({ risk, dialog, copy, absent }) => {
     const user = userEvent.setup();
     removePermission.mockResolvedValueOnce({ ok: true });
     renderWithProviders(
@@ -64,6 +73,7 @@ describe('RolePermissionsTable', () => {
     await user.click(screen.getByRole('button', { name: `Remove ${label}` }));
     const confirm = screen.getByRole(dialog, { name: `Remove ${label}?` });
     expect(confirm).toHaveTextContent(copy);
+    expect(confirm).not.toHaveTextContent(absent);
 
     // I2: the table hands the rendered organisation to each row, or the cross-tab guard is off.
     await user.click(within(confirm).getByRole('button', { name: 'Remove' }));

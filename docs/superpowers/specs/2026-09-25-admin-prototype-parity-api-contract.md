@@ -245,7 +245,7 @@ mutation reads its result back and also needs that view permission, otherwise 40
 | POST `/branches/{id}/reactivate`                   | optional `{reason}`                                                                                                                      | BranchDetail                                                               | `branch.reactivate` (B) + `branch.view`                                       | SUSPENDED → ACTIVE; organisation ACTIVE                                                                                                                                                                                     |
 | POST `/branches/{id}/close`                        | CloseBranch                                                                                                                              | BranchDetail                                                               | `branch.close` (B) + `branch.view`                                            | ACTIVE/SUSPENDED → CLOSED; 409 with active assignments or active child branches                                                                                                                                             |
 
-Role endpoint notes (layer 09, from backend source at f74e44b; verify live at L2):
+Role endpoint notes (layer 09, from backend source at f74e44b). Source reading only (no UI path to probe it live):
 
 - `PATCH /tenant/roles/{id}`: `role_name` isn't validated, so a blank value is stored (BG-34). A
   non-null `description`, `""` included, replaces the stored one; `null` keeps it.

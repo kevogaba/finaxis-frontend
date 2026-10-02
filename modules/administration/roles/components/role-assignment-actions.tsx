@@ -171,7 +171,8 @@ export function RevokeRoleAssignmentButton({
         size="small"
         variant="outlined"
         color="error"
-        aria-label={`Revoke ${userLabel}'s ${scopeLabel} assignment`}
+        // The dialog title's phrasing plus the scope: a user's rows differ by role and scope.
+        aria-label={`Revoke ${userLabel}'s ${roleLabel} assignment (${scopeLabel})`}
         onClick={() => {
           setOpen(true);
         }}

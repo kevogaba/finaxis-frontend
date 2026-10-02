@@ -263,6 +263,8 @@ interface RemovePermissionButtonProps {
   label: string;
   /** CRITICAL, or unknown (treated as critical, Ruling 7). */
   critical: boolean;
+  /** The catalogue couldn't say how risky this is: the copy must not call it critical. */
+  riskUnknown?: boolean;
   /** I2: forwarded to `ConfirmDialog` as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -272,6 +274,7 @@ export function RemovePermissionButton({
   grantId,
   label,
   critical,
+  riskUnknown = false,
   contextOrganisationId,
 }: RemovePermissionButtonProps) {
   const notify = useToast();
@@ -285,6 +288,10 @@ export function RemovePermissionButton({
       if (successRef.current) focusRecordTitle();
     };
   }, []);
+  // Unknown risk confirms as critical (Ruling 7) without claiming it is.
+  const criticalLead = riskUnknown
+    ? "Its risk can't be confirmed, so treat it as critical."
+    : `${label} is a critical permission.`;
 
   return (
     <>
@@ -305,7 +312,7 @@ export function RemovePermissionButton({
         title={`Remove ${label}?`}
         description={
           critical
-            ? `${label} is a critical permission. Everyone holding this role loses it immediately.`
+            ? `${criticalLead} Everyone holding this role loses it immediately.`
             : `Everyone holding this role loses ${label} immediately.`
         }
         confirmLabel="Remove"

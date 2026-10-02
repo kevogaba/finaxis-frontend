@@ -77,6 +77,7 @@ export function RolePermissionsTable({
                     label={row.name ?? row.code}
                     // An unknown risk (catalogue unreadable) confirms as critical (Ruling 7).
                     critical={row.risk === 'CRITICAL' || row.risk === null}
+                    riskUnknown={row.risk === null}
                     contextOrganisationId={contextOrganisationId}
                   />
                 </TableCell>

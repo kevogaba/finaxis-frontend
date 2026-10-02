@@ -107,7 +107,7 @@ describe('RevokeRoleAssignmentButton', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: "Revoke Backend Jane Manager's institution-wide assignment",
+        name: "Revoke Backend Jane Manager's Compliance assignment (institution-wide)",
       }),
     );
     const dialog = screen.getByRole('alertdialog', {
@@ -148,7 +148,9 @@ describe('RevokeRoleAssignmentButton', () => {
     );
 
     await user.click(
-      screen.getByRole('button', { name: "Revoke Grace Achieng's Westlands Branch assignment" }),
+      screen.getByRole('button', {
+        name: "Revoke Grace Achieng's Teller assignment (Westlands Branch)",
+      }),
     );
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).not.toHaveTextContent('your own assignment');

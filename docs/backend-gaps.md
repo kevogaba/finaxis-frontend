@@ -397,7 +397,7 @@ Suggested: return each permission with its scope (tenant or the branch ids) on `
   and `updateRole` sets every non-null field (`JooqIamAdministrationPersistence.kt`). So a blank
   `role_name` is stored and `""` replaces the description, while `null` keeps either field.
   Found by source reading at f74e44b; the contract (7a7f4c3) said the description can't be
-  cleared. To be confirmed live.
+  cleared. Source reading only (no UI path to probe it live).
 - **Frontend handling:** the edit form requires a name (1–100 characters) and sends `null` for a
   blank description, so a description can be replaced but not removed.
 - **Suggested change:** validate `role_name` as `CreateRoleRequest` does, and document whether
