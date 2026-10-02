@@ -25,6 +25,8 @@ const FONT_STACK = [
   'sans-serif',
 ].join(',');
 
+const CSS_VAR_PREFIX = 'finaxis';
+
 type Scheme = typeof LIGHT | typeof DARK;
 
 function paletteFor(mode: 'light' | 'dark', scheme: Scheme) {
@@ -77,7 +79,7 @@ const SOFT_BACKGROUND = {
 export function createFinaxisTheme() {
   return createTheme({
     cssVariables: {
-      cssVarPrefix: 'finaxis',
+      cssVarPrefix: CSS_VAR_PREFIX,
       colorSchemeSelector: 'class',
     },
     colorSchemes: {
@@ -101,6 +103,12 @@ export function createFinaxisTheme() {
         },
       },
     },
+    // MUI 9.4's keyboard focus ring, spread on `.Mui-focusVisible` by ButtonBase, Link, Chip,
+    // Tab, ToggleButtonGroup, … Clip-prone components (Tab inside the Tabs scroller, MenuItem)
+    // inset it themselves. Default solid/2px/offset 2px keeps the ring's existing look; the colour
+    // is the focus token's CSS var, written out because `theme.vars` doesn't exist yet here (the
+    // render test pins it to `theme.vars.palette.focus`).
+    focusVisible: { outlineColor: `var(--${CSS_VAR_PREFIX}-palette-focus)` },
     spacing: 4,
     shape: { borderRadius: 6 },
     // Spec: hover/press feedback runs 150-200ms (MASTER.md "Motion is functional"). Only the
@@ -146,16 +154,6 @@ export function createFinaxisTheme() {
       button: { fontSize: '0.8125rem', fontWeight: 700, textTransform: 'none', letterSpacing: 0 },
     },
     components: {
-      MuiButtonBase: {
-        styleOverrides: {
-          root: ({ theme }) => ({
-            '&.Mui-focusVisible': {
-              outline: `2px solid ${theme.vars.palette.focus}`,
-              outlineOffset: 2,
-            },
-          }),
-        },
-      },
       MuiButton: {
         defaultProps: { disableElevation: true },
         styleOverrides: {
@@ -409,6 +407,16 @@ export function createFinaxisTheme() {
           // resolves to `& .MuiTablePagination-actions` on the toolbar (not inert, unlike
           // `notchedOutline` above).
           actions: { '& .MuiIconButton-root': { width: 32, height: 32 } },
+          // Rows-per-page (layer 07b gate finding 1). This div is a bare Select display, not a
+          // ButtonBase, so it never gets the theme-wide `.Mui-focusVisible` ring (a JS class
+          // ButtonBase/Tab/etc. add themselves) — MUI's own built-in style for it is only a
+          // ~12%-opacity `background-color` on `:focus` (TablePagination.js's
+          // `TablePaginationInputBase`), which reads as almost no cue at all (WCAG 2.4.7). Spread
+          // the same resolved ring `theme.focusVisible` (not a hand copy) so it stays one place to
+          // tune (Ruling 5) and keeps the house look: outset +2px, `palette.focus`.
+          select: ({ theme }) => ({
+            '&:focus-visible': theme.focusVisible === false ? undefined : theme.focusVisible,
+          }),
         },
       },
       MuiTabs: {

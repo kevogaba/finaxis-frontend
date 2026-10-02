@@ -21,6 +21,9 @@ describe('status chip', () => {
     ['FAILURE', 'error'],
     ['HIGH', 'error'],
     ['MEDIUM', 'warning'],
+    ['CLOSED', 'default'],
+    ['ARCHIVED', 'default'],
+    ['DEPRECATED', 'warning'],
     ['INFO', 'default'],
     ['SOMETHING_NEW', 'default'],
   ])('%s has the %s tone', (value, tone) => {

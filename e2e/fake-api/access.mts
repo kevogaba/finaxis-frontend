@@ -11,8 +11,16 @@ export interface AccessContext {
   claims: ContextClaims;
   organisation: FakeOrganisation;
   membership: FakeMembership;
+  /** Everything the context holds: TENANT grants plus, with a branch selected, that branch's
+   * BRANCH grants — what `/auth/me` reports. */
   permissions: ReadonlySet<string>;
+  /** TENANT-scope grants only (contract §E "T"). */
+  tenantPermissions: ReadonlySet<string>;
 }
+
+/** Contract §E.4: `tenant` counts TENANT grants only; `branch` also counts BRANCH grants at the
+ * selected branch. */
+export type PermissionScope = 'tenant' | 'branch';
 
 /** ACTIVE assignment rows on ACTIVE branches — one row per assignment, so branches can repeat. */
 export function activeAssignmentRows(
@@ -29,8 +37,12 @@ export function activeAssignmentRows(
   );
 }
 
-function effectivePermissions(state: RunState, claims: ContextClaims): Set<string> {
-  const permissions = new Set<string>();
+function effectivePermissions(
+  state: RunState,
+  claims: ContextClaims,
+): { all: Set<string>; tenant: Set<string> } {
+  const all = new Set<string>();
+  const tenant = new Set<string>();
   for (const assignment of state.roleAssignments) {
     if (
       assignment.userId !== claims.userId ||
@@ -39,15 +51,23 @@ function effectivePermissions(state: RunState, claims: ContextClaims): Set<strin
     ) {
       continue;
     }
-    if (assignment.scopeType === 'BRANCH' && assignment.branchId !== claims.branchId) {
+    // A BRANCH grant counts only while its branch is selected — never at institution level.
+    if (
+      assignment.scopeType === 'BRANCH' &&
+      (claims.branchId === null || assignment.branchId !== claims.branchId)
+    ) {
       continue;
     }
     const role = state.roles.find((candidate) => candidate.id === assignment.roleId);
-    if (role?.status === 'ACTIVE') {
-      role.permissions.forEach((code) => permissions.add(code));
+    if (role?.status !== 'ACTIVE') {
+      continue;
+    }
+    for (const code of role.permissions) {
+      all.add(code);
+      if (assignment.scopeType === 'TENANT') tenant.add(code);
     }
   }
-  return permissions;
+  return { all, tenant };
 }
 
 /**
@@ -105,17 +125,24 @@ export function requireContext({ req, state }: RouteContext): AccessContext {
   ) {
     throw invalidContext();
   }
+  const { all, tenant } = effectivePermissions(state, claims);
   return {
     state,
     claims,
     organisation,
     membership,
-    permissions: effectivePermissions(state, claims),
+    permissions: all,
+    tenantPermissions: tenant,
   };
 }
 
-export function requirePermission(access: AccessContext, code: string): void {
-  if (!access.permissions.has(code)) {
+export function requirePermission(
+  access: AccessContext,
+  code: string,
+  scope: PermissionScope = 'tenant',
+): void {
+  const held = scope === 'branch' ? access.permissions : access.tenantPermissions;
+  if (!held.has(code)) {
     throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
   }
 }

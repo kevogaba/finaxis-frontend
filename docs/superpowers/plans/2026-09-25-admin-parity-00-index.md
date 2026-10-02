@@ -77,6 +77,9 @@ invalid_active_tenant_context` (e.g. the selected branch was suspended). The use
 ## Stack
 
 Trunk `main`. Branches use the `admin-parity/NN-concern` prefix. Each layer is independently green.
+From layer 07 on, two build lanes run in parallel (see the
+[parallel-lanes rules](./2026-09-27-admin-parity-parallel-lanes.md)), and layers are registered in
+the order they integrate, so the stack order can differ from the numbering below (07b sits on 06).
 
 | #   | Branch                             | Plan                                                              | Detail |
 | --- | ---------------------------------- | ----------------------------------------------------------------- | ------ |
@@ -87,6 +90,7 @@ Trunk `main`. Branches use the `admin-parity/NN-concern` prefix. Each layer is i
 | 04  | `admin-parity/04-shell`            | [04-shell](./2026-09-25-admin-parity-04-shell.md)                 | full   |
 | 05  | `admin-parity/05-context`          | [05-context](./2026-09-25-admin-parity-05-context.md)             | full   |
 | 06  | `admin-parity/06-audit`            | [06-audit](./2026-09-25-admin-parity-06-audit.md)                 | full   |
+| 07b | `admin-parity/07b-record-kit`      | [07b-record-kit](./2026-09-27-admin-parity-07b-record-kit.md)     | full   |
 | 07  | `admin-parity/07-business-date`    | [07-business-date](./2026-09-25-admin-parity-07-business-date.md) | full   |
 | 08  | `admin-parity/08-branches`         | just-in-time from spec §10.3                                      | JIT    |
 | 09  | `admin-parity/09-roles`            | just-in-time from spec §10.4                                      | JIT    |
