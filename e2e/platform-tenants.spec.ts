@@ -69,6 +69,62 @@ async function fillAdministrator(page: Page) {
   await page.getByRole('textbox', { name: 'Phone' }).fill('+254712000140');
 }
 
+/** The focused control's room above the wizard's sticky action bar and below the sticky app bar. A
+ * control closer than 0 is under a bar and, for keyboard users, hidden (WCAG 2.4.11). */
+async function focusClearance(page: Page) {
+  // A frame after the key press: the browser has scrolled the focused control into view.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  return page.evaluate(() => {
+    const focused = document.activeElement;
+    const actionBar = document.querySelector('form button[type="submit"]')?.parentElement;
+    const form = actionBar?.closest('form');
+    const appBar = document.querySelector('header');
+    if (!focused || !actionBar || !form || !appBar) return null;
+    const rect = focused.getBoundingClientRect();
+    const labelled = focused as HTMLInputElement;
+    return {
+      name:
+        focused.getAttribute('aria-label') ??
+        labelled.labels?.[0]?.textContent ??
+        focused.textContent.trim().slice(0, 40),
+      inForm: form.contains(focused),
+      inActionBar: actionBar.contains(focused),
+      belowAppBar: rect.top - appBar.getBoundingClientRect().bottom,
+      aboveActionBar: actionBar.getBoundingClientRect().top - rect.bottom,
+    };
+  });
+}
+
+/** Tabs from a step's heading to the action bar, then Shift+Tabs back out of the form: every stop
+ * clears both sticky bars, and the walk covers at least `minimum` stops. */
+async function expectFocusStopsClearTheBars(page: Page, step: string, minimum: number) {
+  await page.getByRole('heading', { level: 2, name: step }).focus();
+  let stops = 0;
+  for (let press = 0; press < 25; press++) {
+    await page.keyboard.press('Tab');
+    const stop = await focusClearance(page);
+    if (!stop?.inForm || stop.inActionBar) break;
+    stops++;
+    expect(
+      stop.aboveActionBar,
+      `Tab stop "${stop.name}" is under the action bar`,
+    ).toBeGreaterThanOrEqual(0);
+  }
+  expect(stops).toBeGreaterThanOrEqual(minimum);
+
+  // Backwards, out of the form: the shell's app bar must not cover a stop either.
+  for (let press = 0; press < 40; press++) {
+    await page.keyboard.press('Shift+Tab');
+    const stop = await focusClearance(page);
+    if (!stop?.inForm) break;
+    if (stop.inActionBar) continue;
+    expect(
+      stop.belowAppBar,
+      `Shift+Tab stop "${stop.name}" is under the app bar`,
+    ).toBeGreaterThanOrEqual(0);
+  }
+}
+
 /** After a `goto`, a client handler works only once React has hydrated the node (selectMuiOption's
  * poll, for a control that isn't a Select). */
 async function hydrated(locator: Locator) {
@@ -333,7 +389,7 @@ test.describe('platform tenants', () => {
     await openRecord(page, 'Kilimo Bora SACCO');
 
     await page.getByRole('button', { name: 'Deprovision', exact: true }).click();
-    const dialog = dialogOf(page);
+    const dialog = page.getByRole('alertdialog'); // CRITICAL: irreversible, so an alertdialog
     const confirm = dialog.getByRole('textbox', { name: 'Type kilimo-bora to confirm' });
     await confirm.fill('kilimo');
     await dialog.getByRole('textbox', { name: /^Reason/ }).fill('Merged into Harambee');
@@ -487,7 +543,55 @@ test.describe('platform tenants', () => {
     await expect(mainText(page, "You don't have permission")).toBeVisible();
     await expect(mainText(page, 'Only a draft can be amended')).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: 'Tenant code' })).toHaveCount(0);
+    // No form follows, so no form instructions; the way back is the same as the draft guard's.
+    await expect(mainText(page, /so enter them again/)).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Back to the record' })).toHaveAttribute(
+      'href',
+      `/platform-admin/tenants/${IDS.acme}`,
+    );
   });
+
+  // WCAG 2.4.11: the wizard's sticky action bar (and the shell's app bar, going backwards) must not
+  // cover the control that has keyboard focus. axe cannot see this; the page's scroll padding fixes it.
+  for (const viewport of [
+    { label: 'desktop', width: 1440, height: 900 },
+    { label: '375px', width: 375, height: 812 },
+  ]) {
+    test(`keeps keyboard focus clear of the sticky bars in the wizard (${viewport.label})`, async ({
+      context,
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await authenticate(context, testInfo, 'platform-tenants');
+      await openDirectory(page);
+      await page.goto('/platform-admin/tenants/new');
+      await expect(
+        page.getByRole('heading', { level: 1, name: 'Create tenant draft' }),
+      ).toBeVisible({
+        timeout: 15000,
+      });
+      await hydrated(page.getByRole('button', { name: 'Continue' }));
+      // Fields keep a readable width on a wide screen, as the branch and role forms do.
+      const codeField = await page.getByRole('textbox', { name: 'Tenant code' }).boundingBox();
+      expect(codeField?.width).toBeLessThanOrEqual(640);
+
+      // Step 1 ends in the Country combobox, Legal name and the First business date on the way.
+      await expectFocusStopsClearTheBars(page, 'Institution', 8);
+
+      await page.getByRole('textbox', { name: 'Tenant code' }).fill('tujenge-traders');
+      await page.getByRole('textbox', { name: 'Display name' }).fill('Tujenge Traders SACCO');
+      await pick(page, 'Country', 'Kenya');
+      await pick(page, 'Base currency', 'KES · Kenyan Shilling');
+      await pick(page, 'Timezone', 'Africa/Nairobi');
+      await next(page, 'First administrator');
+      await fillAdministrator(page);
+      await next(page, 'Initial settings');
+      await next(page, 'Review');
+
+      // The three Edit buttons, "Edit first administrator" among them.
+      await expectFocusStopsClearTheBars(page, 'Review', 3);
+    });
+  }
 
   for (const a11yCase of A11Y_CASES) {
     test(`has no serious or critical accessibility violations (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
@@ -524,6 +628,11 @@ test.describe('platform tenants', () => {
         [
           `/platform-admin/tenants/${TENANT_SCENARIO_IDS.umoja}/amend`,
           'Amend Umoja Teachers SACCO',
+        ],
+        // Pwani is ACTIVE: the "Only a draft can be amended" state, with its way back.
+        [
+          `/platform-admin/tenants/${TENANT_SCENARIO_IDS.pwani}/amend`,
+          'Amend Pwani Fishermen SACCO',
         ],
         [`/platform-admin/tenants/${IDS.acme}`, 'Acme SACCO'],
       ] as const) {

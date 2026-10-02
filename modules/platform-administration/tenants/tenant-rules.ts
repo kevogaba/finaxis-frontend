@@ -11,8 +11,10 @@ export { currencyLabel } from '@/modules/administration/settings/settings-rules'
 export type TenantLifecycleAction =
   'amend' | 'submit' | 'approve' | 'reject' | 'suspend' | 'reactivate' | 'deprovision';
 
+/** Hero order: the first action is the contained primary (tenant-lifecycle-actions.tsx), so the
+ * forward action leads and an edit-like Amend follows, outlined. */
 const ACTIONS_BY_STATUS: Record<TenantStatus, readonly TenantLifecycleAction[]> = {
-  DRAFT: ['amend', 'submit'],
+  DRAFT: ['submit', 'amend'],
   PENDING_APPROVAL: ['approve', 'reject'],
   PROVISIONING: [],
   ACTIVE: ['suspend', 'deprovision'],
@@ -198,8 +200,8 @@ export function countryOptions(): TenantOption[] {
   return options.sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** A stored value the runtime doesn't list (a retired code, an alias) goes first, so that amend
- * still shows it. */
+/** A value the runtime doesn't list (a retired code, an alias) goes first, so that whatever
+ * carries it still shows it: amend's stored country, or the directory's Country filter from the URL. */
 export function withCurrent(options: TenantOption[], value: string | undefined): TenantOption[] {
   return value && !options.some((option) => option.value === value)
     ? [{ value, label: value }, ...options]

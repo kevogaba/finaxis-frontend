@@ -66,7 +66,8 @@ export const tenantReadRoutes: Route[] = [
     const type = query.get('type');
     const sortBy = query.get('sort_by') ?? 'createdAt';
     const direction = (query.get('sort_dir') ?? 'DESC').toUpperCase();
-    const key = BRANCH_SORTS[sortBy];
+    // `sort_by` is user-controlled: `toString` must not resolve to an `Object.prototype` member.
+    const key = Object.hasOwn(BRANCH_SORTS, sortBy) ? BRANCH_SORTS[sortBy] : undefined;
     if (!key || (direction !== 'ASC' && direction !== 'DESC')) {
       throw problem(500, 'internal_error', 'An unexpected error occurred.');
     }

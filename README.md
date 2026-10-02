@@ -182,10 +182,12 @@ lib/
 │                                # `apiGet`/`apiPost`/`apiPut`/`apiPatch`/`apiDelete`, the Server
 │                                # Action pipeline (action-result.ts's `runServerAction`), paging
 │                                # (paging.ts), wire schemas (wire.ts), problem mapping and
-│                                # `load()` (problem.ts, load.ts), bounded name/branch/role lookups
-│                                # (lookups.ts), URL query-string helpers (query-string.ts's
-│                                # `toQueryString`/`toSearchParams`/`hrefWith`), and the URL sort
-│                                # allow-list (list-sort.ts's `parseListSort`/`sortQuery`)
+│                                # `load()` (problem.ts, load.ts), named guard copy
+│                                # (explain-action-result.ts's `explain`), bounded
+│                                # name/branch/role lookups (lookups.ts), URL query-string
+│                                # helpers (query-string.ts's `toQueryString`/`toSearchParams`/
+│                                # `hrefWith`), and the URL sort allow-list (list-sort.ts's
+│                                # `parseListSort`/`sortQuery`)
 ├── apply-field-errors.ts        # Server Action `fieldErrors` → React Hook Form field errors
 ├── business-date.ts             # `dd-MM-yyyy` business date parsing/compare/convert
                                    # (`businessDateDay`, `isoToBusinessDate`, `nextBusinessDateIso`)
@@ -240,7 +242,7 @@ theme/
 proxy.ts                        # Optimistic cookie-presence redirect (not a trust boundary);
                                  # forwards the requested pathname so context selection can return
                                  # the user to it afterwards
-test/                           # Vitest setup + renderWithProviders
+test/                           # Vitest setup, renderWithProviders, ownStyle (an element's own CSS)
 e2e/
 ├── fake-api/                   # Standalone fake backend (plain Node, `.mts`; `routes/` handlers,
 │                                # `scenarios.mts` seed data, `state.mts` run state,
@@ -408,8 +410,11 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   `modules/platform-administration/tenants/`: the directory, the create-draft wizard, amend, the
   record's lifecycle (submit, approve, reject, suspend, reactivate, deprovision) and bootstrap
   retry. Times show in UTC.
-  - The reserved platform organisation is hidden from the directory and its record URL is a 404;
-    a filtered count can read one high (`docs/backend-gaps.md` BG-29).
+  - The reserved platform organisation is hidden from the directory and its record URL shows the
+    not-found page (the layout's `notFound()` answers HTTP 200); a filtered count can read one
+    high (`docs/backend-gaps.md` BG-29). One check, `isInstitutionId` (a UUID that is not the
+    platform organisation, in any letter case), guards the record, both tabs, amend and every
+    tenant Server Action.
   - A tenant code is checked before the create call, because a duplicate is a backend 500
     (BG-07); the check reads one page of 100 matches.
   - Approve stays on offer for its maker: the platform context can't read who created or

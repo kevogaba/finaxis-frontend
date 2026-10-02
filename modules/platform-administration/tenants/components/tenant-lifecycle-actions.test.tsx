@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen, waitFor, within } from '@testing-library/react';
+import { ownStyle } from '@/test/own-style';
 import { renderWithProviders } from '@/test/test-utils';
 import type { TenantLifecycleAction } from '../tenant-rules';
 import { TenantLifecycleActions } from './tenant-lifecycle-actions';
@@ -57,8 +58,13 @@ describe('TenantLifecycleActions', () => {
   it('links Amend, submits through a confirmation with no reason, then focuses Approve', async () => {
     const user = userEvent.setup();
     submitTenant.mockResolvedValueOnce({ ok: true });
-    const { rerender } = renderWithProviders(record(['amend', 'submit']));
+    const { rerender } = renderWithProviders(record(['submit', 'amend']));
 
+    // The first action is the contained primary: the forward action leads, Amend is outlined.
+    expect(screen.getByRole('button', { name: 'Submit for approval' })).toHaveClass(
+      'MuiButton-contained',
+    );
+    expect(screen.getByRole('link', { name: 'Amend draft' })).toHaveClass('MuiButton-outlined');
     expect(screen.getByRole('link', { name: 'Amend draft' })).toHaveAttribute(
       'href',
       `/platform-admin/tenants/${ID}/amend`,
@@ -197,6 +203,13 @@ describe('TenantLifecycleActions', () => {
     await user.click(screen.getByRole('button', { name: 'Deprovision' }));
     const dialog = screen.getByRole('alertdialog', { name: `Deprovision ${NAME}?` });
     const confirm = within(dialog).getByRole('textbox', { name: 'Type umoja-teachers to confirm' });
+    // The code to type back stands out in the prompt: monospace and bold, still part of its name.
+    // The outlined input's notch repeats the label, so the code appears twice.
+    const codes = within(dialog).getAllByText('umoja-teachers', { selector: 'code' });
+    for (const code of codes) {
+      expect(ownStyle(code, 'font-family')).toContain('monospace');
+      expect(ownStyle(code, 'font-weight')).toBe('700');
+    }
     await user.type(confirm, 'umoja');
     await user.type(
       within(dialog).getByRole('textbox', { name: 'Reason' }),

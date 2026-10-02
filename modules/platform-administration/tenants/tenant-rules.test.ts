@@ -43,7 +43,7 @@ const VALID: TenantDraftValues = {
 
 describe('tenant lifecycle availability', () => {
   it.each([
-    ['DRAFT', ['amend', 'submit']],
+    ['DRAFT', ['submit', 'amend']],
     ['PENDING_APPROVAL', ['approve', 'reject']],
     ['ACTIVE', ['suspend', 'deprovision']],
     ['SUSPENDED', ['reactivate', 'deprovision']],

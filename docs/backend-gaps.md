@@ -351,7 +351,7 @@ reuse/release of rejected codes.
 `GET /platform/tenants` includes the reserved PLATFORM organisation. The frontend filters it out,
 so a page can show one fewer row. The result count subtracts it whenever it is known to be included
 (always when unfiltered, and when its row is on the page), so a filtered count can read one high;
-its record URL is a 404. Suggested: exclude it server-side.
+its record URL shows the not-found page. Suggested: exclude it server-side.
 
 ### BG-30 — Error envelope inconsistencies · P2
 

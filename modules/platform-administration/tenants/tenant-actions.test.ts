@@ -175,6 +175,8 @@ describe('tenant actions', () => {
     ).toMatchObject({
       code: 'accounting.currency_invalid',
       requestId: 'req-2',
+      formError:
+        "The platform can't settle in this currency. Choose another base currency, or clear the base currency setting.",
       fieldErrors: { baseCurrencyCode: "The platform can't settle in this currency." },
     });
 
@@ -194,14 +196,14 @@ describe('tenant actions', () => {
     );
     expect(await actions.amendTenantDraft(null, amend())).toMatchObject({
       code: 'accounting.currency_invalid',
-      formError: expect.not.stringMatching(/setting/i) as unknown,
+      formError: "The platform can't settle in this currency. Choose another base currency.",
       fieldErrors: { baseCurrencyCode: "The platform can't settle in this currency." },
     });
 
     apiPatch.mockRejectedValueOnce(new BackendApiError(422, { code: 'invalid_operation' }));
     expect(await actions.amendTenantDraft(null, amend())).toMatchObject({
       code: 'invalid_operation',
-      formError: expect.not.stringMatching(/setting/i) as unknown,
+      formError: 'The platform refused a value. Check the timezone and the other details.',
     });
   });
 

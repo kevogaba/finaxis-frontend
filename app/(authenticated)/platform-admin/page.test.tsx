@@ -49,15 +49,22 @@ describe('PlatformOverviewPage', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'Platform overview' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Finaxis Platform')).toBeInTheDocument();
+    // The card titles sit directly under the h1: h2, not skipped levels (axe heading-order).
+    expect(screen.getByRole('heading', { level: 2, name: 'Finaxis Platform' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'SACCO institutions' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Platform HQ')).toBeInTheDocument();
-    expect(screen.getByText('1 tenant is available from the live directory.')).toBeInTheDocument();
+    expect(screen.getByText('1 SACCO institution is in the directory.')).toBeInTheDocument();
+    // The navigation and the directory's h1 call them SACCO institutions, and the directory now
+    // creates and changes them: nothing here says tenants, live or read-only.
+    expect(screen.queryByText(/read-only|live directory|Live tenant/i)).toBeNull();
     expect(listTenants).toHaveBeenCalledWith({
       sort: { by: 'createdAt', dir: 'DESC' },
       page: 0,
       size: 1,
     });
-    expect(screen.getByRole('link', { name: 'Open tenant directory' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open SACCO institutions' })).toHaveAttribute(
       'href',
       '/platform-admin/tenants',
     );
@@ -67,9 +74,7 @@ describe('PlatformOverviewPage', () => {
     listTenants.mockResolvedValueOnce(directory(1));
     renderWithProviders(await PlatformOverviewPage());
 
-    expect(
-      screen.getByText('No tenants are available in the live directory yet.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('No SACCO institutions have been created yet.')).toBeInTheDocument();
   });
 
   it('renders the safe error state with its reference, keeping the directory link', async () => {
@@ -78,7 +83,7 @@ describe('PlatformOverviewPage', () => {
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
     expect(screen.getByText('Reference: req-9')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open tenant directory' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open SACCO institutions' })).toHaveAttribute(
       'href',
       '/platform-admin/tenants',
     );

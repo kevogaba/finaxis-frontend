@@ -120,6 +120,19 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
     expect(await revoked.json()).toMatchObject({ status: 'REVOKED' });
   });
 
+  test('answers an off-list branch sort_by as a 500, including names every object inherits', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'default', null);
+    // BG-07: only the five camelCase keys sort; a name from Object.prototype is no key.
+    for (const sortBy of ['branch_code', 'toString', 'constructor', '__proto__']) {
+      const refused = await request.get(api(`/branches?sort_by=${sortBy}`), { headers });
+      expect(refused.status(), sortBy).toBe(500);
+    }
+    const sorted = await request.get(api('/branches?sort_by=branchCode&sort_dir=ASC'), { headers });
+    expect(sorted.status()).toBe(200);
+  });
+
   test('rejects unknown properties and searches tenant users', async ({ request }) => {
     const headers = await contextFor(request, 'branches', null);
     const camel = await request.post(api('/branches'), { headers, data: { branchCode: 'X1' } });

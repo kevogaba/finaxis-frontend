@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode, type SyntheticEvent } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import GlobalStyles from '@mui/material/GlobalStyles';
 import Paper from '@mui/material/Paper';
 import Step from '@mui/material/Step';
 import StepLabel from '@mui/material/StepLabel';
@@ -32,6 +33,9 @@ interface WizardFormProps {
   alerts?: ReactNode;
   children: ReactNode;
 }
+
+/** The sticky action bar is 70 px tall; the rest is a gap. */
+const ACTION_BAR_CLEARANCE = 96;
 
 /**
  * A multi-step form (spec §9): the themed Stepper, the current step in a surface, and a sticky
@@ -71,6 +75,9 @@ export function WizardForm({
       onSubmit={onSubmit}
       sx={{ display: 'grid', gap: 4.5 }}
     >
+      {/* The sticky action bar (70 px) must not cover a control the keyboard reaches: the page keeps
+          96 px of scroll padding below while a wizard is mounted (WCAG 2.4.11). */}
+      <GlobalStyles styles={{ html: { scrollPaddingBottom: ACTION_BAR_CLEARANCE } }} />
       <Stepper activeStep={active}>
         {steps.map((step, index) => (
           <Step key={step.label} aria-current={index === active ? 'step' : undefined}>

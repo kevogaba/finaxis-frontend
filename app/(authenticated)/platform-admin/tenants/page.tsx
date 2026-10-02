@@ -147,9 +147,13 @@ export default async function TenantDirectoryPage({ searchParams }: TenantDirect
               <EmptyState
                 title="No institutions"
                 description={
-                  filtered
-                    ? 'No institutions match these filters.'
-                    : 'No institutions have been created yet.'
+                  // The platform row is hidden, so a page can be empty while institutions exist
+                  // elsewhere: follow the visible total, not the backend's rows.
+                  total > 0
+                    ? 'No institutions on this page.'
+                    : filtered
+                      ? 'No institutions match these filters.'
+                      : 'No institutions have been created yet.'
                 }
               />
             ) : (

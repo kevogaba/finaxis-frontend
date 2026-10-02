@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import { ConfirmDialog } from '@/components/data-display/confirm-dialog';
@@ -236,7 +237,15 @@ export function TenantLifecycleActions({
                     <input type="hidden" name="tenantCode" value={tenantCode} />
                     <TextField
                       name="confirmCode"
-                      label={`Type ${tenantCode} to confirm`}
+                      label={
+                        <>
+                          Type{' '}
+                          <Box component="code" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
+                            {tenantCode}
+                          </Box>{' '}
+                          to confirm
+                        </>
+                      }
                       required
                       error={Boolean(fieldErrors.confirmCode)}
                       helperText={fieldErrors.confirmCode ?? 'The tenant code, exactly as shown.'}

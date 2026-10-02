@@ -51,12 +51,14 @@ export default async function AmendTenantPage({ params }: AmendTenantPageProps) 
 
   const record = tenant.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
-  const header = (
-    <PageHeader
-      eyebrow={EYEBROW}
-      title={`Amend ${record.displayName}`}
-      description="Amending replaces the whole draft. The platform doesn't return the legal name, registration number or first administrator, so enter them again."
-    />
+  // Only the form asks for the details again; the states that replace it have no form to explain.
+  const header = (description?: string) => (
+    <PageHeader eyebrow={EYEBROW} title={`Amend ${record.displayName}`} description={description} />
+  );
+  const backToRecord = (
+    <Button component={NextLink} href={`/platform-admin/tenants/${tenantId}`} variant="outlined">
+      Back to the record
+    </Button>
   );
 
   if (
@@ -67,9 +69,9 @@ export default async function AmendTenantPage({ params }: AmendTenantPageProps) 
   ) {
     return (
       <>
-        {header}
+        {header()}
         <Paper>
-          <ForbiddenState />
+          <ForbiddenState action={backToRecord} />
         </Paper>
       </>
     );
@@ -78,20 +80,12 @@ export default async function AmendTenantPage({ params }: AmendTenantPageProps) 
   if (record.status !== 'DRAFT') {
     return (
       <>
-        {header}
+        {header()}
         <Paper>
           <ForbiddenState
             title="Only a draft can be amended"
             description="This institution has left the draft stage, so its details can't be changed here."
-            action={
-              <Button
-                component={NextLink}
-                href={`/platform-admin/tenants/${tenantId}`}
-                variant="outlined"
-              >
-                Back to the record
-              </Button>
-            }
+            action={backToRecord}
           />
         </Paper>
       </>
@@ -100,7 +94,9 @@ export default async function AmendTenantPage({ params }: AmendTenantPageProps) 
 
   return (
     <>
-      {header}
+      {header(
+        "Amending replaces the whole draft. The platform doesn't return the legal name, registration number or first administrator, so enter them again.",
+      )}
       <TenantDraftWizard
         tenantId={tenantId}
         defaults={{

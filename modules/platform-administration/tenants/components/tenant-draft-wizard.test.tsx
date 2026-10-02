@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen, waitFor, within } from '@testing-library/react';
+import { ownStyle } from '@/test/own-style';
 import { renderWithProviders } from '@/test/test-utils';
 import { UUID_PATTERN } from '@/lib/api/wire';
 import { EMPTY_TENANT_DRAFT, type TenantFormOptions } from '../tenant-rules';
@@ -84,6 +85,129 @@ describe('TenantDraftWizard', () => {
     expect(
       await screen.findByText('Check these fields: Display name, Base currency, Timezone.'),
     ).toBeInTheDocument();
+  });
+
+  it('adds no error line on a blur, so a click on Continue never lands on a moved page', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TenantDraftWizard defaults={EMPTY_TENANT_DRAFT} options={OPTIONS} />);
+
+    await user.click(screen.getByRole('textbox', { name: 'Tenant code' }));
+    await user.tab();
+    await user.click(screen.getByRole('combobox', { name: 'Country' }));
+    await user.tab();
+
+    // Nothing is validated until Continue: an error line added by a blur would shift the page.
+    expect(screen.getByRole('textbox', { name: 'Tenant code' })).not.toHaveAccessibleDescription(
+      'Use 3–32 lowercase letters, digits or hyphens.',
+    );
+    expect(screen.queryByText('Choose a country.')).toBeNull();
+  });
+
+  it("shows an invalid choice's error right after the choice, and a valid choice clears it", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TenantDraftWizard defaults={EMPTY_TENANT_DRAFT} options={OPTIONS} />);
+
+    await pick(user, 'Country', 'Kenya');
+    expect(screen.queryByText('Choose a country.')).toBeNull();
+    // Emptying a required choice is a choice too: its refusal appears at once, before any blur.
+    await user.clear(screen.getByRole('combobox', { name: 'Country' }));
+    expect(await screen.findByText('Choose a country.')).toBeInTheDocument();
+
+    await pick(user, 'Country', 'Uganda');
+    await waitFor(() => {
+      expect(screen.queryByText('Choose a country.')).toBeNull();
+    });
+  });
+
+  it('disables the review Edit buttons while the save is pending', async () => {
+    const user = userEvent.setup();
+    // Always settled in `finally`: a save left pending would hold React's global action queue and
+    // starve the tests after this one.
+    let settle: (result: unknown) => void = () => undefined;
+    createTenantDraft.mockReturnValueOnce(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    renderWithProviders(
+      <TenantDraftWizard
+        defaults={{
+          ...EMPTY_TENANT_DRAFT,
+          tenantCode: 'acme',
+          displayName: 'Tujenge Traders SACCO',
+          countryCode: 'KE',
+          baseCurrencyCode: 'KES',
+          timezone: 'Africa/Nairobi',
+          adminEmail: 'amina@tujenge.example',
+          adminUsername: 'amina.otieno',
+          adminDisplayName: 'Amina Otieno',
+          adminPhone: '+254712000140',
+        }}
+        options={OPTIONS}
+      />,
+    );
+
+    await next(user, 'First administrator');
+    await next(user, 'Initial settings');
+    await next(user, 'Review');
+    expect(screen.getByRole('button', { name: 'Edit institution' })).toBeEnabled();
+    try {
+      await user.click(screen.getByRole('button', { name: 'Create draft' }));
+      await waitFor(() => {
+        expect(createTenantDraft).toHaveBeenCalledTimes(1);
+      });
+      for (const name of [
+        'Edit institution',
+        'Edit first administrator',
+        'Edit initial settings',
+      ]) {
+        expect(screen.getByRole('button', { name })).toBeDisabled();
+      }
+    } finally {
+      settle({
+        ok: false,
+        formError: 'The platform did not respond.',
+        fieldErrors: {},
+        code: null,
+        requestId: null,
+      });
+    }
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Edit institution' })).toBeEnabled();
+    });
+  });
+
+  it("shows the review's unset answers muted and in regular weight, apart from real values", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <TenantDraftWizard
+        defaults={{
+          ...EMPTY_TENANT_DRAFT,
+          tenantCode: 'acme',
+          displayName: 'Tujenge Traders SACCO',
+          countryCode: 'KE',
+          baseCurrencyCode: 'KES',
+          timezone: 'Africa/Nairobi',
+          adminEmail: 'amina@tujenge.example',
+          adminUsername: 'amina.otieno',
+          adminDisplayName: 'Amina Otieno',
+          adminPhone: '+254712000140',
+        }}
+        options={OPTIONS}
+      />,
+    );
+
+    await next(user, 'First administrator');
+    await next(user, 'Initial settings');
+    await next(user, 'Review');
+
+    // Legal name, registration number, and the three optional settings.
+    const unset = screen.getAllByText('Not set');
+    expect(unset).toHaveLength(5);
+    for (const element of unset) {
+      expect(ownStyle(element, 'color')).toContain('--finaxis-palette-text-secondary');
+      expect(ownStyle(element, 'font-weight')).toBe('400');
+    }
   });
 
   it('walks every step, returns to a taken code, and retries the create with the same key', async () => {

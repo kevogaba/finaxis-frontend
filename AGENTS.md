@@ -61,7 +61,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   `Stepper` and a sticky action bar) with one React Hook Form across the steps: Continue
   `trigger`s the step's own fields, the last step submits them all with one idempotency key, and
   a server field error returns to its step (see
-  `modules/platform-administration/tenants/components/tenant-draft-wizard.tsx`).
+  `modules/platform-administration/tenants/components/tenant-draft-wizard.tsx`). The form
+  validates on Continue, never on blur (a blur-added error line would move Continue under the
+  pointer); a choice validates its own field. While mounted, `WizardForm` keeps 96 px of page
+  scroll padding below, and `app/globals.css` keeps 80 px above for the sticky app bar, so a
+  sticky bar never covers a control the keyboard reaches (WCAG 2.4.11).
 - Every data-listing UI (both workspaces; new lists especially) is server-paginated with state in
   the URL: page sizes come from `lib/api/paging.ts`'s `PAGE_SIZES`, and lists render
   `TablePaginationBar` (`components/data-display/table-pagination-bar.tsx`) plus, where the list

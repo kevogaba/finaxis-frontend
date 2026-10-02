@@ -6,17 +6,26 @@ import {
   useEffect,
   useRef,
   useState,
+  type ReactNode,
   type SyntheticEvent,
 } from 'react';
 import { unstable_rethrow } from 'next/navigation';
-import { Controller, useForm, type Control, type FieldErrors } from 'react-hook-form';
+import {
+  Controller,
+  useForm,
+  type Control,
+  type FieldErrors,
+  type UseFormTrigger,
+} from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Alert from '@mui/material/Alert';
 import Autocomplete from '@mui/material/Autocomplete';
+import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 import { DescriptionList } from '@/components/data-display/description-list';
 import { SectionCard } from '@/components/data-display/section-card';
 import { WizardForm, type WizardStep } from '@/components/data-display/wizard-form';
@@ -113,6 +122,10 @@ const LABELS: Record<FieldName, string> = {
   auditRetentionDays: 'Audit retention (days)',
 };
 
+/** Field groups stay a readable width on a wide screen, as the branch and role forms do; the
+ * Stepper and the review cards keep the full width. */
+const FIELD_GROUP = { maxWidth: 640, display: 'grid', gap: 4.5 } as const;
+
 // Mirrors ReasonDialog's and 08's draft form: never `caught.message`.
 const SUBMIT_FAILED =
   "We couldn't confirm this change. Try again; it's safe to retry. If it keeps failing, reload the page.";
@@ -122,6 +135,7 @@ const firstStepWith = (steps: readonly DraftStep[], invalid: (name: FieldName) =
 
 interface OptionFieldProps {
   control: Control<TenantDraftValues>;
+  trigger: UseFormTrigger<TenantDraftValues>;
   name: OptionName;
   options: readonly TenantOption[];
   required?: boolean;
@@ -129,7 +143,14 @@ interface OptionFieldProps {
 }
 
 /** A choice from the server-built list, so SSR and hydration render the same options. */
-function OptionField({ control, name, options, required = false, hint }: OptionFieldProps) {
+function OptionField({
+  control,
+  trigger,
+  name,
+  options,
+  required = false,
+  hint,
+}: OptionFieldProps) {
   return (
     <Controller
       name={name}
@@ -140,8 +161,9 @@ function OptionField({ control, name, options, required = false, hint }: OptionF
           value={options.find((option) => option.value === field.value) ?? null}
           onChange={(_event, option) => {
             field.onChange(option?.value ?? '');
-            // A choice is final, so validate it now: a refusal's error clears with the fix.
-            field.onBlur();
+            // A choice is final, so validate it now: a refusal's error clears with the fix. The
+            // form validates on Continue, not on blur, so nothing shifts under a click.
+            void trigger(name);
           }}
           getOptionLabel={(option) => option.label}
           isOptionEqualToValue={(option, selected) => option.value === selected.value}
@@ -165,21 +187,30 @@ function OptionField({ control, name, options, required = false, hint }: OptionF
 const labelOf = (options: readonly TenantOption[], value: string) =>
   options.find((option) => option.value === value)?.label ?? value;
 
+/** An optional answer left empty: muted and regular weight, so a gap doesn't read as a value. */
+const NOT_SET = (
+  <Typography component="span" sx={{ color: 'text.secondary', fontWeight: 400 }}>
+    Not set
+  </Typography>
+);
+
 interface TenantDraftReviewProps {
   values: TenantDraftValues;
   options: TenantFormOptions;
   steps: readonly DraftStep[];
+  /** A save in flight: Edit would move the wizard under it. */
+  pending: boolean;
   onEdit: (step: number) => void;
 }
 
 /** The review step: every answer by step, each step with a way back to it. */
-function TenantDraftReview({ values, options, steps, onEdit }: TenantDraftReviewProps) {
+function TenantDraftReview({ values, options, steps, pending, onEdit }: TenantDraftReviewProps) {
   const businessDate = isoToBusinessDate(values.businessDate);
-  const shown: Record<FieldName, string> = {
+  const shown: Record<FieldName, ReactNode> = {
     tenantCode: values.tenantCode,
     displayName: values.displayName,
-    legalName: values.legalName || 'Not set',
-    registrationNumber: values.registrationNumber || 'Not set',
+    legalName: values.legalName || NOT_SET,
+    registrationNumber: values.registrationNumber || NOT_SET,
     countryCode: labelOf(options.countries, values.countryCode),
     baseCurrencyCode: labelOf(options.currencies, values.baseCurrencyCode),
     timezone: values.timezone,
@@ -191,13 +222,13 @@ function TenantDraftReview({ values, options, steps, onEdit }: TenantDraftReview
     adminDisplayName: values.adminDisplayName,
     adminPhone: values.adminPhone,
     adminSendApplicationInvite: values.adminSendApplicationInvite === 'true' ? 'Yes' : 'No',
-    defaultTimezoneSetting: values.defaultTimezoneSetting || 'Not set',
+    defaultTimezoneSetting: values.defaultTimezoneSetting || NOT_SET,
     baseCurrencySetting: values.baseCurrencySetting
       ? labelOf(options.currencies, values.baseCurrencySetting)
-      : 'Not set',
+      : NOT_SET,
     auditRetentionDays: values.auditRetentionDays
       ? String(Number(values.auditRetentionDays))
-      : 'Not set',
+      : NOT_SET,
   };
   return (
     <>
@@ -210,6 +241,7 @@ function TenantDraftReview({ values, options, steps, onEdit }: TenantDraftReview
             <Button
               size="small"
               aria-label={`Edit ${step.label.toLowerCase()}`}
+              disabled={pending}
               onClick={() => {
                 onEdit(index);
               }}
@@ -269,7 +301,6 @@ export function TenantDraftWizard({
   } = useForm<TenantDraftValues>({
     resolver: zodResolver(tenantDraftSchema),
     defaultValues: defaults,
-    mode: 'onTouched',
   });
   const [state, formAction, pending] = useActionState<ActionResult | null, FormData>(
     async (previous, formData) => {
@@ -399,7 +430,7 @@ export function TenantDraftWizard({
       }
     >
       {current.label === INSTITUTION.label && (
-        <>
+        <Box sx={FIELD_GROUP}>
           <TextField
             required
             {...text(
@@ -430,14 +461,27 @@ export function TenantDraftWizard({
             {...text('registrationNumber', 'Optional.')}
             slotProps={{ htmlInput: { maxLength: 50 } }}
           />
-          <OptionField control={control} name="countryCode" options={options.countries} required />
           <OptionField
             control={control}
+            trigger={trigger}
+            name="countryCode"
+            options={options.countries}
+            required
+          />
+          <OptionField
+            control={control}
+            trigger={trigger}
             name="baseCurrencyCode"
             options={options.currencies}
             required
           />
-          <OptionField control={control} name="timezone" options={options.timeZones} required />
+          <OptionField
+            control={control}
+            trigger={trigger}
+            name="timezone"
+            options={options.timeZones}
+            required
+          />
           {!amend && (
             <TextField
               type="date"
@@ -448,10 +492,10 @@ export function TenantDraftWizard({
               slotProps={{ inputLabel: { shrink: true } }}
             />
           )}
-        </>
+        </Box>
       )}
       {current.label === ADMINISTRATOR.label && (
-        <>
+        <Box sx={FIELD_GROUP}>
           <TextField required type="email" autoComplete="off" {...text('adminEmail')} />
           <TextField
             required
@@ -492,10 +536,10 @@ export function TenantDraftWizard({
               />
             )}
           />
-        </>
+        </Box>
       )}
       {current.label === SETTINGS.label && (
-        <>
+        <Box sx={FIELD_GROUP}>
           <Alert severity="info">
             These settings are stored with the institution, but the platform doesn&apos;t apply them
             yet. Maker-checker always applies, so its switches aren&apos;t offered here, and neither
@@ -503,12 +547,14 @@ export function TenantDraftWizard({
           </Alert>
           <OptionField
             control={control}
+            trigger={trigger}
             name="defaultTimezoneSetting"
             options={options.timeZones}
             hint="Optional."
           />
           <OptionField
             control={control}
+            trigger={trigger}
             name="baseCurrencySetting"
             options={options.currencies}
             hint="Optional."
@@ -520,11 +566,17 @@ export function TenantDraftWizard({
             )}
             slotProps={{ htmlInput: { inputMode: 'numeric', maxLength: 5 } }}
           />
-        </>
+        </Box>
       )}
       {values && (
         <>
-          <TenantDraftReview values={values} options={options} steps={steps} onEdit={goTo} />
+          <TenantDraftReview
+            values={values}
+            options={options}
+            steps={steps}
+            pending={pending}
+            onEdit={goTo}
+          />
           <Alert severity="info">
             {amend
               ? 'Saving replaces the whole draft.'

@@ -21,10 +21,10 @@ export const metadata: Metadata = { title: 'Platform Overview' };
 
 function describeTenantDirectoryState(totalItems: number): string {
   if (totalItems === 0) {
-    return 'No tenants are available in the live directory yet.';
+    return 'No SACCO institutions have been created yet.';
   }
 
-  return `${totalItems} tenant${totalItems === 1 ? ' is' : 's are'} available from the live directory.`;
+  return `${totalItems} SACCO institution${totalItems === 1 ? ' is' : 's are'} in the directory.`;
 }
 
 export default async function PlatformOverviewPage() {
@@ -44,7 +44,7 @@ export default async function PlatformOverviewPage() {
   return (
     <PlatformPageShell
       title="Platform overview"
-      description="Confirm the active platform context and move into the live read-only workspaces."
+      description="Confirm the active platform context and open the SACCO institutions workspace."
     >
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 6 }}>
@@ -54,7 +54,7 @@ export default async function PlatformOverviewPage() {
                 <Typography variant="overline" color="text.secondary">
                   Active platform context
                 </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                <Typography component="h2" variant="h6" sx={{ fontWeight: 700 }}>
                   {selectedContext.context.organization.name}
                 </Typography>
                 <Stack direction="row" spacing={1}>
@@ -81,10 +81,10 @@ export default async function PlatformOverviewPage() {
             <CardContent>
               <Stack spacing={1.25}>
                 <Typography variant="overline" color="text.secondary">
-                  Tenant operations
+                  Institution operations
                 </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                  Live tenant directory
+                <Typography component="h2" variant="h6" sx={{ fontWeight: 700 }}>
+                  SACCO institutions
                 </Typography>
                 {directory.ok ? (
                   <Typography color="text.secondary" variant="body2">
@@ -100,7 +100,7 @@ export default async function PlatformOverviewPage() {
             </CardContent>
             <CardActions>
               <Button component={NextLink} href="/platform-admin/tenants" size="small">
-                Open tenant directory
+                Open SACCO institutions
               </Button>
             </CardActions>
           </Card>
