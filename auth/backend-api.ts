@@ -121,11 +121,29 @@ async function request<T>(
     throw new BackendApiError(response.status, await problemDetails(response));
   }
 
+  if (response.status === 204) {
+    // No body to parse, and none of our routes rely on a 204's (nonexistent) payload.
+    return undefined as T;
+  }
+
   try {
     return (await response.json()) as T;
   } catch {
     throw toBackendApiError(UPSTREAM_FAILURE_STATUS);
   }
+}
+
+function jsonBodyInit(
+  method: string,
+  body: Record<string, unknown> | undefined,
+  idempotencyKey: string,
+): RequestInit {
+  const headers: Record<string, string> = { 'Idempotency-Key': idempotencyKey };
+  if (body === undefined) {
+    return { method, headers };
+  }
+  headers['Content-Type'] = 'application/json';
+  return { method, headers, body: JSON.stringify(body) };
 }
 
 export const backendApi = {
@@ -138,19 +156,39 @@ export const backendApi = {
     body: Record<string, unknown>,
     headers: Headers,
     contextToken?: string,
+    // Server Actions pass the key the form minted when it opened (spec §6.4) so a retry replays.
+    idempotencyKey: string = crypto.randomUUID(),
   ): Promise<T> {
-    return request<T>(
-      path,
-      headers,
-      {
-        body: JSON.stringify(body),
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': crypto.randomUUID(),
-        },
-        method: 'POST',
-      },
-      contextToken,
-    );
+    return request<T>(path, headers, jsonBodyInit('POST', body, idempotencyKey), contextToken);
+  },
+
+  put<T>(
+    path: string,
+    body: Record<string, unknown>,
+    headers: Headers,
+    contextToken?: string,
+    idempotencyKey: string = crypto.randomUUID(),
+  ): Promise<T> {
+    return request<T>(path, headers, jsonBodyInit('PUT', body, idempotencyKey), contextToken);
+  },
+
+  patch<T>(
+    path: string,
+    body: Record<string, unknown>,
+    headers: Headers,
+    contextToken?: string,
+    idempotencyKey: string = crypto.randomUUID(),
+  ): Promise<T> {
+    return request<T>(path, headers, jsonBodyInit('PATCH', body, idempotencyKey), contextToken);
+  },
+
+  delete<T>(
+    path: string,
+    headers: Headers,
+    contextToken?: string,
+    idempotencyKey: string = crypto.randomUUID(),
+    body?: Record<string, unknown>,
+  ): Promise<T> {
+    return request<T>(path, headers, jsonBodyInit('DELETE', body, idempotencyKey), contextToken);
   },
 };

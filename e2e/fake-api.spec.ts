@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { IncomingMessage } from 'node:http';
+import { Socket } from 'node:net';
 import { expect, test } from '@playwright/test';
+import { sendIdempotent } from './fake-api/idempotency.mts';
+import type { RouteContext } from './fake-api/router.mts';
 import { seedScenario } from './fake-api/scenarios.mts';
+import type { RunState } from './fake-api/state.mts';
 
 const FAKE_API_URL = `http://127.0.0.1:${process.env.FAKE_API_PORT ?? '3199'}`;
 
@@ -149,16 +154,17 @@ test.describe('fake API', () => {
     });
   });
 
-  // Contract §B: bad paging on the auth list routes is validation_failed with no violations,
-  // unlike every other route's pageOf failure (which keeps a field-level violations array).
-  test('rejects bad paging on /auth/organisations as validation_failed with no violations', async ({
+  // Contract §B (L0 live finding): bad paging (page/size out of range) is `invalid_parameter`
+  // with no violations on every paged route — http.mts's `intParam` throws this directly, so
+  // there's no auth-only quirk left to carve out.
+  test('rejects bad paging on /auth/organisations as invalid_parameter with no violations', async ({
     request,
   }) => {
     const response = await request.get(`${FAKE_API_URL}/api/v1/auth/organisations?size=0`, {
       headers: bearer(),
     });
     expect(response.status()).toBe(400);
-    expect(await response.json()).toMatchObject({ code: 'validation_failed', violations: null });
+    expect(await response.json()).toMatchObject({ code: 'invalid_parameter', violations: null });
   });
 
   // Contract §C: /me's branches[] is "per ACTIVE assignment ... may include SUSPENDED branches",
@@ -253,5 +259,100 @@ test.describe('fake API', () => {
     };
     expect(body.page.total_items).toBe(30);
     expect(body.items.map((item) => item.occurred_at)).toContain('2026-09-07T07:59:00Z');
+  });
+
+  // A2: a replay echoes the stored response for the same key, a changed body under the same key
+  // is IDEMPOTENCY_KEY_REUSED, and neither request adds more than the one audit event a success
+  // records (six seeded BUSINESS_DATE cob.start events, contract §G, plus this one).
+  test('replays a success for the same Idempotency-Key and rejects a changed body', async ({
+    request,
+  }) => {
+    const headers = bearer();
+    const selection = await request.post(`${FAKE_API_URL}/api/v1/auth/select-organisation`, {
+      headers,
+      data: { organisation_id: '11111111-1111-4111-8111-111111111111' },
+    });
+    const { context_token: contextToken } = (await selection.json()) as { context_token: string };
+    const key = randomUUID();
+    const send = (data: Record<string, unknown>) =>
+      request.post(`${FAKE_API_URL}/api/v1/tenant/business-date/cob/start`, {
+        headers: {
+          ...headers,
+          'X-Active-Organisation-Context': contextToken,
+          'Idempotency-Key': key,
+        },
+        data,
+      });
+
+    const first = await send({ reason: 'End of day' });
+    const replay = await send({ reason: 'End of day' });
+    const changed = await send({ reason: 'Something else' });
+
+    expect(first.status()).toBe(200);
+    expect(replay.headers()['idempotency-replayed']).toBe('true');
+    expect(await replay.json()).toEqual(await first.json());
+    expect(changed.status()).toBe(409);
+    expect(await changed.json()).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+
+    const audit = await request.get(
+      `${FAKE_API_URL}/api/v1/tenant/audit-events?entity_type=BUSINESS_DATE&action=cob.start`,
+      { headers: { ...headers, 'X-Active-Organisation-Context': contextToken } },
+    );
+    const auditBody = (await audit.json()) as { page: { total_items: number } };
+    expect(auditBody.page.total_items).toBe(7);
+  });
+
+  // A2 (direct call, no HTTP): no 07 route returns 204, so this exercises `sendIdempotent`'s
+  // no-body branch directly against a stub RouteContext.
+  test('sendIdempotent sends a 204 with no body on first call and on replay', () => {
+    const req = new IncomingMessage(new Socket());
+    req.method = 'POST';
+    const key = randomUUID();
+    req.headers['idempotency-key'] = key;
+
+    const written: { status: number; headers: Record<string, string>; body: unknown }[] = [];
+    const res = {
+      writeHead(status: number, headers: Record<string, string>) {
+        written.push({ status, headers, body: undefined });
+      },
+      end(body?: unknown) {
+        const last = written.at(-1);
+        if (last) last.body = body;
+      },
+    } as unknown as RouteContext['res'];
+
+    const state = { idempotency: new Map() } as unknown as RunState;
+    const context: RouteContext = {
+      req,
+      res,
+      params: {},
+      query: new URLSearchParams(),
+      state,
+      path: '/api/v1/tenant/business-date/cob/start',
+    };
+
+    let calls = 0;
+    // M17: a non-empty return value proves the 204 path drops it (a broken implementation that
+    // serialized `produce()`'s return as JSON couldn't pass this — the old `undefined` return let
+    // it pass either way).
+    const produce = () => {
+      calls += 1;
+      return { ignored: true };
+    };
+
+    sendIdempotent(context, {}, produce, 204);
+    sendIdempotent(context, {}, produce, 204);
+
+    expect(calls).toBe(1);
+    expect(written).toHaveLength(2);
+    expect(written[0]).toMatchObject({ status: 204, body: undefined });
+    expect(written[0]?.headers).toMatchObject({ 'Idempotency-Key': key });
+    expect(written[0]?.headers['Content-Type']).toBeUndefined();
+    expect(written[1]).toMatchObject({ status: 204, body: undefined });
+    expect(written[1]?.headers).toMatchObject({
+      'Idempotency-Key': key,
+      'Idempotency-Replayed': 'true',
+    });
+    expect(written[1]?.headers['Content-Type']).toBeUndefined();
   });
 });

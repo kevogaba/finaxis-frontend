@@ -90,6 +90,98 @@ describe('backendApi', () => {
     expect(init.body).toBe(JSON.stringify({ organisation_id: '123' }));
   });
 
+  it('forwards a caller-supplied idempotency key', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const key = '0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+
+    await backendApi.post('/api/v1/tenant/business-date/cob/start', {}, requestHeaders, 'ctx', key);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get('Idempotency-Key')).toBe(key);
+  });
+
+  it('sends JSON and a caller-supplied idempotency key for PUT requests', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const key = '1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e';
+
+    await backendApi.put(
+      '/api/v1/tenant/business-date',
+      { new_business_date: '08-09-2026' },
+      requestHeaders,
+      'ctx',
+      key,
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe('PUT');
+    expect(init.body).toBe(JSON.stringify({ new_business_date: '08-09-2026' }));
+    const headers = new Headers(init.headers);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.get('Idempotency-Key')).toBe(key);
+  });
+
+  it('sends JSON and a caller-supplied idempotency key for PATCH requests', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const key = '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f';
+
+    await backendApi.patch(
+      '/api/v1/tenant/business-date',
+      { reason: 'fix' },
+      requestHeaders,
+      'ctx',
+      key,
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe('PATCH');
+    expect(init.body).toBe(JSON.stringify({ reason: 'fix' }));
+    const headers = new Headers(init.headers);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.get('Idempotency-Key')).toBe(key);
+  });
+
+  it('sends a JSON body and Content-Type for DELETE requests with a body', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const key = '3d4e5f6a-7b8c-4d9e-8f0a-2b3c4d5e6f7a';
+
+    await backendApi.delete('/api/v1/tenant/business-date/history/1', requestHeaders, 'ctx', key, {
+      reason: 'cleanup',
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBe(JSON.stringify({ reason: 'cleanup' }));
+    const headers = new Headers(init.headers);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.get('Idempotency-Key')).toBe(key);
+  });
+
+  it('sends no body and no Content-Type for DELETE requests without a body', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const key = '4e5f6a7b-8c9d-4e0f-9a1b-3c4d5e6f7a8b';
+
+    await backendApi.delete('/api/v1/tenant/business-date/history/1', requestHeaders, 'ctx', key);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBeUndefined();
+    const headers = new Headers(init.headers);
+    expect(headers.has('Content-Type')).toBe(false);
+    expect(headers.get('Idempotency-Key')).toBe(key);
+  });
+
+  it.each([
+    ['get', () => backendApi.get('/api/v1/tenant/business-date', requestHeaders)],
+    ['post', () => backendApi.post('/api/v1/tenant/business-date/cob/start', {}, requestHeaders)],
+    ['put', () => backendApi.put('/api/v1/tenant/business-date', {}, requestHeaders)],
+    ['patch', () => backendApi.patch('/api/v1/tenant/business-date', {}, requestHeaders)],
+    ['delete', () => backendApi.delete('/api/v1/tenant/business-date/history/1', requestHeaders)],
+  ])('%s resolves a 204 response to undefined before any JSON parse', async (_method, call) => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await expect(call()).resolves.toBeUndefined();
+  });
+
   it('exposes the safe problem code and request id from problem+json errors', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
@@ -115,6 +207,19 @@ describe('backendApi', () => {
       code: 'invalid_active_tenant_context',
       requestId: 'req-123',
     });
+  });
+
+  it('prefers the body request_id over the X-Request-Id response header', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'internal_error', request_id: 'req-body' }), {
+        status: 500,
+        headers: { 'x-request-id': 'req-from-header' },
+      }),
+    );
+
+    const error = await backendApi.get('/api/v1/auth/me', requestHeaders).catch((e: unknown) => e);
+
+    expect(error).toMatchObject({ status: 500, code: 'internal_error', requestId: 'req-body' });
   });
 
   it('falls back to the X-Request-Id header when the problem body has no request_id', async () => {
@@ -221,7 +326,7 @@ describe('backendApi', () => {
   });
 
   it('normalizes empty successful backend JSON responses', async () => {
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 200 }));
 
     await expect(
       backendApi.get('/api/v1/auth/organisations', requestHeaders),

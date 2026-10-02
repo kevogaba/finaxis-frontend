@@ -29,10 +29,26 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   with dotted palette-path strings (e.g. `sx={{ color: 'brand.onNavy' }}`), and route `next/link`
   through `components/navigation/next-link.tsx` when a Server Component needs to pass it as a
   `component` prop.
+- Never pass a pre-built React element from a Server Component into an MUI prop that MUI gates
+  with `isValidElement`/`cloneElement` (e.g. Chip `icon`/`avatar`/`deleteIcon`). React's Flight
+  client can deliver it to SSR as a lazy wrapper, MUI drops it, and hydration fails. Render that
+  component in a small `'use client'` file that builds the element itself and takes only primitive
+  props (see `modules/administration/business-date/components/business-date-chip.tsx`).
 - This is Material UI v9: some props renamed since earlier majors (e.g. `Stack`'s
   `alignItems`/`justifyContent`/`flexWrap` and `Checkbox`/`Radio`'s `inputRef`/`inputProps` moved
   to `sx` / `slotProps.input`). Check `node_modules/@mui/material/package.json` version and the
   installed major's migration guide before assuming an older API shape.
+- Mutations are Server Actions built on `runServerAction` (`lib/api/action-result.ts`), which calls
+  through `apiPost`/`apiPut`/`apiPatch`/`apiDelete` (`lib/api/tenant-api.ts`). Forward the
+  idempotency key the form minted when it opened (`ReasonDialog` does this) — never generate one
+  per request — so a retry after a failure replays instead of repeating the change. When
+  uncontrolled fields (a reason, a date) must survive a failed submit, dispatch the
+  `useActionState` action yourself from `onSubmit` inside `startTransition`, never through
+  `<form action={fn}>` — React resets every uncontrolled field on every submit outcome via
+  `requestFormReset` when the DOM `action` prop drives it (`ReasonDialog`/`ConfirmDialog`). That
+  reducer must wrap its call in `try/catch`, call `unstable_rethrow(error)` first so a
+  redirect/`notFound()` keeps propagating, and only then return a safe synthesized failure — an
+  escaped rejection reaches `app/error.tsx` and loses the dialog's typed input and idempotency key.
 - Every tenant-workspace data-listing UI (new lists especially) is server-paginated with state in
   the URL: page sizes come from `lib/api/paging.ts`'s `PAGE_SIZES`, and lists render
   `TablePaginationBar` (`components/data-display/table-pagination-bar.tsx`) plus, where the list

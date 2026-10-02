@@ -32,8 +32,10 @@ interface ContextSelectionFormProps {
 export function ContextSelectionForm(props: ContextSelectionFormProps) {
   const selection = useContextSelection(props);
   const { branchPage } = selection;
-  const hasNoOrganisations = selection.organisationPage.items.length === 0;
-  const canChooseOrganisation = !selection.organisationError && !hasNoOrganisations;
+  const hasOrganisations = selection.organisationPage.items.length > 0;
+  // A retry after a failed load starts from an empty page: that isn't "no organisations" yet.
+  const hasNoOrganisations = !selection.isLoadingOrganisations && !hasOrganisations;
+  const canChooseOrganisation = !selection.organisationError && hasOrganisations;
   const hasLoadedBranches = branchPage !== null;
   const hasNoBranches = hasLoadedBranches && branchPage.items.length === 0;
   // All branches (institution level) stays valid with zero branch rows (contract §A re-validates a

@@ -81,6 +81,24 @@ export interface FakeRoleAssignment {
   status: string;
 }
 
+export interface FakeBusinessDate {
+  organisationId: string;
+  date: string;
+  status: 'OPEN' | 'CLOSING' | 'CLOSED';
+}
+
+export interface FakeBusinessDateEvent {
+  organisationId: string;
+  eventType: string;
+  fromStatus: string | null;
+  toStatus: string;
+  fromDate: string | null;
+  toDate: string;
+  actorUserId: string | null;
+  reason: string | null;
+  occurredAt: string;
+}
+
 export interface FakeAuditEvent {
   id: string;
   organisationId: string;
@@ -111,6 +129,13 @@ export interface RunState {
   roles: FakeRole[];
   roleAssignments: FakeRoleAssignment[];
   auditEvents: FakeAuditEvent[];
+  businessDates: FakeBusinessDate[];
+  /** Newest first, like the API. */
+  businessDateHistory: FakeBusinessDateEvent[];
+  /** Idempotency-Key → the successful response it replays. */
+  idempotency: Map<string, { fingerprint: string; status: number; body: unknown }>;
+  /** Mutations that fail with a lock timeout before one succeeds. */
+  lockTimeoutsRemaining: number;
 }
 
 const runs = new Map<string, RunState>();
