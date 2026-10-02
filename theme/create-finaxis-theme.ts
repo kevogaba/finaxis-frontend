@@ -467,6 +467,82 @@ export function createFinaxisTheme() {
           }),
         },
       },
+      MuiStepper: {
+        // Cells, not connectors (spec §7.3): the prototype's bordered wizard header.
+        defaultProps: { connector: null },
+        styleOverrides: {
+          root: ({ theme }) => ({
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            alignItems: 'stretch',
+            // The 1px gaps over the divider-coloured root draw every cell border, for any number
+            // of steps.
+            gap: '1px',
+            overflow: 'hidden',
+            border: `1px solid ${theme.vars.palette.divider}`,
+            borderRadius: 6,
+            backgroundColor: theme.vars.palette.divider,
+            [theme.breakpoints.up('md')]: {
+              gridTemplateColumns: 'none',
+              gridAutoFlow: 'column',
+              gridAutoColumns: 'minmax(0, 1fr)',
+            },
+          }),
+        },
+      },
+      MuiStep: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            minHeight: 72,
+            padding: '13px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            backgroundColor: theme.vars.palette.background.paper,
+            // Below md, an odd last step spans the two-column grid's last row.
+            '&:nth-of-type(odd):last-of-type': { gridColumn: '1 / -1' },
+            [theme.breakpoints.up('md')]: {
+              '&:nth-of-type(odd):last-of-type': { gridColumn: 'auto' },
+            },
+          }),
+        },
+        variants: [
+          {
+            // Step has no active class; its ownerState carries `active`.
+            props: { active: true },
+            style: ({ theme }) => ({
+              backgroundColor: theme.vars.palette.status.infoBg,
+              boxShadow: `inset 0 -3px 0 ${theme.vars.palette.primary.main}`,
+            }),
+          },
+        ],
+      },
+      MuiStepLabel: {
+        styleOverrides: {
+          iconContainer: { paddingRight: 11 },
+          label: ({ theme }) => ({
+            fontSize: '0.8125rem',
+            fontWeight: 700,
+            color: theme.vars.palette.text.secondary,
+            '&.Mui-active, &.Mui-completed': {
+              color: theme.vars.palette.text.primary,
+              fontWeight: 700,
+            },
+          }),
+        },
+      },
+      MuiStepIcon: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            width: 29,
+            height: 29,
+            color: theme.vars.palette.surfaces.tertiary,
+            '&.Mui-active': { color: theme.vars.palette.primary.main },
+            '&.Mui-completed': { color: theme.vars.palette.success.main },
+            '&.Mui-active .MuiStepIcon-text': { fill: theme.vars.palette.primary.contrastText },
+          }),
+          text: ({ theme }) => ({ fill: theme.vars.palette.text.secondary, fontWeight: 800 }),
+        },
+      },
       MuiDialog: {
         styleOverrides: {
           paper: ({ theme }) => [{ borderRadius: 14 }, ...overlayShadowStyles(theme)],
