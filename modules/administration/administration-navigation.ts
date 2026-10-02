@@ -1,3 +1,4 @@
+import AccountTreeOutlined from '@mui/icons-material/AccountTreeOutlined';
 import EventOutlined from '@mui/icons-material/EventOutlined';
 import HomeOutlined from '@mui/icons-material/HomeOutlined';
 import Inventory2Outlined from '@mui/icons-material/Inventory2Outlined';
@@ -10,6 +11,12 @@ import type { WorkspaceNavigationItem } from '@/components/shell/workspace-navig
  */
 export const administrationNavigationItems: readonly WorkspaceNavigationItem[] = [
   { href: '/admin', label: 'Overview', icon: HomeOutlined },
+  {
+    href: '/admin/branches',
+    label: 'Branches',
+    icon: AccountTreeOutlined,
+    requiresAny: ['branch.view'],
+  },
   {
     href: '/admin/business-date',
     label: 'Business date',

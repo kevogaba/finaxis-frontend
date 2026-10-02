@@ -50,6 +50,10 @@ const FIELDS_WITH_CLEARS = [
   },
 ];
 
+const SEARCH_FIELDS = [
+  { kind: 'search' as const, name: 'q', label: 'Search', placeholder: 'Code or name' },
+];
+
 const DATETIME_FIELDS = [{ kind: 'datetime' as const, name: 'occurredFrom', label: 'From' }];
 const END_OF_MINUTE_FIELDS = [
   { kind: 'datetime' as const, name: 'occurredTo', label: 'To', endOfMinute: true },
@@ -350,5 +354,71 @@ describe('ListToolbar', () => {
     expect(push).toHaveBeenLastCalledWith('/admin/audit?entityType=USER&page=1', {
       scroll: false,
     });
+  });
+
+  it('commits a trimmed search on Enter, once, and resets the page', async () => {
+    search = 'status=ACTIVE&page=2';
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ListToolbar fields={SEARCH_FIELDS} resultLabel="2 branches" timeZone={NAIROBI} />,
+    );
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search' }), '  west {Enter}');
+
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith('/admin/audit?status=ACTIVE&q=west', { scroll: false });
+  });
+
+  it('skips an unchanged blur and clears the search when emptied', async () => {
+    search = 'q=west';
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ListToolbar fields={SEARCH_FIELDS} resultLabel="1 branch" timeZone={NAIROBI} />,
+    );
+    const field = screen.getByRole('searchbox', { name: 'Search' });
+    expect(field).toHaveValue('west');
+
+    await user.click(field);
+    await user.tab();
+    expect(push).not.toHaveBeenCalled();
+
+    await user.clear(field);
+    await user.tab();
+    expect(push).toHaveBeenCalledWith('/admin/audit', { scroll: false });
+  });
+
+  it('commits the moment the native clear (x) empties the box, without waiting for blur (V9)', async () => {
+    search = 'q=west';
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ListToolbar fields={SEARCH_FIELDS} resultLabel="1 branch" timeZone={NAIROBI} />,
+    );
+    const field = screen.getByRole('searchbox', { name: 'Search' });
+    expect(field).toHaveValue('west');
+
+    await user.clear(field);
+
+    // No blur/tab here: the commit must already have happened on the clearing change itself, or
+    // the box (now empty) and the still-filtered results would disagree (gate finding V9).
+    expect(push).toHaveBeenCalledWith('/admin/audit', { scroll: false });
+    expect(field).toHaveFocus();
+  });
+
+  it('resets the search box on every URL change, including back to empty (Clear filters)', () => {
+    search = '';
+    const { rerender } = renderWithProviders(
+      <ListToolbar fields={SEARCH_FIELDS} resultLabel="6 branches" timeZone={NAIROBI} />,
+    );
+    const field = screen.getByRole('searchbox', { name: 'Search' });
+    fireEvent.change(field, { target: { value: 'west' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    search = 'q=west'; // the commit lands
+    rerender(<ListToolbar fields={SEARCH_FIELDS} resultLabel="1 branch" timeZone={NAIROBI} />);
+    expect(screen.getByRole('searchbox', { name: 'Search' })).toHaveValue('west');
+
+    search = ''; // "Clear filters": the old text must not come back, nor re-commit on blur
+    rerender(<ListToolbar fields={SEARCH_FIELDS} resultLabel="6 branches" timeZone={NAIROBI} />);
+    expect(screen.getByRole('searchbox', { name: 'Search' })).toHaveValue('');
   });
 });

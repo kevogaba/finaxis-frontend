@@ -51,6 +51,7 @@ tackled separately in the platform repository.
 | BG-30 | P2       | Wrong-context 403s put a sentence in `code`; invalid JWT 401 has no body                           |
 | BG-31 | P2       | Mutations silently require the matching `.view` permission                                         |
 | BG-32 | P2       | Documentation drift in the platform repository                                                     |
+| BG-33 | P2       | Permission codes in /auth/me carry no scope                                                        |
 
 ## Details
 
@@ -371,3 +372,13 @@ or document the requirement.
 - `README.md:121-122` says API docs are off in production (environment-controlled, default on).
 - `docs/architecture/accounting-foundation.md:659-660` calls the `require_maker_checker_*` settings
   switches; the code never reads them.
+
+### BG-33 — Permission codes in `/auth/me` carry no scope · P2
+
+`/auth/me` returns only the flattened effective permission codes, so tenant-scoped gates can't be
+told apart from branch-scoped ones. Some routes check their permission at tenant scope:
+`GET /branches` (`branch.view`), and the user search and branch assignment behind the assign drawer
+(`user.view`, `user.assign_branch`). A role granting those codes only at branch scope passes the
+UI's gate and then gets a 403. Frontend handling: the backend stays the authority. The Branches
+directory shows its access-denied state (spec §6.6), and the assign drawer reports the 403 inline.
+Suggested: return each permission with its scope (tenant or the branch ids) on `/auth/me`.

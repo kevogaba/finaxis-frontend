@@ -5,6 +5,7 @@ import { matchRoute } from './router.mts';
 import type { Route } from './router.mts';
 import { authRoutes } from './routes/auth.mts';
 import { auditRoutes } from './routes/audit.mts';
+import { branchRoutes } from './routes/branches.mts';
 import { businessDateRoutes } from './routes/business-date.mts';
 import { platformTenantRoutes } from './routes/platform-tenants.mts';
 import { tenantReadRoutes } from './routes/tenant-reads.mts';
@@ -17,6 +18,7 @@ const routes: Route[] = [
   ...tenantReadRoutes,
   ...auditRoutes,
   ...businessDateRoutes,
+  ...branchRoutes,
 ];
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {

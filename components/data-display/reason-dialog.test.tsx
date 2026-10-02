@@ -237,6 +237,37 @@ describe('ReasonDialog', () => {
     });
   });
 
+  it('colours the confirm button error and marks the dialog alertdialog for tone="error" (V3)', () => {
+    renderWithProviders(
+      <ReasonDialog
+        open
+        title="Close Westlands Branch?"
+        description="Closing is permanent."
+        confirmLabel="Close branch"
+        reason="required"
+        action={() => Promise.resolve<ActionResult>({ ok: true })}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+        tone="error"
+      />,
+    );
+    expect(
+      screen.getByRole('alertdialog', { name: 'Close Westlands Branch?' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close branch' })).toHaveClass(
+      'MuiButton-colorError',
+    );
+  });
+
+  it('defaults to the primary tone: a plain dialog role and no error colour (V3)', () => {
+    setup(() => Promise.resolve<ActionResult>({ ok: true }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start close of business' })).not.toHaveClass(
+      'MuiButton-colorError',
+    );
+  });
+
   it('links the description to the dialog for assistive tech (M14)', () => {
     setup(() => Promise.resolve<ActionResult>({ ok: true }));
     expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
