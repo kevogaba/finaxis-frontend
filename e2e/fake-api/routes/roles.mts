@@ -329,7 +329,7 @@ export const roleRoutes: Route[] = [
     requirePermission(access, 'role.update');
     requirePermission(access, 'role.view');
     const role = findRole(access, context.params.role_id ?? '');
-    // The body is required (contract §D). As in the backend (BG-09a), a non-null field replaces
+    // The body is required (contract §D). As in the backend (BG-34), a non-null field replaces
     // the stored one, blank included; the UI pre-validates the name.
     const body = objectBody(await readBody(context.req), ['role_name', 'description']);
     const name = stringField(body, 'role_name', { required: false });

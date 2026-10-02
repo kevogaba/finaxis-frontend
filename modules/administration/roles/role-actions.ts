@@ -75,7 +75,7 @@ export async function updateRole(
     await apiPatch(
       `/api/v1/tenant/roles/${input.roleId}`,
       // `null` keeps the current description: it can be replaced, never removed (contract §D).
-      // Source f74e44b shows `""` would clear it (BG-09a), so a blank field never sends `""`.
+      // Source f74e44b shows `""` would clear it (BG-34), so a blank field never sends `""`.
       { role_name: input.roleName, description: input.description || null },
       input.idempotencyKey,
     );

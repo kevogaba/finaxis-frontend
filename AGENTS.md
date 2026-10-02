@@ -49,6 +49,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   reducer must wrap its call in `try/catch`, call `unstable_rethrow(error)` first so a
   redirect/`notFound()` keeps propagating, and only then return a safe synthesized failure — an
   escaped rejection reaches `app/error.tsx` and loses the dialog's typed input and idempotency key.
+- When one submit fans out to several backend writes (granting several permissions), derive each
+  write's `Idempotency-Key` from the form's minted key and the item (`grantKey` in
+  `modules/administration/roles/role-actions.ts`), never a fresh random key, so a retry replays the
+  writes that already landed.
 - Multi-field forms use React Hook Form with the zod resolver and merge a Server Action's
   `fieldErrors` back with `applyFieldErrors` (`lib/apply-field-errors.ts`). Dialogs with one or
   two fields keep `useActionState` + native constraints. Name specific guard failures (a 409/403
@@ -73,6 +77,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   read in one request with a bounded page size (`?size=100`, the backend maximum) — so it is no
   licence for an unbounded list (plan
   `docs/superpowers/plans/2026-09-27-admin-parity-13-settings.md`, Ruling 6).
+  The role grant drawer's catalogue (`modules/administration/roles`'s `getPermissionCatalogue` and
+  `listGrantedCodes`) is a fifth, named exception: it is a picker's option set, not a data-listing
+  directory — one bounded page of 100 plus the role's granted-code set, each read once and
+  filtered client-side — so it is no licence for an unbounded list (plan
+  `docs/superpowers/plans/2026-10-01-admin-parity-09-roles.md`, Ruling 6).
 - A context-scoped read goes through `lib/api/tenant-api.ts`'s `apiGet(path, schema)`, where
   `schema` is a snake_case zod schema defined in the domain's own `<domain>-contract.ts` (e.g.
   `modules/administration/audit/audit-contract.ts`) that transforms the wire shape to camelCase.
