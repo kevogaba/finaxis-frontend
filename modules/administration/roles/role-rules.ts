@@ -77,7 +77,8 @@ export function assignmentsDescription(
   role: Pick<RoleShape, 'status'>,
   holder: PermissionHolder,
 ): string {
-  return role.status !== 'ACTIVE' && canAll(holder, ['user.assign_role', 'user.view'])
+  // The permission rule lives only in canAssignRole: ask it about the role once it is ACTIVE.
+  return role.status !== 'ACTIVE' && canAssignRole({ status: 'ACTIVE' }, holder)
     ? 'Activate this role to assign it.'
     : 'Who holds this role. Institution scope applies everywhere; branch scope only while that branch is selected.';
 }

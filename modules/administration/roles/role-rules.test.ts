@@ -103,11 +103,14 @@ describe('role rules', () => {
     const activate = 'Activate this role to assign it.';
     expect(assignmentsDescription({ status: 'DISABLED' }, assigner)).toBe(activate);
     expect(assignmentsDescription({ status: 'ARCHIVED' }, assigner)).toBe(activate);
-    // An ACTIVE role, or a viewer who couldn't assign it anyway, gets the ordinary description.
+    // An ACTIVE role gets the ordinary description.
     expect(assignmentsDescription({ status: 'ACTIVE' }, assigner)).toMatch(/^Who holds this role/);
-    expect(assignmentsDescription({ status: 'DISABLED' }, { permissions: ['user.view'] })).toMatch(
-      /^Who holds this role/,
-    );
+    // So does a viewer who couldn't assign it anyway, missing either permission.
+    for (const permissions of [['user.view'], ['user.assign_role']]) {
+      expect(assignmentsDescription({ status: 'DISABLED' }, { permissions })).toMatch(
+        /^Who holds this role/,
+      );
+    }
   });
 
   it('groups the catalogue by module label, permissions by code', () => {
