@@ -72,6 +72,7 @@ describe('tenant lifecycle availability', () => {
     expect(canRetryBootstrap('QUEUED', EVERY_CODE)).toBe(false);
     expect(canRetryBootstrap(null, EVERY_CODE)).toBe(false);
     expect(canRetryBootstrap('FAILED', { permissions: ['tenant.bootstrap_retry'] })).toBe(false);
+    expect(canRetryBootstrap('FAILED', { permissions: ['tenant.view'] })).toBe(false);
   });
 });
 
@@ -137,6 +138,31 @@ describe('country, currency and timezone choices', () => {
     expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
     expect(options.currencies).toContainEqual({ value: 'KES', label: 'KES · Kenyan Shilling' });
     expect(options.timeZones).toContainEqual({ value: 'Africa/Nairobi', label: 'Africa/Nairobi' });
+  });
+
+  it('lists each country name once', () => {
+    const labels = tenantFormOptions().countries.map((option) => option.label);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it('leaves out withdrawn codes and pseudo or supranational regions', () => {
+    const codes = tenantFormOptions().countries.map((option) => option.value);
+    for (const code of ['DD', 'UK', 'XA', 'ZZ', 'EU']) expect(codes).not.toContain(code);
+  });
+
+  it('names Germany by its current code only', () => {
+    expect(tenantFormOptions().countries.filter((option) => option.label === 'Germany')).toEqual([
+      { value: 'DE', label: 'Germany' },
+    ]);
+  });
+
+  it('still offers a withdrawn country code that is stored, so amend shows it', () => {
+    const options = tenantFormOptions({
+      countryCode: 'DD',
+      baseCurrencyCode: 'KES',
+      timezone: 'Africa/Nairobi',
+    });
+    expect(options.countries[0]).toEqual({ value: 'DD', label: 'DD' });
   });
 
   it('puts a stored value the runtime does not list first, so amend still shows it', () => {

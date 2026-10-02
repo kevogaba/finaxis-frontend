@@ -171,10 +171,13 @@ export function countryName(code: string): string {
   }
 }
 
+/** Regions `Intl` names that aren't countries to put on an institution. */
+const NON_COUNTRIES: ReadonlySet<string> = new Set(['XA', 'XB', 'ZZ', 'QO', 'EU', 'EZ', 'UN']);
+
 /**
- * Every two-letter region the runtime can name, sorted by name (contract §D: `^[A-Z]{2}$`; Intl has
- * no region list). ponytail: this also lists Intl's few non-country regions (EU, UN, …); add a
- * deny-list if one confuses users.
+ * Every country the runtime can name, sorted by name (contract §D: `^[A-Z]{2}$`; Intl has no region
+ * list). Only canonical codes: `DisplayNames` also names withdrawn aliases (DD, UK, …) as their
+ * current country, which would list it twice and let a retired code be stored.
  */
 export function countryOptions(): TenantOption[] {
   const options: TenantOption[] = [];
@@ -182,7 +185,14 @@ export function countryOptions(): TenantOption[] {
     for (const second of LETTERS) {
       const code = `${first}${second}`;
       const name = REGION_NAMES.of(code);
-      if (name && name !== code) options.push({ value: code, label: name });
+      if (
+        name &&
+        name !== code &&
+        !NON_COUNTRIES.has(code) &&
+        Intl.getCanonicalLocales(`und-${code}`)[0] === `und-${code}`
+      ) {
+        options.push({ value: code, label: name });
+      }
     }
   }
   return options.sort((a, b) => a.label.localeCompare(b.label));
