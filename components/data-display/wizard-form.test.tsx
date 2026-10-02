@@ -11,6 +11,20 @@ const STEPS: WizardStep[] = [
   { label: 'Review', helper: 'Check everything' },
 ];
 
+/** The `color` the element's own emotion class declares (computed style would inherit one). */
+function ownColor(element: Element) {
+  const classes = Array.from(element.classList).map((name) => `.${name}`);
+  let color = '';
+  for (const sheet of Array.from(document.styleSheets)) {
+    for (const rule of Array.from(sheet.cssRules)) {
+      if (rule instanceof CSSStyleRule && classes.includes(rule.selectorText)) {
+        color = rule.style.color || color;
+      }
+    }
+  }
+  return color;
+}
+
 function wizard(active: number, props: Partial<ComponentProps<typeof WizardForm>> = {}) {
   return (
     <WizardForm
@@ -45,6 +59,17 @@ describe('WizardForm', () => {
     expect(screen.getByRole('form', { name: 'Create tenant draft' })).toBeInTheDocument();
     expect(screen.getByText('Step 2 of 3')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Administrator' })).toBeInTheDocument();
+  });
+
+  it('gives its muted lines the secondary text colour', () => {
+    renderWithProviders(wizard(1));
+
+    // The step counter, the stepper caption and the helper under the heading.
+    const muted = [screen.getByText('Step 2 of 3'), ...screen.getAllByText('The first user')];
+    expect(muted).toHaveLength(3);
+    expect(
+      muted.map((element) => ownColor(element).includes('--finaxis-palette-text-secondary')),
+    ).toEqual([true, true, true]);
   });
 
   it('offers Back after the first step, Continue until the last, and Cancel back to the list', () => {

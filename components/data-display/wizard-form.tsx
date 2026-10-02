@@ -78,8 +78,7 @@ export function WizardForm({
               optional={
                 <Typography
                   variant="caption"
-                  color="text.secondary"
-                  sx={{ display: { xs: 'none', sm: 'block' } }}
+                  sx={{ color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}
                 >
                   {step.helper}
                 </Typography>
@@ -94,14 +93,15 @@ export function WizardForm({
       </Stepper>
       <Paper sx={{ overflow: 'visible' }}>
         <Box sx={{ px: 6, pt: 5, pb: 4, borderBottom: 1, borderColor: 'divider' }}>
-          <Typography variant="overline" component="p" color="text.secondary">
+          <Typography variant="overline" component="p" sx={{ color: 'text.secondary' }}>
             {`Step ${active + 1} of ${steps.length}`}
           </Typography>
-          {/* A focus target only (tabIndex -1), with the browser's ring, as 08's record title. */}
+          {/* A focus target only (tabIndex -1); the theme's MuiTypography :focus-visible ring shows it,
+              as on 08's record title. */}
           <Typography ref={headingRef} tabIndex={-1} component="h2" variant="h4" sx={{ my: 1 }}>
             {current?.label}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             {current?.helper}
           </Typography>
         </Box>
