@@ -1,12 +1,21 @@
 import 'server-only';
+import { cache } from 'react';
+import { headers } from 'next/headers';
 import { z } from 'zod';
-import { backendApi } from '@/auth/backend-api';
+import { BackendApiError, backendApi } from '@/auth/backend-api';
 import { readContextToken } from '@/auth/context-cookie';
 import type { FinaxisUser } from '@/auth/auth.types';
 import {
   resolveApplicationContextModule,
   type ApplicationContext,
 } from '@/config/application-context';
+import {
+  branchPageSchema,
+  organisationPageSchema,
+  profileSchema,
+  selectBranchResponseSchema,
+  selectOrganisationResponseSchema,
+} from '@/auth/context-contract';
 import type {
   BackendBranch,
   BackendOrganisation,
@@ -31,7 +40,7 @@ export type SelectedContextProfile =
     }
   | {
       kind: 'redirect-to-context-selection';
-      reason: 'missing-context-token' | 'profile-has-no-selected-branch' | 'profile-request-failed';
+      reason: 'missing-context-token' | 'invalid-context';
     };
 
 export class ContextTokenMissingError extends Error {
@@ -69,8 +78,8 @@ export function parseDiscoveryPageQuery(
   return parsed.success ? parsed.data : null;
 }
 
-async function requireContextToken(headers: Headers): Promise<string> {
-  const contextToken = await readContextToken(headers);
+async function requireContextToken(requestHeaders: Headers): Promise<string> {
+  const contextToken = await readContextToken(requestHeaders);
   if (!contextToken) {
     throw new ContextTokenMissingError();
   }
@@ -79,49 +88,53 @@ async function requireContextToken(headers: Headers): Promise<string> {
 }
 
 export async function discoverOrganisations(
-  headers: Headers,
+  requestHeaders: Headers,
   page = DEFAULT_DISCOVERY_PAGE,
 ): Promise<Page<BackendOrganisation>> {
   const discoveryPage = validateDiscoveryPage(page);
-  return backendApi.get<Page<BackendOrganisation>>(
+  const raw = await backendApi.get<unknown>(
     `/api/v1/auth/organisations?page=${discoveryPage}&size=${DISCOVERY_PAGE_SIZE}`,
-    headers,
+    requestHeaders,
   );
+  return organisationPageSchema.parse(raw);
 }
 
 export async function selectOrganisation(
-  headers: Headers,
+  requestHeaders: Headers,
   organisationId: string,
 ): Promise<SelectOrganisationResponse> {
-  return backendApi.post<SelectOrganisationResponse>(
+  const raw = await backendApi.post<unknown>(
     '/api/v1/auth/select-organisation',
     { organisation_id: validateOrganisationId(organisationId) },
-    headers,
+    requestHeaders,
   );
+  return selectOrganisationResponseSchema.parse(raw);
 }
 
 export async function discoverBranches(
-  headers: Headers,
+  requestHeaders: Headers,
   page = DEFAULT_DISCOVERY_PAGE,
 ): Promise<Page<BackendBranch>> {
   const discoveryPage = validateDiscoveryPage(page);
-  return backendApi.get<Page<BackendBranch>>(
+  const raw = await backendApi.get<unknown>(
     `/api/v1/auth/branches?page=${discoveryPage}&size=${DISCOVERY_PAGE_SIZE}`,
-    headers,
-    await requireContextToken(headers),
+    requestHeaders,
+    await requireContextToken(requestHeaders),
   );
+  return branchPageSchema.parse(raw);
 }
 
 export async function selectBranch(
-  headers: Headers,
+  requestHeaders: Headers,
   branchId: string,
 ): Promise<SelectBranchResponse> {
-  return backendApi.post<SelectBranchResponse>(
+  const raw = await backendApi.post<unknown>(
     '/api/v1/auth/select-branch',
     { branch_id: validateBranchId(branchId) },
-    headers,
-    await requireContextToken(headers),
+    requestHeaders,
+    await requireContextToken(requestHeaders),
   );
+  return selectBranchResponseSchema.parse(raw);
 }
 
 export function profileToFinaxisUser(
@@ -156,29 +169,41 @@ export function profileToFinaxisUser(
   };
 }
 
+function isAuthFailure(error: unknown): boolean {
+  return (
+    error instanceof BackendApiError &&
+    (error.status === 401 || error.code === 'invalid_active_tenant_context')
+  );
+}
+
 /**
- * Resolves the only context that is safe to pass to the authenticated shell.
- * The signed context token stays in the HttpOnly cookie and is never returned
- * from this server-only boundary.
+ * Resolves the only context that is safe to pass to the authenticated shell. The signed context
+ * token stays in the HttpOnly cookie. A 401 (expired session) or `invalid_active_tenant_context`
+ * (stale or revoked context) sends the user back through context selection; any other failure —
+ * another 403 such as `forbidden` for a role without `iam.profile.read`, a backend outage, or a
+ * response that no longer matches the contract — throws to the error boundary rather than looping.
  */
-export async function getSelectedContextProfile(headers: Headers): Promise<SelectedContextProfile> {
-  const contextToken = await readContextToken(headers);
+export async function getSelectedContextProfile(
+  requestHeaders: Headers,
+): Promise<SelectedContextProfile> {
+  const contextToken = await readContextToken(requestHeaders);
   if (!contextToken) {
     return { kind: 'redirect-to-context-selection', reason: 'missing-context-token' };
   }
 
-  let profile: BackendProfile;
+  let raw: unknown;
   try {
-    profile = await backendApi.get<BackendProfile>('/api/v1/auth/me', headers, contextToken);
-  } catch {
-    return { kind: 'redirect-to-context-selection', reason: 'profile-request-failed' };
+    raw = await backendApi.get<unknown>('/api/v1/auth/me', requestHeaders, contextToken);
+  } catch (error) {
+    if (isAuthFailure(error)) {
+      return { kind: 'redirect-to-context-selection', reason: 'invalid-context' };
+    }
+    throw error;
   }
 
-  if (!profile.organisation || !profile.selected_branch) {
-    return {
-      kind: 'redirect-to-context-selection',
-      reason: 'profile-has-no-selected-branch',
-    };
+  const profile = profileSchema.parse(raw);
+  if (!profile.organisation) {
+    return { kind: 'redirect-to-context-selection', reason: 'invalid-context' };
   }
 
   return {
@@ -187,7 +212,14 @@ export async function getSelectedContextProfile(headers: Headers): Promise<Selec
     context: {
       module: resolveApplicationContextModule(profile.organisation.id),
       organization: { id: profile.organisation.id, name: profile.organisation.name },
-      branch: { id: profile.selected_branch.id, name: profile.selected_branch.name },
+      branch: profile.selected_branch
+        ? { id: profile.selected_branch.id, name: profile.selected_branch.name }
+        : null,
     },
   };
 }
+
+/** Per-request memoized profile for Server Components (one `/auth/me` call per render). */
+export const getCurrentContextProfile = cache(async (): Promise<SelectedContextProfile> =>
+  getSelectedContextProfile(await headers()),
+);

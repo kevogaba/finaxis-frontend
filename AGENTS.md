@@ -47,6 +47,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - The backend's wire format is snake_case and differs from the published OpenAPI casing; never
   generate a client from the OpenAPI as-is. Follow
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`.
+- `/auth/*` responses are parsed by the zod schemas in `auth/context-contract.ts` — never trust an
+  unparsed backend body.
+- `ApplicationContext.branch` is nullable: `null` means All branches (institution level), not "no
+  branch selected yet." Render it as `branch?.name ?? 'All branches'`, never assume a branch exists.
 
 ## Authentication rules
 

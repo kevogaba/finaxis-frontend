@@ -31,6 +31,10 @@ test.describe('Protected routes without a session', () => {
 });
 
 test.describe('Protected routes with a mocked authenticated session', () => {
+  // /select-context can be the first hit of its route tree under a cold `next dev` compile (see
+  // the equivalent bound in e2e/context-selection.spec.ts).
+  test.describe.configure({ timeout: 60000 });
+
   test('stops /admin at shell-free context selection until context is chosen', async ({
     context,
     page,
@@ -39,8 +43,10 @@ test.describe('Protected routes with a mocked authenticated session', () => {
 
     await page.goto('/admin');
 
-    await expect(page).toHaveURL(/\/select-context\?next=%2Fadmin$/);
-    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fadmin$/, { timeout: 20000 });
+    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByRole('banner')).toHaveCount(0);
   });
 });

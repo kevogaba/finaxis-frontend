@@ -135,6 +135,7 @@ app/
 │   ├── admin/                 # Overview page; later layers add Approval queue, Users & access,
 │   │                            # Branches, Roles & permissions, Settings, Business date, and
 │   │                            # Audit trail as their own nav items (spec §8)
+│   │   └── layout.tsx           # Redirects a platform context to /platform-admin
 │   ├── platform-admin/         # Read-only workspace, gated to the platform organisation's context
 │   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
 │   │   └── tenants/             # Live tenant directory + tenant detail (dynamic route)
@@ -144,6 +145,7 @@ app/
 ├── globals.css               # CSS layers, Tailwind import, MUI/Tailwind bridge, restrained defaults
 ├── layout.tsx                 # Root layout: fonts, AppRouterCacheProvider, AppProviders
 ├── loading.tsx / not-found.tsx
+├── error.tsx                  # Root error boundary: shows only the digest, never a server message
 └── icon.tsx                   # Generated favicon (temporary Finaxis mark)
 auth/
 ├── auth.ts / auth-client.ts  # Better Auth server instance + browser client (keycloak() plugin)
@@ -153,6 +155,8 @@ auth/
 ├── context-service.ts        # Server-only backend discovery/selection/profile calls
 ├── context-cookie.ts          # HttpOnly context token cookie (never sent to the browser)
 ├── context-browser-dto.ts     # Whitelisted/camelCased context shapes exposed to the browser
+├── context-contract.ts        # Zod schemas parsing every `/auth/*` response (wire shapes)
+├── context-destination.ts     # Prefix-allow-listed post-selection `next` destination
 ├── context-selection-redirect.ts # Builds the `/select-context?next=` redirect from proxy.ts's header
 └── build-keycloak-logout-url.ts
 config/
@@ -164,11 +168,14 @@ modules/
 components/
 ├── auth/                     # Keycloak sign-in button, login status alert
 ├── branding/                  # FinaxisLogo, ProductFeature
-├── context/                    # ContextSelectionPage (organisation/branch picker)
+├── context/                    # Shared organisation/branch selection: ContextSelectionPage,
+│                                # ContextSelectionForm, useContextSelection, context-api,
+│                                # PaginationControls
 ├── navigation/                 # next/link client re-export (Next.js 16 RSC boundary workaround)
 ├── profile/                   # Profile view
-├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle
-└── shell/                      # AppShell, header, drawer, user menu, workspace navigation
+├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle, ToastProvider
+└── shell/                      # AppShell, header, drawer, context switcher dialog, app switcher,
+                                 # user menu, workspace navigation
 theme/
 ├── tokens.ts                   # Raw token values (LIGHT/DARK/BRAND) — the source of truth
 ├── create-finaxis-theme.ts   # Single theme, light/dark colorSchemes, component defaults
@@ -220,6 +227,32 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
 - Server-side organisation and branch discovery and selection are wired through `/select-context`
   before the authenticated shell renders. The selected backend context token is persisted only in
   an HttpOnly cookie; browser route responses contain status-safe data and never expose the token.
+- A multi-branch member can choose "All branches (institution level)" instead of a single branch;
+  the header, app shell footer, and platform-admin page render `branch?.name ?? 'All branches'` for
+  that nullable-branch context (AGENTS.md), and the profile page renders the same nullable selected
+  branch as "All branches (institution level)".
+- The app bar's context button (`components/shell/context-switcher-dialog.tsx`) re-runs the same
+  organisation/branch selection in a dialog, so a signed-in user can switch organisation or branch,
+  or drop to All branches, at any time. A same-organisation branch switch refreshes in place; an
+  organisation change also navigates to that organisation's workspace (`/admin` or
+  `/platform-admin`). Picking an organisation, the current one included, always re-POSTs
+  select-organisation, because the context cookie is shared across tabs and may no longer match
+  what this tab shows; that POST drops any pinned branch, so closing the dialog at the branch step
+  lands at All branches.
+- The two-tile app switcher (`components/shell/app-switcher.tsx`) moves a platform member between
+  the Administration and Platform Administration workspaces. Multi-branch platform members land at
+  All branches from the switcher; they pin a specific branch afterwards with the context button. A
+  failed auto-pin (server error) also lands at All branches; one that fails because the context was
+  rejected or already gone (403/409) instead sends the user to `/select-context` with no toast. A
+  rejected organisation POST from the switcher opens the context dialog with no further explanation.
+- Deep links into a protected route survive `/select-context` by path only: the redirect's `next`
+  query param is validated against a prefix allow-list (`auth/context-destination.ts`) before the
+  post-selection redirect uses it, so an unrecognized or external value falls back to `/profile`;
+  `SAFE_PATH` rejects a `?`, so a deep link's own query string (e.g. tenant-directory paging) is
+  dropped, not preserved.
+- `app/error.tsx` is the root error boundary for anything thrown below the root layout, including a
+  backend outage or a response that no longer matches the contract. It shows only Next's error
+  digest as a support reference; server error messages are never rendered.
 - The profile page renders the backend `/api/v1/auth/me` result for the selected context, including
   organisation, selected branch, assigned branches, roles, and permissions.
 - Authorization/permission enforcement remains a backend concern; UI-displayed roles and

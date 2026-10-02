@@ -151,6 +151,41 @@ describe('SelectContextPage', () => {
     );
   });
 
+  it('preserves a nested in-app path as the destination', async () => {
+    getAuthenticatedUser.mockResolvedValueOnce({
+      branches: [],
+      email: 'jane.muthoni@finaxis.test',
+      id: 'user-1',
+      name: 'Jane Muthoni',
+      roles: [],
+    });
+    discoverOrganisations.mockResolvedValueOnce({
+      items: [],
+      page: {
+        has_next: false,
+        has_previous: false,
+        number: 0,
+        size: 25,
+        total_items: 0,
+        total_pages: 0,
+      },
+    });
+
+    const ui = await SelectContextPage({
+      searchParams: Promise.resolve({
+        next: '/platform-admin/tenants/99999999-9999-4999-8999-999999999999',
+        page: '0',
+      }),
+    });
+    render(ui);
+
+    expect(renderedSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destination: '/platform-admin/tenants/99999999-9999-4999-8999-999999999999',
+      }),
+    );
+  });
+
   it('falls back to the fixed profile destination for unsafe redirect requests', async () => {
     getAuthenticatedUser.mockResolvedValueOnce({
       branches: [],

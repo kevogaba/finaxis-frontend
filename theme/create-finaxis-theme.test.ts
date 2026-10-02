@@ -1,6 +1,9 @@
+import { getContrastRatio } from '@mui/material/styles';
 import { describe, expect, it } from 'vitest';
 import { createFinaxisTheme } from './create-finaxis-theme';
 import { BRAND, DARK, LIGHT } from './tokens';
+
+const ALERT_SEVERITIES = ['success', 'warning', 'error', 'info'] as const;
 
 describe('createFinaxisTheme', () => {
   const theme = createFinaxisTheme();
@@ -67,5 +70,26 @@ describe('createFinaxisTheme', () => {
     expect(theme.transitions.duration.shortest).toBe(150);
     expect(theme.transitions.duration.shorter).toBe(175);
     expect(theme.transitions.duration.short).toBe(200);
+  });
+
+  it('keeps filled Alert text at or above 4.5:1 contrast (WCAG AA, body2 12.5px) in both schemes', () => {
+    // MUI 9.4 paints a *light*-scheme filled Alert on `<severity>.main`, but a *dark*-scheme one
+    // on `<severity>.dark` (darken 0.3) with white text — success/warning/error all fall below
+    // 4.5:1 there. theme/contrast.ts only understands #RRGGBB, not the rgb()/var() strings MUI's
+    // getContrastRatio returns, so this uses MUI's own helper.
+    if (!light || !dark) {
+      throw new Error('Expected both colour schemes to produce a palette.');
+    }
+    for (const severity of ALERT_SEVERITIES) {
+      const lightBg = light[severity].main;
+      const lightFg = light.Alert[`${severity}FilledColor`];
+      expect(getContrastRatio(lightFg, lightBg)).toBeGreaterThanOrEqual(4.5);
+
+      const darkBg = dark.Alert[`${severity}FilledBg`];
+      const darkFg = dark.Alert[`${severity}FilledColor`];
+      expect(getContrastRatio(darkFg, darkBg)).toBeGreaterThanOrEqual(4.5);
+      // Pins the override itself, so a silently dropped `palette.Alert` change fails here too.
+      expect(darkBg).toBe(DARK[severity].main);
+    }
   });
 });

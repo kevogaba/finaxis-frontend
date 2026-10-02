@@ -11,6 +11,10 @@ const ORGANISATION_ID = '11111111-1111-4111-8111-111111111111';
 const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
 
 test.describe('Authenticated context selection', () => {
+  // /profile and /select-context can be the first hit of their route tree under a cold `next dev`
+  // compile.
+  test.describe.configure({ timeout: 60000 });
+
   test('stops authenticated profile access at shell-free /select-context', async ({
     context,
     page,
@@ -19,8 +23,10 @@ test.describe('Authenticated context selection', () => {
 
     await page.goto('/profile');
 
-    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/);
-    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/, { timeout: 20000 });
+    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByRole('banner')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Users', exact: true })).toHaveCount(0);
   });
@@ -31,7 +37,7 @@ test.describe('Authenticated context selection', () => {
   }, testInfo) => {
     await authenticate(context, testInfo);
     await page.goto('/profile');
-    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/);
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/, { timeout: 20000 });
 
     const organisationRequest = page.waitForRequest(
       sameOriginRequest(testInfo, '/api/context/organisation', 'POST'),
@@ -57,9 +63,9 @@ test.describe('Authenticated context selection', () => {
     const branchPost = await branchRequest;
     expect(branchPost.postDataJSON()).toEqual({ branch_id: BRANCH_ID });
 
-    await expect(page).toHaveURL(/\/profile$/);
+    await expect(page).toHaveURL(/\/profile$/, { timeout: 15000 });
     const banner = page.getByRole('banner');
-    await expect(banner.getByText('Administration')).toBeVisible();
+    await expect(banner.getByText('Administration')).toBeVisible({ timeout: 15000 });
     await expect(banner.getByText('Greenfield SACCO')).toBeVisible();
     await expect(banner.getByText('Head Office')).toBeVisible();
     const main = page.getByRole('main');
@@ -103,8 +109,10 @@ test.describe('Authenticated context selection', () => {
     await selectMuiOption(page, 'Organisation', /Greenfield SACCO/);
     expect((await organisationResponse).status()).toBe(403);
 
+    // A 403 here can never succeed on retry, so it gets the access-denied copy, not the generic
+    // "We couldn't update your context" retryable one.
     await expect(
-      page.getByRole('alert').filter({ hasText: "We couldn't update your context" }),
+      page.getByRole('alert').filter({ hasText: 'You do not have access to this context' }),
     ).toBeVisible();
     await expect(page.getByText(/secret|token|membership/i)).toHaveCount(0);
     await expect(page).toHaveURL(/\/select-context$/);
@@ -120,8 +128,10 @@ test.describe('Authenticated context selection', () => {
 
     await page.goto('/profile');
 
-    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/);
-    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/, { timeout: 20000 });
+    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByRole('banner')).toHaveCount(0);
     await expect(page.getByText('Backend Jane Manager')).toHaveCount(0);
   });

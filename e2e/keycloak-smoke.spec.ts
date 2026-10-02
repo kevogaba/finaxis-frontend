@@ -30,8 +30,8 @@ test.describe('Real Keycloak authentication (requires the platform docker compos
     // drawer's keepMounted copy), which would otherwise make this a strict-mode violation.
     await expect(banner.getByText(/greenfield sacco/i)).toBeVisible();
 
-    await page.getByRole('button', { name: 'Switch application' }).click();
-    await expect(page.getByRole('menuitem', { name: /administration/i })).toBeVisible();
+    await page.getByRole('button', { name: 'Switch application', exact: true }).click();
+    await expect(page.getByRole('button', { name: /^Administration/ })).toBeVisible();
     await page.keyboard.press('Escape');
 
     // The Users page no longer exists until PR 10; assert the rail's Overview link instead.

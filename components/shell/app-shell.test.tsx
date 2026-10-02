@@ -6,9 +6,14 @@ import type { FinaxisUser } from '@/auth/auth.types';
 import type { ApplicationContext } from '@/config/application-context';
 import { AppShell } from './app-shell';
 
+// A stable router object: the real Next router is memoized, and the context dialog's load
+// effect depends on `[open, router]`, so a fresh object per render would re-run it every render.
+const { router } = vi.hoisted(() => ({
+  router: { push: vi.fn(), refresh: vi.fn(), replace: vi.fn() },
+}));
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
-  return { ...actual, usePathname: () => '/platform-admin' };
+  return { ...actual, usePathname: () => '/platform-admin', useRouter: () => router };
 });
 
 const USER: FinaxisUser = {
@@ -29,7 +34,12 @@ const PLATFORM: ApplicationContext = {
 describe('AppShell', () => {
   it('renders the module navigation filtered by permissions, the page, and the footer', () => {
     renderWithProviders(
-      <AppShell user={USER} context={PLATFORM} initialNavCollapsed={false}>
+      <AppShell
+        user={USER}
+        context={PLATFORM}
+        initialNavCollapsed={false}
+        platformOrganisationId="platform"
+      >
         <div>Page content</div>
       </AppShell>,
     );
@@ -47,6 +57,7 @@ describe('AppShell', () => {
         user={{ ...USER, permissions: ['tenant.view'] }}
         context={PLATFORM}
         initialNavCollapsed={false}
+        platformOrganisationId="platform"
       >
         <div />
       </AppShell>,
@@ -58,7 +69,12 @@ describe('AppShell', () => {
   it('persists the collapse preference in a cookie', async () => {
     const user = userEvent.setup();
     renderWithProviders(
-      <AppShell user={USER} context={PLATFORM} initialNavCollapsed={false}>
+      <AppShell
+        user={USER}
+        context={PLATFORM}
+        initialNavCollapsed={false}
+        platformOrganisationId="platform"
+      >
         <div />
       </AppShell>,
     );
@@ -72,7 +88,12 @@ describe('AppShell', () => {
   it('clears the collapse cookie when the rail expands again', async () => {
     const user = userEvent.setup();
     renderWithProviders(
-      <AppShell user={USER} context={PLATFORM} initialNavCollapsed={false}>
+      <AppShell
+        user={USER}
+        context={PLATFORM}
+        initialNavCollapsed={false}
+        platformOrganisationId="platform"
+      >
         <div />
       </AppShell>,
     );
@@ -89,7 +110,12 @@ describe('AppShell', () => {
   it('opens the mobile navigation drawer from the header button', async () => {
     const user = userEvent.setup();
     renderWithProviders(
-      <AppShell user={USER} context={PLATFORM} initialNavCollapsed={false}>
+      <AppShell
+        user={USER}
+        context={PLATFORM}
+        initialNavCollapsed={false}
+        platformOrganisationId="platform"
+      >
         <div />
       </AppShell>,
     );

@@ -10,7 +10,7 @@ import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import NextLink from '@/components/navigation/next-link';
-import { getSelectedContextProfile } from '@/auth/context-service';
+import { getCurrentContextProfile } from '@/auth/context-service';
 import { PlatformPageShell } from '@/modules/platform-administration/components/platform-page-shell';
 import { platformAdministrationService } from '@/modules/platform-administration/platform-administration-service';
 import { safeParseTenantListQuery } from '@/modules/platform-administration/platform-administration-queries';
@@ -70,7 +70,7 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
   const requestHeaders = await headers();
   const query =
     safeParseTenantListQuery(toUrlSearchParams(await searchParams)) ?? DEFAULT_TENANT_LIST_QUERY;
-  const selectedContext = await getSelectedContextProfile(requestHeaders);
+  const selectedContext = await getCurrentContextProfile();
 
   if (selectedContext.kind !== 'resolved') {
     redirect('/select-context');
@@ -109,7 +109,9 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
                   <Typography color="text.secondary" variant="body2">
                     Branch:
                   </Typography>
-                  <Typography variant="body2">{selectedContext.context.branch.name}</Typography>
+                  <Typography variant="body2">
+                    {selectedContext.context.branch?.name ?? 'All branches'}
+                  </Typography>
                 </Stack>
                 <Stack direction="row" spacing={1}>
                   <Typography color="text.secondary" variant="body2">

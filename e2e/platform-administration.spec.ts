@@ -37,7 +37,9 @@ test.describe('Platform administration workspace', () => {
     expect((await organisationResponse).status()).toBe(200);
 
     await expect(page).toHaveURL(/\/platform-admin\/tenants$/, { timeout: 15000 });
-    await expect(page.getByRole('heading', { level: 1, name: 'Tenant directory' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Tenant directory' })).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByRole('link', { name: 'Acme SACCO' })).toHaveAttribute(
       'href',
       `/platform-admin/tenants/${PLATFORM_TENANT_ID}`,

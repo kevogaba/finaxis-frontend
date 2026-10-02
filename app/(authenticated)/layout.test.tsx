@@ -31,14 +31,18 @@ vi.mock('next/headers', () => ({
   headers: vi.fn(() => new Headers()),
 }));
 
+vi.mock('@/config/env.server', () => ({
+  serverEnv: { PLATFORM_ORGANISATION_ID: 'platform-org' },
+}));
+
 const getAuthenticatedUser = vi.fn();
 vi.mock('@/auth/get-authenticated-user', () => ({
   getAuthenticatedUser: (...args: unknown[]) => getAuthenticatedUser(...args) as unknown,
 }));
 
-const getSelectedContextProfile = vi.fn();
+const getCurrentContextProfile = vi.fn();
 vi.mock('@/auth/context-service', () => ({
-  getSelectedContextProfile: (...args: unknown[]) => getSelectedContextProfile(...args) as unknown,
+  getCurrentContextProfile: (...args: unknown[]) => getCurrentContextProfile(...args) as unknown,
   profileToFinaxisUser: (profile: Record<string, unknown>, fallbackUser: unknown) =>
     profileToFinaxisUser(profile, fallbackUser) as unknown,
 }));
@@ -48,14 +52,16 @@ vi.mock('@/components/shell/app-shell', () => ({
     children,
     context,
     initialNavCollapsed,
+    platformOrganisationId,
     user,
   }: {
     children: React.ReactNode;
     context: unknown;
     initialNavCollapsed: boolean;
+    platformOrganisationId: unknown;
     user: unknown;
   }) => {
-    renderedShell({ context, initialNavCollapsed, user });
+    renderedShell({ context, initialNavCollapsed, platformOrganisationId, user });
     return children;
   },
 }));
@@ -93,7 +99,7 @@ describe('AuthenticatedLayout', () => {
       selected_branch: { id: 'branch-1', code: 'HQ', name: 'Headquarters', status: 'ACTIVE' },
       user_id: 'backend-user-1',
     };
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       context: {
         branch: { id: 'branch-1', name: 'Headquarters' },
         module: { id: 'administration', name: 'Administration' },
@@ -115,6 +121,7 @@ describe('AuthenticatedLayout', () => {
         organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
       },
       initialNavCollapsed: false,
+      platformOrganisationId: 'platform-org',
       user: {
         branches: [{ id: 'branch-1', name: 'Headquarters' }],
         email: 'backend.jane@finaxis.test',
@@ -137,7 +144,7 @@ describe('AuthenticatedLayout', () => {
     );
 
     expect(redirect).toHaveBeenCalledWith('/login?reason=session_expired');
-    expect(getSelectedContextProfile).not.toHaveBeenCalled();
+    expect(getCurrentContextProfile).not.toHaveBeenCalled();
     expect(renderedShell).not.toHaveBeenCalled();
   });
 
@@ -149,7 +156,7 @@ describe('AuthenticatedLayout', () => {
       roles: [],
       branches: [],
     });
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       kind: 'redirect-to-context-selection',
       reason: 'missing-context-token',
     });
@@ -173,7 +180,7 @@ describe('AuthenticatedLayout', () => {
       roles: [],
       branches: [],
     });
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       kind: 'redirect-to-context-selection',
       reason: 'missing-context-token',
     });
@@ -197,7 +204,7 @@ describe('AuthenticatedLayout', () => {
       roles: [],
       branches: [],
     });
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       context: {
         branch: { id: 'branch-1', name: 'Headquarters' },
         module: { id: 'administration', name: 'Administration' },
@@ -233,7 +240,7 @@ describe('AuthenticatedLayout', () => {
       roles: [],
       branches: [],
     });
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       context: {
         branch: { id: 'branch-1', name: 'Headquarters' },
         module: { id: 'administration', name: 'Administration' },

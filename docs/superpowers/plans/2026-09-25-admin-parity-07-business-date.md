@@ -1529,6 +1529,7 @@ it('renders the business date slot', () => {
     <ApplicationContextProvider value={CONTEXT}>
       <GlobalHeader
         user={USER}
+        platformOrganisationId="platform"
         onOpenNavigation={vi.fn()}
         onOpenContextSwitcher={vi.fn()}
         businessDate={<span>Business date slot</span>}
@@ -2424,7 +2425,7 @@ test.describe('business date', () => {
 
     await run(page, 'Start close of business', 'End of day');
     await expect(
-      page.getByRole('status').filter({ hasText: 'Close of business started' }),
+      page.getByRole('alert').filter({ hasText: 'Close of business started' }),
     ).toBeVisible();
     await expect(hero(page).getByText('Closing', { exact: true })).toBeVisible();
     await expect(historyRows(page).nth(1)).toContainText('Close of business started');

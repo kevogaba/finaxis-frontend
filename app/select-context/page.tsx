@@ -8,19 +8,10 @@ import {
   toBrowserOrganisationPage,
 } from '@/auth/context-browser-dto';
 import { discoverOrganisations, parseDiscoveryPageQuery } from '@/auth/context-service';
-import {
-  ContextSelectionPage,
-  type ContextSelectionDestination,
-} from '@/components/context/context-selection-page';
+import { safeContextDestination } from '@/auth/context-destination';
+import { ContextSelectionPage } from '@/components/context/context-selection-page';
 
 export const metadata: Metadata = { title: 'Select context' };
-
-const ALLOWED_DESTINATIONS: readonly ContextSelectionDestination[] = [
-  '/profile',
-  '/admin',
-  '/platform-admin',
-  '/platform-admin/tenants',
-];
 
 interface SelectContextPageProps {
   searchParams?: Promise<{
@@ -42,12 +33,9 @@ function firstParam(value: string | string[] | undefined): string | undefined {
 
 async function selectedDestination(
   searchParams: SelectContextPageProps['searchParams'],
-): Promise<ContextSelectionDestination> {
+): Promise<string> {
   const params = (await searchParams) ?? {};
-  const requestedDestination = firstParam(params.next) ?? firstParam(params.returnTo);
-  return (
-    ALLOWED_DESTINATIONS.find((destination) => destination === requestedDestination) ?? '/profile'
-  );
+  return safeContextDestination(firstParam(params.next) ?? firstParam(params.returnTo));
 }
 
 async function selectedDiscoveryPage(

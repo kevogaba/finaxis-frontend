@@ -22,7 +22,7 @@ describe('ProfileView', () => {
     expect(screen.getByText('No branches assigned')).toBeInTheDocument();
     expect(screen.getByText('No application roles assigned')).toBeInTheDocument();
     expect(screen.getByText('No organisation assigned')).toBeInTheDocument();
-    expect(screen.getByText('No branch selected')).toBeInTheDocument();
+    expect(screen.getByText('All branches (institution level)')).toBeInTheDocument();
     expect(screen.getByText('No application permissions assigned')).toBeInTheDocument();
   });
 
