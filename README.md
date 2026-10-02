@@ -375,12 +375,14 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   `GET /tenant/roles`: code/name search, status and system/custom filters, and sortable
   Role/Code/Status headers. It creates and edits custom roles and activates or deactivates them.
   It grants permissions from the catalogue (search, risk filter, grouped by module, several per
-  submit) and removes them after a confirmation. It also assigns or revokes the role institution-
-  wide or at one branch. The record page renders Overview, Permissions, Assignments, and Audit
-  tabs. Known limits:
+  submit) and removes them after a confirmation. It also assigns or revokes the role
+  institution-wide or at one branch. The record page renders Overview, Permissions, Assignments,
+  and Audit tabs. Known limits:
   - The directory shows only what role summaries carry: no description, created date, or counts
     (`docs/backend-gaps.md` BG-09, BG-15). Its default order is newest first.
   - The toolbar search commits on Enter or blur, not as you type.
+  - Backend `validation_failed` violations aren't mapped onto form fields; the forms apply the same
+    rules client-side (`docs/backend-gaps.md` BG-09).
   - System roles are immutable (the backend answers 409), so their edit, status, and permission
     controls are hidden. They can still be assigned.
   - A grant submit carries up to 25 permissions. Each is its own write, with an idempotency key
