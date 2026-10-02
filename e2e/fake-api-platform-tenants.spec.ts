@@ -56,12 +56,20 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
     // Write-only (BG-14): never returned.
     expect(Object.keys(detail)).not.toContain('legal_name');
 
+    // A valid body plus one property the wire format doesn't know. Were unknown properties ignored,
+    // this would answer 201: a body that also lacked a required field would hide that.
     const camel = await request.post(api('/platform/tenants'), {
       headers,
-      data: { tenantCode: 'camel-case' },
+      data: { ...DRAFT, tenant_code: 'camel-case', tenantCode: 'camel-case' },
     });
     expect(camel.status()).toBe(400);
     expect(await camel.json()).toMatchObject({ code: 'invalid_json' });
+    // Nothing was created, and the same body without the extra property is valid.
+    const withoutExtra = await request.post(api('/platform/tenants'), {
+      headers,
+      data: { ...DRAFT, tenant_code: 'camel-case' },
+    });
+    expect(withoutExtra.status()).toBe(201);
 
     const noPhone = await request.post(api('/platform/tenants'), {
       headers,
@@ -170,6 +178,27 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
       bootstrap_status: 'PROVISIONING_IDENTITY',
       bootstrap_failure_code: null,
     });
+  });
+
+  test('refuses an unknown property on a reason body too, before the transition runs', async ({
+    request,
+  }) => {
+    const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
+    const suspend = api(`/platform/tenants/${IDS.acme}/suspend`);
+    // Acme is ACTIVE and the reason is valid: only the extra property is wrong.
+    const extra = await request.post(suspend, {
+      headers,
+      data: { reason: 'Compliance review', reasonText: 'x' },
+    });
+    expect(extra.status()).toBe(400);
+    expect(await extra.json()).toMatchObject({ code: 'invalid_json' });
+    // Still ACTIVE: the same reason alone suspends it.
+    const suspended = await request.post(suspend, {
+      headers,
+      data: { reason: 'Compliance review' },
+    });
+    expect(suspended.status()).toBe(200);
+    expect(await suspended.json()).toMatchObject({ status: 'SUSPENDED' });
   });
 
   test('seeds the platform organisation, Acme and one institution per lifecycle state', async ({
