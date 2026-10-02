@@ -184,6 +184,25 @@ describe('tenant actions', () => {
     });
   });
 
+  it('names the amend 422s without the settings, which an amend never sends', async () => {
+    const amend = () => form({ ...FIELDS, idempotencyKey: KEY, tenantId: TENANT });
+
+    apiPatch.mockRejectedValueOnce(
+      new BackendApiError(422, { code: 'accounting.currency_invalid' }),
+    );
+    expect(await actions.amendTenantDraft(null, amend())).toMatchObject({
+      code: 'accounting.currency_invalid',
+      formError: expect.not.stringMatching(/setting/i) as unknown,
+      fieldErrors: { baseCurrencyCode: "The platform can't settle in this currency." },
+    });
+
+    apiPatch.mockRejectedValueOnce(new BackendApiError(422, { code: 'invalid_operation' }));
+    expect(await actions.amendTenantDraft(null, amend())).toMatchObject({
+      code: 'invalid_operation',
+      formError: expect.not.stringMatching(/setting/i) as unknown,
+    });
+  });
+
   it('validates on the server too: a bad phone never reaches the pre-check or the backend', async () => {
     const result = await actions.createTenantDraft(
       null,

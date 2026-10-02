@@ -40,8 +40,9 @@ const requiredReason = z
   .max(500, 'Keep the reason under 500 characters.');
 
 /** Create and amend share these causes (contract §D, §I). Each 422 names its likely field and
- * hedges: the currency check also covers the base currency setting, the value check the settings. */
-function explainDraft(result: ActionResult): ActionResult {
+ * hedges. Only create sends settings, so only its copy points at the base currency setting and the
+ * initial settings. */
+function explainDraft(result: ActionResult, withSettings: boolean): ActionResult {
   const taken = explain(
     result,
     TENANT_CODE_TAKEN,
@@ -51,13 +52,17 @@ function explainDraft(result: ActionResult): ActionResult {
   const currency = explain(
     taken,
     'accounting.currency_invalid',
-    "The platform can't settle in this currency. Choose another base currency, or clear the base currency setting.",
+    withSettings
+      ? "The platform can't settle in this currency. Choose another base currency, or clear the base currency setting."
+      : "The platform can't settle in this currency. Choose another base currency.",
     { baseCurrencyCode: "The platform can't settle in this currency." },
   );
   return explain(
     currency,
     'invalid_operation',
-    'The platform refused a value. Check the timezone and the initial settings.',
+    withSettings
+      ? 'The platform refused a value. Check the timezone and the initial settings.'
+      : 'The platform refused a value. Check the timezone and the other details.',
   );
 }
 
@@ -89,7 +94,7 @@ export async function createTenantDraft(
       redirect(`/platform-admin/tenants/${draft.tenantId}`);
     },
   );
-  return explainDraft(result);
+  return explainDraft(result, true);
 }
 
 export async function amendTenantDraft(
@@ -106,7 +111,7 @@ export async function amendTenantDraft(
     },
   );
   return explain(
-    explainDraft(result),
+    explainDraft(result, false),
     'conflict',
     'Only a draft can be amended. It may already have been submitted. Refresh and check.',
   );
