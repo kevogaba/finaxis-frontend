@@ -2307,7 +2307,11 @@ test.describe('working context', () => {
 
     await expect(page.getByRole('banner').getByText('Westlands Branch')).toBeVisible();
     await expect(
+<<<<<<< HEAD
       page.getByRole('alert').filter({ hasText: /Switched to Greenfield SACCO/ }),
+=======
+      page.getByRole('status').filter({ hasText: /Switched to Greenfield SACCO/ }),
+>>>>>>> 769967d (doc: admin parity plans and handoff)
     ).toBeVisible();
   });
 

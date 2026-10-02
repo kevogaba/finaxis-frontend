@@ -77,32 +77,44 @@ invalid_active_tenant_context` (e.g. the selected branch was suspended). The use
 ## Stack
 
 Trunk `main`. Branches use the `admin-parity/NN-concern` prefix. Each layer is independently green.
+<<<<<<< HEAD
 From layer 07 on, two build lanes run in parallel (see the
 [parallel-lanes rules](./2026-09-27-admin-parity-parallel-lanes.md)), and layers are registered in
 the order they integrate, so the stack order can differ from the numbering below. Stack order so
 far: 00–06, 07b, 07, 15.
+=======
 
-| #   | Branch                             | Plan                                                              | Detail |
-| --- | ---------------------------------- | ----------------------------------------------------------------- | ------ |
-| 00  | `admin-parity/00-deps`             | [01-deps-and-docs](./2026-09-25-admin-parity-01-deps-and-docs.md) | full   |
-| 01  | `admin-parity/01-docs`             | [01-deps-and-docs](./2026-09-25-admin-parity-01-deps-and-docs.md) | full   |
-| 02  | `admin-parity/02-theme`            | [02-theme](./2026-09-25-admin-parity-02-theme.md)                 | full   |
-| 03  | `admin-parity/03-fake-api`         | [03-fake-api](./2026-09-25-admin-parity-03-fake-api.md)           | full   |
-| 04  | `admin-parity/04-shell`            | [04-shell](./2026-09-25-admin-parity-04-shell.md)                 | full   |
-| 05  | `admin-parity/05-context`          | [05-context](./2026-09-25-admin-parity-05-context.md)             | full   |
-| 06  | `admin-parity/06-audit`            | [06-audit](./2026-09-25-admin-parity-06-audit.md)                 | full   |
-| 07b | `admin-parity/07b-record-kit`      | [07b-record-kit](./2026-09-27-admin-parity-07b-record-kit.md)     | full   |
-| 07  | `admin-parity/07-business-date`    | [07-business-date](./2026-09-25-admin-parity-07-business-date.md) | full   |
-| 08  | `admin-parity/08-branches`         | just-in-time from spec §10.3                                      | JIT    |
-| 09  | `admin-parity/09-roles`            | just-in-time from spec §10.4                                      | JIT    |
-| 10  | `admin-parity/10-users-record`     | just-in-time from spec §10.5                                      | JIT    |
-| 11  | `admin-parity/11-users-invite`     | just-in-time from spec §10.5                                      | JIT    |
-| 12  | `admin-parity/12-approvals`        | just-in-time from spec §10.6, §8 (notifications)                  | JIT    |
-| 13  | `admin-parity/13-settings`         | just-in-time from spec §10.7                                      | JIT    |
-| 14  | `admin-parity/14-overview`         | just-in-time from spec §10.8                                      | JIT    |
-| 15  | `admin-parity/15-profile`          | [15-profile](./2026-09-27-admin-parity-15-profile.md)             | full   |
-| 16  | `admin-parity/16-platform-tenants` | just-in-time from spec §11.1–11.2                                 | JIT    |
-| 17  | `admin-parity/17-platform-records` | just-in-time from spec §11.2–11.4                                 | JIT    |
+> > > > > > > 769967d (doc: admin parity plans and handoff)
+
+| #            | Branch                        | Plan                                                              | Detail |
+| ------------ | ----------------------------- | ----------------------------------------------------------------- | ------ |
+| 00           | `admin-parity/00-deps`        | [01-deps-and-docs](./2026-09-25-admin-parity-01-deps-and-docs.md) | full   |
+| 01           | `admin-parity/01-docs`        | [01-deps-and-docs](./2026-09-25-admin-parity-01-deps-and-docs.md) | full   |
+| 02           | `admin-parity/02-theme`       | [02-theme](./2026-09-25-admin-parity-02-theme.md)                 | full   |
+| 03           | `admin-parity/03-fake-api`    | [03-fake-api](./2026-09-25-admin-parity-03-fake-api.md)           | full   |
+| 04           | `admin-parity/04-shell`       | [04-shell](./2026-09-25-admin-parity-04-shell.md)                 | full   |
+| 05           | `admin-parity/05-context`     | [05-context](./2026-09-25-admin-parity-05-context.md)             | full   |
+| 06           | `admin-parity/06-audit`       | [06-audit](./2026-09-25-admin-parity-06-audit.md)                 | full   |
+| <<<<<<< HEAD |
+| 07b          | `admin-parity/07b-record-kit` | [07b-record-kit](./2026-09-27-admin-parity-07b-record-kit.md)     | full   |
+| =======      |
+
+> > > > > > > 769967d (doc: admin parity plans and handoff)
+> > > > > > > | 07 | `admin-parity/07-business-date` | [07-business-date](./2026-09-25-admin-parity-07-business-date.md) | full |
+> > > > > > > | 08 | `admin-parity/08-branches` | just-in-time from spec §10.3 | JIT |
+> > > > > > > | 09 | `admin-parity/09-roles` | just-in-time from spec §10.4 | JIT |
+> > > > > > > | 10 | `admin-parity/10-users-record` | just-in-time from spec §10.5 | JIT |
+> > > > > > > | 11 | `admin-parity/11-users-invite` | just-in-time from spec §10.5 | JIT |
+> > > > > > > | 12 | `admin-parity/12-approvals` | just-in-time from spec §10.6, §8 (notifications) | JIT |
+> > > > > > > | 13 | `admin-parity/13-settings` | just-in-time from spec §10.7 | JIT |
+> > > > > > > | 14 | `admin-parity/14-overview` | just-in-time from spec §10.8 | JIT |
+> > > > > > > <<<<<<< HEAD
+> > > > > > > | 15 | `admin-parity/15-profile` | [15-profile](./2026-09-27-admin-parity-15-profile.md) | full |
+> > > > > > > \=======
+> > > > > > > | 15 | `admin-parity/15-profile` | just-in-time from spec §10.9 | JIT |
+> > > > > > > 769967d (doc: admin parity plans and handoff)
+> > > > > > > | 16 | `admin-parity/16-platform-tenants` | just-in-time from spec §11.1–11.2 | JIT |
+> > > > > > > | 17 | `admin-parity/17-platform-records` | just-in-time from spec §11.2–11.4 | JIT |
 
 The shell layer from the spec's §13 is split into `04-shell` (chrome, navigation, cleanup) and
 `05-context` (All branches, context dialog, app switcher) for reviewability; later numbers shift by
