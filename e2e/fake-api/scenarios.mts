@@ -1,4 +1,5 @@
 import type {
+  FakeAuditEvent,
   FakeBranch,
   FakeBranchAssignment,
   FakeMembership,
@@ -168,6 +169,43 @@ function tenantRoleAssignment(
   };
 }
 
+function seedAuditEvents(): FakeAuditEvent[] {
+  const catalogue: [string, string, string | null, string][] = [
+    ['USER', 'user.invite', IDS.jane, 'SUCCESS'],
+    ['BRANCH', 'branch.create_draft', IDS.westlands, 'SUCCESS'],
+    ['ROLE', 'role.update', IDS.tenantAdminRole, 'SUCCESS'],
+    ['BUSINESS_DATE', 'cob.start', null, 'SUCCESS'],
+    ['MEMBERSHIP', 'membership.revoke', IDS.greenfieldMembership, 'FAILURE'],
+  ];
+  return Array.from({ length: 30 }, (_, index) => {
+    const [entityType = 'USER', action = 'user.invite', entityId = null, outcome = 'SUCCESS'] =
+      catalogue[index % catalogue.length] ?? [];
+    const minute = String(59 - index).padStart(2, '0');
+    return {
+      id: `e0000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      organisationId: IDS.greenfield,
+      occurredAt: `2026-09-07T07:${minute}:00Z`,
+      actorUserId: index % 6 === 5 ? null : IDS.jane,
+      actorType: index % 6 === 5 ? 'SYSTEM' : 'USER',
+      branchId: index % 2 === 0 ? IDS.headOffice : null,
+      entityType,
+      entityId,
+      action,
+      outcome,
+      severity: 'INFO',
+      reason: index === 0 ? 'New teller joining the Westlands team' : null,
+      beforeJson: index === 2 ? '{"role_name":"Tenant admin"}' : null,
+      afterJson:
+        index === 0
+          ? '{"status":"DRAFT"}'
+          : index === 2
+            ? '{"role_name":"Tenant administrator"}'
+            : null,
+      metadataJson: '{}',
+    };
+  });
+}
+
 function greenfieldTenant(): RunState {
   return {
     actorUserId: IDS.jane,
@@ -214,6 +252,7 @@ function greenfieldTenant(): RunState {
         IDS.tenantAdminRole,
       ),
     ],
+    auditEvents: seedAuditEvents(),
   };
 }
 
@@ -267,6 +306,7 @@ function platformOperator(): RunState {
         IDS.platformAdminRole,
       ),
     ],
+    auditEvents: [],
   };
 }
 
@@ -337,6 +377,17 @@ function noBranches(): RunState {
   };
 }
 
+/** Strips permission `codes` from every role — reusable across gating scenarios. */
+function withoutPermission(state: RunState, ...codes: string[]): RunState {
+  return {
+    ...state,
+    roles: state.roles.map((candidate) => ({
+      ...candidate,
+      permissions: candidate.permissions.filter((permission) => !codes.includes(permission)),
+    })),
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -372,6 +423,7 @@ const BUILDERS = {
       ),
     };
   },
+  'no-audit-permission': () => withoutPermission(greenfieldTenant(), 'audit.view'),
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */
