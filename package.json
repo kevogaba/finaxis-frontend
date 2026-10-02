@@ -31,7 +31,7 @@
     "@mui/material": "^9.4.0",
     "@mui/material-nextjs": "^9.4.0",
     "better-auth": "1.7.6",
-    "ioredis": "^5.11.1",
+    "ioredis": "^6.0.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-hook-form": "^7.89.0",
