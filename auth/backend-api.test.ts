@@ -90,6 +90,41 @@ describe('backendApi', () => {
     expect(init.body).toBe(JSON.stringify({ organisation_id: '123' }));
   });
 
+  it('exposes the safe problem code and request id from problem+json errors', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          type: 'urn:finaxis:problem:invalid_active_tenant_context',
+          title: 'Forbidden',
+          status: 403,
+          detail: 'The active organisation context is invalid.',
+          instance: '/api/v1/auth/me',
+          code: 'invalid_active_tenant_context',
+          request_id: 'req-123',
+          violations: null,
+        }),
+        { status: 403, headers: { 'Content-Type': 'application/problem+json' } },
+      ),
+    );
+
+    const error = await backendApi.get('/api/v1/auth/me', requestHeaders).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BackendApiError);
+    expect(error).toMatchObject({
+      status: 403,
+      code: 'invalid_active_tenant_context',
+      requestId: 'req-123',
+    });
+  });
+
+  it('tolerates an empty error body (invalid JWT) and non-JSON errors', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 401 }));
+
+    const error = await backendApi.get('/api/v1/auth/me', requestHeaders).catch((e: unknown) => e);
+
+    expect(error).toMatchObject({ status: 401, code: null, requestId: null });
+  });
+
   it('returns only safe problem metadata for non-success responses', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ detail: 'Membership for Acme is inactive.' }), { status: 403 }),

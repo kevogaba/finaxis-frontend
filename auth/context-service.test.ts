@@ -13,12 +13,28 @@ Object.assign(process.env, {
   FINAXIS_API_URL: 'http://localhost:8080',
 });
 
-const { backendApi, readContextToken } = vi.hoisted(() => ({
-  backendApi: { get: vi.fn(), post: vi.fn() },
-  readContextToken: vi.fn(),
-}));
+const { BackendApiError, backendApi, readContextToken } = vi.hoisted(() => {
+  class BackendApiError extends Error {
+    readonly status: number;
+    readonly code: string | null;
+    readonly requestId: string | null;
 
-vi.mock('@/auth/backend-api', () => ({ backendApi }));
+    constructor(status: number, details: { code?: string | null; requestId?: string | null } = {}) {
+      super(`Platform API request failed with status ${status}.`);
+      this.status = status;
+      this.code = details.code ?? null;
+      this.requestId = details.requestId ?? null;
+    }
+  }
+
+  return {
+    BackendApiError,
+    backendApi: { get: vi.fn(), post: vi.fn() },
+    readContextToken: vi.fn(),
+  };
+});
+
+vi.mock('@/auth/backend-api', () => ({ backendApi, BackendApiError }));
 vi.mock('@/auth/context-cookie', () => ({ readContextToken }));
 
 const {
@@ -70,6 +86,15 @@ const profile = {
   user_id: 'user-1',
 };
 
+const page = {
+  number: 0,
+  size: 25,
+  total_items: 0,
+  total_pages: 0,
+  has_next: false,
+  has_previous: false,
+};
+
 describe('context service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -114,7 +139,7 @@ describe('context service', () => {
   });
 
   it('discovers the first bounded organisation page with the incoming request headers', async () => {
-    backendApi.get.mockResolvedValueOnce({ items: [], page: {} });
+    backendApi.get.mockResolvedValueOnce({ items: [], page });
 
     await discoverOrganisations(requestHeaders);
 
@@ -125,7 +150,7 @@ describe('context service', () => {
   });
 
   it('forwards the requested organisation discovery page with the bounded page size', async () => {
-    backendApi.get.mockResolvedValueOnce({ items: [], page: {} });
+    backendApi.get.mockResolvedValueOnce({ items: [], page });
 
     await discoverOrganisations(requestHeaders, 4);
 
@@ -148,7 +173,15 @@ describe('context service', () => {
   });
 
   it('sends a validated organisation selection to the backend', async () => {
-    backendApi.post.mockResolvedValueOnce({ organisation_id: platformOrganisationId });
+    backendApi.post.mockResolvedValueOnce({
+      organisation_id: platformOrganisationId,
+      membership_id: 'membership-1',
+      context_token: 'signed-context-token',
+      context_header: 'X-Active-Organisation-Context',
+      branch_id: null,
+      requires_branch_selection: false,
+      assigned_branch_ids: [],
+    });
 
     await selectOrganisation(requestHeaders, platformOrganisationId);
 
@@ -161,7 +194,7 @@ describe('context service', () => {
 
   it('uses only the HttpOnly context cookie for branch discovery', async () => {
     readContextToken.mockResolvedValueOnce('signed-context-token');
-    backendApi.get.mockResolvedValueOnce({ items: [], page: {} });
+    backendApi.get.mockResolvedValueOnce({ items: [], page });
 
     await discoverBranches(requestHeaders);
 
@@ -175,7 +208,7 @@ describe('context service', () => {
 
   it('forwards the requested branch discovery page with the bounded page size', async () => {
     readContextToken.mockResolvedValueOnce('signed-context-token');
-    backendApi.get.mockResolvedValueOnce({ items: [], page: {} });
+    backendApi.get.mockResolvedValueOnce({ items: [], page });
 
     await discoverBranches(requestHeaders, 2);
 
@@ -198,7 +231,13 @@ describe('context service', () => {
 
   it('validates branch identifiers and forwards the server-side context token', async () => {
     readContextToken.mockResolvedValueOnce('signed-context-token');
-    backendApi.post.mockResolvedValueOnce({ branch_id: branchId });
+    backendApi.post.mockResolvedValueOnce({
+      organisation_id: platformOrganisationId,
+      membership_id: 'membership-1',
+      branch_id: branchId,
+      context_token: 'signed-context-token',
+      context_header: 'X-Active-Organisation-Context',
+    });
 
     await selectBranch(requestHeaders, branchId);
 
@@ -313,23 +352,49 @@ describe('context service', () => {
     expect(backendApi.get).not.toHaveBeenCalled();
   });
 
-  it('does not resolve a shell context when the profile has no selected branch', async () => {
+  it('resolves an institution-level context when no branch is selected', async () => {
     readContextToken.mockResolvedValueOnce('signed-context-token');
     backendApi.get.mockResolvedValueOnce({ ...profile, selected_branch: null });
 
-    await expect(getSelectedContextProfile(requestHeaders)).resolves.toEqual({
-      kind: 'redirect-to-context-selection',
-      reason: 'profile-has-no-selected-branch',
+    await expect(getSelectedContextProfile(requestHeaders)).resolves.toMatchObject({
+      kind: 'resolved',
+      context: { branch: null },
     });
   });
 
-  it('does not expose backend failures through the selected-context result', async () => {
+  it('sends a stale or revoked context back to context selection', async () => {
     readContextToken.mockResolvedValueOnce('signed-context-token');
-    backendApi.get.mockRejectedValueOnce(new Error('backend detail: sensitive context token'));
+    backendApi.get.mockRejectedValueOnce(
+      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
+    );
 
     await expect(getSelectedContextProfile(requestHeaders)).resolves.toEqual({
       kind: 'redirect-to-context-selection',
-      reason: 'profile-request-failed',
+      reason: 'invalid-context',
     });
+  });
+
+  it('throws a plain 403 (a role without iam.profile.read) instead of cycling through selection', async () => {
+    readContextToken.mockResolvedValueOnce('signed-context-token');
+    backendApi.get.mockRejectedValueOnce(new BackendApiError(403, { code: 'forbidden' }));
+
+    await expect(getSelectedContextProfile(requestHeaders)).rejects.toBeInstanceOf(BackendApiError);
+  });
+
+  it('rethrows non-API failures (e.g. a network error) instead of redirecting', async () => {
+    readContextToken.mockResolvedValueOnce('signed-context-token');
+    backendApi.get.mockRejectedValueOnce(new Error('backend detail: sensitive context token'));
+
+    await expect(getSelectedContextProfile(requestHeaders)).rejects.toThrow('backend detail');
+  });
+
+  it('throws on backend outages and schema drift instead of looping through selection', async () => {
+    readContextToken.mockResolvedValueOnce('signed-context-token');
+    backendApi.get.mockRejectedValueOnce(new BackendApiError(502));
+    await expect(getSelectedContextProfile(requestHeaders)).rejects.toBeInstanceOf(BackendApiError);
+
+    readContextToken.mockResolvedValueOnce('signed-context-token');
+    backendApi.get.mockResolvedValueOnce({ ...profile, user_id: undefined });
+    await expect(getSelectedContextProfile(requestHeaders)).rejects.toThrow();
   });
 });

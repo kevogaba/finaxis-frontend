@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { REQUEST_PATHNAME_HEADER } from '@/auth/auth.types';
 
-const getSelectedContextProfile = vi.fn();
+const getCurrentContextProfile = vi.fn();
 
 vi.mock('next/headers', () => ({
   headers: vi.fn(() => new Headers()),
@@ -22,7 +22,7 @@ vi.mock('next/navigation', async (importOriginal) => {
 });
 
 vi.mock('@/auth/context-service', () => ({
-  getSelectedContextProfile: (...args: unknown[]) => getSelectedContextProfile(...args) as unknown,
+  getCurrentContextProfile: (...args: unknown[]) => getCurrentContextProfile(...args) as unknown,
 }));
 
 const { default: PlatformAdministrationLayout } = await import('./layout');
@@ -33,7 +33,7 @@ describe('PlatformAdministrationLayout', () => {
   });
 
   it('renders children for a platform context', async () => {
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       context: {
         branch: { id: 'branch-1', name: 'Platform HQ' },
         module: { id: 'platform-administration', name: 'Platform Administration' },
@@ -53,7 +53,7 @@ describe('PlatformAdministrationLayout', () => {
   });
 
   it('redirects tenant contexts away from the platform workspace before rendering children', async () => {
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       context: {
         branch: { id: 'branch-2', name: 'Tenant HQ' },
         module: { id: 'administration', name: 'Administration' },
@@ -77,7 +77,7 @@ describe('PlatformAdministrationLayout', () => {
     vi.mocked(headers).mockResolvedValueOnce(
       new Headers({ [REQUEST_PATHNAME_HEADER]: '/platform-admin/tenants' }),
     );
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       kind: 'redirect-to-context-selection',
       reason: 'missing-context-token',
     });

@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { redirect } from 'next/navigation';
 
-const { getAuthenticatedUser, getSelectedContextProfile, profileToFinaxisUser } = vi.hoisted(
-  () => ({
-    getAuthenticatedUser: vi.fn(),
-    getSelectedContextProfile: vi.fn(),
-    profileToFinaxisUser: vi.fn(),
-  }),
-);
+const { getAuthenticatedUser, getCurrentContextProfile, profileToFinaxisUser } = vi.hoisted(() => ({
+  getAuthenticatedUser: vi.fn(),
+  getCurrentContextProfile: vi.fn(),
+  profileToFinaxisUser: vi.fn(),
+}));
 
 vi.mock('next/headers', () => ({ headers: vi.fn(() => new Headers()) }));
 vi.mock('next/navigation', () => ({
@@ -17,7 +15,7 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('@/auth/auth', () => ({ auth: { api: { getSession: vi.fn() } } }));
 vi.mock('@/auth/get-authenticated-user', () => ({ getAuthenticatedUser }));
-vi.mock('@/auth/context-service', () => ({ getSelectedContextProfile, profileToFinaxisUser }));
+vi.mock('@/auth/context-service', () => ({ getCurrentContextProfile, profileToFinaxisUser }));
 vi.mock('@/components/profile/profile-view', () => ({
   ProfileView: ({ user, signedInAt }: { user: unknown; signedInAt: Date }) => (
     <div data-profile={JSON.stringify(user)}>{signedInAt.toISOString()}</div>
@@ -42,7 +40,7 @@ describe('ProfilePage', () => {
       branches: [],
       permissions: [],
     });
-    getSelectedContextProfile.mockResolvedValue({
+    getCurrentContextProfile.mockResolvedValue({
       context: {},
       kind: 'resolved',
       profile: { user_id: 'backend-user-1' },
@@ -61,7 +59,7 @@ describe('ProfilePage', () => {
   });
 
   it('redirects to context selection when the backend context is not resolved', async () => {
-    getSelectedContextProfile.mockResolvedValueOnce({
+    getCurrentContextProfile.mockResolvedValueOnce({
       kind: 'redirect-to-context-selection',
       reason: 'missing-context-token',
     });

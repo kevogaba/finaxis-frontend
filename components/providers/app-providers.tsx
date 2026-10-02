@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
 import { createFinaxisTheme } from '@/theme';
+import { ToastProvider } from './toast-provider';
 
 interface AppProvidersProps {
   children: ReactNode;
@@ -16,7 +17,7 @@ export function AppProviders({ children }: AppProvidersProps) {
   return (
     <ThemeProvider theme={theme} defaultMode="system" disableTransitionOnChange>
       <CssBaseline enableColorScheme />
-      {children}
+      <ToastProvider>{children}</ToastProvider>
     </ThemeProvider>
   );
 }

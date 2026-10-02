@@ -256,6 +256,18 @@ describe('context routes', () => {
     expect(clearContextToken).toHaveBeenCalledOnce();
   });
 
+  it('clears the context cookie when branch discovery finds the context already gone (403)', async () => {
+    discoverBranches.mockRejectedValueOnce({ status: 403 });
+
+    const response = await getBranches(branchDiscoveryRequest());
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      message: 'You do not have access to this context.',
+    });
+    expect(clearContextToken).toHaveBeenCalledOnce();
+  });
+
   it('rejects missing and malformed organisation identifiers', async () => {
     const missing = await postOrganisation(
       new Request('http://localhost/api/context/organisation', { method: 'POST' }),
@@ -320,6 +332,9 @@ describe('context routes', () => {
     await expect(response.json()).resolves.toEqual({
       message: 'You do not have access to this context.',
     });
+    // Unlike the branch endpoints below, this route never clears the context cookie on a 403: the
+    // organisation POST issues no token here to begin with, so there is nothing pinned to clear.
+    expect(clearContextToken).not.toHaveBeenCalled();
   });
 
   it('maps expired sessions during selection to a safe 401 message', async () => {
@@ -397,6 +412,26 @@ describe('context routes', () => {
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
       message: 'You do not have access to this context.',
+    });
+    expect(clearContextToken).toHaveBeenCalledOnce();
+  });
+
+  it('clears the context cookie when branch selection finds no context token to select against (409)', async () => {
+    selectBranch.mockRejectedValueOnce(
+      new (await import('@/auth/context-service')).ContextTokenMissingError(),
+    );
+
+    const response = await postBranch(
+      new Request('http://localhost/api/context/branch', {
+        body: JSON.stringify({ branch_id: branchId }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      message: 'Your saved context is no longer valid. Select an organisation again.',
     });
     expect(clearContextToken).toHaveBeenCalledOnce();
   });

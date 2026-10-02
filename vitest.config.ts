@@ -19,6 +19,9 @@ export default defineConfig({
     setupFiles: ['./test/setup.ts'],
     globals: true,
     css: true,
+    // The first test in each MUI-heavy jsdom file pays MUI/Emotion cold-render cost, which goes
+    // past vitest's 5 s default when every default worker is busy.
+    testTimeout: 15000,
     include: ['**/*.{test,spec}.{ts,tsx}'],
     exclude: [
       'node_modules/**',

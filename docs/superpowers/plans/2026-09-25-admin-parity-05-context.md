@@ -2307,7 +2307,7 @@ test.describe('working context', () => {
 
     await expect(page.getByRole('banner').getByText('Westlands Branch')).toBeVisible();
     await expect(
-      page.getByRole('status').filter({ hasText: /Switched to Greenfield SACCO/ }),
+      page.getByRole('alert').filter({ hasText: /Switched to Greenfield SACCO/ }),
     ).toBeVisible();
   });
 

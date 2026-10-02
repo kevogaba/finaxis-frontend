@@ -154,7 +154,9 @@ describe('ContextSelectionPage', () => {
     expect(await screen.findByText(/page 2 of 2/i)).toBeInTheDocument();
   });
 
-  it('shows safe retryable error copy when organisation selection fails', async () => {
+  it('shows access-denied copy, not the generic retryable one, when organisation selection fails with a 403', async () => {
+    // A 403 here can never succeed on retry (unlike a 5xx or a network error), so it gets its own
+    // safe copy instead of "We couldn't update your context. Please try again."
     fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'member details: secret' }, 403));
     const user = userEvent.setup();
     renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
@@ -162,10 +164,28 @@ describe('ContextSelectionPage', () => {
     await chooseOrganisation(user);
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /couldn.t update your context\. please try again\./i,
+      /you do not have access to this context/i,
     );
     expect(screen.getByRole('alert')).not.toHaveTextContent('member details: secret');
     expect(screen.getByRole('combobox', { name: /organisation/i })).toBeEnabled();
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        assignedBranchIds: [branch.branchId],
+        branchId: branch.branchId,
+        membershipId: organisation.membershipId,
+        organisationId: organisation.organisationId,
+        requiresBranchSelection: false,
+      }),
+    );
+    await chooseOrganisation(user);
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/profile');
+    });
+    expect(
+      fetchMock.mock.calls.filter((call) => String(call[0]) === '/api/context/organisation'),
+    ).toHaveLength(2);
   });
 
   it('disables the organisation control while its selection request is pending', async () => {
@@ -244,12 +264,93 @@ describe('ContextSelectionPage', () => {
     });
   });
 
+  it('auto-pins the lone distinct branch without showing the branch control', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          branchId: branch.branchId,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+        }),
+      );
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/profile');
+    });
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      '/api/context/organisation',
+      '/api/context/branch',
+    ]);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      body: JSON.stringify({ branch_id: branch.branchId }),
+      method: 'POST',
+    });
+    expect(screen.queryByRole('combobox', { name: /branch/i })).not.toBeInTheDocument();
+  });
+
+  it('lets the user retry when auto-pinning the lone branch fails', async () => {
+    const organisationSuccessBody = {
+      assignedBranchIds: [branch.branchId],
+      branchId: null,
+      membershipId: organisation.membershipId,
+      organisationId: organisation.organisationId,
+      requiresBranchSelection: true,
+    };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(organisationSuccessBody))
+      .mockResolvedValueOnce(jsonResponse({ message: 'backend token: secret' }, 502))
+      .mockResolvedValueOnce(jsonResponse(organisationSuccessBody))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          branchId: branch.branchId,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+        }),
+      );
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /couldn.t update your context\. please try again\./i,
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent('backend token: secret');
+    expect(screen.queryByRole('combobox', { name: /branch/i })).not.toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+
+    await chooseOrganisation(user);
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/profile');
+    });
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      '/api/context/organisation',
+      '/api/context/branch',
+      '/api/context/organisation',
+      '/api/context/branch',
+    ]);
+  });
+
   it('shows a branch loading state after an organisation requires branch selection', async () => {
     let resolveBranches: (response: Response) => void = () => undefined;
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -282,7 +383,7 @@ describe('ContextSelectionPage', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -365,11 +466,70 @@ describe('ContextSelectionPage', () => {
     expect(await screen.findByText(/page 2 of 2/i)).toBeInTheDocument();
   });
 
+  it('offers All branches when several distinct branches are assigned and completes without posting a branch', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(branchPage([branch, secondBranch])));
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ContextSelectionPage
+        destination="/admin"
+        organisations={organisationPage([organisation])}
+      />,
+    );
+
+    await chooseOrganisation(user);
+    await user.click(await screen.findByRole('combobox', { name: /branch/i }));
+    await user.click(screen.getByRole('option', { name: /all branches/i }));
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/admin');
+    });
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      '/api/context/organisation',
+      '/api/context/branches?page=0',
+    ]);
+  });
+
   it('shows safe error copy when explicit branch selection fails', async () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(branchPage([branch])))
+      .mockResolvedValueOnce(jsonResponse({ message: 'context token leaked detail' }, 500));
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+    await chooseBranch(user);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /couldn.t update your context\. please try again\./i,
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/context token leaked detail/i);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('shows an access-denied message when the branch endpoint finds the context already gone (403)', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -384,18 +544,47 @@ describe('ContextSelectionPage', () => {
     await chooseOrganisation(user);
     await chooseBranch(user);
 
+    // The backend clears the context cookie server-side on a 403 (contract §E), so there is
+    // nothing left to retry against — the safe message says so instead of the generic "try again".
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      /couldn.t update your context\. please try again\./i,
+      /you do not have access to this context/i,
     );
     expect(screen.getByRole('alert')).not.toHaveTextContent(/context token leaked detail/i);
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('moves focus off <body> onto the alert when a lost context unmounts the focused Branch select', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(branchPage([branch])))
+      .mockResolvedValueOnce(jsonResponse({ message: 'context token leaked detail' }, 403));
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+    await chooseBranch(user);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/you do not have access to this context/i);
+    expect(screen.queryByRole('combobox', { name: /branch/i })).not.toBeInTheDocument();
+    // The Branch select it was focused on is gone; the browser would otherwise strand focus on
+    // <body>, so it is recovered onto the alert that replaced it.
+    expect(document.activeElement).toBe(alert);
   });
 
   it('shows a safe branch-discovery error and retries without exposing response details', async () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -414,6 +603,38 @@ describe('ContextSelectionPage', () => {
     await user.click(screen.getByRole('button', { name: /try again/i }));
 
     expect(await screen.findByRole('combobox', { name: /branch/i })).toBeEnabled();
+  });
+
+  it('moves focus off <body> onto the alert when a branch page 5xxs out from under the focused pagination controls', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          branchPage([branch], { hasNext: true, hasPrevious: false, totalItems: 2, totalPages: 2 }),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: 'backend token: secret' }, 500));
+    const user = userEvent.setup();
+    renderWithProviders(<ContextSelectionPage organisations={organisationPage([organisation])} />);
+
+    await chooseOrganisation(user);
+    const branchPages = await screen.findByRole('navigation', { name: /branch pages/i });
+    await user.click(within(branchPages).getByRole('button', { name: /next/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/couldn.t load branches/i);
+    expect(screen.queryByRole('navigation', { name: /branch pages/i })).not.toBeInTheDocument();
+    // The pagination nav it was focused on is gone; recover focus onto the alert that replaced it
+    // rather than let it fall to <body>.
+    expect(document.activeElement).toBe(alert);
   });
 
   it('shows an actionable empty branch state after an organisation requires branch selection', async () => {
@@ -436,12 +657,46 @@ describe('ContextSelectionPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/no branches are available/i);
   });
 
+  it('still offers All branches beside the empty branch state and completes at institution level', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignedBranchIds: [],
+          branchId: null,
+          membershipId: organisation.membershipId,
+          organisationId: organisation.organisationId,
+          requiresBranchSelection: true,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(branchPage([])));
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ContextSelectionPage
+        destination="/admin"
+        organisations={organisationPage([organisation])}
+      />,
+    );
+
+    await chooseOrganisation(user);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no branches are available/i);
+    await user.click(screen.getByRole('combobox', { name: /branch/i }));
+    await user.click(screen.getByRole('option', { name: /all branches/i }));
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/admin');
+    });
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      '/api/context/organisation',
+      '/api/context/branches?page=0',
+    ]);
+  });
+
   it('disables both controls while an explicit branch selection is pending', async () => {
     let resolveBranch: (response: Response) => void = () => undefined;
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -495,7 +750,7 @@ describe('ContextSelectionPage', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
@@ -535,7 +790,7 @@ describe('ContextSelectionPage', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
-          assignedBranchIds: [branch.branchId],
+          assignedBranchIds: [branch.branchId, secondBranch.branchId],
           branchId: null,
           membershipId: organisation.membershipId,
           organisationId: organisation.organisationId,
