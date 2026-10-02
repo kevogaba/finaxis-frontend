@@ -19,42 +19,14 @@ describe('platformAdministrationService', () => {
     backendApi.get.mockResolvedValue({ items: [], page: {} });
   });
 
-  it('reads tenants through the platform endpoint with encoded pagination and filters', async () => {
-    await platformAdministrationService.listTenants(headers, {
-      q: 'Acme Ltd',
-      page: 2,
-      size: 50,
-      status: 'ACTIVE',
-      country: 'KE',
-      createdFrom: '2026-01-01',
-      createdTo: '2026-07-26',
-      sortBy: 'displayName',
-      sortDir: 'desc',
-    });
-
-    expect(backendApi.get).toHaveBeenCalledWith(
-      '/api/v1/platform/tenants?q=Acme+Ltd&status=ACTIVE&country=KE&created_from=2026-01-01&created_to=2026-07-26&page=2&size=50&sort_by=displayName&sort_dir=desc',
-      headers,
-      'signed-context',
-    );
-  });
-
-  it('reads related tenant resources with the context token', async () => {
-    await platformAdministrationService.getTenant(headers, '11111111-1111-1111-1111-111111111111');
+  it('reads tenant users with the context token', async () => {
     await platformAdministrationService.listTenantUsers(
       headers,
       '11111111-1111-1111-1111-111111111111',
       { q: 'smith', userStatus: 'ACTIVE', page: 1, size: 10, membershipStatus: 'ACTIVE' },
     );
 
-    expect(backendApi.get).toHaveBeenNthCalledWith(
-      1,
-      '/api/v1/platform/tenants/11111111-1111-1111-1111-111111111111',
-      headers,
-      'signed-context',
-    );
-    expect(backendApi.get).toHaveBeenNthCalledWith(
-      2,
+    expect(backendApi.get).toHaveBeenCalledWith(
       '/api/v1/platform/tenants/11111111-1111-1111-1111-111111111111/users?q=smith&user_status=ACTIVE&membership_status=ACTIVE&page=1&size=10',
       headers,
       'signed-context',
@@ -96,11 +68,14 @@ describe('platformAdministrationService', () => {
     );
   });
 
-  it('rejects invalid identifiers and missing context before a backend call', async () => {
-    expect(() => platformAdministrationService.getTenant(headers, 'not-a-uuid')).toThrow();
+  it('rejects a missing context before a backend call', async () => {
     readContextToken.mockResolvedValueOnce(null);
     await expect(
-      platformAdministrationService.getTenant(headers, '11111111-1111-1111-1111-111111111111'),
+      platformAdministrationService.getTenantUser(
+        headers,
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222',
+      ),
     ).rejects.toThrow('selected platform context');
     expect(backendApi.get).not.toHaveBeenCalled();
   });
@@ -145,12 +120,10 @@ describe('platformAdministrationService', () => {
 
   it('exposes only read methods for Stage 1', () => {
     expect(Object.keys(platformAdministrationService).sort()).toEqual([
-      'getTenant',
       'getTenantBranch',
       'getTenantUser',
       'listTenantBranches',
       'listTenantUsers',
-      'listTenants',
     ]);
     expect('post' in platformAdministrationService).toBe(false);
     expect('patch' in platformAdministrationService).toBe(false);

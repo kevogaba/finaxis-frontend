@@ -6,9 +6,6 @@ import type {
   ApiPage,
   BranchDetail,
   BranchListQuery,
-  TenantDetail,
-  TenantListQuery,
-  TenantSummary,
   TenantUserDetail,
   TenantUserSummary,
   UserListQuery,
@@ -17,8 +14,6 @@ import { toQueryString } from './platform-administration-queries';
 import {
   mapBranch,
   mapBranchPage,
-  mapTenantDetail,
-  mapTenantPage,
   mapTenantUser,
   mapTenantUserPage,
 } from './platform-administration-mappers';
@@ -39,28 +34,6 @@ async function read<T>(path: string, headers: Headers, map: (value: unknown) => 
 }
 
 export const platformAdministrationService = {
-  listTenants(headers: Headers, query: TenantListQuery): Promise<ApiPage<TenantSummary>> {
-    return read<ApiPage<TenantSummary>>(
-      `/api/v1/platform/tenants${toQueryString({
-        q: query.q,
-        status: query.status,
-        country: query.country,
-        created_from: query.createdFrom,
-        created_to: query.createdTo,
-        page: query.page ?? 0,
-        size: query.size ?? 25,
-        sort_by: query.sortBy,
-        sort_dir: query.sortDir,
-      })}`,
-      headers,
-      (raw) => mapTenantPage(raw as Parameters<typeof mapTenantPage>[0]),
-    );
-  },
-  getTenant(headers: Headers, tenantId: string): Promise<TenantDetail> {
-    return read(`/api/v1/platform/tenants/${idSchema.parse(tenantId)}`, headers, (raw) =>
-      mapTenantDetail(raw as Parameters<typeof mapTenantDetail>[0]),
-    );
-  },
   listTenantUsers(
     headers: Headers,
     tenantId: string,

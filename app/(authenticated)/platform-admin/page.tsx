@@ -1,7 +1,5 @@
-import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardActions from '@mui/material/CardActions';
@@ -11,65 +9,25 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import NextLink from '@/components/navigation/next-link';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { ErrorState } from '@/components/data-display/error-state';
+import { load } from '@/lib/api/load';
 import { PlatformPageShell } from '@/modules/platform-administration/components/platform-page-shell';
-import { platformAdministrationService } from '@/modules/platform-administration/platform-administration-service';
-import { safeParseTenantListQuery } from '@/modules/platform-administration/platform-administration-queries';
 import { platformAdministrationModule } from '@/modules/platform-administration/platform-administration-module';
-import type { TenantListQuery } from '@/modules/platform-administration/platform-administration.types';
-
-const DEFAULT_TENANT_LIST_QUERY: TenantListQuery = {
-  q: undefined,
-  status: undefined,
-  country: undefined,
-  createdFrom: undefined,
-  createdTo: undefined,
-  page: 0,
-  size: 25,
-  sortBy: undefined,
-  sortDir: 'asc',
-};
+import { DEFAULT_TENANT_SORT } from '@/modules/platform-administration/tenants/tenant-query';
+import { visibleTenantTotal } from '@/modules/platform-administration/tenants/tenant-rules';
+import { listTenants } from '@/modules/platform-administration/tenants/tenant-service';
 
 export const metadata: Metadata = { title: 'Platform Overview' };
 
-interface PlatformOverviewPageProps {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}
-
-function toUrlSearchParams(params: Record<string, string | string[] | undefined>): URLSearchParams {
-  const result = new URLSearchParams();
-
-  Object.entries(params).forEach(([key, value]) => {
-    if (Array.isArray(value)) {
-      value.forEach((entry) => {
-        result.append(key, entry);
-      });
-      return;
-    }
-
-    if (value !== undefined) {
-      result.set(key, value);
-    }
-  });
-
-  return result;
-}
-
-function describeTenantDirectoryState(query: TenantListQuery, totalItems: number): string {
+function describeTenantDirectoryState(totalItems: number): string {
   if (totalItems === 0) {
     return 'No tenants are available in the live directory yet.';
-  }
-
-  if (query.q || query.status || query.country) {
-    return `${totalItems} tenant${totalItems === 1 ? ' is' : 's are'} visible for the current live filters.`;
   }
 
   return `${totalItems} tenant${totalItems === 1 ? ' is' : 's are'} available from the live directory.`;
 }
 
-export default async function PlatformOverviewPage({ searchParams }: PlatformOverviewPageProps) {
-  const requestHeaders = await headers();
-  const query =
-    safeParseTenantListQuery(toUrlSearchParams(await searchParams)) ?? DEFAULT_TENANT_LIST_QUERY;
+export default async function PlatformOverviewPage() {
   const selectedContext = await getCurrentContextProfile();
 
   if (selectedContext.kind !== 'resolved') {
@@ -80,14 +38,8 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
     redirect('/admin');
   }
 
-  const tenantDirectoryResult = await platformAdministrationService
-    .listTenants(requestHeaders, query)
-    .then((data) => ({ data, kind: 'success' as const }))
-    .catch((error: unknown) => ({
-      error:
-        error instanceof Error ? error.message : 'The backend did not return a usable response.',
-      kind: 'error' as const,
-    }));
+  // Only the count is shown, so one row is enough (BG-15: no aggregate counts).
+  const directory = await load(listTenants({ sort: DEFAULT_TENANT_SORT, page: 0, size: 1 }));
 
   return (
     <PlatformPageShell
@@ -134,20 +86,15 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>
                   Live tenant directory
                 </Typography>
-                {tenantDirectoryResult.kind === 'success' ? (
+                {directory.ok ? (
                   <Typography color="text.secondary" variant="body2">
                     {describeTenantDirectoryState(
-                      query,
-                      tenantDirectoryResult.data.page.totalItems,
+                      // BG-29: the total includes the reserved platform organisation.
+                      visibleTenantTotal(directory.value.page.totalItems, false, false),
                     )}
                   </Typography>
                 ) : (
-                  <Alert severity="warning" sx={{ alignItems: 'flex-start' }}>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      Live tenant data is temporarily unavailable.
-                    </Typography>
-                    <Typography variant="body2">{tenantDirectoryResult.error}</Typography>
-                  </Alert>
+                  <ErrorState problem={directory.problem} />
                 )}
               </Stack>
             </CardContent>

@@ -200,7 +200,7 @@ export function countryOptions(): TenantOption[] {
 
 /** A stored value the runtime doesn't list (a retired code, an alias) goes first, so that amend
  * still shows it. */
-function withCurrent(options: TenantOption[], value: string | undefined): TenantOption[] {
+export function withCurrent(options: TenantOption[], value: string | undefined): TenantOption[] {
   return value && !options.some((option) => option.value === value)
     ? [{ value, label: value }, ...options]
     : options;
