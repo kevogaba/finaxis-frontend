@@ -21,7 +21,7 @@ and shell flows described below.
 
 ## Prerequisites
 
-- Node.js `>=24.9.0` (see `.nvmrc` / `.node-version` — 24 is the current LTS line)
+- Node.js `>=24.15.0` (see `.nvmrc` / `.node-version` — 24 is the current LTS line)
 - pnpm `11.13.1` (pinned via `packageManager` in `package.json`; enable with `corepack enable`)
 
 ## Installation

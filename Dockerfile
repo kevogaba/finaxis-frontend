@@ -2,7 +2,7 @@
 
 # Pinned to match .node-version/.nvmrc exactly, the same reproducibility standard
 # this repo already holds its other pinned versions to (e.g. better-auth, pnpm).
-FROM node:24.13.1-alpine AS base
+FROM node:24.19.0-alpine AS base
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 RUN corepack enable
