@@ -37,7 +37,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - This is Material UI v9: some props renamed since earlier majors (e.g. `Stack`'s
   `alignItems`/`justifyContent`/`flexWrap` and `Checkbox`/`Radio`'s `inputRef`/`inputProps` moved
   to `sx` / `slotProps.input`). Check `node_modules/@mui/material/package.json` version and the
-  installed major's migration guide before assuming an older API shape.
+  installed major's migration guide before assuming an older API shape. `Typography` also drops a
+  dotted palette path in `color` (`color="text.secondary"` emits no colour rule, so the text
+  inherits its parent's): write `sx={{ color: 'text.secondary' }}`, or `color="textSecondary"` on
+  `TruncatedText`. An ESLint rule in `eslint.config.mjs` enforces it.
 - Mutations are Server Actions built on `runServerAction` (`lib/api/action-result.ts`), which calls
   through `apiPost`/`apiPut`/`apiPatch`/`apiDelete` (`lib/api/tenant-api.ts`). Forward the
   idempotency key the form minted when it opened (`ReasonDialog` does this) — never generate one

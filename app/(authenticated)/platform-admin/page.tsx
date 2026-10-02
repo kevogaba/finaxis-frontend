@@ -51,14 +51,14 @@ export default async function PlatformOverviewPage() {
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
               <Stack spacing={1}>
-                <Typography variant="overline" color="text.secondary">
+                <Typography variant="overline" sx={{ color: 'text.secondary' }}>
                   Active platform context
                 </Typography>
                 <Typography component="h2" variant="h6" sx={{ fontWeight: 700 }}>
                   {selectedContext.context.organization.name}
                 </Typography>
                 <Stack direction="row" spacing={1}>
-                  <Typography color="text.secondary" variant="body2">
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                     Branch:
                   </Typography>
                   <Typography variant="body2">
@@ -66,7 +66,7 @@ export default async function PlatformOverviewPage() {
                   </Typography>
                 </Stack>
                 <Stack direction="row" spacing={1}>
-                  <Typography color="text.secondary" variant="body2">
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                     Module:
                   </Typography>
                   <Typography variant="body2">{selectedContext.context.module.name}</Typography>
@@ -80,14 +80,14 @@ export default async function PlatformOverviewPage() {
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
               <Stack spacing={1.25}>
-                <Typography variant="overline" color="text.secondary">
+                <Typography variant="overline" sx={{ color: 'text.secondary' }}>
                   Institution operations
                 </Typography>
                 <Typography component="h2" variant="h6" sx={{ fontWeight: 700 }}>
                   SACCO institutions
                 </Typography>
                 {directory.ok ? (
-                  <Typography color="text.secondary" variant="body2">
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                     {describeTenantDirectoryState(
                       // BG-29: the total includes the reserved platform organisation.
                       visibleTenantTotal(directory.value.page.totalItems, false, false),

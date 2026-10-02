@@ -47,6 +47,25 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    // MUI v9 silently drops a dotted palette path in Typography's `color` prop (it emits no colour
+    // rule at all, so the text inherits its parent's), while `sx={{ color: 'text.secondary' }}` and
+    // `color="textSecondary"` work. Scoped to Typography and TruncatedText (which forwards `color`
+    // to one); MuiLink still renders a dotted `color`, and a literal `text.*` anywhere else (an
+    // `sx` colour, a theme slot) is the supported spelling.
+    files: ['**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "JSXOpeningElement[name.name=/^(Typography|TruncatedText)$/] > JSXAttribute[name.name='color'] Literal[value=/^text\\./]",
+          message:
+            'MUI v9 drops dotted palette paths on Typography color: use sx={{ color: ... }} (TruncatedText: color="textSecondary").',
+        },
+      ],
+    },
+  },
+  {
     // Test files commonly assert against loosely typed mock/DOM values; the
     // type-aware strictness earns its keep in application code, not assertions.
     files: ['**/*.test.{ts,tsx}', 'e2e/**/*.ts', 'test/**/*.ts', 'test/**/*.tsx'],

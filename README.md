@@ -69,8 +69,9 @@ run automatically (installed via `pnpm install`'s `prepare` script — no manual
 
 ESLint layers `typescript-eslint`'s `strictTypeChecked` + `stylisticTypeChecked` presets and
 `eslint-plugin-jsx-a11y`'s `strict` rules on top of `eslint-config-next` — all official preset
-configs, not hand-rolled rules, chosen for a multi-contributor codebase where the type checker
-catching a bug beats a reviewer catching it.
+configs, chosen for a multi-contributor codebase where the type checker catching a bug beats a
+reviewer catching it. The one hand-written rule is a `no-restricted-syntax` guard against
+`color="text.*"` on `Typography` and `TruncatedText`, which MUI v9 silently ignores.
 
 ## Testing
 

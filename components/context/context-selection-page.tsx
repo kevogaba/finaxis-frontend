@@ -40,7 +40,7 @@ export function ContextSelectionPage({
             <Typography component="h1" variant="h1">
               Select your context
             </Typography>
-            <Typography color="text.secondary" sx={{ mt: 1 }}>
+            <Typography sx={{ color: 'text.secondary', mt: 1 }}>
               Choose the organisation and branch you want to work in.
             </Typography>
           </Box>

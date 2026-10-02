@@ -22,7 +22,7 @@ export function EmptyState({ title, description }: EmptyStateProps) {
       }}
     >
       <Inventory2Outlined sx={{ fontSize: 34 }} aria-hidden="true" />
-      <Typography component="p" variant="h5" color="text.primary">
+      <Typography component="p" variant="h5" sx={{ color: 'text.primary' }}>
         {title}
       </Typography>
       {description && <Typography variant="body2">{description}</Typography>}
