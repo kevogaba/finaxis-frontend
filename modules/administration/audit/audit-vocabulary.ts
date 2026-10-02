@@ -14,6 +14,8 @@ export const AUDIT_ENTITY_TYPES = [
   { value: 'BUSINESS_DATE', label: 'Business date' },
 ] as const;
 
+export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number]['value'];
+
 /**
  * Contract §G's explicit actions plus the common state-machine transitions, grouped by the
  * entity type each is recorded on. Unlisted actions still render through `actionLabel`'s fallback.

@@ -20,6 +20,11 @@ const TONES: Record<string, StatusTone> = {
   DEACTIVATING: 'warning',
   DEPROVISIONING: 'warning',
   MEDIUM: 'warning',
+  // Explicitly neutral: CLOSED is also business date's routine end-of-day state (plan 07), so it
+  // must never read as an error; a terminal branch passes `tone` if it needs one.
+  CLOSED: 'default',
+  ARCHIVED: 'default',
+  DEPRECATED: 'warning',
   SUSPENDED: 'error',
   REJECTED: 'error',
   REVOKED: 'error',

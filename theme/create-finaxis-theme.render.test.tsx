@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
+import TablePagination from '@mui/material/TablePagination';
 import TextField from '@mui/material/TextField';
-import Button from '@mui/material/Button';
 import DialogActions from '@mui/material/DialogActions';
 import { renderWithProviders } from '@/test/test-utils';
 import { createFinaxisTheme } from './create-finaxis-theme';
@@ -57,6 +60,56 @@ function lastRuleDeclarations(css: string, hashClass: string, selectorSuffix: st
     throw new Error(`No rule found for .${hashClass}${selectorSuffix}`);
   }
   return declarations;
+}
+
+/** The value the cascade applies for `property` on `.<hash><suffix>`: the last declaration across
+ * every emitted rule with exactly that selector (emotion can split one class into several rules). */
+function effectiveDeclaration(
+  css: string,
+  hashClass: string,
+  selectorSuffix: string,
+  property: string,
+): string | undefined {
+  const escapedHash = hashClass.replace(/[.:#]/g, '\\$&');
+  const pattern = new RegExp(`\\.${escapedHash}${selectorSuffix}\\{([^}]*)\\}`, 'g');
+  let value: string | undefined;
+  for (const match of css.matchAll(pattern)) {
+    for (const declaration of (match[1] ?? '').split(';')) {
+      const colon = declaration.indexOf(':');
+      if (colon > 0 && declaration.slice(0, colon).trim() === property) {
+        value = declaration.slice(colon + 1).trim();
+      }
+    }
+  }
+  return value;
+}
+
+/** The full selector and declarations of the last emitted rule whose selector ends in the
+ * literal, stable `suffix` text (e.g. `.MuiTablePagination-select:focus-visible`) — for a
+ * component whose own emotion hash class lands on an ancestor node (TablePagination's InputBase
+ * wrapper), not on the focusable element itself, so `hashClassOf`/`effectiveDeclaration` (keyed
+ * off the target element's own hash class) can't find it. */
+function ruleEndingIn(css: string, suffix: string): { selector: string; declarations: string } {
+  const escaped = suffix.replace(/[.:#]/g, '\\$&');
+  const pattern = new RegExp(`([^{}]*${escaped})\\{([^}]*)\\}`, 'g');
+  let found: { selector: string; declarations: string } | undefined;
+  for (const match of css.matchAll(pattern)) {
+    found = { selector: match[1] ?? '', declarations: match[2] ?? '' };
+  }
+  if (!found) {
+    throw new Error(`No rule found ending in ${suffix}`);
+  }
+  return found;
+}
+
+function propertyValue(declarations: string, property: string): string | undefined {
+  for (const declaration of declarations.split(';')) {
+    const colon = declaration.indexOf(':');
+    if (colon > 0 && declaration.slice(0, colon).trim() === property) {
+      return declaration.slice(colon + 1).trim();
+    }
+  }
+  return undefined;
 }
 
 describe('MuiIconButton colour (finding 1)', () => {
@@ -171,6 +224,13 @@ describe.each(['success', 'warning', 'error', 'info'] as const)(
       expect(focusBg.includes(softBgVar)).toBe(true);
       expect(focusBg.includes(darkVar)).toBe(false);
 
+      // MUI 9.4's `focusVisible` theme option also paints `.Mui-focusVisible` with
+      // `box-shadow: var(--_focusVisible-shadow, 0 0)` — prove the soft variant's own inset ring
+      // (emitted after, per the comment above) still wins the cascade instead of that empty shadow.
+      const focusBoxShadow = getComputedStyle(chip).boxShadow;
+      expect(focusBoxShadow).toContain('inset');
+      expect(focusBoxShadow.includes(varName(theme.vars.palette[color].main))).toBe(true);
+
       // jsdom never matches real `:hover` (no mouse state), so prove the hover fix the way
       // the browser actually resolves it: by cascade over the emitted CSS text. MUI's own
       // "clickable coloured" hover rule is bare `:hover` (specificity 0,0,2,0); this theme's
@@ -240,5 +300,80 @@ describe('MuiOutlinedInput padding', () => {
     );
     expect(rulesDeclaring(getByLabelText('Single'), 'padding-block')).not.toEqual([]);
     expect(rulesDeclaring(getByLabelText('Reason'), 'padding-block')).toEqual([]);
+  });
+});
+
+describe('focus ring (MUI focusVisible; deferred from layer 02)', () => {
+  it('draws the theme-wide ring in the focus token', () => {
+    const ring = theme.focusVisible;
+    if (!ring) throw new Error('theme.focusVisible is not enabled');
+    expect(ring).toMatchObject({ outlineStyle: 'solid', outlineWidth: 2 });
+    expect(varName(ring.outlineColor ?? '')).toBe(varName(theme.vars.palette.focus));
+  });
+
+  it('insets a Tab ring so the Tabs scroller cannot clip it', () => {
+    const { getByRole } = renderWithProviders(
+      <Tabs value={0} aria-label="Record sections">
+        <Tab label="Overview" />
+      </Tabs>,
+    );
+    const hash = hashClassOf(getByRole('tab', { name: 'Overview' }));
+    const css = allEmittedCss();
+
+    expect(effectiveDeclaration(css, hash, '', '--_focusVisible-offset')).toBe('-3');
+    // The old MuiButtonBase override re-declared a literal `outline-offset: 2px` after MUI's
+    // var-based offset, which re-outset the Tab ring — the effective value must be the calc.
+    expect(effectiveDeclaration(css, hash, '\\.Mui-focusVisible', 'outline-offset')).toMatch(
+      /^calc\(var\(--_focusVisible-offset/,
+    );
+  });
+
+  it('keeps an ordinary button ring outset, in the focus colour', () => {
+    const { getByRole } = renderWithProviders(<Button>Save</Button>);
+    const hash = hashClassOf(getByRole('button', { name: 'Save' }));
+    const css = allEmittedCss();
+
+    expect(effectiveDeclaration(css, hash, '', '--_focusVisible-offset')).toBe('1');
+    expect(
+      varName(effectiveDeclaration(css, hash, '\\.Mui-focusVisible', 'outline-color') ?? ''),
+    ).toBe(varName(theme.vars.palette.focus));
+  });
+});
+
+describe('TablePagination rows-per-page select focus ring (layer 07b gate finding 1)', () => {
+  it('gives the keyboard-focused select the house ring: outset, in the focus colour', () => {
+    const { getByRole } = renderWithProviders(
+      <TablePagination
+        component="div"
+        count={25}
+        page={0}
+        rowsPerPage={10}
+        onPageChange={vi.fn()}
+        onRowsPerPageChange={vi.fn()}
+      />,
+    );
+    const css = allEmittedCss();
+
+    // The combobox div's own emotion hash class lands on an ancestor (the InputBase wrapper),
+    // so read the rule off the stable `.MuiTablePagination-select` class instead.
+    const { selector, declarations } = ruleEndingIn(
+      css,
+      '.MuiTablePagination-select:focus-visible',
+    );
+
+    // Prove the rule actually reaches the rendered combobox, not just that some rule with this
+    // literal text exists: `matches()` resolves the full (ancestor-hash-prefixed) selector
+    // against the real document tree.
+    const combobox = getByRole('combobox', { name: /rows per page/i });
+    expect(combobox.matches(selector.replace(':focus-visible', ''))).toBe(true);
+
+    expect(varName(propertyValue(declarations, 'outline-color') ?? '')).toBe(
+      varName(theme.vars.palette.focus),
+    );
+    // Same house ring as an ordinary button: outset (the `--_focusVisible-offset` default of 1),
+    // not the inset Tab/rail variants.
+    expect(propertyValue(declarations, 'outline-offset')).toMatch(
+      /^calc\(var\(--_focusVisible-offset/,
+    );
   });
 });
