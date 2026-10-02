@@ -69,11 +69,11 @@ test.describe('Authenticated context selection', () => {
     await expect(banner.getByText('Greenfield SACCO')).toBeVisible();
     await expect(banner.getByText('Head Office')).toBeVisible();
     const main = page.getByRole('main');
-    await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Backend Jane Manager' })).toBeVisible();
-    // Scoped to `main`: the account trigger in the banner also shows the user's email now.
-    await expect(main.getByText('backend.jane@greenfield.example')).toBeVisible();
-    await expect(main.getByText('user.view')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'My profile' })).toBeVisible();
+    // Scoped to `main`: the account trigger in the banner also shows the user's name and email.
+    await expect(
+      main.getByText('Backend Jane Manager · backend.jane@greenfield.example'),
+    ).toBeVisible();
   });
 
   test('shows an actionable empty state when no organisations are available', async ({

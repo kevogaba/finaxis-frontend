@@ -47,6 +47,6 @@ describe('proxy', () => {
   });
 
   it('does not match login requests', () => {
-    expect(config.matcher).toEqual(['/admin/:path*', '/platform-admin/:path*', '/profile']);
+    expect(config.matcher).toEqual(['/admin/:path*', '/platform-admin/:path*', '/profile/:path*']);
   });
 });

@@ -445,6 +445,54 @@ function withoutPermission(state: RunState, ...codes: string[]): RunState {
   };
 }
 
+// Layer 15 (profile) seed IDs — 15000000-… per the lane rules; never reused.
+const PROFILE_IDS = {
+  legacyRole: '15000000-0000-4000-8000-000000000001',
+  legacyGrant: '15000000-0000-4000-8000-000000000002',
+  branchAdminGrant: '15000000-0000-4000-8000-000000000003',
+} as const;
+
+/**
+ * Contract §C: `/auth/me` lists roles per ACTIVE assignment at any scope — so a DISABLED role
+ * (which grants nothing) and TENANT_ADMIN a second time, through a BRANCH grant. Spreads
+ * `greenfieldTenant()` so collections later layers add still carry over.
+ */
+function profileRoles(): RunState {
+  const state = greenfieldTenant();
+  return {
+    ...state,
+    roles: [
+      ...state.roles,
+      {
+        ...role(PROFILE_IDS.legacyRole, IDS.greenfield, 'LEGACY_TELLER', 'Legacy teller', [
+          'user.suspend',
+        ]),
+        systemRole: false,
+        status: 'DISABLED',
+      },
+    ],
+    roleAssignments: [
+      ...state.roleAssignments,
+      tenantRoleAssignment(
+        PROFILE_IDS.legacyGrant,
+        IDS.greenfield,
+        IDS.jane,
+        PROFILE_IDS.legacyRole,
+      ),
+      {
+        ...tenantRoleAssignment(
+          PROFILE_IDS.branchAdminGrant,
+          IDS.greenfield,
+          IDS.jane,
+          IDS.tenantAdminRole,
+        ),
+        scopeType: 'BRANCH',
+        branchId: IDS.headOffice,
+      },
+    ],
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -491,6 +539,20 @@ const BUILDERS = {
     ),
   'business-date-busy': () => ({ ...greenfieldTenant(), lockTimeoutsRemaining: 1 }),
   'business-date-no-history': () => ({ ...greenfieldTenant(), businessDateHistory: [] }),
+  // Layer 15 (profile).
+  'profile-roles': profileRoles,
+  // The real PLATFORM_SUPER_ADMIN holds audit.view (contract §J), yet the tenant audit API rejects
+  // the platform context — proves Activity is gated on the workspace, not only the permission.
+  'platform-audit-viewer': () => {
+    const state = platformOperator();
+    return {
+      ...state,
+      roles: state.roles.map((candidate) => ({
+        ...candidate,
+        permissions: [...candidate.permissions, 'audit.view'],
+      })),
+    };
+  },
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */
