@@ -67,6 +67,16 @@ describe('describeProblem', () => {
     consoleError.mockRestore();
   });
 
+  describe('code-specific problems', () => {
+    it.each([
+      ['lifecycle.business_date_lock_timeout', 'Busy — try again'],
+      ['IDEMPOTENCY_KEY_REUSED', 'Already submitted'],
+      ['IDEMPOTENCY_REQUEST_IN_PROGRESS', 'Still processing'],
+    ])('gives %s its own message', (code, title) => {
+      expect(describeProblem(new BackendApiError(409, { code })).title).toBe(title);
+    });
+  });
+
   it('never exposes an arbitrary error message, and still mints a support reference and logs it', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 

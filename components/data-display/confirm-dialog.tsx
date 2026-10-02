@@ -36,6 +36,11 @@ interface ConfirmDialogProps<Result extends ConfirmOutcome> {
   onSuccess: () => void;
   /** Under the description: a warning, or hidden inputs the action reads. */
   children?: ReactNode;
+  /**
+   * The organisation the page rendered for, carried as a hidden input so a Server Action can
+   * refuse a stale submit after the user switched organisation in another tab (I2).
+   */
+  contextOrganisationId?: string;
 }
 
 export function ConfirmDialog<Result extends ConfirmOutcome>({
@@ -84,6 +89,7 @@ function ConfirmForm<Result extends ConfirmOutcome>({
   onPendingChange,
   descriptionId,
   children,
+  contextOrganisationId,
 }: Omit<ConfirmDialogProps<Result>, 'open'> & {
   onPendingChange: (pending: boolean) => void;
   descriptionId: string;
@@ -132,6 +138,9 @@ function ConfirmForm<Result extends ConfirmOutcome>({
           </Alert>
         )}
         <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
+        {contextOrganisationId && (
+          <input type="hidden" name="contextOrganisationId" value={contextOrganisationId} />
+        )}
         {children}
       </DialogContent>
       <DialogActions>

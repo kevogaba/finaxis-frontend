@@ -120,6 +120,24 @@ describe('ConfirmDialog', () => {
     );
   });
 
+  it('carries the rendered organisation id as a hidden field when provided (I2)', () => {
+    renderWithProviders(
+      <ConfirmDialog
+        open
+        title="Submit Westlands Branch for approval?"
+        description="A second administrator must activate it."
+        confirmLabel="Submit for approval"
+        action={() => Promise.resolve<FullResult>({ ok: true })}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+        contextOrganisationId="org-1"
+      />,
+    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[name="contextOrganisationId"]')?.value,
+    ).toBe('org-1');
+  });
+
   it('links the description to the dialog for assistive tech', () => {
     setup(() => Promise.resolve<FullResult>({ ok: true }));
     expect(screen.getByRole('dialog')).toHaveAccessibleDescription(

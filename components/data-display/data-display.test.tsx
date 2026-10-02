@@ -4,6 +4,7 @@ import { renderWithProviders } from '@/test/test-utils';
 import { DescriptionList } from './description-list';
 import { EmptyState } from './empty-state';
 import { ErrorState } from './error-state';
+import { SectionCard } from './section-card';
 import { TruncatedText } from './truncated-text';
 
 describe('data display', () => {
@@ -36,5 +37,17 @@ describe('data display', () => {
     renderWithProviders(<TruncatedText value="A very long branch name indeed" maxWidth={120} />);
     const node = screen.getByText('A very long branch name indeed');
     expect(node).toHaveAttribute('title', 'A very long branch name indeed');
+  });
+
+  it('renders a section card as a landmark named by its heading', () => {
+    renderWithProviders(
+      <SectionCard title="Personal information" description="Identity details">
+        <p>Body</p>
+      </SectionCard>,
+    );
+    expect(screen.getByRole('region', { name: 'Personal information' })).toHaveTextContent('Body');
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Personal information' }),
+    ).toBeInTheDocument();
   });
 });

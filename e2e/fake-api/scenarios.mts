@@ -2,6 +2,7 @@ import type {
   FakeAuditEvent,
   FakeBranch,
   FakeBranchAssignment,
+  FakeBusinessDateEvent,
   FakeMembership,
   FakeOrganisation,
   FakeRole,
@@ -42,6 +43,10 @@ export const TENANT_ADMIN_PERMISSIONS = [
   'audit.view',
   'settings.view',
   'business_date.view',
+  'business_date.advance',
+  'business_date.reopen',
+  'cob.start',
+  'cob.complete',
 ];
 
 export const PLATFORM_ADMIN_PERMISSIONS = [
@@ -206,6 +211,50 @@ function seedAuditEvents(): FakeAuditEvent[] {
   });
 }
 
+function seedBusinessDateHistory(): FakeBusinessDateEvent[] {
+  const base = { organisationId: IDS.greenfield, actorUserId: IDS.jane, reason: null };
+  return [
+    {
+      ...base,
+      eventType: 'ADVANCED',
+      fromStatus: 'OPEN',
+      toStatus: 'OPEN',
+      fromDate: '04-09-2026',
+      toDate: '07-09-2026',
+      occurredAt: '2026-09-07T05:00:00Z',
+      reason: 'Weekend',
+    },
+    {
+      ...base,
+      eventType: 'REOPENED',
+      fromStatus: 'CLOSED',
+      toStatus: 'OPEN',
+      fromDate: '04-09-2026',
+      toDate: '04-09-2026',
+      occurredAt: '2026-09-07T04:58:00Z',
+    },
+    {
+      ...base,
+      eventType: 'COB_COMPLETED',
+      fromStatus: 'CLOSING',
+      toStatus: 'CLOSED',
+      fromDate: '04-09-2026',
+      toDate: '04-09-2026',
+      occurredAt: '2026-09-04T18:30:00Z',
+    },
+    {
+      ...base,
+      eventType: 'COB_STARTED',
+      fromStatus: 'OPEN',
+      toStatus: 'CLOSING',
+      fromDate: '04-09-2026',
+      toDate: '04-09-2026',
+      occurredAt: '2026-09-04T18:00:00Z',
+      reason: 'End of day',
+    },
+  ];
+}
+
 function greenfieldTenant(): RunState {
   return {
     actorUserId: IDS.jane,
@@ -253,6 +302,10 @@ function greenfieldTenant(): RunState {
       ),
     ],
     auditEvents: seedAuditEvents(),
+    businessDates: [{ organisationId: IDS.greenfield, date: '07-09-2026', status: 'OPEN' }],
+    businessDateHistory: seedBusinessDateHistory(),
+    idempotency: new Map(),
+    lockTimeoutsRemaining: 0,
   };
 }
 
@@ -307,6 +360,10 @@ function platformOperator(): RunState {
       ),
     ],
     auditEvents: [],
+    businessDates: [],
+    businessDateHistory: [],
+    idempotency: new Map(),
+    lockTimeoutsRemaining: 0,
   };
 }
 
@@ -424,6 +481,16 @@ const BUILDERS = {
     };
   },
   'no-audit-permission': () => withoutPermission(greenfieldTenant(), 'audit.view'),
+  'business-date-read-only': () =>
+    withoutPermission(
+      greenfieldTenant(),
+      'business_date.advance',
+      'business_date.reopen',
+      'cob.start',
+      'cob.complete',
+    ),
+  'business-date-busy': () => ({ ...greenfieldTenant(), lockTimeoutsRemaining: 1 }),
+  'business-date-no-history': () => ({ ...greenfieldTenant(), businessDateHistory: [] }),
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */

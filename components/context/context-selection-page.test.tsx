@@ -120,6 +120,28 @@ describe('ContextSelectionPage', () => {
     expect(screen.getByRole('button', { name: /try again/i })).toBeEnabled();
   });
 
+  it('does not claim there are no organisations while a retry is still loading', async () => {
+    let resolveRetry: (response: Response) => void = () => undefined;
+    fetchMock.mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveRetry = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ContextSelectionPage hasOrganisationLoadError organisations={organisationPage([])} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(await screen.findByText(/loading organisations/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no organisations are available/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /organisation/i })).not.toBeInTheDocument();
+
+    resolveRetry(jsonResponse(organisationPage([organisation])));
+    expect(await screen.findByRole('combobox', { name: /organisation/i })).toBeInTheDocument();
+  });
+
   it('loads the next organisation page through the discovery route', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(

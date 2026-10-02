@@ -31,6 +31,12 @@ const PLATFORM: ApplicationContext = {
   branch: { id: 'ops', name: 'Platform Operations' },
 };
 
+const ADMINISTRATION: ApplicationContext = {
+  module: { id: 'administration', name: 'Administration' },
+  organization: { id: 'org-1', name: 'Umoja Teachers SACCO' },
+  branch: { id: 'branch-1', name: 'Westlands Branch' },
+};
+
 describe('AppShell', () => {
   it('renders the module navigation filtered by permissions, the page, and the footer', () => {
     renderWithProviders(
@@ -125,5 +131,45 @@ describe('AppShell', () => {
     await user.click(screen.getByRole('button', { name: 'Open navigation' }));
 
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  it('shows only the platform notifications node in a platform context', () => {
+    renderWithProviders(
+      <AppShell
+        user={USER}
+        context={PLATFORM}
+        initialNavCollapsed={false}
+        platformOrganisationId="platform"
+        notifications={{
+          administration: <span>Tenant node</span>,
+          'platform-administration': <span>Platform node</span>,
+        }}
+      >
+        <div />
+      </AppShell>,
+    );
+
+    expect(screen.getByText('Platform node')).toBeInTheDocument();
+    expect(screen.queryByText('Tenant node')).not.toBeInTheDocument();
+  });
+
+  it('shows only the tenant notifications node in an administration context', () => {
+    renderWithProviders(
+      <AppShell
+        user={USER}
+        context={ADMINISTRATION}
+        initialNavCollapsed={false}
+        platformOrganisationId="platform"
+        notifications={{
+          administration: <span>Tenant node</span>,
+          'platform-administration': <span>Platform node</span>,
+        }}
+      >
+        <div />
+      </AppShell>,
+    );
+
+    expect(screen.getByText('Tenant node')).toBeInTheDocument();
+    expect(screen.queryByText('Platform node')).not.toBeInTheDocument();
   });
 });

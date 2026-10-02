@@ -1,13 +1,5 @@
 import { encodeContext } from '../context-token.mts';
-import {
-  objectBody,
-  pageOf,
-  problem,
-  ProblemError,
-  readBody,
-  sendJson,
-  stringField,
-} from '../http.mts';
+import { objectBody, pageOf, problem, readBody, sendJson, stringField } from '../http.mts';
 import {
   activeAssignmentRows,
   canSelectOrganisation,
@@ -46,24 +38,10 @@ function profileBranches(state: RunState, userId: string, organisationId: string
 }
 
 /**
- * Contract §B: bad paging on the auth list routes reports `validation_failed` with no violations
- * (every other route's `pageOf` failure keeps the field-level violations array from `http.mts`).
- */
-function pageOfAuthList<T>(items: readonly T[], query: URLSearchParams) {
-  try {
-    return pageOf(items, query);
-  } catch (error) {
-    if (error instanceof ProblemError && error.problem.code === 'validation_failed') {
-      throw problem(400, 'validation_failed', error.problem.detail);
-    }
-    throw error;
-  }
-}
-
-/**
  * Contract §A ("Missing required fields"): a `@NotNull` uuid field that's absent or null is
  * `validation_failed` with a `NotNull` violation — distinct from `stringField`'s `invalid_json`
- * for a present-but-wrong-type value, and from `pageOfAuthList`'s violations-less paging quirk.
+ * for a present-but-wrong-type value, and from bad paging's violations-less `invalid_parameter`
+ * (`http.mts`'s `intParam`).
  */
 function requiredIdField(body: Record<string, unknown>, key: string): string {
   if (body[key] === undefined || body[key] === null) {
@@ -100,7 +78,7 @@ export const authRoutes: Route[] = [
       });
     // Contract §E.1 (BG-23): the permission filter runs after paging, so `total_items` can
     // overcount and a page can come back short.
-    const page = pageOfAuthList(items, query);
+    const page = pageOf(items, query);
     sendJson(res, 200, {
       ...page,
       items: page.items.filter((item) =>
@@ -156,7 +134,7 @@ export const authRoutes: Route[] = [
         branch_status: branch.status,
       }),
     );
-    sendJson(context.res, 200, pageOfAuthList(items, context.query));
+    sendJson(context.res, 200, pageOf(items, context.query));
   }),
 
   route('POST', '/api/v1/auth/select-branch', async (context) => {
