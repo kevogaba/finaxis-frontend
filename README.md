@@ -70,8 +70,11 @@ run automatically (installed via `pnpm install`'s `prepare` script — no manual
 ESLint layers `typescript-eslint`'s `strictTypeChecked` + `stylisticTypeChecked` presets and
 `eslint-plugin-jsx-a11y`'s `strict` rules on top of `eslint-config-next` — all official preset
 configs, chosen for a multi-contributor codebase where the type checker catching a bug beats a
-reviewer catching it. The one hand-written rule is a `no-restricted-syntax` guard against
-`color="text.*"` on `Typography` and `TruncatedText`, which MUI v9 silently ignores.
+reviewer catching it. The one hand-written rule is a `no-restricted-syntax` guard against a dotted
+palette path in `color` (`color="text.secondary"`) on `Typography`, `Box`, `Stack`, `Grid`,
+`DialogContentText` and `TruncatedText`, which MUI v9 silently ignores; write
+`sx={{ color: 'text.secondary' }}` (`TruncatedText`: `color="textSecondary"`). MUI `Link` still
+honours a dotted `color`.
 
 ## Testing
 
