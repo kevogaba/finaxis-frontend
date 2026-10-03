@@ -1,6 +1,6 @@
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { IDS } from './fake-api/scenarios.mts';
+import { expectNoSeriousOrCriticalViolations } from './support/admin';
 import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
 
 const ACME_TENANT_ID = '99999999-9999-4999-8999-999999999999';
@@ -13,15 +13,6 @@ async function goToAdminAsGreenfield(page: Page): Promise<void> {
     timeout: 15000,
   });
   await selectMuiOption(page, 'Organisation', /Greenfield/);
-}
-
-async function expectNoSeriousOrCriticalViolations(page: Page): Promise<void> {
-  const results = await new AxeBuilder({ page }).analyze();
-  expect(
-    results.violations.filter((violation) =>
-      ['serious', 'critical'].includes(violation.impact ?? ''),
-    ),
-  ).toEqual([]);
 }
 
 test.describe('working context', () => {
@@ -125,7 +116,7 @@ test.describe('working context', () => {
 
     // The first tab still renders Greenfield. Re-picking it must re-select it server-side rather
     // than list Platform's branches under a Greenfield label. A click on the pre-hydration SSR
-    // markup is dropped (see selectMuiOption), so wait for React to own the button first.
+    // markup is dropped (see expectHydrated), so wait for React to own the button first.
     const contextButton = page.getByRole('button', { name: /switch organisation or branch/i });
     await expectHydrated(contextButton);
     await contextButton.click();

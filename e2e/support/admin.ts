@@ -30,21 +30,29 @@ export async function enterAdmin(
   });
 }
 
-// Scoped to `main`: in an observed failure, an unscoped page.getByText resolved to two elements
-// for the branches spec's "guides a branch context" test -- one hidden and outside `main`, one
-// inside it (the layout has a single BranchContextState call site, so it wasn't a double render).
-// The likely cause (not reproduced in this session) is app/loading.tsx's root Suspense boundary
-// letting the streamed content briefly exist as a hidden duplicate segment. Whatever the actual
-// cause, `getByRole('main')` excludes a hidden `<main>` from resolution, so a chained getByText only
-// ever searches the one rendered, visible `<main>` -- deterministic regardless of the mechanism.
+/**
+ * Text inside the page's `main` landmark.
+ *
+ * Scoped to `main`: in an observed failure, an unscoped page.getByText resolved to two elements
+ * for the branches spec's "guides a branch context" test -- one hidden and outside `main`, one
+ * inside it (the layout has a single BranchContextState call site, so it wasn't a double render).
+ * The likely cause (not reproduced in this session) is app/loading.tsx's root Suspense boundary
+ * letting the streamed content briefly exist as a hidden duplicate segment. Whatever the actual
+ * cause, `getByRole('main')` excludes a hidden `<main>` from resolution, so a chained getByText only
+ * ever searches the one rendered, visible `<main>` -- deterministic regardless of the mechanism.
+ */
 export const mainText = (page: Page, value: string | RegExp, options?: { exact?: boolean }) =>
   page.getByRole('main').getByText(value, options);
 
-// A record's Overview can render its status twice by design (the hero chip, then the
-// description-list row), both visible, so `.first()` is load-bearing here, not a leftover: without
-// it this assertion would be a two-match strict-mode violation on every run. It does not pin the
-// check to the hero specifically -- if only one copy carried the asserted value, `.first()` would
-// resolve to whichever one does.
+/**
+ * A status label in `main`, exact match, first copy only.
+ *
+ * A record's Overview can render its status twice by design (the hero chip, then the
+ * description-list row), both visible, so `.first()` is load-bearing here, not a leftover: without
+ * it this assertion would be a two-match strict-mode violation on every run. It does not pin the
+ * check to the hero specifically -- if only one copy carried the asserted value, `.first()` would
+ * resolve to whichever one does. Scope a check that must hold in the hero to the hero instead.
+ */
 export const statusChip = (page: Page, value: string) =>
   mainText(page, value, { exact: true }).first();
 
@@ -52,9 +60,11 @@ export const statusChip = (page: Page, value: string) =>
 export const rowsOf = (page: Page, table: string) =>
   page.getByRole('table', { name: table }).getByRole('row');
 
-// Not-found renders `app/not-found.tsx`. A record layout's `notFound()` answers HTTP 200 behind the
-// root loading boundary, so a missing page is asserted by its content, never by
-// `response.status()`.
+/**
+ * The not-found page's heading. Not-found renders `app/not-found.tsx`. A record layout's
+ * `notFound()` answers HTTP 200 behind the root loading boundary, so a missing page is asserted by
+ * its content, never by `response.status()`.
+ */
 export const notFoundHeading = (page: Page) =>
   page.getByRole('heading', { level: 1, name: "We couldn't find that page" });
 
