@@ -219,9 +219,10 @@ ones with their defaults):
 8. **Branch scan** (BG-09): `listUserBranchAssignments(userId)` reads
    `GET /tenant/branch-assignments?status=ACTIVE&page=N&size=100` for N = 0..4 and keeps the user's
    rows, de-duplicated by id (the order is unspecified); `truncated` is true when page 4 still has
-   more, and the tab and the Overview say "partial". In a branch context the backend forces the
-   selected branch, so the tab says only that branch is visible and offers Switch to All branches
-   when the user has more than one ACTIVE branch.
+   more, and the tab and the Overview say "partial" (the Overview's count in a branch context reads
+   `At least N at <branch> (partial)`, never a bare `0 at <branch>`). In a branch context the backend
+   forces the selected branch, so the tab says only that branch is visible and offers Switch to All
+   branches when the user has more than one ACTIVE branch.
 9. **Approve outcome** (question Q2, default): no kit change. The toast says "Approval recorded"; the
    refreshed record tells 200 from 202 by state ("Active" vs "Provisioning identity", plus the
    Overview's provisioning note).
@@ -768,7 +769,9 @@ Plus, each as its own `it`:
   `"Their branch assignments can't be read here, so only institution scope is available."`; selected
   branch "Westlands Branch" → `"They aren't assigned to Westlands Branch. Assign them there first to give a branch-scoped role."`; otherwise `"Assign them to a branch first to give a branch-scoped role."`.
 - `branchAssignmentCount`: `(2, false, null)` → `'2'`; `(500, true, null)` →
-  `'At least 500 (partial)'`; `(1, false, 'Westlands Branch')` → `'1 at Westlands Branch'`.
+  `'At least 500 (partial)'`; `(1, false, 'Westlands Branch')` → `'1 at Westlands Branch'`;
+  `(3, true, 'Westlands Branch')` → `'At least 3 at Westlands Branch (partial)'` (a capped scan stays
+  partial in a branch context: the selected branch can hold more than 500 ACTIVE assignments).
 - `pageOfItems` over 23 items: page 2 of size 10 → 3 items, `{ number: 2, size: 10, totalItems: 23, totalPages: 3, hasNext: false, hasPrevious: true }`; page 3 → no items and
   `lastPageIfPastEnd(page)` is 2; no items → `totalPages: 0`.
 - `parseUserId`: lower-cases `10000000-0000-4000-8000-00000000000D`; `null` for `'not-a-uuid'`,
@@ -1088,7 +1091,13 @@ export function branchAssignmentCount(
   truncated: boolean,
   selectedBranchName: string | null,
 ): string {
-  if (selectedBranchName) return `${count} at ${selectedBranchName}`;
+  // A capped scan is partial in a branch context too: the backend forces the search to the selected
+  // branch (§E.4), and a branch with more than 500 ACTIVE assignments can hide the user's row.
+  if (selectedBranchName) {
+    return truncated
+      ? `At least ${count} at ${selectedBranchName} (partial)`
+      : `${count} at ${selectedBranchName}`;
+  }
   return truncated ? `At least ${count} (partial)` : String(count);
 }
 

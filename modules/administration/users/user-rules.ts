@@ -307,7 +307,13 @@ export function branchAssignmentCount(
   truncated: boolean,
   selectedBranchName: string | null,
 ): string {
-  if (selectedBranchName) return `${count} at ${selectedBranchName}`;
+  // A capped scan is partial in a branch context too: the backend forces the search to the selected
+  // branch (§E.4), and a branch with more than 500 ACTIVE assignments can hide the user's row.
+  if (selectedBranchName) {
+    return truncated
+      ? `At least ${count} at ${selectedBranchName} (partial)`
+      : `${count} at ${selectedBranchName}`;
+  }
   return truncated ? `At least ${count} (partial)` : String(count);
 }
 

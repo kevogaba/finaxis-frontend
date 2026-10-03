@@ -612,6 +612,16 @@ describe('branchAssignmentCount', () => {
     expect(branchAssignmentCount(500, true, null)).toBe('At least 500 (partial)');
     expect(branchAssignmentCount(1, false, 'Westlands Branch')).toBe('1 at Westlands Branch');
   });
+
+  it('keeps the partial hedge in a branch context, where the scan is still capped', () => {
+    // A branch with more than 500 ACTIVE assignments: the user's may lie beyond the window.
+    expect(branchAssignmentCount(3, true, 'Westlands Branch')).toBe(
+      'At least 3 at Westlands Branch (partial)',
+    );
+    expect(branchAssignmentCount(0, true, 'Westlands Branch')).toBe(
+      'At least 0 at Westlands Branch (partial)',
+    );
+  });
 });
 
 describe('pageOfItems', () => {
