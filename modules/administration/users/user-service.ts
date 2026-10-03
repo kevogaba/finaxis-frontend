@@ -17,6 +17,7 @@ import {
   type MembershipSummary,
 } from './user-contract';
 import { userListApiPath, type UserListQuery } from './user-query';
+import { SCAN_CEILING } from './user-rules';
 
 export function listUsers(query: UserListQuery) {
   return apiGet(userListApiPath(query), userPageSchema);
@@ -30,9 +31,10 @@ export const getUser = cache(async (userId: string) => {
 });
 
 const SCAN_PAGE_SIZE = 100;
-// ponytail: at most 5 pages of 100 per scan, like the lookup indexes (spec §6.3). The backend has
-// no user_id filter on memberships or branch assignments (BG-09).
-const SCAN_PAGES = 5;
+// ponytail: at most SCAN_CEILING rows (5 pages of 100) per scan, like the lookup indexes (spec §6.3).
+// The backend has no user_id filter on memberships or branch assignments (BG-09). The ceiling is
+// shared with user-rules.ts, whose copy names it.
+const SCAN_PAGES = SCAN_CEILING / SCAN_PAGE_SIZE;
 
 /** BG-09: memberships can't be filtered by user. `q` is a case-insensitive substring over username,
  * email and name, with `%` and `_` as wildcards (contract §A), so the hits are a superset: match
@@ -70,7 +72,9 @@ export interface UserBranchScan {
  * search to that branch (§E.4), so the result is that branch's rows only. 12 reuses it. */
 export const listUserBranchAssignments = cache(async (userId: string): Promise<UserBranchScan> => {
   const id = uuidSchema.parse(userId).toLowerCase();
-  // By id: the order is unspecified (`sort_*` is ignored), so a row can repeat across pages.
+  // By id: the order is unspecified (`sort_*` is ignored), so with LIMIT/OFFSET paging and no order a
+  // row can repeat across pages or be skipped. Even an uncapped scan (`truncated: false`) is best
+  // effort, not a proof of completeness (BG-09).
   const rows = new Map<string, BranchAssignment>();
   for (let page = 0; page < SCAN_PAGES; page += 1) {
     const result = await apiGet(
@@ -101,12 +105,9 @@ export async function getUserInviter(userId: string): Promise<string | null> {
   }
 }
 
-/** BG-15: one `size=1` read; null when unreadable. */
-export async function countUserRoleAssignments(userId: string): Promise<number | null> {
-  try {
-    const page = await listRoleAssignments({ userId, status: 'ACTIVE' }, { page: 0, size: 1 });
-    return page.page.totalItems;
-  } catch {
-    return null;
-  }
+/** BG-15: one `size=1` read. Rejects when it fails, so the caller settles it with `load()` and can
+ * say it failed instead of treating a failure as "not permitted" (never a quiet null). */
+export async function countUserRoleAssignments(userId: string): Promise<number> {
+  const page = await listRoleAssignments({ userId, status: 'ACTIVE' }, { page: 0, size: 1 });
+  return page.page.totalItems;
 }

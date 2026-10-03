@@ -11,6 +11,7 @@ import { SectionCard } from '@/components/data-display/section-card';
 import { humanizeEnum, StatusChip } from '@/components/data-display/status-chip';
 import { load, type Loaded } from '@/lib/api/load';
 import { getBranchIndex, getOrganisationTimeZone } from '@/lib/api/lookups';
+import type { ProblemView } from '@/lib/api/problem';
 import { formatInstant, shortId } from '@/lib/format';
 import { OnboardingTimeline } from '@/modules/administration/users/components/onboarding-timeline';
 import type {
@@ -51,7 +52,8 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
   const selectedBranch = selected.kind === 'resolved' ? selected.context.branch : null;
   const [membership, roleCount, scan] = await Promise.all([
     can(holder, 'membership.view') ? load(findUserMembership(record.id, record.email)) : null,
-    can(holder, 'role_assignment.view') ? countUserRoleAssignments(record.id) : null,
+    // null: not permitted (the row is left out). A Loaded failure: permitted, but the read failed.
+    can(holder, 'role_assignment.view') ? load(countUserRoleAssignments(record.id)) : null,
     can(holder, 'branch_assignment.view') ? load(listUserBranchAssignments(record.id)) : null,
   ]);
   const detail =
@@ -69,16 +71,25 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
       label: 'User status',
       value: <StatusChip value={record.userStatus} label={userStatusLabel(record.userStatus)} />,
     },
-    ...(roleCount === null ? [] : [{ label: 'Role assignments', value: String(roleCount) }]),
-    ...(scan?.ok
+    ...(roleCount
+      ? [
+          {
+            label: 'Role assignments',
+            value: roleCount.ok ? String(roleCount.value) : readFailed(roleCount.problem),
+          },
+        ]
+      : []),
+    ...(scan
       ? [
           {
             label: 'Branch assignments',
-            value: branchAssignmentCount(
-              scan.value.items.length,
-              scan.value.truncated,
-              selectedBranch?.name ?? null,
-            ),
+            value: scan.ok
+              ? branchAssignmentCount(
+                  scan.value.items.length,
+                  scan.value.truncated,
+                  selectedBranch?.name ?? null,
+                )
+              : readFailed(scan.problem),
           },
         ]
       : []),
@@ -103,6 +114,25 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
 }
 
 const MUTED_PARAGRAPH_SX = { color: 'text.secondary', px: 4.5, py: 3.5 } as const;
+
+/** A fact whose read failed: said so, with the request reference when there is one, never the
+ * backend's own text. A fact the holder isn't permitted to read is left out instead. */
+function readFailed(problem: ProblemView): ReactNode {
+  return (
+    <>
+      {"Couldn't be loaded"}
+      {problem.requestId && (
+        <Typography
+          variant="caption"
+          component="span"
+          sx={{ display: 'block', color: 'text.secondary', fontWeight: 400 }}
+        >
+          Reference: {problem.requestId}
+        </Typography>
+      )}
+    </>
+  );
+}
 
 /** The Membership card's body: each way the read can fall short says so, never an empty card. */
 function membershipBody(

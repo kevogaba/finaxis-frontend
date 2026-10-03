@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ZodType } from 'zod';
 import { branchAssignmentPageSchema } from '@/modules/administration/branches/branch-contract';
-import { membershipPageSchema, userPageSchema } from './user-contract';
+import {
+  membershipDetailSchema,
+  membershipPageSchema,
+  userPageSchema,
+  userSummarySchema,
+} from './user-contract';
 import { userListApiPath, type UserListQuery } from './user-query';
+import { SCAN_CEILING } from './user-rules';
 
 const { apiGet, listAuditEvents, listRoleAssignments } = vi.hoisted(() => ({
   apiGet: vi.fn<(path: string, schema: ZodType) => Promise<unknown>>(),
@@ -85,12 +91,14 @@ describe('user service', () => {
     it('read by a validated id, with their own schemas', async () => {
       apiGet.mockResolvedValue({});
       await service.getUser(ANN);
-      expect(apiGet).toHaveBeenLastCalledWith(`/api/v1/tenant/users/${ANN}`, expect.anything());
+      expect(apiGet).toHaveBeenLastCalledWith(`/api/v1/tenant/users/${ANN}`, userSummarySchema);
+      expect(apiGet.mock.lastCall?.[1]).toBe(userSummarySchema);
       await service.getMembership(MEMBERSHIP_ID);
       expect(apiGet).toHaveBeenLastCalledWith(
         `/api/v1/tenant/memberships/${MEMBERSHIP_ID}`,
-        expect.anything(),
+        membershipDetailSchema,
       );
+      expect(apiGet.mock.lastCall?.[1]).toBe(membershipDetailSchema);
     });
 
     it('reject a malformed id before any call', async () => {
@@ -215,6 +223,12 @@ describe('user service', () => {
       expect(scan).toEqual({ items: [], truncated: true });
     });
 
+    it('reads SCAN_CEILING rows at most, as pages of 100 (A-m3)', async () => {
+      apiGet.mockImplementation(page([assignmentWire(A1, JOANN)], true));
+      await service.listUserBranchAssignments(ANN);
+      expect(apiGet).toHaveBeenCalledTimes(SCAN_CEILING / 100);
+    });
+
     it('is complete when a page ends the scan, even on the fifth', async () => {
       apiGet.mockImplementation(page([assignmentWire(A1, JOANN)], true));
       apiGet.mockImplementationOnce(page([], true));
@@ -277,9 +291,9 @@ describe('user service', () => {
       );
     });
 
-    it('is null when unreadable', async () => {
+    it('rejects when unreadable, so the page can say it failed (never a quiet null, 1a)', async () => {
       listRoleAssignments.mockRejectedValueOnce(new Error('forbidden'));
-      await expect(service.countUserRoleAssignments(ANN)).resolves.toBeNull();
+      await expect(service.countUserRoleAssignments(ANN)).rejects.toThrow('forbidden');
     });
   });
 });

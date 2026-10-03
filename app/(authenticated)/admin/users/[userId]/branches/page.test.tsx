@@ -103,6 +103,10 @@ const UNAVAILABLE =
 const TRUNCATED_NOTE = 'Only the first 100 active branches are listed.';
 const NO_ROWS = 'This user has no branch assignments.';
 const OFFER = 'Assign a branch so they can work there.';
+const OTHER_BRANCHES = 'They may be assigned to other branches.';
+const SWITCH_TO_SEE = 'Switch to All branches to see them.';
+const BEYOND_CEILING =
+  'Only the first 500 branch assignments were checked, so they may be assigned beyond them.';
 const contextNote = (name: string) =>
   `Only ${name} is visible with a branch selected. Switch to All branches to see this user's other branch assignments.`;
 const singleBranchNote = (name: string) =>
@@ -216,6 +220,11 @@ function expectScoped(root: ParentNode) {
 }
 
 const alerts = () => [...document.querySelectorAll<HTMLElement>('.MuiAlert-root')];
+/** The empty state's title and description, found through the card's own markup. */
+const emptyState = () => {
+  const title = screen.getByText(/^No (branch assignments|assignment at)/);
+  return { title: title.textContent, description: title.nextElementSibling?.textContent };
+};
 const noteOf = (text: string): HTMLElement => {
   const note = screen.getByText(text).closest<HTMLElement>('.MuiAlert-root');
   if (!note) throw new Error(`"${text}" is not inside an Alert`);
@@ -466,7 +475,8 @@ describe('UserBranchesPage: what the list says about itself', () => {
     await show();
 
     expect(alerts().map((alert) => alert.textContent)).toEqual([PARTIAL_SCAN_NOTE]);
-    expect(screen.getByText('No branch assignments')).toBeInTheDocument();
+    // Not "No branch assignments": under a note saying the list may be incomplete, that is a guess.
+    expect(emptyState().title).toBe('No branch assignments found');
     expect(switchButton()).toBeNull();
   });
 
@@ -487,6 +497,17 @@ describe('UserBranchesPage: what the list says about itself', () => {
     expect(button.closest('.MuiAlert-message')).not.toBeNull();
     expect(button.closest('.MuiAlert-action')).toBeNull();
     expect(within(partial).queryByRole('button')).toBeNull();
+  });
+
+  it('marks both static notes as notes, not alerts, so a screen reader is not interrupted on every visit (2)', async () => {
+    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' }, truncated: true });
+
+    await show();
+
+    expect(alerts()).toHaveLength(2);
+    for (const alert of alerts()) expect(alert).toHaveAttribute('role', 'note');
+    expect(screen.queryAllByRole('alert')).toHaveLength(0);
+    expect(screen.getAllByRole('note')).toHaveLength(2);
   });
 
   it('shows only the branch note in a branch context when the scan was complete', async () => {
@@ -530,6 +551,109 @@ describe('UserBranchesPage: what the list says about itself', () => {
 
     expect(switchButton()).toBeInTheDocument();
     expect(screen.queryByText(singleBranchNote('Head Office'))).toBeNull();
+  });
+});
+
+describe('UserBranchesPage: the empty state says only what could be seen (1c)', () => {
+  const HEAD = { id: HEAD_OFFICE, name: 'Head Office' };
+
+  it('claims no assignments only when the whole list was visible: no branch selected, scan complete', async () => {
+    setup();
+
+    await show();
+
+    expect(emptyState()).toEqual({ title: 'No branch assignments', description: OFFER });
+  });
+
+  it('says so, with no offer, when the whole list was visible and nothing can be assigned', async () => {
+    setup({ membershipStatus: 'REVOKED' });
+
+    await show();
+
+    expect(emptyState()).toEqual({ title: 'No branch assignments', description: NO_ROWS });
+  });
+
+  it('names the selected branch, and says they may be elsewhere with the way to see them', async () => {
+    setup({ selectedBranch: HEAD });
+
+    await show();
+
+    expect(emptyState()).toEqual({
+      title: 'No assignment at Head Office',
+      description: `${OTHER_BRANCHES} ${SWITCH_TO_SEE} ${OFFER}`,
+    });
+    expect(screen.queryByText('No branch assignments')).toBeNull();
+  });
+
+  it('leaves the switch out of the empty state when the account cannot switch', async () => {
+    setup({
+      selectedBranch: HEAD,
+      profileBranches: [
+        { id: HEAD_OFFICE, status: 'ACTIVE' },
+        { id: WESTLANDS, status: 'SUSPENDED' },
+      ],
+    });
+
+    await show();
+
+    expect(emptyState()).toEqual({
+      title: 'No assignment at Head Office',
+      description: `${OTHER_BRANCHES} ${OFFER}`,
+    });
+  });
+
+  it('keeps the offer out when nothing can be assigned, in a branch context', async () => {
+    setup({ selectedBranch: HEAD, membershipStatus: 'REVOKED' });
+
+    await show();
+
+    expect(emptyState()).toEqual({
+      title: 'No assignment at Head Office',
+      description: `${OTHER_BRANCHES} ${SWITCH_TO_SEE}`,
+    });
+  });
+
+  it('says a capped scan found none, and that they may be beyond what was checked', async () => {
+    setup({ truncated: true });
+
+    await show();
+
+    expect(emptyState()).toEqual({
+      title: 'No branch assignments found',
+      description: `${BEYOND_CEILING} ${OFFER}`,
+    });
+    expect(screen.queryByText(NO_ROWS)).toBeNull();
+  });
+
+  it('keeps the offer out of a capped scan when nothing can be assigned', async () => {
+    setup({ truncated: true, membershipStatus: 'REVOKED' });
+
+    await show();
+
+    expect(emptyState()).toEqual({
+      title: 'No branch assignments found',
+      description: BEYOND_CEILING,
+    });
+  });
+
+  it('never claims "no assignment at" a branch whose list was capped: it says both things', async () => {
+    setup({ selectedBranch: HEAD, truncated: true });
+
+    await show();
+
+    expect(emptyState()).toEqual({
+      title: 'No branch assignments found',
+      description: `${BEYOND_CEILING} ${OTHER_BRANCHES} ${SWITCH_TO_SEE} ${OFFER}`,
+    });
+  });
+
+  it('shows no empty state at all while a row is listed (the control for the cases above)', async () => {
+    setup({ selectedBranch: HEAD, truncated: true, rows: [row(1, HEAD_OFFICE, 'HOME')] });
+
+    await show();
+
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.queryByText(/^No (branch assignments|assignment at)/)).toBeNull();
   });
 });
 

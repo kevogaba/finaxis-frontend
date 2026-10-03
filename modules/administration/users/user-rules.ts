@@ -254,12 +254,20 @@ export function canAssignUserBranch(status: MembershipStatus, holder: Permission
   );
 }
 
+/** The most branch assignments (or memberships) a scan reads: the backend can't filter either by user
+ * (BG-09), so a scan pages through at most this many rows. Client-safe, so the copy that names the
+ * ceiling and the service that enforces it (`SCAN_PAGES` in user-service.ts) can't drift apart. */
+export const SCAN_CEILING = 500;
+
 export const ACCESS_DESCRIPTION =
   'Roles this user holds. Institution scope applies everywhere; branch scope only while that branch is selected.';
 export const NO_ACTIVE_ROLES =
   'There are no active roles to assign. Create or activate one under Roles & permissions.';
-export const PARTIAL_SCAN_NOTE =
-  "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 branch assignments were checked.";
+/** `getRoleIndex` answers an empty map on any failure, and every tenant has system roles, so an empty
+ * index is a failed read, not "no roles". */
+export const ROLES_UNAVAILABLE =
+  "Roles couldn't be loaded, so none can be assigned right now. Refresh to try again.";
+export const PARTIAL_SCAN_NOTE = `This list may be incomplete: the platform can't filter branch assignments by user, so only the first ${SCAN_CEILING} branch assignments were checked.`;
 
 /** `canSwitch`: the signed-in user has more than one ACTIVE branch, so All branches is open. */
 export function branchContextNote(branchName: string, canSwitch: boolean): string {
@@ -301,7 +309,7 @@ export function roleScopeHint(input: {
     return "Their branch assignments can't be read here, so only institution scope is available.";
   }
   if (input.truncated) {
-    return 'Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here.';
+    return `Only the first ${SCAN_CEILING} branch assignments were checked and none of theirs was among them, so only institution scope is offered here.`;
   }
   if (input.selectedBranchName) {
     return `They aren't assigned to ${input.selectedBranchName}. Assign them there first to give a branch-scoped role.`;
@@ -317,11 +325,53 @@ export function branchAssignmentCount(
   // A capped scan is partial in a branch context too: the backend forces the search to the selected
   // branch (§E.4), and a branch with more than 500 ACTIVE assignments can hide the user's row.
   if (selectedBranchName) {
-    return truncated
-      ? `At least ${count} at ${selectedBranchName} (partial)`
-      : `${count} at ${selectedBranchName}`;
+    if (!truncated) return `${count} at ${selectedBranchName}`;
+    return count === 0
+      ? `None found at ${selectedBranchName} (partial)`
+      : `At least ${count} at ${selectedBranchName} (partial)`;
   }
-  return truncated ? `At least ${count} (partial)` : String(count);
+  if (!truncated) return String(count);
+  return count === 0 ? 'None found (partial)' : `At least ${count} (partial)`;
+}
+
+/** The Branch assignments tab's empty state. "No branch assignments" is a fact only when everything
+ * could be seen: with a branch selected only that branch is visible (§E.4), and a capped scan hides
+ * the rows past its ceiling (Ruling 8). A capped scan wins the title even in a branch context, since
+ * "No assignment at <branch>" would be a guess there too. */
+export function branchAssignmentsEmptyState(input: {
+  selectedBranchName: string | null;
+  truncated: boolean;
+  /** The signed-in user has more than one ACTIVE branch, so All branches is open to them. */
+  canSwitch: boolean;
+  /** An Assign branch button is on the tab. */
+  assignOffered: boolean;
+}): { title: string; description: string } {
+  const { selectedBranchName, truncated, canSwitch, assignOffered } = input;
+  const offer = 'Assign a branch so they can work there.';
+  if (!selectedBranchName && !truncated) {
+    return {
+      title: 'No branch assignments',
+      description: assignOffered ? offer : 'This user has no branch assignments.',
+    };
+  }
+  const description: string[] = [];
+  if (truncated) {
+    description.push(
+      `Only the first ${SCAN_CEILING} branch assignments were checked, so they may be assigned beyond them.`,
+    );
+  }
+  if (selectedBranchName) {
+    description.push('They may be assigned to other branches.');
+    if (canSwitch) description.push('Switch to All branches to see them.');
+  }
+  if (assignOffered) description.push(offer);
+  return {
+    title:
+      selectedBranchName && !truncated
+        ? `No assignment at ${selectedBranchName}`
+        : 'No branch assignments found',
+    description: description.join(' '),
+  };
 }
 
 /** Server-side paging of a bounded, already filtered list (the scan's rows for one user), so the

@@ -64,10 +64,13 @@ interface Setup {
   membership?: { id: string } | null | Error;
   /** What the membership detail read settles with; an Error rejects it. */
   detail?: Record<string, unknown> | Error;
-  roleCount?: number | null;
+  /** The role count read: the count, or an Error that rejects it. */
+  roleCount?: number | Error;
   /** The branch scan: how many of the user's rows it found, and whether it hit its ceiling. */
   scanRows?: number;
   truncated?: boolean;
+  /** An Error rejects the branch scan instead. */
+  scanError?: Error;
 }
 
 const DETAIL = {
@@ -90,6 +93,7 @@ function setup({
   roleCount = 2,
   scanRows = 3,
   truncated = false,
+  scanError,
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
@@ -108,11 +112,15 @@ function setup({
   else findUserMembership.mockResolvedValue(membership);
   if (detail instanceof Error) getMembership.mockRejectedValue(detail);
   else getMembership.mockResolvedValue(detail);
-  countUserRoleAssignments.mockResolvedValue(roleCount);
-  listUserBranchAssignments.mockResolvedValue({
-    items: Array.from({ length: scanRows }, (_, n) => ({ id: `row-${n}` })),
-    truncated,
-  });
+  if (roleCount instanceof Error) countUserRoleAssignments.mockRejectedValue(roleCount);
+  else countUserRoleAssignments.mockResolvedValue(roleCount);
+  if (scanError) listUserBranchAssignments.mockRejectedValue(scanError);
+  else {
+    listUserBranchAssignments.mockResolvedValue({
+      items: Array.from({ length: scanRows }, (_, n) => ({ id: `row-${n}` })),
+      truncated,
+    });
+  }
   getBranchIndex.mockResolvedValue(
     new Map([[WESTLANDS, { name: 'Westlands Branch', code: 'WESTLANDS' }]]),
   );
@@ -200,6 +208,28 @@ describe('UserOverviewPage: the profile', () => {
     expect(countUserRoleAssignments).toHaveBeenCalledWith(FELIX);
     expect(fact(card('Profile'), 'Role assignments')).toHaveTextContent(/^0$/);
   });
+
+  it("keeps the row and says the count couldn't be loaded when its read failed (1a)", async () => {
+    setup({ roleCount: new BackendApiError(500, { requestId: 'req-roles' }) });
+
+    await show();
+
+    // A failure is not "not permitted": the holder has the code, so the row stays, with its reference
+    // and none of the backend's own text.
+    const value = fact(card('Profile'), 'Role assignments');
+    expect(value).toHaveTextContent(/^Couldn't be loaded/);
+    expect(within(value).getByText('Reference: req-roles')).toBeInTheDocument();
+    expect(value).not.toHaveTextContent(/^\d/);
+  });
+
+  it('leaves the role row out, with no failure shown, for a holder without role_assignment.view (1a)', async () => {
+    setup({ permissions: without('role_assignment.view') });
+
+    await show();
+
+    expect(hasFact(card('Profile'), 'Role assignments')).toBe(false);
+    expect(screen.queryByText(/couldn't be loaded/i)).not.toBeInTheDocument();
+  });
 });
 
 describe('UserOverviewPage: the branch assignment count', () => {
@@ -232,7 +262,7 @@ describe('UserOverviewPage: the branch assignment count', () => {
     );
   });
 
-  it('says it is partial in a branch context too, never a bare "0 at" a branch', async () => {
+  it('says none were found, and that it is partial, in a branch context too (never "0 at" or "At least 0")', async () => {
     setup({
       scanRows: 0,
       truncated: true,
@@ -242,9 +272,39 @@ describe('UserOverviewPage: the branch assignment count', () => {
     await show();
 
     expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(
-      /^At least 0 at Westlands Branch \(partial\)$/,
+      /^None found at Westlands Branch \(partial\)$/,
     );
     expect(screen.queryByText(/^0 at/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/at least 0/i)).not.toBeInTheDocument();
+  });
+
+  it('says none were found, and that it is partial, at institution level when a capped scan found nothing', async () => {
+    setup({ scanRows: 0, truncated: true });
+
+    await show();
+
+    expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(
+      /^None found \(partial\)$/,
+    );
+  });
+
+  it("keeps the row and says the count couldn't be loaded when the scan failed (1a)", async () => {
+    setup({ scanError: new BackendApiError(500, { requestId: 'req-scan' }) });
+
+    await show();
+
+    const value = fact(card('Profile'), 'Branch assignments');
+    expect(value).toHaveTextContent(/^Couldn't be loaded/);
+    expect(within(value).getByText('Reference: req-scan')).toBeInTheDocument();
+    expect(value).not.toHaveTextContent(/^\d|partial/);
+  });
+
+  it('shows a failed scan on the row even when it is a 403, since the holder has the code', async () => {
+    setup({ scanError: new BackendApiError(403, { code: 'forbidden' }) });
+
+    await show();
+
+    expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(/^Couldn't be loaded/);
   });
 
   it('is shown only with branch_assignment.view, and the scan is read only then', async () => {

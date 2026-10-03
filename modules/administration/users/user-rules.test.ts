@@ -15,6 +15,8 @@ import {
   OWN_MEMBERSHIP,
   PARTIAL_SCAN_NOTE,
   PROVISIONING_NOTE,
+  ROLES_UNAVAILABLE,
+  SCAN_CEILING,
   USER_MAKER_CHECKER_BLOCKED,
   type MembershipAction,
   type OnboardingKey,
@@ -22,6 +24,7 @@ import {
   availableMembershipActions,
   blockedMembershipActions,
   branchAssignmentCount,
+  branchAssignmentsEmptyState,
   branchContextNote,
   canAssignUserBranch,
   canAssignUserRole,
@@ -557,11 +560,28 @@ describe('copy constants', () => {
       "Their account is deactivated on the platform, so this membership can't be approved.",
     );
     expect(ACCESS_DESCRIPTION).toMatch(/^Roles this user holds\./);
-    expect(NO_ACTIVE_ROLES).toMatch(/Roles & permissions/);
+    expect(NO_ACTIVE_ROLES).toBe(
+      'There are no active roles to assign. Create or activate one under Roles & permissions.',
+    );
+    // A failed role read is not "no active roles": every tenant has system roles (1b).
+    expect(ROLES_UNAVAILABLE).toBe(
+      "Roles couldn't be loaded, so none can be assigned right now. Refresh to try again.",
+    );
     // Context-neutral: the same note covers an institution scan and one forced to a selected branch.
     expect(PARTIAL_SCAN_NOTE).toBe(
       "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 branch assignments were checked.",
     );
+  });
+});
+
+describe('SCAN_CEILING', () => {
+  it('is 500, and the sentences that name the ceiling say whatever it is (A-m3)', () => {
+    expect(SCAN_CEILING).toBe(500);
+    const checked = `first ${SCAN_CEILING} branch assignments were checked`;
+    expect(PARTIAL_SCAN_NOTE).toContain(checked);
+    expect(
+      roleScopeHint({ readable: true, offered: 0, truncated: true, selectedBranchName: null }),
+    ).toContain(checked);
   });
 });
 
@@ -662,9 +682,89 @@ describe('branchAssignmentCount', () => {
     expect(branchAssignmentCount(3, true, 'Westlands Branch')).toBe(
       'At least 3 at Westlands Branch (partial)',
     );
+  });
+
+  it('says none were found, never "At least 0", when a capped scan found nothing', () => {
     expect(branchAssignmentCount(0, true, 'Westlands Branch')).toBe(
-      'At least 0 at Westlands Branch (partial)',
+      'None found at Westlands Branch (partial)',
     );
+    expect(branchAssignmentCount(0, true, null)).toBe('None found (partial)');
+    // A complete scan that found nothing is a fact, not a hedge.
+    expect(branchAssignmentCount(0, false, null)).toBe('0');
+    expect(branchAssignmentCount(0, false, 'Westlands Branch')).toBe('0 at Westlands Branch');
+  });
+});
+
+describe('branchAssignmentsEmptyState', () => {
+  const OFFER = 'Assign a branch so they can work there.';
+  const OTHER = 'They may be assigned to other branches.';
+  const SWITCH = 'Switch to All branches to see them.';
+  const BEYOND =
+    'Only the first 500 branch assignments were checked, so they may be assigned beyond them.';
+  const base = {
+    selectedBranchName: null,
+    truncated: false,
+    canSwitch: false,
+    assignOffered: false,
+  };
+
+  it('claims no assignments only when nothing was hidden (no branch selected, scan complete)', () => {
+    expect(branchAssignmentsEmptyState(base)).toEqual({
+      title: 'No branch assignments',
+      description: 'This user has no branch assignments.',
+    });
+    expect(branchAssignmentsEmptyState({ ...base, assignOffered: true })).toEqual({
+      title: 'No branch assignments',
+      description: OFFER,
+    });
+    // Switching is a branch-context matter: it changes nothing here.
+    expect(branchAssignmentsEmptyState({ ...base, canSwitch: true })).toEqual({
+      title: 'No branch assignments',
+      description: 'This user has no branch assignments.',
+    });
+  });
+
+  it('names the selected branch, and offers the switch only to an account that can switch', () => {
+    const branch = { ...base, selectedBranchName: 'Head Office' };
+    expect(branchAssignmentsEmptyState({ ...branch, canSwitch: true })).toEqual({
+      title: 'No assignment at Head Office',
+      description: `${OTHER} ${SWITCH}`,
+    });
+    expect(branchAssignmentsEmptyState(branch)).toEqual({
+      title: 'No assignment at Head Office',
+      description: OTHER,
+    });
+    expect(
+      branchAssignmentsEmptyState({ ...branch, canSwitch: true, assignOffered: true }),
+    ).toEqual({
+      title: 'No assignment at Head Office',
+      description: `${OTHER} ${SWITCH} ${OFFER}`,
+    });
+  });
+
+  it('says a capped scan found none and that they may be beyond what was checked', () => {
+    expect(branchAssignmentsEmptyState({ ...base, truncated: true })).toEqual({
+      title: 'No branch assignments found',
+      description: BEYOND,
+    });
+    expect(branchAssignmentsEmptyState({ ...base, truncated: true, assignOffered: true })).toEqual({
+      title: 'No branch assignments found',
+      description: `${BEYOND} ${OFFER}`,
+    });
+  });
+
+  it('says both when a branch context was capped, and never claims "no assignment at" it', () => {
+    expect(
+      branchAssignmentsEmptyState({
+        selectedBranchName: 'Head Office',
+        truncated: true,
+        canSwitch: true,
+        assignOffered: true,
+      }),
+    ).toEqual({
+      title: 'No branch assignments found',
+      description: `${BEYOND} ${OTHER} ${SWITCH} ${OFFER}`,
+    });
   });
 });
 

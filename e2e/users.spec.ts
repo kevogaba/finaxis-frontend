@@ -723,7 +723,16 @@ test.describe('users: access and audit', () => {
       mainText(page, /^Only Head Office is visible with a branch selected\./),
     ).toBeVisible({ timeout: 15000 });
     await expect(mainText(page, PARTIAL_SCAN_NOTE)).toHaveCount(0);
-    await expect(mainText(page, 'No branch assignments', { exact: true })).toBeVisible();
+    // "No branch assignments" would be a false fact under that note: only this branch was visible.
+    await expect(mainText(page, 'No assignment at Head Office', { exact: true })).toBeVisible();
+    await expect(
+      mainText(
+        page,
+        'They may be assigned to other branches. Switch to All branches to see them. Assign a branch so they can work there.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(mainText(page, 'No branch assignments', { exact: true })).toHaveCount(0);
 
     await press(page.getByRole('button', { name: 'Assign branch' }));
     const drawer = page.getByRole('dialog', { name: 'Assign to a branch' });
@@ -1041,7 +1050,15 @@ test.describe('users: gating and ids', () => {
     await openUser(page, USERS.ann, 'Ann Mwangi');
     await openTab(page, 'Branch assignments');
     await expect(mainText(page, PARTIAL_SCAN_NOTE)).toBeVisible({ timeout: 15000 });
-    await expect(mainText(page, 'No branch assignments', { exact: true })).toBeVisible();
+    await expect(mainText(page, 'No branch assignments found', { exact: true })).toBeVisible();
+    await expect(
+      mainText(
+        page,
+        'Only the first 500 branch assignments were checked, so they may be assigned beyond them. Assign a branch so they can work there.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(mainText(page, 'No branch assignments', { exact: true })).toHaveCount(0);
     await openTab(page, 'Roles & access');
     await press(page.getByRole('button', { name: 'Assign role' }));
     const drawer = page.getByRole('dialog', { name: 'Assign a role' });
@@ -1089,14 +1106,20 @@ test.describe('users: gating and ids', () => {
     await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2); // Joann's Head Office row
     await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Head Office');
 
-    // Felix holds none at Head Office: never a bare "0 at Head Office".
+    // Felix holds none at Head Office: never a bare "0 at Head Office", and not "At least 0" either.
     await openUser(page, USERS.felix, 'Felix Omondi');
     await expect(fact(page, 'Branch assignments')).toHaveText(
-      'At least 0 at Head Office (partial)',
+      'None found at Head Office (partial)',
       {
         timeout: 15000,
       },
     );
+    // The tab doesn't claim "No assignment at Head Office" for a branch whose list was capped.
+    await openTab(page, 'Branch assignments');
+    await expect(mainText(page, 'No branch assignments found', { exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(mainText(page, /^No assignment at /)).toHaveCount(0);
   });
 });
 

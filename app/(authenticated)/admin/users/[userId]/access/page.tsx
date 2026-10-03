@@ -25,6 +25,7 @@ import {
   canAssignUserRole,
   NO_ACTIVE_ROLES,
   parseUserId,
+  ROLES_UNAVAILABLE,
   roleScopeBranches,
   roleScopeHint,
 } from '@/modules/administration/users/user-rules';
@@ -80,11 +81,14 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
     selectedBranchName: selectedBranch?.name ?? null,
   });
   const assignOffered = canAssign && roleOptions.length > 0;
+  // `getRoleIndex` answers an empty map on any failure and every tenant has system roles, so an empty
+  // index means the read failed: never "there are no active roles".
+  const noRoleOffered = roles.size === 0 ? ROLES_UNAVAILABLE : NO_ACTIVE_ROLES;
 
   const card = (content: ReactNode) => (
     <SectionCard
       title="Roles & access"
-      description={canAssign && roleOptions.length === 0 ? NO_ACTIVE_ROLES : ACCESS_DESCRIPTION}
+      description={canAssign && roleOptions.length === 0 ? noRoleOffered : ACCESS_DESCRIPTION}
       actions={
         assignOffered ? (
           <AssignUserRoleButton

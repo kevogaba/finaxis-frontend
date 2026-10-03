@@ -20,6 +20,7 @@ import { listBranches } from '@/modules/administration/branches/branch-service';
 import { AssignUserBranchButton } from '@/modules/administration/users/components/user-branch-actions';
 import { UserBranchAssignmentsTable } from '@/modules/administration/users/components/user-branch-assignments-table';
 import {
+  branchAssignmentsEmptyState,
   branchContextNote,
   canAssignUserBranch,
   pageOfItems,
@@ -160,8 +161,10 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
   const notices =
     selectedBranch || scan.value.truncated ? (
       <Box sx={{ px: 4, pt: 3, display: 'grid', gap: 2 }}>
+        {/* role="note": static notices, not alerts announced on every visit to the tab (as the
+            settings catalogue's, and distinct from the toast's alert). */}
         {selectedBranch && (
-          <Alert severity="info">
+          <Alert severity="info" role="note">
             {branchContextNote(selectedBranch.name, canSwitch)}
             {canSwitch && (
               <Box sx={{ mt: 2 }}>
@@ -170,7 +173,11 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
             )}
           </Alert>
         )}
-        {scan.value.truncated && <Alert severity="info">{PARTIAL_SCAN_NOTE}</Alert>}
+        {scan.value.truncated && (
+          <Alert severity="info" role="note">
+            {PARTIAL_SCAN_NOTE}
+          </Alert>
+        )}
       </Box>
     ) : null;
 
@@ -178,13 +185,14 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
     <>
       {notices}
       {paged.items.length === 0 ? (
+        // With a branch selected or a capped scan, "none" would be a guess under the note saying so.
         <EmptyState
-          title="No branch assignments"
-          description={
-            assignOffered
-              ? 'Assign a branch so they can work there.'
-              : 'This user has no branch assignments.'
-          }
+          {...branchAssignmentsEmptyState({
+            selectedBranchName: selectedBranch?.name ?? null,
+            truncated: scan.value.truncated,
+            canSwitch,
+            assignOffered,
+          })}
         />
       ) : (
         <UserBranchAssignmentsTable
