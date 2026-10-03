@@ -7,12 +7,12 @@ import TextField from '@mui/material/TextField';
 import PersonAddAltOutlined from '@mui/icons-material/PersonAddAltOutlined';
 import { AssignmentDrawer } from '@/components/data-display/assignment-drawer';
 import { ConfirmDialog } from '@/components/data-display/confirm-dialog';
+import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import { useToast } from '@/components/providers/toast-provider';
 import { UserPicker } from '@/modules/administration/users/components/user-picker';
 import { assignBranchUser, revokeBranchAssignment } from '../branch-actions';
 import { BRANCH_ASSIGNMENT_TYPES } from '../branch-contract';
-import { focusRecordTitle } from './branch-lifecycle-actions';
 
 interface AssignBranchUserButtonProps {
   branchId: string;

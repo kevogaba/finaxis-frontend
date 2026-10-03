@@ -382,10 +382,11 @@ describe('TablePagination rows-per-page select focus ring (layer 07b gate findin
 
 describe('Typography focus-visible ring (gate finding V7: record-title focus fallback)', () => {
   it('gives a programmatically focused heading the house ring, not the browser default', () => {
-    // `focusRecordTitle` (branch-lifecycle-actions.tsx) sets `tabIndex = -1` and calls `.focus()`
-    // on a plain `<h1>` — the same "non-ButtonBase element needs the shared ring" situation as
-    // TablePagination's rows-per-page select above, fixed the same way: spread `theme.focusVisible`
-    // under `&:focus-visible` from a `styleOverrides.root`, here on MuiTypography.
+    // `focusRecordTitle` (components/data-display/focus-record-title.ts) sets `tabIndex = -1` and
+    // calls `.focus()` on a plain `<h1>` — the same "non-ButtonBase element needs the shared ring"
+    // situation as TablePagination's rows-per-page select above, fixed the same way: spread
+    // `theme.focusVisible` under `&:focus-visible` from a `styleOverrides.root`, here on
+    // MuiTypography.
     const { getByText } = renderWithProviders(
       <Typography component="h1" tabIndex={-1}>
         Westlands Branch
