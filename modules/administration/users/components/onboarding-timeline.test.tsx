@@ -30,8 +30,10 @@ describe('OnboardingTimeline', () => {
       <OnboardingTimeline progress={onboardingProgress('PENDING_APPROVAL', 'PROVISIONING_IDP')} />,
     );
 
-    expect(screen.getByRole('list', { name: 'Onboarding steps' })).toBeInTheDocument();
-    expect(screen.getByText(PROVISIONING_NOTE)).toBeInTheDocument();
+    const list = screen.getByRole('list', { name: 'Onboarding steps' });
+    const note = screen.getByText(PROVISIONING_NOTE);
+    // Under the steps, not above them or inside the list: exactly "follows".
+    expect(list.compareDocumentPosition(note)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('shows only the sentence once onboarding has stopped', () => {

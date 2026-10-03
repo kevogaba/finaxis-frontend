@@ -4,6 +4,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import {
   MEMBERSHIP_MISSING,
+  MEMBERSHIP_UNAVAILABLE,
   OWN_MEMBERSHIP,
   USER_MAKER_CHECKER_BLOCKED,
   type MembershipAction,
@@ -31,17 +32,19 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const NAME = 'Amina Odhiambo';
 
 interface Overrides {
+  /** Defaults to a found membership; `null` is the hero after a failed or missed lookup. */
+  membershipId?: string | null;
   actions: readonly MembershipAction[];
   blocked?: Partial<Record<MembershipAction, string>>;
   note?: string | null;
 }
 
 /** The hero's slot: the record title is the page's `h1`, the focus fallback's target. */
-const record = ({ actions, blocked = {}, note = null }: Overrides) => (
+const record = ({ membershipId = MEMBERSHIP, actions, blocked = {}, note = null }: Overrides) => (
   <main>
     <h1>{NAME}</h1>
     <UserLifecycleActions
-      membershipId={MEMBERSHIP}
+      membershipId={membershipId}
       userName={NAME}
       actions={actions}
       blocked={blocked}
@@ -72,6 +75,8 @@ describe('UserLifecycleActions', () => {
 
     await user.click(screen.getByRole('button', { name: 'Approve' }));
     const dialog = screen.getByRole('dialog', { name: `Approve ${NAME}?` });
+    // The activate endpoint reads no body, so Approve is a bare confirmation: no reason field.
+    expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
 
     await waitFor(() => {
@@ -158,6 +163,7 @@ describe('UserLifecycleActions', () => {
     await user.click(screen.getByRole('button', { name: 'Suspend' }));
     const dialog = screen.getByRole('dialog', { name: `Suspend ${NAME}?` });
     const reason = within(dialog).getByRole('textbox', { name: /^Reason/ });
+    expect(reason).toBeRequired();
     await user.type(reason, 'Cash audit');
     await user.click(within(dialog).getByRole('button', { name: 'Suspend' }));
 
@@ -225,11 +231,35 @@ describe('UserLifecycleActions', () => {
     await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), 'Cash audit');
     await user.click(within(dialog).getByRole('button', { name: 'Suspend' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Membership suspended');
+    expectScoped(suspendMembership.mock.calls[0]?.[1] as FormData);
 
     // A disabled button can't take focus, so with nothing enabled left the title is the target
     // (08's drafter-Submit case: the only action on offer is the blocked one).
     rerender(record({ actions: ['revoke'], blocked: { revoke: OWN_MEMBERSHIP } }));
 
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: NAME })).toHaveFocus();
+    });
+  });
+
+  it('falls back to the record title when the membership re-read fails after a transition', async () => {
+    const user = userEvent.setup();
+    suspendMembership.mockResolvedValueOnce({ ok: true });
+    const { rerender } = renderActions({ actions: ['suspend', 'revoke'] });
+
+    await user.click(screen.getByRole('button', { name: 'Suspend' }));
+    const dialog = screen.getByRole('dialog', { name: `Suspend ${NAME}?` });
+    await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), 'Cash audit');
+    await user.click(within(dialog).getByRole('button', { name: 'Suspend' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Membership suspended');
+    expectScoped(suspendMembership.mock.calls[0]?.[1] as FormData);
+
+    // `refresh()` re-runs the layout. If its membership lookup now fails, the hero keeps only the
+    // note (no membership, no action) and this component stays mounted, so nothing unmounts to
+    // run the cleanup: the effect is what returns focus to the title.
+    rerender(record({ membershipId: null, actions: [], note: MEMBERSHIP_UNAVAILABLE }));
+
+    expect(await screen.findByText(MEMBERSHIP_UNAVAILABLE)).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: NAME })).toHaveFocus();
     });
@@ -242,7 +272,11 @@ describe('UserLifecycleActions', () => {
 
     await user.click(screen.getByRole('button', { name: 'Revoke' }));
     const dialog = screen.getByRole('alertdialog', { name: `Revoke ${NAME}'s membership?` });
-    await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), 'Left the SACCO');
+    expect(dialog).toHaveTextContent('Every role and branch assignment here is revoked with it');
+    expect(dialog).toHaveTextContent('can never be invited to this institution again');
+    const reason = within(dialog).getByRole('textbox', { name: /^Reason/ });
+    expect(reason).toBeRequired();
+    await user.type(reason, 'Left the SACCO');
     await user.click(within(dialog).getByRole('button', { name: 'Revoke' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Membership revoked');
     expectScoped(revokeMembership.mock.calls[0]?.[1] as FormData);
