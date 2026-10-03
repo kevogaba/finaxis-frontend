@@ -209,8 +209,7 @@ export function BranchLifecycleActions({
           <Typography
             id={BLOCKED_ID}
             variant="caption"
-            color="text.secondary"
-            sx={{ flexBasis: '100%', textAlign: 'right' }}
+            sx={{ color: 'text.secondary', flexBasis: '100%', textAlign: 'right' }}
           >
             {MAKER_CHECKER_BLOCKED}
           </Typography>

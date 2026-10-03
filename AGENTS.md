@@ -37,7 +37,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - This is Material UI v9: some props renamed since earlier majors (e.g. `Stack`'s
   `alignItems`/`justifyContent`/`flexWrap` and `Checkbox`/`Radio`'s `inputRef`/`inputProps` moved
   to `sx` / `slotProps.input`). Check `node_modules/@mui/material/package.json` version and the
-  installed major's migration guide before assuming an older API shape.
+  installed major's migration guide before assuming an older API shape. `Typography`, `Box`,
+  `Stack`, `Grid` and `DialogContentText` also drop a dotted palette path in `color`
+  (`color="text.secondary"` emits no colour rule, so the text inherits its parent's): write
+  `sx={{ color: 'text.secondary' }}`, or `color="textSecondary"` on `TruncatedText`. MUI `Link`
+  still honours a dotted `color`. An ESLint rule in `eslint.config.mjs` enforces it.
 - Mutations are Server Actions built on `runServerAction` (`lib/api/action-result.ts`), which calls
   through `apiPost`/`apiPut`/`apiPatch`/`apiDelete` (`lib/api/tenant-api.ts`). Forward the
   idempotency key the form minted when it opened (`ReasonDialog` does this) — never generate one
@@ -57,28 +61,36 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   `fieldErrors` back with `applyFieldErrors` (`lib/apply-field-errors.ts`). Dialogs with one or
   two fields keep `useActionState` + native constraints. Name specific guard failures (a 409/403
   with a known cause) in the action, never with a raw backend message.
-- Every tenant-workspace data-listing UI (new lists especially) is server-paginated with state in
+- Multi-step forms use `components/data-display/wizard-form.tsx`'s `WizardForm` (the themed MUI
+  `Stepper` and a sticky action bar) with one React Hook Form across the steps: Continue
+  `trigger`s the step's own fields, the last step submits them all with one idempotency key, and
+  a server field error returns to its step (see
+  `modules/platform-administration/tenants/components/tenant-draft-wizard.tsx`). The form
+  validates on Continue, never on blur (a blur-added error line would move Continue under the
+  pointer); a choice validates its own field. While mounted, `WizardForm` keeps 96 px of page
+  scroll padding below, and `app/globals.css` keeps 80 px above for the sticky app bar, so a
+  sticky bar never covers a control the keyboard reaches (WCAG 2.4.11).
+- Every data-listing UI (both workspaces; new lists especially) is server-paginated with state in
   the URL: page sizes come from `lib/api/paging.ts`'s `PAGE_SIZES`, and lists render
   `TablePaginationBar` (`components/data-display/table-pagination-bar.tsx`) plus, where the list
   has filters, `ListToolbar`. Both route every client-side rewrite of a list's URL query params
   through `components/data-display/use-list-navigation.ts`'s `useListNavigation()` — never an
   ad-hoc `new URLSearchParams(...)` plus `router.push`. Never introduce an unpaginated list
-  endpoint or view. Two exceptions predate this pattern:
+  endpoint or view. One exception predates this pattern:
   `components/context/pagination-controls.tsx` (the pre-shell organisation/branch selection
-  lists in `/select-context`, which have no URL to hold state) and the platform tenant
-  directory's own `modules/platform-administration/components/platform-pagination.tsx`. The
-  profile's assigned-branches table (`app/(authenticated)/profile/contexts/page.tsx`) is a third,
-  named exception: it lists only the signed-in user's own branch assignments from `/auth/me`,
-  which has no paging and includes SUSPENDED branches that the paginated `/auth/branches` omits —
-  bounded by one user's assignments, so it is no licence for an unbounded list (plan
+  lists in `/select-context`, which have no URL to hold state). The profile's assigned-branches
+  table (`app/(authenticated)/profile/contexts/page.tsx`) is a second, named exception: it lists
+  only the signed-in user's own branch assignments from `/auth/me`, which has no paging and
+  includes SUSPENDED branches that the paginated `/auth/branches` omits — bounded by one user's
+  assignments, so it is no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-09-27-admin-parity-15-profile.md`).
-  The settings catalogue (`modules/administration/settings`) is a fourth, named exception: it is a
+  The settings catalogue (`modules/administration/settings`) is a third, named exception: it is a
   bounded form, not a data-listing directory — the fixed catalogue plus the tenant's stored keys,
   read in one request with a bounded page size (`?size=100`, the backend maximum) — so it is no
   licence for an unbounded list (plan
   `docs/superpowers/plans/2026-09-27-admin-parity-13-settings.md`, Ruling 6).
   The role grant drawer's catalogue (`modules/administration/roles`'s `getPermissionCatalogue` and
-  `listGrantedCodes`) is a fifth, named exception: it is a picker's option set, not a data-listing
+  `listGrantedCodes`) is a fourth, named exception: it is a picker's option set, not a data-listing
   directory — one bounded page of 100 plus the role's granted-code set, each read once and
   filtered client-side — so it is no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-10-01-admin-parity-09-roles.md`, Ruling 6).

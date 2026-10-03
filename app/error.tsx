@@ -29,11 +29,11 @@ export default function Error({
           <Typography component="h1" variant="h3">
             Something went wrong
           </Typography>
-          <Typography color="text.secondary">
+          <Typography sx={{ color: 'text.secondary' }}>
             We couldn&apos;t load this page. Try again, or sign in again if the problem continues.
           </Typography>
           {error.digest && (
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
               Reference: {error.digest}
             </Typography>
           )}

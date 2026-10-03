@@ -56,7 +56,7 @@ export function ContinueWithKeycloakButton() {
       >
         {isRedirecting ? 'Redirecting…' : 'Continue to Finaxis'}
       </Button>
-      <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+      <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center' }}>
         You will be redirected to your organization&apos;s secure identity service.
       </Typography>
     </Stack>

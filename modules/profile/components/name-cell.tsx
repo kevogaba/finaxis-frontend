@@ -21,7 +21,7 @@ export function NameCell({
         </Typography>
         {current && <StatusChip value="CURRENT" label="Current" tone="info" />}
       </Box>
-      <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+      <Typography variant="caption" sx={{ color: 'text.secondary', overflowWrap: 'anywhere' }}>
         {code}
       </Typography>
     </TableCell>

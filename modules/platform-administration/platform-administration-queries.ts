@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import type {
-  BranchListQuery,
-  TenantListQuery,
-  UserListQuery,
-} from './platform-administration.types';
+import type { BranchListQuery, UserListQuery } from './platform-administration.types';
 
 const pageSchema = z.number().int().min(0).default(0);
 const sizeSchema = z.number().int().min(1).max(100).default(25);
@@ -21,33 +17,6 @@ export function parseSize(value: string | null | undefined): number {
 function optionalText(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed?.length ? trimmed : undefined;
-}
-
-export function parseTenantListQuery(params: URLSearchParams): TenantListQuery {
-  return {
-    q: optionalText(params.get('q')),
-    status: optionalText(params.get('status')),
-    country: optionalText(params.get('country')),
-    createdFrom: optionalText(params.get('createdFrom')),
-    createdTo: optionalText(params.get('createdTo')),
-    page: parsePage(params.get('page')),
-    size: parseSize(params.get('size')),
-    sortBy: optionalText(params.get('sortBy')),
-    sortDir: params.get('sortDir') === 'desc' ? 'desc' : 'asc',
-  };
-}
-
-/**
- * Query parsers validate with `.parse()` so malformed input (e.g. `size=101`) is
- * rejected rather than silently clamped. Server Component pages must not let that
- * rejection surface as an uncaught error, so route through this before rendering.
- */
-export function safeParseTenantListQuery(params: URLSearchParams): TenantListQuery | null {
-  try {
-    return parseTenantListQuery(params);
-  } catch {
-    return null;
-  }
 }
 
 export function parseUserListQuery(params: URLSearchParams): UserListQuery {

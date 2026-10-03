@@ -18,7 +18,7 @@ test.describe('Platform administration workspace', () => {
     await authenticate(context, testInfo, 'platform-operator');
 
     // The very first hit of this route tree: the layout+page module graph (and its imports —
-    // TenantTable, platformAdministrationService, …) can still be compiling, so this redirect can
+    // TenantDirectoryTable, the tenant service, …) can still be compiling, so this redirect can
     // be slower than the default 5s assertion timeout under cold `next dev` worker contention.
     await page.goto('/platform-admin/tenants');
     await expect(page).toHaveURL(/\/select-context\?next=%2Fplatform-admin%2Ftenants$/, {
@@ -37,14 +37,14 @@ test.describe('Platform administration workspace', () => {
     expect((await organisationResponse).status()).toBe(200);
 
     await expect(page).toHaveURL(/\/platform-admin\/tenants$/, { timeout: 15000 });
-    await expect(page.getByRole('heading', { level: 1, name: 'Tenant directory' })).toBeVisible({
+    await expect(page.getByRole('heading', { level: 1, name: 'SACCO institutions' })).toBeVisible({
       timeout: 15000,
     });
     await expect(page.getByRole('link', { name: 'Acme SACCO' })).toHaveAttribute(
       'href',
       `/platform-admin/tenants/${PLATFORM_TENANT_ID}`,
     );
-    await expect(page.getByRole('navigation', { name: 'pagination navigation' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Go to next page' })).toBeVisible();
 
     await page.getByRole('link', { name: 'Acme SACCO' }).click();
     await expect(page).toHaveURL(new RegExp(`/platform-admin/tenants/${PLATFORM_TENANT_ID}$`), {

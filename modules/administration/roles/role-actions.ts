@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
+import { explain } from '@/lib/api/explain-action-result';
 import { apiDelete, apiPatch, apiPost } from '@/lib/api/tenant-api';
 import { UUID_PATTERN, uuidSchema } from '@/lib/api/wire';
 import { ROLE_SCOPE_TYPES, roleCreatedSchema } from './role-contract';
@@ -13,18 +14,6 @@ import { MAX_GRANTS_PER_SUBMIT, roleDraftSchema } from './role-rules';
 import { getRole } from './role-service';
 
 const idempotencyKey = z.uuid();
-
-/** Swaps the generic status message for one that names the guard behind a known code (spec §6.7).
- * branch-actions.ts keeps the same private helper; a 'use server' module can't export it. */
-function explain(
-  result: ActionResult,
-  code: string,
-  formError: string,
-  fieldErrors: Partial<Record<string, string>> = {},
-): ActionResult {
-  if (result.ok || result.code !== code) return result;
-  return { ...result, formError, fieldErrors: { ...result.fieldErrors, ...fieldErrors } };
-}
 
 // 409 = a system role (immutable) OR an optimistic-lock race (contract §I): never assert which.
 const IMMUTABLE =

@@ -88,9 +88,8 @@ export function GlobalHeader({
             <Typography
               component="span"
               variant="caption"
-              color="text.secondary"
               noWrap
-              sx={{ maxWidth: '100%' }}
+              sx={{ color: 'text.secondary', maxWidth: '100%' }}
             >
               {branch?.name ?? 'All branches'}
             </Typography>

@@ -2,24 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   mapBranch,
   mapBranchPage,
-  mapTenantDetail,
-  mapTenantPage,
   mapTenantUser,
   mapTenantUserPage,
 } from './platform-administration-mappers';
 
 describe('platform administration response mappers', () => {
-  it('maps snake_case page metadata and tenant fields to camelCase DTOs', () => {
+  it('maps snake_case page metadata and user fields to camelCase DTOs', () => {
     expect(
-      mapTenantPage({
+      mapTenantUserPage({
         items: [
           {
-            id: 'tenant-id',
-            tenant_code: 'acme',
-            display_name: 'Acme',
-            country_code: 'KE',
-            status: 'ACTIVE',
-            bootstrap_status: null,
+            id: 'user-id',
+            username: 'user',
+            email: 'user@example.test',
+            display_name: 'User',
+            user_status: 'ACTIVE',
+            membership_status: 'ACTIVE',
           },
         ],
         page: {
@@ -34,16 +32,12 @@ describe('platform administration response mappers', () => {
     ).toEqual({
       items: [
         {
-          id: 'tenant-id',
-          tenantCode: 'acme',
-          displayName: 'Acme',
-          countryCode: 'KE',
-          baseCurrencyCode: undefined,
-          timezone: undefined,
-          status: 'ACTIVE',
-          bootstrapStatus: null,
-          createdAt: undefined,
-          updatedAt: undefined,
+          id: 'user-id',
+          username: 'user',
+          email: 'user@example.test',
+          displayName: 'User',
+          userStatus: 'ACTIVE',
+          membershipStatus: 'ACTIVE',
         },
       ],
       page: {
@@ -82,16 +76,6 @@ describe('platform administration response mappers', () => {
       created_at: '2026-07-26T00:00:00Z',
       updated_at: '2026-07-26T00:00:00Z',
     };
-    expect(
-      mapTenantDetail({
-        id: 'tenant-id',
-        tenant_code: 'acme',
-        display_name: 'Acme',
-        country_code: 'KE',
-        status: 'ACTIVE',
-        bootstrap_failure_code: null,
-      }).bootstrapFailureCode,
-    ).toBeNull();
     expect(mapTenantUser(user).displayName).toBe('User');
     expect(
       mapTenantUserPage({
