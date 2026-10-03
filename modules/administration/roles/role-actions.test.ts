@@ -269,6 +269,25 @@ describe('role actions', () => {
     });
   });
 
+  it("names a missing role, for the user record's visible role select", async () => {
+    const schemas: z.ZodType[] = [];
+    runServerAction.mockImplementationOnce((given: z.ZodType) => {
+      schemas.push(given);
+      return Promise.resolve({ ok: true });
+    });
+    await actions.assignRole(null, form({}));
+    const fields = { idempotencyKey: KEY, userId: USER, scopeType: 'TENANT' };
+
+    for (const roleId of ['', 'not-a-uuid']) {
+      const parsed = schemas[0]?.safeParse({ ...fields, roleId });
+      expect(parsed?.error?.issues).toContainEqual(
+        expect.objectContaining({ path: ['roleId'], message: 'Choose a role.' }),
+      );
+    }
+    // A chosen role raises no roleId issue, and the same input is otherwise valid.
+    expect(schemas[0]?.safeParse({ ...fields, roleId: ROLE }).success).toBe(true);
+  });
+
   it('revokes with DELETE', async () => {
     await actions.revokeRoleAssignment(
       null,

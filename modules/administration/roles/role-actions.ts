@@ -193,7 +193,7 @@ export async function removePermission(
 const assignInput = z
   .object({
     idempotencyKey,
-    roleId: uuidSchema,
+    roleId: z.string().regex(UUID_PATTERN, 'Choose a role.'),
     userId: z.string().regex(UUID_PATTERN, 'Choose a user.'),
     scopeType: z.enum(ROLE_SCOPE_TYPES, { error: 'Choose a scope.' }),
     // Rendered only for BRANCH scope (RoleScopeFields).
