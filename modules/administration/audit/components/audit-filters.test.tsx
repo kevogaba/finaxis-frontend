@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/test-utils';
@@ -175,5 +175,67 @@ describe('AuditFilters', () => {
     expect(pushed).toContain('entityType=MEMBERSHIP');
     expect(pushed).not.toContain('entityId');
     expect(pushed).not.toContain('action');
+  });
+});
+
+describe('AuditFilters: after an actor is picked', () => {
+  const VICTOR = '10000000-0000-4000-8000-00000000000a';
+  const props = {
+    entityType: undefined,
+    resultLabel: '4 events',
+    actorChip: null,
+    actorSearch: true,
+    timeZone: 'Africa/Nairobi',
+  };
+
+  beforeEach(() => {
+    search = '';
+    router.push.mockReset();
+    // A fresh Response per call: a body can be read only once.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            items: [
+              {
+                id: VICTOR,
+                displayName: 'Victor Otieno',
+                email: 'victor.otieno@greenfield.example',
+                username: 'victor.otieno',
+                membershipStatus: 'ACTIVE',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('keeps keyboard focus on the Actor input when the chosen actor lands, so the next Tab continues from it', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderWithProviders(<AuditFilters {...props} />);
+    await user.type(screen.getByRole('combobox', { name: 'Actor' }), 'vic');
+    await screen.findByRole('option', { name: /Victor Otieno/ });
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(router.push).toHaveBeenCalledTimes(1);
+    const before = screen.getByRole('combobox', { name: 'Actor' });
+
+    // The server's re-render: the filter and its chip have landed.
+    rerender(
+      <AuditFilters
+        {...props}
+        actorId={VICTOR}
+        actorChip={{ label: 'Actor: Victor Otieno', removeParam: 'actorId' }}
+      />,
+    );
+
+    const after = screen.getByRole('combobox', { name: 'Actor' });
+    expect(after).not.toBe(before); // the search did start over ...
+    expect(after).toHaveValue('');
+    expect(after).toHaveFocus(); // ... without dropping focus to <body>
   });
 });

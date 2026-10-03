@@ -13,6 +13,9 @@ import { findUserMembership, getUser } from '@/modules/administration/users/user
 
 export const metadata: Metadata = { title: 'User audit trail' };
 
+const NOT_HERE =
+  "Role and branch assignment changes are recorded on each assignment and branch, so they don't appear here.";
+
 interface UserAuditPageProps {
   params: Promise<{ userId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -53,7 +56,9 @@ export default async function UserAuditPage({ params, searchParams }: UserAuditP
       views={views}
       params={toSearchParams(await searchParams)}
       path={`/admin/users/${userId}/audit`}
-      description="This user's history across their record, account and membership, and what they did. Role and branch assignment changes are recorded on each assignment and branch, so they don't appear here."
+      description={`This user's history across their ${
+        membershipId ? 'record, account and membership' : 'record and account'
+      }, and what they did. ${NOT_HERE}`}
     />
   );
 }

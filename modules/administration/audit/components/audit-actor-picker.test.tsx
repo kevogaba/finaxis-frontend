@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import { AuditActorPicker } from './audit-actor-picker';
 
@@ -36,6 +36,17 @@ const respond = (body: unknown) => () =>
     }),
   );
 
+type User = ReturnType<typeof userEvent.setup>;
+
+/** Types, then picks the first match with the keyboard alone: focus never leaves the input. */
+async function pickByKeyboard(user: User) {
+  await user.type(screen.getByRole('combobox', { name: 'Actor' }), 'vic');
+  await screen.findByRole('option', { name: /Victor Otieno/ });
+  await user.keyboard('{ArrowDown}{Enter}');
+}
+
+const actorInput = () => screen.getByRole('combobox', { name: 'Actor' });
+
 describe('AuditActorPicker', () => {
   beforeEach(() => {
     router.push.mockReset();
@@ -69,10 +80,12 @@ describe('AuditActorPicker', () => {
     renderWithProviders(<AuditActorPicker />);
 
     await user.type(screen.getByRole('combobox', { name: 'Actor' }), 'vic');
-    await screen.findByRole('option', { name: /Victor Otieno/ });
 
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[0]).toBe('/api/tenant/users?q=vic');
+    // Only the last search matters: under load the picker's 300 ms debounce can also fire for
+    // 'v' or 'vi' between two keystrokes, so neither the call count nor the first call is stable.
+    await waitFor(() => {
+      expect(vi.mocked(globalThis.fetch).mock.lastCall?.[0]).toBe('/api/tenant/users?q=vic');
+    });
   });
 
   it('does not navigate when the typed text drops the choice (no actorId to filter by)', async () => {
@@ -94,5 +107,68 @@ describe('AuditActorPicker', () => {
     expect(onError).not.toHaveBeenCalled();
     // The picker reported `null` here; no second navigation, so the filter is left as it was.
     expect(router.push).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts keyboard focus back on the Actor input once the chosen actor lands', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderWithProviders(<AuditActorPicker />);
+    await pickByKeyboard(user);
+    expect(router.push).toHaveBeenCalledTimes(1);
+    const before = actorInput();
+    expect(before).toHaveFocus(); // the keyboard pick left it there
+
+    // The page re-renders with the new filter: the picker starts over, empty, on a fresh input.
+    rerender(<AuditActorPicker actorId={VICTOR} />);
+
+    expect(actorInput()).not.toBe(before);
+    expect(actorInput()).toHaveValue('');
+    expect(actorInput()).toHaveFocus();
+  });
+
+  it('does not take focus on a first render that already has an actor applied', () => {
+    renderWithProviders(<AuditActorPicker actorId={VICTOR} />);
+
+    expect(actorInput()).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
+  });
+
+  it('does not take focus when the actor changed without a pick here (Back, chip removal)', () => {
+    const { rerender } = renderWithProviders(<AuditActorPicker actorId={VICTOR} />);
+
+    rerender(<AuditActorPicker />);
+
+    expect(actorInput()).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
+  });
+
+  it('leaves focus where the user moved it while the new filter was landing', async () => {
+    const user = userEvent.setup();
+    const page = (actorId?: string) => (
+      <>
+        <AuditActorPicker actorId={actorId} />
+        <button type="button">Elsewhere</button>
+      </>
+    );
+    const { rerender } = renderWithProviders(page());
+    await pickByKeyboard(user);
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Elsewhere' })).toHaveFocus();
+
+    rerender(page(VICTOR));
+
+    expect(screen.getByRole('button', { name: 'Elsewhere' })).toHaveFocus();
+    expect(actorInput()).not.toHaveFocus();
+  });
+
+  it('does not navigate when the actor already applied is picked again, and clears the stale name', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AuditActorPicker actorId={VICTOR} />);
+
+    await pickByKeyboard(user);
+
+    expect(router.push).not.toHaveBeenCalled();
+    // The chip already names Victor; the box must not keep "Victor Otieno" beside it.
+    expect(actorInput()).toHaveValue('');
+    expect(actorInput()).toHaveFocus();
   });
 });

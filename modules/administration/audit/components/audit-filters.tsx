@@ -60,7 +60,7 @@ export function AuditFilters({
         { kind: 'datetime', name: 'occurredTo', label: 'To', endOfMinute: true },
       ]}
     >
-      {actorSearch && <AuditActorPicker key={actorId ?? 'none'} />}
+      {actorSearch && <AuditActorPicker actorId={actorId} />}
     </ListToolbar>
   );
 }

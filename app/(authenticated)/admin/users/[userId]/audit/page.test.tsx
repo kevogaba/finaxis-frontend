@@ -41,6 +41,11 @@ const FELIX = '10000000-0000-4000-8000-00000000000d';
 const FELIX_MEMBERSHIP = '10000000-0000-4000-8000-00000000000e';
 const EMAIL = 'felix.omondi@greenfield.example';
 const BOTH = ['audit.view', 'membership.view'];
+const TAIL =
+  "Role and branch assignment changes are recorded on each assignment and branch, so they don't appear here.";
+// The description names only the histories the tab offers.
+const WITH_MEMBERSHIP = `This user's history across their record, account and membership, and what they did. ${TAIL}`;
+const WITHOUT_MEMBERSHIP = `This user's history across their record and account, and what they did. ${TAIL}`;
 
 interface Setup {
   permissions?: string[];
@@ -168,9 +173,24 @@ describe('UserAuditPage: what it hands the shared tab', () => {
     expect(tab.path).toBe(`/admin/users/${FELIX}/audit`);
     expect(tab.params.get('view')).toBe('actor');
     expect(tab.params.get('page')).toBe('2');
-    expect(tab.description).toContain('across their record, account and membership');
-    expect(tab.description).toContain("they don't appear here");
+    expect(tab.description).toBe(WITH_MEMBERSHIP);
   });
+
+  it.each([
+    ['no membership was found', { membership: null }],
+    ['the membership lookup failed', { membership: new BackendApiError(500, { requestId: 'r' }) }],
+    ['the holder cannot view memberships', { permissions: ['audit.view'] }],
+  ] as [string, Setup][])(
+    'does not promise membership history when %s, and so offers no Membership view',
+    async (_label, overrides) => {
+      setup(overrides);
+
+      const tab = await show();
+
+      expect(labels(tab)).not.toContain('Membership');
+      expect(tab.description).toBe(WITHOUT_MEMBERSHIP);
+    },
+  );
 
   it('renders nothing when the record itself failed (the layout shows that failure)', async () => {
     setup();

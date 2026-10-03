@@ -240,8 +240,8 @@ ones with their defaults):
 12. **Audit tab:** views `user` (USER / user id), `account` (USER_ACCOUNT / user id), `membership`
     (MEMBERSHIP / membership id, only when the membership resolved) and `actor` (`actorId`).
 13. **Actor picker:** `ListToolbar` gains an optional `children` slot (rendered after the fields,
-    before the chips), and `AuditFilters` renders `AuditActorPicker` there when the holder has
-    `user.view`.
+    before the chips), and `AuditFilters` renders `AuditActorPicker` (given the applied `actorId`)
+    there when the holder has `user.view`.
 14. **Fake API:** `routes/memberships.mts` (list, detail, activate, suspend, reactivate, revoke);
     `FakeUser.identityLinked?` (absent = linked: 200; `false`: 202 and the user becomes
     PROVISIONING_IDP) and `FakeMembership.invitedBy?` (maker-checker). Scenarios `users`,
@@ -2882,7 +2882,8 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
   `getCurrentContextProfile`, `can`; `toSearchParams`, `load`.
 - Produces:
   - `ListToolbar({ …, children?: ReactNode })` (additive);
-  - `AuditActorPicker()` (no props);
+  - `AuditActorPicker({ actorId }: { actorId?: string })` (the applied actor, a plain string: the picker restarts
+    on it and keeps keyboard focus across the restart);
   - `AuditFilters({ …, actorSearch?: boolean, actorId?: string })` (additive);
   - the route `/admin/users/[userId]/audit`.
 
@@ -2930,7 +2931,11 @@ it('filters by the chosen user and returns to the first page', async () => {
 ```
 
 `audit-filters.test.tsx`: "offers the actor search only when users can be searched" (`actorSearch`
-→ a combobox named `Actor`; without it, none).
+→ a combobox named `Actor`; without it, none), and a keyboard pick (type, ArrowDown, Enter) followed by a
+re-render with the new `actorId` leaves focus on the `Actor` input (fix round: the first design's remount
+dropped it to `<body>`); `audit-actor-picker.test.tsx` adds the controls (a first render with an applied
+actor, a filter that changed without a pick here, and a user who moved on all leave focus alone;
+re-picking the applied actor makes no navigation and clears the stale name).
 
 - [ ] **Step 3: Run them to verify they fail** — form U. Expected: FAIL.
 
@@ -2939,21 +2944,42 @@ it('filters by the chosen user and returns to the first page', async () => {
 ```tsx
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import { useListNavigation } from '@/components/data-display/use-list-navigation';
 import { UserPicker } from '@/modules/administration/users/components/user-picker';
 
 /** Spec §10.1: the actor filter by user search (the first 10 matches). Choosing a user filters by
- * `actorId` and returns to the first page; the toolbar's chip shows and removes the filter. */
-export function AuditActorPicker() {
+ * `actorId` and returns to the first page; the toolbar's chip shows and removes the filter. The
+ * search restarts (a fresh `UserPicker`, keyed on the applied actor) each time the filter changes,
+ * which replaces the focused input: after this picker's OWN choice, focus goes back to the new input
+ * once the filter lands (a filter that changed any other way, or a user who moved on, never takes it). */
+export function AuditActorPicker({ actorId }: { actorId?: string }) {
   const navigate = useListNavigation();
+  const box = useRef<HTMLDivElement>(null);
+  const refocus = useRef(false);
+  // Re-picking the applied actor changes no URL, so the stale name is cleared by bumping this.
+  const [resets, setResets] = useState(0);
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body && !box.current?.contains(active)) return;
+    box.current?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus();
+  }, [actorId, resets]);
   return (
-    <Box sx={{ width: { xs: '100%', sm: 260 } }}>
+    <Box ref={box} sx={{ width: { xs: '100%', sm: 260 } }}>
       <UserPicker
+        key={`${actorId ?? 'none'}:${resets}`}
         name="actorSearch"
         label="Actor"
         onChange={(chosen) => {
           if (!chosen) return;
+          refocus.current = true;
+          if (chosen.id === actorId) {
+            setResets((count) => count + 1);
+            return;
+          }
           navigate((params) => {
             params.set('actorId', chosen.id);
             params.delete('page');
@@ -2967,8 +2993,9 @@ export function AuditActorPicker() {
 ```
 
 `AuditFilters` gains `actorSearch?: boolean` and `actorId?: string` and renders
-`{actorSearch && <AuditActorPicker key={actorId ?? 'none'} />}` as `ListToolbar`'s children (the
-key clears the picker after each navigation). The audit page adds `getCurrentContextProfile()` to
+`{actorSearch && <AuditActorPicker actorId={actorId} />}` as `ListToolbar`'s children (the picker
+keys itself on `actorId`, so it clears after each navigation; the key must not sit on the picker
+here, or the remount would drop focus to `<body>`). The audit page adds `getCurrentContextProfile()` to
 its `Promise.all` and passes `actorSearch={can(holder, 'user.view')}` (the search reads
 `/tenant/users`) and `actorId={query.actorId}`.
 
@@ -3009,11 +3036,17 @@ export default async function UserAuditPage({ params, searchParams }: UserAuditP
       ]}
       params={toSearchParams(await searchParams)}
       path={`/admin/users/${userId}/audit`}
-      description="This user's history across their record, account and membership, and what they did. Role and branch assignment changes are recorded on each assignment and branch, so they don't appear here."
+      description={`This user's history across their ${
+        membershipId ? 'record, account and membership' : 'record and account'
+      }, and what they did. ${NOT_HERE}`}
     />
   );
 }
 ```
+
+`NOT_HERE` is "Role and branch assignment changes are recorded on each assignment and branch, so they
+don't appear here." The description names only the histories the tab offers: without a Membership view
+(no `membership.view`, or a membership that wasn't found or failed to load) it says "record and account".
 
 If TypeScript widens the literal past the non-empty tuple, declare it as
 `const views: [RecordAuditView, ...RecordAuditView[]] = […]` first.
