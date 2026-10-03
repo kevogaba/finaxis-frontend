@@ -1,7 +1,5 @@
-import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardActions from '@mui/material/CardActions';
@@ -11,65 +9,25 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import NextLink from '@/components/navigation/next-link';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { ErrorState } from '@/components/data-display/error-state';
+import { load } from '@/lib/api/load';
 import { PlatformPageShell } from '@/modules/platform-administration/components/platform-page-shell';
-import { platformAdministrationService } from '@/modules/platform-administration/platform-administration-service';
-import { safeParseTenantListQuery } from '@/modules/platform-administration/platform-administration-queries';
 import { platformAdministrationModule } from '@/modules/platform-administration/platform-administration-module';
-import type { TenantListQuery } from '@/modules/platform-administration/platform-administration.types';
-
-const DEFAULT_TENANT_LIST_QUERY: TenantListQuery = {
-  q: undefined,
-  status: undefined,
-  country: undefined,
-  createdFrom: undefined,
-  createdTo: undefined,
-  page: 0,
-  size: 25,
-  sortBy: undefined,
-  sortDir: 'asc',
-};
+import { DEFAULT_TENANT_SORT } from '@/modules/platform-administration/tenants/tenant-query';
+import { visibleTenantTotal } from '@/modules/platform-administration/tenants/tenant-rules';
+import { listTenants } from '@/modules/platform-administration/tenants/tenant-service';
 
 export const metadata: Metadata = { title: 'Platform Overview' };
 
-interface PlatformOverviewPageProps {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}
-
-function toUrlSearchParams(params: Record<string, string | string[] | undefined>): URLSearchParams {
-  const result = new URLSearchParams();
-
-  Object.entries(params).forEach(([key, value]) => {
-    if (Array.isArray(value)) {
-      value.forEach((entry) => {
-        result.append(key, entry);
-      });
-      return;
-    }
-
-    if (value !== undefined) {
-      result.set(key, value);
-    }
-  });
-
-  return result;
-}
-
-function describeTenantDirectoryState(query: TenantListQuery, totalItems: number): string {
+function describeTenantDirectoryState(totalItems: number): string {
   if (totalItems === 0) {
-    return 'No tenants are available in the live directory yet.';
+    return 'No SACCO institutions have been created yet.';
   }
 
-  if (query.q || query.status || query.country) {
-    return `${totalItems} tenant${totalItems === 1 ? ' is' : 's are'} visible for the current live filters.`;
-  }
-
-  return `${totalItems} tenant${totalItems === 1 ? ' is' : 's are'} available from the live directory.`;
+  return `${totalItems} SACCO institution${totalItems === 1 ? ' is' : 's are'} in the directory.`;
 }
 
-export default async function PlatformOverviewPage({ searchParams }: PlatformOverviewPageProps) {
-  const requestHeaders = await headers();
-  const query =
-    safeParseTenantListQuery(toUrlSearchParams(await searchParams)) ?? DEFAULT_TENANT_LIST_QUERY;
+export default async function PlatformOverviewPage() {
   const selectedContext = await getCurrentContextProfile();
 
   if (selectedContext.kind !== 'resolved') {
@@ -80,33 +38,27 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
     redirect('/admin');
   }
 
-  const tenantDirectoryResult = await platformAdministrationService
-    .listTenants(requestHeaders, query)
-    .then((data) => ({ data, kind: 'success' as const }))
-    .catch((error: unknown) => ({
-      error:
-        error instanceof Error ? error.message : 'The backend did not return a usable response.',
-      kind: 'error' as const,
-    }));
+  // Only the count is shown, so one row is enough (BG-15: no aggregate counts).
+  const directory = await load(listTenants({ sort: DEFAULT_TENANT_SORT, page: 0, size: 1 }));
 
   return (
     <PlatformPageShell
       title="Platform overview"
-      description="Confirm the active platform context and move into the live read-only workspaces."
+      description="Confirm the active platform context and open the SACCO institutions workspace."
     >
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 6 }}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
               <Stack spacing={1}>
-                <Typography variant="overline" color="text.secondary">
+                <Typography variant="overline" sx={{ color: 'text.secondary' }}>
                   Active platform context
                 </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                <Typography component="h2" variant="h6" sx={{ fontWeight: 700 }}>
                   {selectedContext.context.organization.name}
                 </Typography>
                 <Stack direction="row" spacing={1}>
-                  <Typography color="text.secondary" variant="body2">
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                     Branch:
                   </Typography>
                   <Typography variant="body2">
@@ -114,7 +66,7 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
                   </Typography>
                 </Stack>
                 <Stack direction="row" spacing={1}>
-                  <Typography color="text.secondary" variant="body2">
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                     Module:
                   </Typography>
                   <Typography variant="body2">{selectedContext.context.module.name}</Typography>
@@ -128,32 +80,27 @@ export default async function PlatformOverviewPage({ searchParams }: PlatformOve
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
               <Stack spacing={1.25}>
-                <Typography variant="overline" color="text.secondary">
-                  Tenant operations
+                <Typography variant="overline" sx={{ color: 'text.secondary' }}>
+                  Institution operations
                 </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                  Live tenant directory
+                <Typography component="h2" variant="h6" sx={{ fontWeight: 700 }}>
+                  SACCO institutions
                 </Typography>
-                {tenantDirectoryResult.kind === 'success' ? (
-                  <Typography color="text.secondary" variant="body2">
+                {directory.ok ? (
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                     {describeTenantDirectoryState(
-                      query,
-                      tenantDirectoryResult.data.page.totalItems,
+                      // BG-29: the total includes the reserved platform organisation.
+                      visibleTenantTotal(directory.value.page.totalItems, false, false),
                     )}
                   </Typography>
                 ) : (
-                  <Alert severity="warning" sx={{ alignItems: 'flex-start' }}>
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                      Live tenant data is temporarily unavailable.
-                    </Typography>
-                    <Typography variant="body2">{tenantDirectoryResult.error}</Typography>
-                  </Alert>
+                  <ErrorState problem={directory.problem} />
                 )}
               </Stack>
             </CardContent>
             <CardActions>
               <Button component={NextLink} href="/platform-admin/tenants" size="small">
-                Open tenant directory
+                Open SACCO institutions
               </Button>
             </CardActions>
           </Card>

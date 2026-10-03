@@ -59,8 +59,7 @@ export function RolePermissionsTable({
                 {row.name && (
                   <Typography
                     variant="caption"
-                    color="text.secondary"
-                    sx={{ fontFamily: 'monospace' }}
+                    sx={{ color: 'text.secondary', fontFamily: 'monospace' }}
                   >
                     {row.code}
                   </Typography>

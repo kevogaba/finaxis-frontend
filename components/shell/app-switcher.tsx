@@ -101,7 +101,7 @@ function Tile({ title, description, selected, icon: Icon, onClick }: TileProps) 
       <Typography component="span" variant="subtitle2" sx={{ fontWeight: 700 }}>
         {title}
       </Typography>
-      <Typography component="span" variant="caption" color="text.secondary">
+      <Typography component="span" variant="caption" sx={{ color: 'text.secondary' }}>
         {description}
       </Typography>
     </ButtonBase>
@@ -262,7 +262,7 @@ export function AppSwitcher({
         <Typography id={titleId} component="h2" variant="subtitle2" sx={{ fontWeight: 700 }}>
           Finaxis apps
         </Typography>
-        <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 3 }}>
+        <Typography variant="caption" component="p" sx={{ color: 'text.secondary', mb: 3 }}>
           Choose a workspace
         </Typography>
         {platform === undefined || switching ? (

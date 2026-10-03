@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
+import { explain } from '@/lib/api/explain-action-result';
 import { apiDelete, apiPost } from '@/lib/api/tenant-api';
 import { UUID_PATTERN, uuidSchema } from '@/lib/api/wire';
 import { BRANCH_ASSIGNMENT_TYPES, branchDraftResultSchema } from './branch-contract';
@@ -26,17 +27,6 @@ const requiredReason = z
 
 const transitionInput = z.object({ idempotencyKey, branchId: uuidSchema, reason: optionalReason });
 const reasonedInput = transitionInput.extend({ reason: requiredReason });
-
-/** Swaps the generic status message for one that names the guard behind a known code (spec §6.7). */
-function explain(
-  result: ActionResult,
-  code: string,
-  formError: string,
-  fieldErrors: Partial<Record<string, string>> = {},
-): ActionResult {
-  if (result.ok || result.code !== code) return result;
-  return { ...result, formError, fieldErrors: { ...result.fieldErrors, ...fieldErrors } };
-}
 
 // Submit/Activate/Reactivate take an optional reason, Suspend/Close a required one; the body is
 // `{}` when there's no reason (contract §D).

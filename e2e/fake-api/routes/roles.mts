@@ -180,14 +180,17 @@ function grantsOf(role: FakeRole) {
     );
 }
 
-/** Mirrors the backend's sort parsing: an off-list `sort_by` or `sort_dir` is a 500 (BG-07). */
+/** Mirrors the backend's sort parsing: an off-list `sort_by` or `sort_dir` is a 500 (BG-07).
+ * `sort_by` is user-controlled, so the allow-list is read with `Object.hasOwn`: `toString` must not
+ * resolve to an `Object.prototype` member. */
 function orderBy<T>(
   rows: T[],
   keys: Partial<Record<string, (row: T) => string>>,
   query: URLSearchParams,
   fallback: { by: string; dir: string },
 ): T[] {
-  const key = keys[query.get('sort_by') ?? fallback.by];
+  const sortBy = query.get('sort_by') ?? fallback.by;
+  const key = Object.hasOwn(keys, sortBy) ? keys[sortBy] : undefined;
   const direction = (query.get('sort_dir') ?? fallback.dir).toUpperCase();
   if (!key || (direction !== 'ASC' && direction !== 'DESC')) {
     throw problem(500, 'internal_error', 'An unexpected error occurred.');

@@ -119,7 +119,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <Typography component="h1" variant="h1">
             Welcome back
           </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mt: 1, mb: 4 }}>
+          <Typography variant="body1" sx={{ color: 'text.secondary', mt: 1, mb: 4 }}>
             Sign in to access your Finaxis workspace.
           </Typography>
 
@@ -127,7 +127,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <ContinueWithKeycloakButton />
 
           <Stack spacing={1} sx={{ alignItems: 'center', mt: 4 }}>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               Need help? <MuiLink href="mailto:support@finaxis.io">Contact support</MuiLink>
             </Typography>
             <Stack direction="row" spacing={2}>

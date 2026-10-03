@@ -92,14 +92,14 @@ export function RecordHero({
             {person ? initialsOf(avatar.name) : avatar.icon}
           </Avatar>
           <Box sx={{ minWidth: 0, flex: '1 1 160px' }}>
-            <Typography variant="overline" component="p" color="text.secondary">
+            <Typography variant="overline" component="p" sx={{ color: 'text.secondary' }}>
               {eyebrow}
             </Typography>
             <Typography component="h1" variant="h2" sx={{ my: 1, overflowWrap: 'anywhere' }}>
               {title}
             </Typography>
             {subtitle && (
-              <Typography color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+              <Typography sx={{ color: 'text.secondary', overflowWrap: 'anywhere' }}>
                 {subtitle}
               </Typography>
             )}

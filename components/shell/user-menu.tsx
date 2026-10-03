@@ -69,9 +69,8 @@ export function UserMenu({ user }: UserMenuProps) {
           <Typography
             component="span"
             variant="caption"
-            color="text.secondary"
             noWrap
-            sx={{ maxWidth: 180 }}
+            sx={{ color: 'text.secondary', maxWidth: 180 }}
           >
             {user.email}
           </Typography>
@@ -80,13 +79,13 @@ export function UserMenu({ user }: UserMenuProps) {
       </Button>
       <Menu id={menuId} anchorEl={anchorEl} open={open} onClose={handleClose}>
         <Box sx={{ px: 2, py: 1, minWidth: 220 }}>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Signed in as
           </Typography>
           <Typography variant="body2" sx={{ fontWeight: 600 }}>
             {user.name}
           </Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             {user.email}
           </Typography>
         </Box>

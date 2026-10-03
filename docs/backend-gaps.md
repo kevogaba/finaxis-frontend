@@ -156,7 +156,9 @@ tackled separately in the platform repository.
   `branch_id` (`RoleAssignmentController`'s `requireNotNull`, source f74e44b; the contract's 409 is
   from 7a7f4c3).
 - **Frontend handling:** pre-validation of every known trigger (e.g. membership lookup by email before
-  inviting, tenant-code uniqueness check, sort allow-lists) and a generic error showing `request_id`.
+  inviting, sort allow-lists), a tenant-code lookup after a failed create to name a duplicate (the
+  create goes first, so a replayed create is never turned away), and a generic error showing
+  `request_id`.
 - **Suggested change:** map domain precondition failures to 404/409/422 with specific codes.
 
 ### BG-08 — Maker not exposed; ambiguous 403 · P1
@@ -237,7 +239,8 @@ tackled separately in the platform repository.
   details and `status_reason` can't be read either. PATCH replaces every field, so an amend without
   re-entering legal name / registration number nulls them; `initial_settings` and `business_date` are
   ignored on amend.
-- **Frontend handling:** amend form asks for those fields to be re-entered and says why.
+- **Frontend handling:** the amend wizard asks for those fields and the first administrator to be
+  re-entered, says why, and sends no settings or business date.
 - **Suggested change:** return them (and admin draft details, status reason) on tenant detail; make
   PATCH a partial update.
 
@@ -349,8 +352,10 @@ reuse/release of rejected codes.
 
 ### BG-29 — PLATFORM organisation in tenant search · P2
 
-`GET /platform/tenants` includes the reserved PLATFORM organisation. The frontend filters it out
-(page sizes can then show one fewer row). Suggested: exclude it server-side.
+`GET /platform/tenants` includes the reserved PLATFORM organisation. The frontend filters it out,
+so a page can show one fewer row. The result count subtracts it whenever it is known to be included
+(always when unfiltered, and when its row is on the page), so a filtered count can read one high;
+its record URL shows the not-found page. Suggested: exclude it server-side.
 
 ### BG-30 — Error envelope inconsistencies · P2
 

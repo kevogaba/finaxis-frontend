@@ -33,7 +33,7 @@ export function PlatformPageShell({
                 {crumb.label}
               </Link>
             ) : (
-              <Typography key={crumb.label} color="text.primary">
+              <Typography key={crumb.label} sx={{ color: 'text.primary' }}>
                 {crumb.label}
               </Typography>
             ),

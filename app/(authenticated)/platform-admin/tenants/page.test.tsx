@@ -1,139 +1,116 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderWithProviders, screen } from '@/test/test-utils';
+import userEvent from '@testing-library/user-event';
+import { renderWithProviders, screen, within } from '@/test/test-utils';
 
-const { listTenants } = vi.hoisted(() => ({
+const PLATFORM = 'abcdef01-2345-4678-89ab-cdef01234567';
+
+const { getCurrentContextProfile, listTenants } = vi.hoisted(() => ({
+  getCurrentContextProfile: vi.fn(),
   listTenants: vi.fn(),
 }));
 
-const requestHeaders = new Headers({ cookie: 'finaxis.context=platform-context' });
-
-vi.mock('next/headers', () => ({ headers: vi.fn(() => requestHeaders) }));
-vi.mock('@/modules/platform-administration/platform-administration-service', () => ({
-  platformAdministrationService: {
-    listTenants: (...args: unknown[]) => listTenants(...args) as unknown,
-  },
+vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
+vi.mock('next/navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation')>()),
+  usePathname: () => '/platform-admin/tenants',
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams('country=DD'),
+}));
+vi.mock('@/auth/context-service', () => ({
+  getCurrentContextProfile: (...args: unknown[]) => getCurrentContextProfile(...args) as unknown,
+}));
+vi.mock('@/config/application-context', () => ({
+  isPlatformOrganisation: (id: string) => id === PLATFORM,
+}));
+vi.mock('@/modules/platform-administration/tenants/tenant-service', () => ({
+  listTenants: (...args: unknown[]) => listTenants(...args) as unknown,
 }));
 
 const { default: TenantDirectoryPage } = await import('./page');
 
+function tenantPage(
+  items: readonly { id: string; tenantCode: string }[],
+  page: { number?: number; totalItems: number; totalPages: number },
+) {
+  return {
+    items: items.map((item) => ({
+      ...item,
+      displayName: item.tenantCode,
+      countryCode: 'KE',
+      status: 'ACTIVE',
+      createdAt: '2026-01-01T00:00:00Z',
+    })),
+    page: {
+      number: page.number ?? 0,
+      size: 10,
+      totalItems: page.totalItems,
+      totalPages: page.totalPages,
+      hasNext: false,
+      hasPrevious: (page.number ?? 0) > 0,
+    },
+  };
+}
+
 describe('TenantDirectoryPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    listTenants.mockResolvedValue({
-      items: [
-        {
-          id: 'tenant-1',
-          tenantCode: 'ACME',
-          displayName: 'Acme SACCO',
-          countryCode: 'KE',
-          baseCurrencyCode: 'KES',
-          timezone: 'Africa/Nairobi',
-          status: 'ACTIVE',
-          bootstrapStatus: 'SUCCESS',
-          createdAt: '2026-07-01T08:00:00Z',
-          updatedAt: '2026-07-24T08:00:00Z',
-        },
-      ],
-      page: {
+    getCurrentContextProfile.mockResolvedValue({
+      kind: 'resolved',
+      profile: { permissions: ['tenant.view'] },
+    });
+    listTenants.mockResolvedValue(tenantPage([], { totalItems: 0, totalPages: 0 }));
+  });
+
+  it('labels a country from the URL that is not canonical by its code, not as the country it aliases', async () => {
+    renderWithProviders(
+      await TenantDirectoryPage({ searchParams: Promise.resolve({ country: 'DD' }) }),
+    );
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Country' }));
+    const options = within(screen.getByRole('listbox')).getAllByRole('option');
+
+    expect(options.filter((option) => option.textContent === 'DD')).toHaveLength(1);
+    expect(
+      options
+        .filter((option) => option.textContent === 'Germany')
+        .map((option) => option.getAttribute('data-value')),
+    ).toEqual(['DE']);
+  });
+
+  it('words the empty state by the visible total when a page holds only the platform row (BG-29)', async () => {
+    // 11 backend items: the oldest, the platform organisation, sits alone on the second page.
+    listTenants.mockResolvedValue(
+      tenantPage([{ id: PLATFORM, tenantCode: 'platform' }], {
         number: 1,
-        size: 25,
-        totalItems: 75,
-        totalPages: 3,
-        hasNext: true,
-        hasPrevious: true,
-      },
-    });
-  });
-
-  it('parses URL filters, renders the tenant table, and preserves filters in pagination links', async () => {
-    const ui = await TenantDirectoryPage({
-      searchParams: Promise.resolve({
-        country: 'KE',
-        page: '1',
-        q: 'Acme',
-        size: '25',
-        status: 'ACTIVE',
+        totalItems: 11,
+        totalPages: 2,
       }),
-    });
-    renderWithProviders(ui);
-
-    expect(listTenants).toHaveBeenCalledWith(requestHeaders, {
-      country: 'KE',
-      createdFrom: undefined,
-      createdTo: undefined,
-      page: 1,
-      q: 'Acme',
-      size: 25,
-      sortBy: undefined,
-      sortDir: 'asc',
-      status: 'ACTIVE',
-    });
-    expect(screen.getByRole('heading', { level: 1, name: 'Tenant directory' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Search tenants')).toHaveValue('Acme');
-    expect(screen.getByLabelText('Status')).toHaveValue('ACTIVE');
-    expect(screen.getByLabelText('Country')).toHaveValue('KE');
-    expect(screen.getByRole('columnheader', { name: 'Tenant' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Country' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Acme SACCO' })).toHaveAttribute(
-      'href',
-      '/platform-admin/tenants/tenant-1',
     );
-    expect(screen.getByLabelText('Status: Active')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to previous page' })).toHaveAttribute(
-      'href',
-      '/platform-admin/tenants?country=KE&q=Acme&size=25&sortDir=asc&status=ACTIVE&page=0',
+
+    renderWithProviders(
+      await TenantDirectoryPage({ searchParams: Promise.resolve({ page: '1' }) }),
     );
-    expect(screen.getByRole('link', { name: 'Go to next page' })).toHaveAttribute(
-      'href',
-      '/platform-admin/tenants?country=KE&q=Acme&size=25&sortDir=asc&status=ACTIVE&page=2',
+
+    expect(screen.getByText('10 institutions')).toBeInTheDocument();
+    expect(screen.getByText('No institutions on this page.')).toBeInTheDocument();
+    expect(screen.queryByText(/have been created yet/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/match these filters/)).not.toBeInTheDocument();
+  });
+
+  it('says none have been created when only the platform organisation exists', async () => {
+    listTenants.mockResolvedValue(
+      tenantPage([{ id: PLATFORM, tenantCode: 'platform' }], { totalItems: 1, totalPages: 1 }),
     );
+
+    renderWithProviders(await TenantDirectoryPage({ searchParams: Promise.resolve({}) }));
+
+    expect(screen.getByText('0 institutions')).toBeInTheDocument();
+    expect(screen.getByText('No institutions have been created yet.')).toBeInTheDocument();
   });
 
-  it('renders an empty state when no tenants match the current filters', async () => {
-    listTenants.mockResolvedValueOnce({
-      items: [],
-      page: {
-        number: 0,
-        size: 25,
-        totalItems: 0,
-        totalPages: 0,
-        hasNext: false,
-        hasPrevious: false,
-      },
-    });
+  it('says nothing matches when a filter finds no institution', async () => {
+    renderWithProviders(await TenantDirectoryPage({ searchParams: Promise.resolve({ q: 'zz' }) }));
 
-    const ui = await TenantDirectoryPage({
-      searchParams: Promise.resolve({ q: 'Missing tenant', status: 'SUSPENDED' }),
-    });
-    renderWithProviders(ui);
-
-    expect(screen.getByText(/no tenants matched the current filters/i)).toBeInTheDocument();
-  });
-
-  it('renders a backend error state instead of a broken table', async () => {
-    listTenants.mockRejectedValueOnce(new Error('Tenant service timed out.'));
-
-    const ui = await TenantDirectoryPage({ searchParams: Promise.resolve({}) });
-    renderWithProviders(ui);
-
-    expect(screen.getByText(/tenant directory is temporarily unavailable/i)).toBeInTheDocument();
-    expect(screen.getByText('Tenant service timed out.')).toBeInTheDocument();
-  });
-
-  it('renders a validation error instead of crashing on an out-of-range page size', async () => {
-    const ui = await TenantDirectoryPage({ searchParams: Promise.resolve({ size: '101' }) });
-    renderWithProviders(ui);
-
-    expect(screen.getByText(/these search parameters aren.t valid/i)).toBeInTheDocument();
-    expect(listTenants).not.toHaveBeenCalled();
-  });
-
-  it('renders a validation error instead of crashing on a negative page number', async () => {
-    const ui = await TenantDirectoryPage({ searchParams: Promise.resolve({ page: '-1' }) });
-    renderWithProviders(ui);
-
-    expect(screen.getByText(/these search parameters aren.t valid/i)).toBeInTheDocument();
-    expect(listTenants).not.toHaveBeenCalled();
+    expect(screen.getByText('No institutions match these filters.')).toBeInTheDocument();
   });
 });

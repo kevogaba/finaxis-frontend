@@ -92,7 +92,7 @@ export function AuditEventTable({
                   {row.actionLabel}
                 </Typography>
                 <Box>
-                  <Typography component="span" variant="caption" color="text.secondary">
+                  <Typography component="span" variant="caption" sx={{ color: 'text.secondary' }}>
                     {row.action}
                   </Typography>
                 </Box>
@@ -101,7 +101,7 @@ export function AuditEventTable({
                     value={row.reason}
                     maxWidth={320}
                     variant="caption"
-                    color="text.secondary"
+                    color="textSecondary"
                   />
                 )}
               </TableCell>

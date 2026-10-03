@@ -2,8 +2,6 @@ import type {
   ApiPage,
   ApiPageMetadata,
   BranchDetail,
-  TenantDetail,
-  TenantSummary,
   TenantUserSummary,
 } from './platform-administration.types';
 
@@ -19,20 +17,6 @@ interface RawPageMetadata {
 interface RawPage<T> {
   items: readonly T[];
   page: RawPageMetadata;
-}
-
-interface RawTenant {
-  id: string;
-  tenant_code: string;
-  display_name: string;
-  country_code: string;
-  base_currency_code?: string;
-  timezone?: string;
-  status: string;
-  bootstrap_status?: string | null;
-  bootstrap_failure_code?: string | null;
-  created_at?: string;
-  updated_at?: string;
 }
 
 interface RawTenantUser {
@@ -70,29 +54,6 @@ export function mapPageMetadata(raw: RawPageMetadata): ApiPageMetadata {
     hasNext: raw.has_next,
     hasPrevious: raw.has_previous,
   };
-}
-
-function mapTenant(raw: RawTenant): TenantSummary {
-  return {
-    id: raw.id,
-    tenantCode: raw.tenant_code,
-    displayName: raw.display_name,
-    countryCode: raw.country_code,
-    baseCurrencyCode: raw.base_currency_code,
-    timezone: raw.timezone,
-    status: raw.status,
-    bootstrapStatus: raw.bootstrap_status,
-    createdAt: raw.created_at,
-    updatedAt: raw.updated_at,
-  };
-}
-
-export function mapTenantPage(raw: RawPage<RawTenant>): ApiPage<TenantSummary> {
-  return { items: raw.items.map(mapTenant), page: mapPageMetadata(raw.page) };
-}
-
-export function mapTenantDetail(raw: RawTenant): TenantDetail {
-  return { ...mapTenant(raw), bootstrapFailureCode: raw.bootstrap_failure_code ?? null };
 }
 
 export function mapTenantUser(raw: RawTenantUser): TenantUserSummary {

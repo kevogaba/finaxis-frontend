@@ -127,7 +127,7 @@ export function UserPicker({
               <Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>
                 {option.displayName}
               </Typography>
-              <Typography variant="caption" component="p" color="text.secondary" noWrap>
+              <Typography variant="caption" component="p" noWrap sx={{ color: 'text.secondary' }}>
                 {option.email}
               </Typography>
             </Box>
