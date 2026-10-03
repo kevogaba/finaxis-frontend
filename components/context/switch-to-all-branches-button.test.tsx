@@ -127,13 +127,17 @@ describe('SwitchToAllBranchesButton', () => {
       assignedBranchIds: ['b-1'],
     });
 
-    await user.click(renderButton());
+    const button = renderButton({ withTitle: true });
+    await user.click(button);
 
     const unavailable = await screen.findByRole('alert');
     expect(unavailable).toHaveTextContent(ALL_BRANCHES_UNAVAILABLE);
     // Informational, not a failure.
     expect(unavailable).toHaveClass('MuiAlert-colorInfo');
     expect(router.refresh).toHaveBeenCalledTimes(1);
+    // The button and its note stay, with the message under them: focus must not jump to the title.
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus();
+    expect(button).toHaveFocus();
   });
 
   it('pins a single branch listed twice again, as context selection does', async () => {
@@ -145,12 +149,16 @@ describe('SwitchToAllBranchesButton', () => {
     });
     selectBranchRequest.mockResolvedValueOnce(undefined);
 
-    await user.click(renderButton());
+    const button = renderButton({ withTitle: true });
+    await user.click(button);
 
     await waitFor(() => {
       expect(selectBranchRequest).toHaveBeenCalledWith('b-1');
     });
     expect(await screen.findByRole('alert')).toHaveTextContent(ALL_BRANCHES_UNAVAILABLE);
+    // Pinned again, so the note and the button stay: focus is not moved to the title either.
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus();
+    expect(button).toHaveFocus();
   });
 
   it('still refreshes when the re-pin fails after the organisation POST moved the context', async () => {

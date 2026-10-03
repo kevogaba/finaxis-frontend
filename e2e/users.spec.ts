@@ -41,7 +41,9 @@ const FORBIDDEN_TITLE = "You don't have permission";
 /** The seeded home assignment of Felix at Westlands (`homeAt(7, …)` in scenarios.mts). */
 const FELIX_HOME_ASSIGNMENT = '10000000-0000-4000-8000-000000000207';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-// A user id no scenario seeds (the seeds stop at …01b, …0301 and …0400 and above).
+// A user id no scenario seeds: the only seeded ids with hex letters are …000a-…000f, …001a and …001b,
+// and every other seed (…0099, …0201-…0210, …0301-…0310, …0401-…0407, the …100000-…100499 fillers)
+// is decimal-padded, so …00ff never appears.
 const UNKNOWN_USER = '10000000-0000-4000-8000-0000000000ff';
 const WANJIRU = /^Wanjiru Njeri Kamau-Otieno/;
 
@@ -841,7 +843,8 @@ test.describe('users: access and audit', () => {
       ),
     ).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('button', { name: 'Switch to All branches' })).toHaveCount(0);
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2); // Head Office
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2); // header + one row
+    await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Head Office');
   });
 
   test('shows a user history in four audit views', async ({ context, page }, testInfo) => {
@@ -943,10 +946,11 @@ test.describe('users: access and audit', () => {
       timeout: 15000,
     });
     expect(searchParam(page, 'entityType')).toBe('USER');
-    expect(searchParam(page, 'page')).toBeNull();
+    // That the pick drops `page` is pinned by 'starts the filtered trail on its first page after an
+    // actor is picked' below: this URL has no `page` to drop (and Victor's four events fit one page).
     const chip = page.getByRole('button', { name: 'Actor: Victor Otieno' });
     await expect(chip).toBeVisible();
-    // His four invitations; the sixth USER event, Jane's, is another actor's.
+    // His four invitations; the other seven USER events are Jane's (six) or the system's (one).
     await expect(page.getByRole('status').filter({ hasText: /^4 events$/ })).toBeVisible();
     // The search starts over, empty, and keeps the keyboard where the user was.
     await expect(actor).toHaveValue('');
@@ -1101,8 +1105,12 @@ test.describe('users: gating and ids', () => {
     await expect(rowsOf(page, 'Audit events').nth(1)).toContainText('Invited user', {
       timeout: 15000,
     });
-    // A row's link into the full trail carries the lower-case id too.
-    const link = page.getByRole('link', { name: /view event/i }).first();
+    // A row's link into the full trail carries the lower-case id too. The User record view holds
+    // exactly one event, so the link is the only one: a duplicate would fail the strict locator.
+    await expect(rowsOf(page, 'Audit events')).toHaveCount(2); // header + the invitation
+    const link = rowsOf(page, 'Audit events')
+      .nth(1)
+      .getByRole('link', { name: /view event/i });
     const href = new URL((await link.getAttribute('href')) ?? '', 'http://localhost');
     expect(href.pathname).toBe('/admin/audit');
     expect(href.searchParams.get('entityId')).toBe(USERS.felix);

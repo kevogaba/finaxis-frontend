@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import type { APIRequestContext } from '@playwright/test';
-import { IDS } from '../fake-api/scenarios.mts';
+import { IDS, type ScenarioName } from '../fake-api/scenarios.mts';
 
 export const FAKE_API_URL = `http://127.0.0.1:${process.env.FAKE_API_PORT ?? '3199'}`;
 export const api = (path: string) => `${FAKE_API_URL}/api/v1${path}`;
 
-/** Headers for a fresh run: at one branch, or at institution level (`null`). */
+/** Headers for a fresh run of `scenario`: at one branch, or at institution level (`null`). A
+ * misspelled scenario name is a type error here, not an empty answer from the fake later. */
 export async function contextFor(
   request: APIRequestContext,
-  scenario: string,
+  scenario: ScenarioName,
   branchId: string | null,
 ): Promise<Record<string, string>> {
   const bearer = { Authorization: `Bearer e2e.${scenario}.${randomUUID()}` };

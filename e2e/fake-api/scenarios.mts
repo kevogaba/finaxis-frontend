@@ -986,10 +986,12 @@ function userAuditEvent(
 
 /**
  * Layer 10: a copy of `default` plus twelve people, one per onboarding state. Victor is the other
- * administrator and the inviter of Amina, Brian, Daniel and Felix; Jane invited Carol, so she can't
- * approve her. Amina, Carol and Daniel have no identity link (approval is a 202); Brian has one
- * (a 200). Ann's email sits inside Joann's, and Wanjiru's name is the 100-character maximum.
- * The fake lists newest first, so the directory reads Joann … Victor, then Jane.
+ * administrator and the inviter of Amina, Brian, Daniel and Felix; Jane invited Carol, so Jane's
+ * approval of her is a 403 (maker-checker, BG-08). Amina, Carol and Daniel have no identity link,
+ * so an approval queues identity provisioning (a 202) unless it is refused first: Daniel's already
+ * ran, so approving him again is a 500 (BG-07, BG-11). Brian has one (a 200). Ann's email sits
+ * inside Joann's, and Wanjiru's name is the 100-character maximum. The fake lists newest first, so
+ * the directory reads Joann … Victor, then Jane.
  */
 function usersScenario(): RunState {
   const state = greenfieldTenant();

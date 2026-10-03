@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
-import { IDS, seedScenario, USER_SCENARIO_IDS as USERS } from './fake-api/scenarios.mts';
+import {
+  IDS,
+  seedScenario,
+  USER_SCENARIO_IDS as USERS,
+  type ScenarioName,
+} from './fake-api/scenarios.mts';
 import { api, contextFor } from './support/fake-api';
 
 interface Paged<T> {
@@ -46,7 +51,7 @@ const read = async <T>(response: APIResponse): Promise<T> => (await response.jso
 const membershipPath = (membershipId: string) => `/tenant/memberships/${membershipId}`;
 
 /** A fresh run of `scenario` at institution level, with the requests as the app sends them. */
-async function signIn(request: APIRequestContext, scenario = 'users') {
+async function signIn(request: APIRequestContext, scenario: ScenarioName = 'users') {
   const headers = await contextFor(request, scenario, null);
   return {
     get: (path: string) => request.get(api(path), { headers }),
@@ -500,7 +505,7 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
   });
 
   test('pads users-many-assignments past the scan ceiling', async ({ request }) => {
-    const page = async (scenario: string, number: number) =>
+    const page = async (scenario: ScenarioName, number: number) =>
       read<Paged<AssignmentRow>>(
         await (
           await signIn(request, scenario)

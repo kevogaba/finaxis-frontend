@@ -28,6 +28,14 @@ const VICTOR_OPTION = {
   membershipStatus: 'ACTIVE',
 };
 
+const JANE_OPTION = {
+  id: JANE,
+  displayName: 'Backend Jane Manager',
+  email: 'jane.manager@greenfield.example',
+  username: 'jane.manager',
+  membershipStatus: 'ACTIVE',
+};
+
 // A fresh Response per call: a body can be read only once (as user-picker.test.tsx).
 const respond = (body: unknown) => () =>
   Promise.resolve(
@@ -199,6 +207,30 @@ describe('AuditActorPicker', () => {
     await pickByKeyboard(user);
     expect(router.push).toHaveBeenCalledTimes(2);
     rerender(<AuditActorPicker actorId={VICTOR} />);
+
+    expect(actorInput()).toHaveValue('');
+    expect(actorInput()).toHaveFocus();
+  });
+
+  it('takes focus for the latest of two picks made before either one landed', async () => {
+    // Search answers by what was typed, so the same input can pick Victor and then Jane.
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      return respond({ items: url.includes('q=jan') ? [JANE_OPTION] : [VICTOR_OPTION] })();
+    });
+    const user = userEvent.setup();
+    const { rerender } = renderWithProviders(<AuditActorPicker />);
+    await pickByKeyboard(user); // Victor; his navigation has not landed
+    await user.clear(actorInput());
+    await user.type(actorInput(), 'jan');
+    await screen.findByRole('option', { name: /Backend Jane Manager/ });
+    await user.keyboard('{ArrowDown}{Enter}'); // Jane, on the same input
+    expect(router.push).toHaveBeenCalledTimes(2);
+    const lastHref = new URL(String(router.push.mock.lastCall?.[0]), 'http://localhost');
+    expect(lastHref.searchParams.get('actorId')).toBe(JANE);
+
+    // Only the latest pick lands (Next supersedes the first): the picker restarts and refocuses.
+    rerender(<AuditActorPicker actorId={JANE} />);
 
     expect(actorInput()).toHaveValue('');
     expect(actorInput()).toHaveFocus();
