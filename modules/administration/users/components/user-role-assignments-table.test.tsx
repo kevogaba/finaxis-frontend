@@ -24,6 +24,17 @@ const LOANS_ASSIGNMENT = '10000000-0000-4000-8000-000000000308';
 const ORG = '11111111-1111-4111-8111-111111111111';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+const hidden = (name: string, root: ParentNode) =>
+  root.querySelector<HTMLInputElement>(`input[name="${name}"]`)?.value;
+
+/** Rule 6: every confirmation carries the rendered organisation, a minted key and its row's
+ * assignment, or the cross-tab guard and the retry's replay silently stop working. */
+function expectScoped(root: ParentNode, assignmentId: string) {
+  expect(hidden('contextOrganisationId', root)).toBe(ORG);
+  expect(hidden('idempotencyKey', root)).toMatch(UUID);
+  expect(hidden('assignmentId', root)).toBe(assignmentId);
+}
+
 const tenantRow: UserRoleAssignmentRow = {
   assignmentId: TENANT_ASSIGNMENT,
   roleName: 'Teller',
@@ -149,6 +160,7 @@ describe('UserRoleAssignmentsTable', () => {
       name: "Revoke Felix Omondi's Teller assignment?",
     });
     expect(dialog).toHaveTextContent('Felix Omondi loses Teller (Westlands Branch) immediately.');
+    expectScoped(dialog, BRANCH_ASSIGNMENT);
     await user.click(within(dialog).getByRole('button', { name: 'Revoke' }));
 
     await waitFor(() => {
@@ -164,8 +176,10 @@ describe('UserRoleAssignmentsTable', () => {
     const user = userEvent.setup();
     renderTable({ self: true });
     await user.click(screen.getByRole('button', { name: /^Revoke Felix Omondi's Teller/ }));
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('This is your own assignment');
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('This is your own assignment');
+    expectScoped(dialog, TENANT_ASSIGNMENT);
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => {
       expect(screen.queryByRole('alertdialog')).toBeNull();
     });
@@ -177,6 +191,7 @@ describe('UserRoleAssignmentsTable', () => {
     await user.click(screen.getByRole('button', { name: /^Revoke Felix Omondi's Teller/ }));
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).not.toHaveTextContent('your own assignment');
+    expectScoped(dialog, TENANT_ASSIGNMENT);
   });
 
   it("renders no revoke for a row the context can't revoke", () => {

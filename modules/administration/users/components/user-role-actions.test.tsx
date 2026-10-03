@@ -30,6 +30,13 @@ const TWO_ROLES = [
 const hidden = (name: string, root: ParentNode = document) =>
   root.querySelector<HTMLInputElement>(`input[name="${name}"]`)?.value;
 
+/** Rule 6: every drawer carries the rendered organisation and a minted key, or the cross-tab guard
+ * and the retry's replay silently stop working. */
+function expectScoped(root: ParentNode) {
+  expect(hidden('contextOrganisationId', root)).toBe(ORG);
+  expect(hidden('idempotencyKey', root)).toMatch(UUID);
+}
+
 interface Overrides {
   roles?: readonly { id: string; label: string }[];
   branches?: readonly { id: string; label: string }[];
@@ -63,8 +70,7 @@ describe('AssignUserRoleButton', () => {
 
     expect(drawer).toHaveTextContent('Give Felix Omondi a role. It takes effect immediately.');
     expect(hidden('userId', drawer)).toBe(FELIX);
-    expect(hidden('contextOrganisationId', drawer)).toBe(ORG);
-    expect(hidden('idempotencyKey', drawer)).toMatch(UUID);
+    expectScoped(drawer);
   });
 
   it('offers the roles it is given and preselects a lone one', async () => {
@@ -72,6 +78,7 @@ describe('AssignUserRoleButton', () => {
     const { unmount } = renderButton();
 
     let drawer = await openDrawer(user);
+    expectScoped(drawer);
     const role = within(drawer).getByRole('combobox', { name: /^Role/ });
     expect(role).toBeRequired();
     // Two roles: nothing is chosen for the administrator.
@@ -88,6 +95,7 @@ describe('AssignUserRoleButton', () => {
     unmount();
     renderButton({ roles: [{ id: TELLER, label: 'Teller (TELLER)' }] });
     drawer = await openDrawer(user);
+    expectScoped(drawer);
     expect(hidden('roleId', drawer)).toBe(TELLER);
     expect(within(drawer).getByRole('combobox', { name: /^Role/ })).toHaveTextContent(
       'Teller (TELLER)',
@@ -99,6 +107,7 @@ describe('AssignUserRoleButton', () => {
     renderButton({ branches: [], branchHint: HINT });
 
     const drawer = await openDrawer(user);
+    expectScoped(drawer);
     const scope = within(drawer).getByRole('combobox', { name: /^Scope/ });
     expect(scope).toHaveAccessibleDescription(
       `Applies at every branch and at institution level. ${HINT}`,
@@ -118,6 +127,7 @@ describe('AssignUserRoleButton', () => {
     });
 
     const drawer = await openDrawer(user);
+    expectScoped(drawer);
     const scope = within(drawer).getByRole('combobox', { name: /^Scope/ });
     expect(scope).toHaveAccessibleDescription('Applies at every branch and at institution level.');
     await user.click(scope);
@@ -130,6 +140,7 @@ describe('AssignUserRoleButton', () => {
     renderButton({ roles: [{ id: TELLER, label: 'Teller (TELLER)' }] });
 
     const drawer = await openDrawer(user);
+    expectScoped(drawer);
     await user.click(within(drawer).getByRole('button', { name: 'Assign role' }));
 
     await waitFor(() => {
@@ -148,18 +159,21 @@ describe('AssignUserRoleButton', () => {
     });
   });
 
-  it("shows the server's role error under the select and keeps the drawer open", async () => {
+  it("shows the server's role error under the select, keeps the drawer open, and retries with the same key", async () => {
     const user = userEvent.setup();
-    assignRole.mockResolvedValueOnce({
-      ok: false,
-      formError: 'Check the highlighted fields and try again.',
-      fieldErrors: { roleId: 'Choose a role.' },
-      code: 'validation_failed',
-      requestId: null,
-    });
+    assignRole
+      .mockResolvedValueOnce({
+        ok: false,
+        formError: 'Check the highlighted fields and try again.',
+        fieldErrors: { roleId: 'Choose a role.' },
+        code: 'validation_failed',
+        requestId: null,
+      })
+      .mockResolvedValueOnce({ ok: true });
     renderButton({ roles: [{ id: TELLER, label: 'Teller (TELLER)' }] });
 
     const drawer = await openDrawer(user);
+    expectScoped(drawer);
     await user.click(within(drawer).getByRole('button', { name: 'Assign role' }));
 
     const role = await within(drawer).findByRole('combobox', { name: /^Role/ });
@@ -170,5 +184,28 @@ describe('AssignUserRoleButton', () => {
     expect(screen.getByRole('dialog', { name: 'Assign a role' })).toBeInTheDocument();
     // The lone role stays chosen: a failed submit keeps what was entered (a retry replays safely).
     expect(hidden('roleId', drawer)).toBe(TELLER);
+
+    // Rule 6 on the submit that failed: the organisation and the key went out with it.
+    expect(assignRole).toHaveBeenCalledTimes(1);
+    const first = assignRole.mock.calls[0]?.[1] as FormData;
+    expect(first.get('contextOrganisationId')).toBe(ORG);
+    const sentKey = first.get('idempotencyKey');
+    expect(sentKey).toMatch(UUID);
+    // The drawer still holds that key (a remount would mint a new one) ...
+    expectScoped(drawer);
+    expect(hidden('idempotencyKey', drawer)).toBe(sentKey);
+
+    // ... so the retry replays the same write, with the organisation again.
+    await user.click(within(drawer).getByRole('button', { name: 'Assign role' }));
+    await waitFor(() => {
+      expect(assignRole).toHaveBeenCalledTimes(2);
+    });
+    const retry = assignRole.mock.calls[1]?.[1] as FormData;
+    expect(retry.get('idempotencyKey')).toBe(sentKey);
+    expect(retry.get('contextOrganisationId')).toBe(ORG);
+    expect(await screen.findByText('Role assigned')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Assign a role' })).toBeNull();
+    });
   });
 });
