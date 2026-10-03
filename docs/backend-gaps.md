@@ -52,6 +52,7 @@ tackled separately in the platform repository.
 | BG-31 | P2       | Mutations silently require the matching `.view` permission                                         |
 | BG-32 | P2       | Documentation drift in the platform repository                                                     |
 | BG-33 | P2       | Permission codes in /auth/me carry no scope                                                        |
+| BG-34 | P2       | Role update accepts a blank name; an empty description clears it                                   |
 
 ## Details
 
@@ -151,7 +152,9 @@ tackled separately in the platform repository.
   email — `UserProvisioningService.kt:52-54,327-389`); approving an unknown, non-pending, or
   provisioning membership; suspend/reactivate/revoke of unknown memberships and revoke of a revoked
   one; reject/suspend of unknown tenants; activate/suspend/reactivate of unknown branches; duplicate
-  tenant codes; any invalid `sort_by`/`sort_dir`.
+  tenant codes; any invalid `sort_by`/`sort_dir`; a BRANCH-scoped role assignment with no
+  `branch_id` (`RoleAssignmentController`'s `requireNotNull`, source f74e44b; the contract's 409 is
+  from 7a7f4c3).
 - **Frontend handling:** pre-validation of every known trigger (e.g. membership lookup by email before
   inviting, tenant-code uniqueness check, sort allow-lists) and a generic error showing `request_id`.
 - **Suggested change:** map domain precondition failures to 404/409/422 with specific codes.
@@ -172,11 +175,15 @@ tackled separately in the platform repository.
 - **Gap:** Branch assignments have no `user_id` filter (and are forced to the selected branch);
   memberships have no `user_id` filter; `/tenant/users` items lack `membership_id`, `membership_type`,
   and dates; membership items lack names; assignment items are IDs only; branch items lack timezone,
-  parent, and dates; tenant items lack currency, timezone, and bootstrap status. `sort_*` on
-  memberships and branch assignments is accepted but ignored; `/tenant/users` has no sort.
+  parent, and dates; tenant items lack currency, timezone, and bootstrap status. Role items lack
+  description and dates. `sort_*` on memberships and branch assignments is accepted but ignored;
+  `/tenant/users` has no sort.
 - **Frontend handling:** memberships resolved with `q=<email>`; a user's branch assignments found by
   a bounded scan and flagged "partial"; names resolved per visible page; lists show only what items
-  carry.
+  carry (the role directory shows role, code, type, and status only). The roles page also departs
+  from the prototype in three smaller ways: the Overview's "Active assignments" counts assignments,
+  not distinct users; the toolbar search commits on Enter or blur; and backend `validation_failed`
+  violations aren't mapped onto form fields (the forms apply the same rules client-side).
 - **Suggested change:** `user_id` filters on memberships and branch assignments; embed display names
   (user, role, branch) in assignment and membership summaries; add membership fields to user
   summaries; honour or remove the sort parameters.
@@ -328,8 +335,10 @@ in the OpenAPI.
 ### BG-27 — Role lifecycle · P2
 
 No role delete; `ARCHIVED` is never written; activate/deactivate work from any state; a DISABLED role
-can be assigned (it grants nothing). Suggested: archive/delete for unused custom roles and a status
-check on assignment.
+can be assigned (it grants nothing). The roles page offers assignment only for ACTIVE roles and has
+no delete. Suggested: archive/delete for unused custom roles and a status check on assignment.
+The assign action also re-reads the role's status before posting, which narrows the race but cannot
+close it: the backend must check.
 
 ### BG-28 — Terminal states without recovery · P2
 
@@ -383,3 +392,15 @@ told apart from branch-scoped ones. Some routes check their permission at tenant
 UI's gate and then gets a 403. Frontend handling: the backend stays the authority. The Branches
 directory shows its access-denied state (spec §6.6), and the assign drawer reports the 403 inline.
 Suggested: return each permission with its scope (tenant or the branch ids) on `/auth/me`.
+
+### BG-34 — Role update accepts a blank name; an empty description clears it · P2
+
+- **Gap:** `UpdateRoleRequest` has no `@NotBlank` (`iam/adapter/inbound/web/dto/RoleApiDtos.kt`),
+  and `updateRole` sets every non-null field (`JooqIamAdministrationPersistence.kt`). So a blank
+  `role_name` is stored and `""` replaces the description, while `null` keeps either field.
+  Found by source reading at f74e44b; the contract (7a7f4c3) said the description can't be
+  cleared. Source reading only (no UI path to probe it live).
+- **Frontend handling:** the edit form requires a name (1–100 characters) and sends `null` for a
+  blank description, so a description can be replaced but not removed.
+- **Suggested change:** validate `role_name` as `CreateRoleRequest` does, and document whether
+  `""` clears the description.

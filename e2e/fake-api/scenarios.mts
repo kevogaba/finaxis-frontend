@@ -664,6 +664,154 @@ function branchesScenario(): RunState {
   };
 }
 
+/** Layer 09 seed IDs (lane rules §5). The fake permission catalogue (routes/roles.mts) numbers
+ * its own ids from …0100 in the same prefix. */
+export const ROLE_SCENARIO_IDS = {
+  grace: '09000000-0000-4000-8000-000000000001',
+  graceMembership: '09000000-0000-4000-8000-000000000002',
+  graceAtWestlands: '09000000-0000-4000-8000-000000000003',
+  tom: '09000000-0000-4000-8000-000000000004',
+  tomMembership: '09000000-0000-4000-8000-000000000005',
+  tomAtHeadOffice: '09000000-0000-4000-8000-000000000006',
+  teller: '09000000-0000-4000-8000-000000000007',
+  opsSupervisor: '09000000-0000-4000-8000-000000000008',
+  loansOfficer: '09000000-0000-4000-8000-000000000009',
+  branchManager: '09000000-0000-4000-8000-00000000000a',
+  compliance: '09000000-0000-4000-8000-00000000000b',
+  graceTellerAtWestlands: '09000000-0000-4000-8000-00000000000c',
+  tomTeller: '09000000-0000-4000-8000-00000000000d',
+  janeCompliance: '09000000-0000-4000-8000-00000000000e',
+} as const;
+
+/** Real TENANT_ADMIN codes (contract §J), granted only in this scenario so `default` stays the
+ * read-only gating scenario (e2e/roles.spec.ts "offers no mutations without the permissions"). */
+const ROLE_ADMIN_CODES = [
+  'role.create',
+  'role.update',
+  'role.activate',
+  'role.deactivate',
+  'role.assign_permission',
+  'role.remove_permission',
+  'user.assign_role',
+  'user.revoke_role',
+];
+
+/**
+ * Layer 09: a copy of `default` plus two staff members (Grace HOME at Westlands, Tom HOME at Head
+ * Office), a second system role, and four custom roles (one DISABLED, one long-named). Grace holds
+ * Teller at Westlands only and Tom holds it institution-wide. Jane holds the long-named role, so
+ * she can revoke her own assignment and keep her access through TENANT_ADMIN.
+ */
+function rolesScenario(): RunState {
+  const state = greenfieldTenant();
+  const ids = ROLE_SCENARIO_IDS;
+  const person = (id: string, username: string, displayName: string): FakeUser => ({
+    id,
+    username,
+    email: `${username}@greenfield.example`,
+    displayName,
+    status: 'ACTIVE',
+    keycloakSubject: `e2e-${username}`,
+  });
+  const staff = (id: string, userId: string): FakeMembership => ({
+    ...membership(id, IDS.greenfield, userId),
+    type: 'STAFF',
+  });
+  const custom = (
+    id: string,
+    code: string,
+    name: string,
+    permissions: string[],
+    createdAt: string,
+    overrides: Partial<FakeRole> = {},
+  ): FakeRole => ({
+    ...role(id, IDS.greenfield, code, name, permissions),
+    systemRole: false,
+    createdAt,
+    updatedAt: createdAt,
+    ...overrides,
+  });
+  return {
+    ...state,
+    users: [
+      ...state.users,
+      person(ids.grace, 'grace.achieng', 'Grace Achieng'),
+      person(ids.tom, 'tom.kiprop', 'Tom Kiprop'),
+    ],
+    memberships: [
+      ...state.memberships,
+      staff(ids.graceMembership, ids.grace),
+      staff(ids.tomMembership, ids.tom),
+    ],
+    branchAssignments: [
+      ...state.branchAssignments,
+      assignment(ids.graceAtWestlands, IDS.greenfield, ids.grace, IDS.westlands, 'HOME'),
+      assignment(ids.tomAtHeadOffice, IDS.greenfield, ids.tom, IDS.headOffice, 'HOME'),
+    ],
+    roles: [
+      ...state.roles.map((candidate) => ({
+        ...candidate,
+        permissions: [...candidate.permissions, ...ROLE_ADMIN_CODES],
+      })),
+      {
+        ...role(ids.branchManager, IDS.greenfield, 'BRANCH_MANAGER', 'Branch manager', [
+          'branch.view',
+          'branch.suspend',
+          'user.assign_branch',
+          'business_date.view',
+        ]),
+        createdAt: '2026-07-01T08:05:00Z',
+      },
+      custom(
+        ids.loansOfficer,
+        'LOANS_OFFICER',
+        'Loans officer',
+        ['user.view'],
+        '2026-07-20T08:00:00Z',
+        {
+          status: 'DISABLED',
+          description: 'Retired with the old loans desk.',
+        },
+      ),
+      custom(
+        ids.teller,
+        'TELLER',
+        'Teller',
+        ['business_date.view', 'branch.view'],
+        '2026-08-01T08:00:00Z',
+        {
+          description: 'Front-desk cash and member service.',
+        },
+      ),
+      custom(
+        ids.opsSupervisor,
+        'OPS_SUPERVISOR',
+        'Operations supervisor',
+        ['business_date.view', 'cob.start', 'business_date.advance'],
+        '2026-08-10T08:00:00Z',
+      ),
+      // A long name: the 375 px a11y cases prove it never scrolls the page (index item 4).
+      custom(
+        ids.compliance,
+        'COMPLIANCE',
+        'Compliance, risk and internal audit reviewer for member savings and credit operations',
+        ['audit.view'],
+        '2026-08-20T08:00:00Z',
+      ),
+    ],
+    roleAssignments: [
+      ...state.roleAssignments,
+      {
+        ...tenantRoleAssignment(ids.graceTellerAtWestlands, IDS.greenfield, ids.grace, ids.teller),
+        scopeType: 'BRANCH',
+        branchId: IDS.westlands,
+      },
+      tenantRoleAssignment(ids.tomTeller, IDS.greenfield, ids.tom, ids.teller),
+      tenantRoleAssignment(ids.janeCompliance, IDS.greenfield, IDS.jane, ids.compliance),
+    ],
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -729,6 +877,17 @@ const BUILDERS = {
   'settings-currency-frozen': () => ({ ...greenfieldTenant(), baseCurrencyFrozen: true }),
   'no-settings-permission': () =>
     withoutPermission(greenfieldTenant(), 'settings.view', 'settings.update'),
+  // Layer 09 (roles). `roles-limited` is the same data without the update, activate,
+  // assignment-view and audit permissions, for the gated-control cases.
+  roles: rolesScenario,
+  'roles-limited': () =>
+    withoutPermission(
+      rolesScenario(),
+      'role.update',
+      'role.activate',
+      'role_assignment.view',
+      'audit.view',
+    ),
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */
