@@ -94,6 +94,14 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   directory — one bounded page of 100 plus the role's granted-code set, each read once and
   filtered client-side — so it is no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-10-01-admin-parity-09-roles.md`, Ruling 6).
+  The user record's Branch assignments tab (`modules/administration/users`'s
+  `listUserBranchAssignments`: a bounded scan of at most 5 × 100 ACTIVE assignments, because the
+  backend can't filter branch assignments by user, BG-09) and its Assign-branch drawer's options
+  (one page of 100 ACTIVE branches, saying so when there are more) are a fifth, named exception: the
+  tab pages what the scan found with the URL holding page and size and says when it may be
+  partial, and the options are a picker's option set, not a data-listing directory — no licence
+  for an unbounded list (plan `docs/superpowers/plans/2026-10-03-admin-parity-10-users.md`,
+  Rulings 8 and 11).
 - A context-scoped read goes through `lib/api/tenant-api.ts`'s `apiGet(path, schema)`, where
   `schema` is a snake_case zod schema defined in the domain's own `<domain>-contract.ts` (e.g.
   `modules/administration/audit/audit-contract.ts`) that transforms the wire shape to camelCase.
