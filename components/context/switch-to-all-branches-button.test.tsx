@@ -34,7 +34,8 @@ vi.mock('./context-api', async (importOriginal) => {
   };
 });
 
-function renderButton() {
+/** `withTitle` puts the button on a page with a record title, as every page that renders it has. */
+function renderButton({ withTitle = false }: { withTitle?: boolean } = {}) {
   renderWithProviders(
     <ApplicationContextProvider
       value={{
@@ -43,7 +44,10 @@ function renderButton() {
         branch: { id: 'b-1', name: 'Head Office' },
       }}
     >
-      <SwitchToAllBranchesButton />
+      <main>
+        {withTitle && <h1>Felix Omondi</h1>}
+        <SwitchToAllBranchesButton />
+      </main>
     </ApplicationContextProvider>,
   );
   return screen.getByRole('button', { name: 'Switch to All branches' });
@@ -72,6 +76,32 @@ describe('SwitchToAllBranchesButton', () => {
     expect(selectBranchRequest).not.toHaveBeenCalled();
   });
 
+  it('moves focus to the record title after a successful switch, since the button leaves the page (M6)', async () => {
+    const user = userEvent.setup();
+    selectOrganisationRequest.mockResolvedValueOnce({
+      branchId: null,
+      requiresBranchSelection: true,
+      assignedBranchIds: ['b-1', 'b-2'],
+    });
+
+    await user.click(renderButton({ withTitle: true }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Switched to Greenfield SACCO · All branches',
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Felix Omondi' })).toHaveFocus();
+  });
+
+  it('leaves focus off the record title when the switch failed (the button is still there)', async () => {
+    const user = userEvent.setup();
+    selectOrganisationRequest.mockRejectedValueOnce(new Error('network'));
+
+    await user.click(renderButton({ withTitle: true }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("couldn't switch to All branches");
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus();
+  });
+
   it('reports success for a done-institution response (already at institution level)', async () => {
     const user = userEvent.setup();
     selectOrganisationRequest.mockResolvedValueOnce({
@@ -97,13 +127,17 @@ describe('SwitchToAllBranchesButton', () => {
       assignedBranchIds: ['b-1'],
     });
 
-    await user.click(renderButton());
+    const button = renderButton({ withTitle: true });
+    await user.click(button);
 
     const unavailable = await screen.findByRole('alert');
     expect(unavailable).toHaveTextContent(ALL_BRANCHES_UNAVAILABLE);
     // Informational, not a failure.
     expect(unavailable).toHaveClass('MuiAlert-colorInfo');
     expect(router.refresh).toHaveBeenCalledTimes(1);
+    // The button and its note stay, with the message under them: focus must not jump to the title.
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus();
+    expect(button).toHaveFocus();
   });
 
   it('pins a single branch listed twice again, as context selection does', async () => {
@@ -115,12 +149,16 @@ describe('SwitchToAllBranchesButton', () => {
     });
     selectBranchRequest.mockResolvedValueOnce(undefined);
 
-    await user.click(renderButton());
+    const button = renderButton({ withTitle: true });
+    await user.click(button);
 
     await waitFor(() => {
       expect(selectBranchRequest).toHaveBeenCalledWith('b-1');
     });
     expect(await screen.findByRole('alert')).toHaveTextContent(ALL_BRANCHES_UNAVAILABLE);
+    // Pinned again, so the note and the button stay: focus is not moved to the title either.
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus();
+    expect(button).toHaveFocus();
   });
 
   it('still refreshes when the re-pin fails after the organisation POST moved the context', async () => {

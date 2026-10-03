@@ -53,6 +53,7 @@ tackled separately in the platform repository.
 | BG-32 | P2       | Documentation drift in the platform repository                                                     |
 | BG-33 | P2       | Permission codes in /auth/me carry no scope                                                        |
 | BG-34 | P2       | Role update accepts a blank name; an empty description clears it                                   |
+| BG-35 | P2       | No documented self-lockout guard: a member may suspend or revoke themselves                        |
 
 ## Details
 
@@ -149,16 +150,18 @@ tackled separately in the platform repository.
   generic handler as `internal_error` (`common/web/api/ApiExceptionHandler.kt:243-258`). Hits:
   invite validation (organisation not ACTIVE, inactive branch, missing/non-ACTIVE role, scope/branch
   mismatch, STAFF/ADMIN without a branch, no role, existing membership, taken username with a new
-  email — `UserProvisioningService.kt:52-54,327-389`); approving an unknown, non-pending, or
-  provisioning membership; suspend/reactivate/revoke of unknown memberships and revoke of a revoked
-  one; reject/suspend of unknown tenants; activate/suspend/reactivate of unknown branches; duplicate
-  tenant codes; any invalid `sort_by`/`sort_dir`; a BRANCH-scoped role assignment with no
-  `branch_id` (`RoleAssignmentController`'s `requireNotNull`, source f74e44b; the contract's 409 is
-  from 7a7f4c3).
+  email — `UserProvisioningService.kt:52-54,327-389`); approving an unknown, non-pending or
+  provisioning membership, or one whose user lacks an active role (or, for a staff or admin member,
+  an active branch assignment); suspend/reactivate/revoke of unknown memberships and revoke of a
+  revoked one; reject/suspend of unknown tenants; activate/suspend/reactivate of unknown
+  branches; duplicate tenant codes; any invalid `sort_by`/`sort_dir`; a BRANCH-scoped role
+  assignment with no `branch_id` (`RoleAssignmentController`'s `requireNotNull`, source f74e44b;
+  the contract's 409 is from 7a7f4c3).
 - **Frontend handling:** pre-validation of every known trigger (e.g. membership lookup by email before
   inviting, sort allow-lists), a tenant-code lookup after a failed create to name a duplicate (the
   create goes first, so a replayed create is never turned away), and a generic error showing
-  `request_id`.
+  `request_id`. The user record withholds Approve once approval ran and names the likely causes of
+  the other approval 500s.
 - **Suggested change:** map domain precondition failures to 404/409/422 with specific codes.
 
 ### BG-08 — Maker not exposed; ambiguous 403 · P1
@@ -168,7 +171,8 @@ tackled separately in the platform repository.
   needs `audit.view` (and isn't readable at all for tenants from the platform context). Maker-checker
   violations return `403 forbidden`, identical to a missing permission.
 - **Frontend handling:** maker looked up from audit when `audit.view` is held; otherwise the approve
-  action stays enabled and a 403 is explained as "permission or maker-checker".
+  action stays enabled and a 403 is explained as "permission or maker-checker". The user record
+  disables Approve for the user's inviter (the `user.invite` actor).
 - **Suggested change:** add `created_by`/`submitted_by` (id + display name) to the DTOs and a distinct
   problem code such as `maker_checker_violation`.
 
@@ -180,8 +184,9 @@ tackled separately in the platform repository.
   parent, and dates; tenant items lack currency, timezone, and bootstrap status. Role items lack
   description and dates. `sort_*` on memberships and branch assignments is accepted but ignored;
   `/tenant/users` has no sort.
-- **Frontend handling:** memberships resolved with `q=<email>`; a user's branch assignments found by
-  a bounded scan and flagged "partial"; names resolved per visible page; lists show only what items
+- **Frontend handling:** memberships resolved with `q=<email>` (at most 5 pages of 100, matched on
+  the user id); a user's branch assignments found by a bounded scan and flagged "partial" (at most
+  500 active assignments); names resolved per visible page; lists show only what items
   carry (the role directory shows role, code, type, and status only). The roles page also departs
   from the prototype in three smaller ways: the Overview's "Active assignments" counts assignments,
   not distinct users; the toolbar search commits on Enter or blur; and backend `validation_failed`
@@ -409,3 +414,18 @@ Suggested: return each permission with its scope (tenant or the branch ids) on `
   blank description, so a description can be replaced but not removed.
 - **Suggested change:** validate `role_name` as `CreateRoleRequest` does, and document whether
   `""` clears the description.
+
+### BG-35 — No documented self-lockout guard on memberships · P2
+
+- **Gap:** The contract documents no guard against a caller suspending or revoking their own
+  membership, or revoking their own role assignments (§E.3 names none; source 7a7f4c3). Without
+  one, a self-suspend ends the session's context at once, because every request re-validates an
+  ACTIVE membership (§A), and a self-revoke is permanent (BG-28). Not probed live: the probe
+  itself would be irreversible.
+- **Frontend handling:** the user record shows Suspend and Revoke disabled on the signed-in user's
+  own record, with the reason; revoking your own role assignment warns in its confirmation
+  (layer 09). Revoking your own branch assignment from the user record's Branch assignments tab
+  shows no such warning (layer 08's `RevokeAssignmentButton` has no `self` prop); at the selected
+  branch it invalidates your context (§E.4).
+- **Suggested change:** document the guard if one exists; otherwise refuse a self-suspend and a
+  self-revoke with a 409 and a specific code.

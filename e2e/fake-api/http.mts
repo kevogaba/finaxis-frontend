@@ -132,6 +132,18 @@ export function stringField(
   return value;
 }
 
+/** A mutation's `reason` (contract §D). Required: 3–500 characters, else `validation_failed`.
+ * Optional: returned as sent, so a caller that caps it does so itself. */
+export function reasonField(body: Record<string, unknown>, required: boolean): string | null {
+  const reason = stringField(body, 'reason', { required });
+  if (required && (reason === null || reason.trim().length < 3 || reason.length > 500)) {
+    throw problem(400, 'validation_failed', 'Validation failed.', [
+      { field: 'reason', code: 'Size', message: 'size must be between 3 and 500' },
+    ]);
+  }
+  return reason;
+}
+
 function intParam(
   query: URLSearchParams,
   name: string,

@@ -5,6 +5,10 @@ import {
   enterAdmin,
   expectA11yCaseApplied,
   expectNoSeriousOrCriticalViolations,
+  mainText,
+  openRecord,
+  rowsOf,
+  statusChip,
 } from './support/admin';
 import { authenticate, selectMuiOption } from './support/auth';
 import { BRANCH_SCENARIO_IDS, IDS } from './fake-api/scenarios.mts';
@@ -14,14 +18,6 @@ const MAKER_CHECKER = 'You drafted this branch, so another administrator must ac
 
 async function openDirectory(page: Page, branch: RegExp | null = ALL_BRANCHES) {
   await enterAdmin(page, '/admin/branches', { heading: 'Branches', branch });
-}
-
-async function openRecord(page: Page, name: string) {
-  await page
-    .getByRole('table', { name: 'Branches' })
-    .getByRole('link', { name, exact: true })
-    .click();
-  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible({ timeout: 15000 });
 }
 
 /** A hero lifecycle action through its dialog; the caller asserts the outcome.
@@ -34,24 +30,6 @@ async function lifecycle(page: Page, label: string, reason?: string) {
   await dialog.getByRole('button', { name: label, exact: true }).click();
   return dialog;
 }
-
-// Scoped to `main`: in an observed failure, an unscoped page.getByText resolved to two elements
-// for the "guides a branch context" test below -- one hidden and outside `main`, one inside it (the
-// layout has a single BranchContextState call site, so it wasn't a double render). The likely cause
-// (not reproduced in this session) is app/loading.tsx's root Suspense boundary letting the streamed
-// content briefly exist as a hidden duplicate segment. Whatever the actual cause, `getByRole('main')`
-// excludes a hidden `<main>` from resolution, so a chained getByText only ever searches the one
-// rendered, visible `<main>` -- deterministic regardless of the mechanism.
-const mainText = (page: Page, value: string | RegExp, options?: { exact?: boolean }) =>
-  page.getByRole('main').getByText(value, options);
-// The Overview tab renders the branch status twice by design (the hero chip, then the
-// description-list row), both visible, so `.first()` is load-bearing here, not a leftover: without
-// it this assertion would be a two-match strict-mode violation on every run. It does not pin the
-// check to the hero specifically -- if only one copy carried the asserted value, `.first()` would
-// resolve to whichever one does (pre-existing deferred minor, progress.md "Task 8: …spec.ts:36").
-const statusChip = (page: Page, value: string) => mainText(page, value, { exact: true }).first();
-const rowsOf = (page: Page, table: string) =>
-  page.getByRole('table', { name: table }).getByRole('row');
 
 test.describe('branches', () => {
   // A branch route can be the first hit of its tree under a cold `next dev` compile.
@@ -135,7 +113,7 @@ test.describe('branches', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'branches');
     await openDirectory(page);
-    await openRecord(page, 'Thika Road Branch');
+    await openRecord(page, 'Branches', 'Thika Road Branch');
 
     await lifecycle(page, 'Activate');
     await expect(page.getByRole('dialog')).toBeHidden();
@@ -154,7 +132,7 @@ test.describe('branches', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'branches');
     await openDirectory(page);
-    await openRecord(page, 'Westlands Branch');
+    await openRecord(page, 'Branches', 'Westlands Branch');
 
     await lifecycle(page, 'Suspend', 'Cash count');
     await expect(page.getByRole('dialog')).toBeHidden();
@@ -175,7 +153,7 @@ test.describe('branches', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'branches');
     await openDirectory(page);
-    await openRecord(page, 'Westlands Branch');
+    await openRecord(page, 'Branches', 'Westlands Branch');
 
     const blocked = await lifecycle(page, 'Close branch', 'Relocating');
     await expect(blocked.getByRole('alert')).toContainText(
@@ -184,7 +162,7 @@ test.describe('branches', () => {
     await blocked.getByRole('button', { name: 'Cancel' }).click();
 
     await page.getByRole('link', { name: 'Back to branches' }).click();
-    await openRecord(page, 'Kisumu Branch');
+    await openRecord(page, 'Branches', 'Kisumu Branch');
     await lifecycle(page, 'Close branch', 'Consolidated into Westlands');
     await expect(page.getByRole('dialog')).toBeHidden();
     // PF6: Close empties the action set, unmounting BranchLifecycleActions, so the unmount
@@ -200,7 +178,7 @@ test.describe('branches', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'branches');
     await openDirectory(page);
-    await openRecord(page, 'Westlands Branch');
+    await openRecord(page, 'Branches', 'Westlands Branch');
     await page.getByRole('tab', { name: 'Users' }).click();
     await expect(rowsOf(page, 'Branch users')).toHaveCount(4, { timeout: 15000 }); // header + 3
 
@@ -258,7 +236,7 @@ test.describe('branches', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'branches');
     await openDirectory(page, /Westlands/);
-    await openRecord(page, 'Westlands Branch');
+    await openRecord(page, 'Branches', 'Westlands Branch');
 
     await page.getByRole('button', { name: 'Suspend', exact: true }).click();
     const dialog = page.getByRole('dialog');
@@ -276,7 +254,7 @@ test.describe('branches', () => {
 
     await expect(page.getByRole('link', { name: 'Branches', exact: true })).toBeVisible(); // rail
     await expect(page.getByRole('link', { name: 'Create branch' })).toHaveCount(0);
-    await openRecord(page, 'Westlands Branch');
+    await openRecord(page, 'Branches', 'Westlands Branch');
     await expect(page.getByRole('button', { name: /^(Suspend|Close branch)$/ })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Users' }).click();
     await expect(rowsOf(page, 'Branch users')).toHaveCount(2, { timeout: 15000 });
@@ -286,12 +264,12 @@ test.describe('branches', () => {
     await page.goto('/admin/branches/new');
     // Scoped to `main`: on one run this matched two nodes (a strict-mode violation) with only one
     // inside `main` (`ForbiddenState` has exactly one call site here, so it isn't a double render).
-    // Likely the same class as the "guides a branch context" test above (see `mainText`'s comment;
-    // not reproduced in this session either): app/loading.tsx's root Suspense boundary can let the
-    // streamed route briefly exist as a hidden duplicate segment next to the rendered one. Whatever
-    // the actual cause, `getByRole('main')` excludes a hidden duplicate landmark from resolution, so
-    // scoping to it is deterministic either way and matches what a user/screen-reader perceives as
-    // the page's content.
+    // Likely the same class as the "guides a branch context" test above (see `mainText`'s comment
+    // in e2e/support/admin.ts; not reproduced in this session either): app/loading.tsx's root
+    // Suspense boundary can let the streamed route briefly exist as a hidden duplicate segment next
+    // to the rendered one. Whatever the actual cause, `getByRole('main')` excludes a hidden
+    // duplicate landmark from resolution, so scoping to it is deterministic either way and matches
+    // what a user/screen-reader perceives as the page's content.
     await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible({
       timeout: 15000,
     });

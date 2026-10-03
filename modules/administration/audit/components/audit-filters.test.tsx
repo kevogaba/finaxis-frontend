@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/test-utils';
@@ -82,6 +82,78 @@ describe('AuditFilters', () => {
     expect(screen.getByText('Entity: User · Mary Wanjiku')).toBeInTheDocument();
   });
 
+  it('offers the actor search only when users can be searched', () => {
+    search = '';
+    const props = {
+      entityType: undefined,
+      resultLabel: '1 event',
+      actorChip: null,
+      timeZone: 'Africa/Nairobi',
+    };
+    const { rerender } = renderWithProviders(<AuditFilters {...props} actorSearch />);
+
+    expect(screen.getByRole('combobox', { name: 'Actor' })).toBeInTheDocument();
+
+    rerender(<AuditFilters {...props} />);
+
+    // The toolbar itself is still there: the search is the only thing that went.
+    expect(screen.getByRole('combobox', { name: 'Entity type' })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Actor' })).not.toBeInTheDocument();
+
+    rerender(<AuditFilters {...props} actorSearch={false} />);
+
+    expect(screen.queryByRole('combobox', { name: 'Actor' })).not.toBeInTheDocument();
+  });
+
+  it('puts the actor search after the date fields and before the actor chip', () => {
+    search = 'actorId=10000000-0000-4000-8000-00000000000a';
+    renderWithProviders(
+      <AuditFilters
+        entityType={undefined}
+        resultLabel="4 events"
+        actorChip={{ label: 'Actor: Victor Otieno', removeParam: 'actorId' }}
+        actorSearch
+        actorId="10000000-0000-4000-8000-00000000000a"
+        timeZone="Africa/Nairobi"
+      />,
+    );
+
+    const to = screen.getByLabelText('To');
+    const actor = screen.getByRole('combobox', { name: 'Actor' });
+    const chip = screen.getByRole('button', { name: 'Actor: Victor Otieno' });
+    expect(to.compareDocumentPosition(actor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(actor.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Positive control for the order checks: the comparison can say "no".
+    expect(chip.compareDocumentPosition(actor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeFalsy();
+  });
+
+  it('restarts the actor search (empty) once the actor filter changes, and not on any other render', () => {
+    search = '';
+    const props = {
+      entityType: undefined,
+      resultLabel: '1 event',
+      actorChip: null,
+      actorSearch: true,
+      timeZone: 'Africa/Nairobi',
+    };
+    const { rerender } = renderWithProviders(<AuditFilters {...props} />);
+    const first = screen.getByRole('combobox', { name: 'Actor' });
+
+    // The same filter (a re-render for any other reason): the same control, its text kept.
+    rerender(<AuditFilters {...props} resultLabel="2 events" />);
+    expect(screen.getByRole('combobox', { name: 'Actor' })).toBe(first);
+
+    // A new actor filter landed: a fresh control, so nothing typed before it is left behind.
+    rerender(<AuditFilters {...props} actorId="10000000-0000-4000-8000-00000000000a" />);
+    const second = screen.getByRole('combobox', { name: 'Actor' });
+    expect(second).not.toBe(first);
+    expect(second).toHaveValue('');
+
+    // And the filter changing again restarts it again.
+    rerender(<AuditFilters {...props} actorId="10000000-0000-4000-8000-00000000000b" />);
+    expect(screen.getByRole('combobox', { name: 'Actor' })).not.toBe(second);
+  });
+
   it('drops a record-link entityId and action when the Entity type changes', async () => {
     search = 'entityType=USER&entityId=u-1&action=user.invite';
     router.push.mockReset();
@@ -103,5 +175,67 @@ describe('AuditFilters', () => {
     expect(pushed).toContain('entityType=MEMBERSHIP');
     expect(pushed).not.toContain('entityId');
     expect(pushed).not.toContain('action');
+  });
+});
+
+describe('AuditFilters: after an actor is picked', () => {
+  const VICTOR = '10000000-0000-4000-8000-00000000000a';
+  const props = {
+    entityType: undefined,
+    resultLabel: '4 events',
+    actorChip: null,
+    actorSearch: true,
+    timeZone: 'Africa/Nairobi',
+  };
+
+  beforeEach(() => {
+    search = '';
+    router.push.mockReset();
+    // A fresh Response per call: a body can be read only once.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            items: [
+              {
+                id: VICTOR,
+                displayName: 'Victor Otieno',
+                email: 'victor.otieno@greenfield.example',
+                username: 'victor.otieno',
+                membershipStatus: 'ACTIVE',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('keeps keyboard focus on the Actor input when the chosen actor lands, so the next Tab continues from it', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderWithProviders(<AuditFilters {...props} />);
+    await user.type(screen.getByRole('combobox', { name: 'Actor' }), 'vic');
+    await screen.findByRole('option', { name: /Victor Otieno/ });
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(router.push).toHaveBeenCalledTimes(1);
+    const before = screen.getByRole('combobox', { name: 'Actor' });
+
+    // The server's re-render: the filter and its chip have landed.
+    rerender(
+      <AuditFilters
+        {...props}
+        actorId={VICTOR}
+        actorChip={{ label: 'Actor: Victor Otieno', removeParam: 'actorId' }}
+      />,
+    );
+
+    const after = screen.getByRole('combobox', { name: 'Actor' });
+    expect(after).not.toBe(before); // the search did start over ...
+    expect(after).toHaveValue('');
+    expect(after).toHaveFocus(); // ... without dropping focus to <body>
   });
 });
