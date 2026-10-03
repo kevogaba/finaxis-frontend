@@ -1043,7 +1043,7 @@ export const ACCESS_DESCRIPTION =
 export const NO_ACTIVE_ROLES =
   'There are no active roles to assign. Create or activate one under Roles & permissions.';
 export const PARTIAL_SCAN_NOTE =
-  "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 in this institution were checked.";
+  "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 branch assignments were checked.";
 
 /** `canSwitch`: the signed-in user has more than one ACTIVE branch, so All branches is open. */
 export function branchContextNote(branchName: string, canSwitch: boolean): string {
@@ -2823,8 +2823,10 @@ in the card. Otherwise:
   `<Alert severity="info">` holding `branchContextNote(selectedBranch.name, canSwitch)`, where
   `canSwitch` is the profile having more than one ACTIVE branch (the branch layout's PF1 check), and
   then a `SwitchToAllBranchesButton` below the text (inside the Alert's children, never its
-  `action` prop); otherwise, when
-  `scan.value.truncated`, `<Alert severity="info">{PARTIAL_SCAN_NOTE}</Alert>`.
+  `action` prop); and, whenever `scan.value.truncated` (with or without a branch selected: Ruling 8,
+  the backend forces a scan to the selected branch, and a branch with more than 500 ACTIVE
+  assignments is capped there too), a second `<Alert severity="info">{PARTIAL_SCAN_NOTE}</Alert>`
+  below it.
 - The table, or `<EmptyState title="No branch assignments" description={canAssign ? 'Assign a branch so they can work there.' : 'This user has no branch assignments.'} />`, then
   `<TablePaginationBar page={paged.page} />`.
 
@@ -3243,7 +3245,12 @@ Kiprono | Amina Odhiambo, Victor Otieno, Backend Jane Manager.
     only the lower-casing makes this pass).
 19. "marks a scan that hit its ceiling as partial" (`users-many-assignments`) — Felix's Overview
     reads `Branch assignments` `At least 1 (partial)`; his Branch assignments tab shows
-    `PARTIAL_SCAN_NOTE` and 2 rows (Westlands, Home).
+    `PARTIAL_SCAN_NOTE` and 2 rows (Westlands, Home). A second leg selects the branch that holds the
+    511 filler assignments (Head Office; check the seed in `scenarios.mts` and the fake's branch
+    filter before pinning anything) and asserts the tab shows BOTH `branchContextNote` and
+    `PARTIAL_SCAN_NOTE` (Ruling 6: a capped scan is partial in a branch context too) and the
+    Overview count carries the hedge (`At least N at <branch> (partial)`); pin the exact N from the
+    fake, never guess it.
 
 **`describe('users: accessibility')`** — one test per `A11Y_CASES` entry (scenario `users`):
 `applyA11yCase` before navigating; after each surface settles, `expectA11yCaseApplied` and
