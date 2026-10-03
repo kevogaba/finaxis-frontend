@@ -167,13 +167,17 @@ export function UserLifecycleActions({
       <Box
         // The nested flex context RecordHero's own actions box needs (08's V6): an explicit
         // flex-end so a full-width caption doesn't leave the buttons at the left edge, and the
-        // hero's mobile rule (`'& > *': flexGrow`, ≤ md) re-applied to this box's children.
+        // hero's mobile rule (`'& > *': flexGrow`, ≤ md) re-applied to this box's children. The cap
+        // (from md, where the hero is a row) makes a long caption wrap here: uncapped, its one-line
+        // width sized this box and squeezed the title column, so the name wrapped and the email
+        // broke mid-word.
         sx={{
           display: 'flex',
           flexWrap: 'wrap',
           alignItems: 'center',
           justifyContent: 'flex-end',
           gap: 2,
+          maxWidth: { md: 320 },
           '& > *': { flexGrow: { xs: 1, md: 0 } },
         }}
       >
@@ -202,7 +206,12 @@ export function UserLifecycleActions({
             key={text}
             variant="caption"
             id={`user-action-blocked-${index}`}
-            sx={{ color: 'text.secondary', flexBasis: '100%', textAlign: 'right' }}
+            sx={{
+              color: 'text.secondary',
+              flexBasis: '100%',
+              textAlign: 'right',
+              textWrap: 'pretty',
+            }}
           >
             {text}
           </Typography>

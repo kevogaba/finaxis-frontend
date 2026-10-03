@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { useToast } from '@/components/providers/toast-provider';
 import { useApplicationContext } from '@/components/shell/organization-context';
 import { ALL_BRANCHES_UNAVAILABLE } from './all-branches-copy';
@@ -57,6 +58,9 @@ export function SwitchToAllBranchesButton() {
         setMessage({ severity: 'info', text: ALL_BRANCHES_UNAVAILABLE });
       } else {
         notify(`Switched to ${organization.name} · All branches`);
+        // The button goes with the branch note once the page refreshes: land on the record title,
+        // not <body> (I3's last-resort target).
+        focusRecordTitle();
       }
       router.refresh();
     } catch (caught) {

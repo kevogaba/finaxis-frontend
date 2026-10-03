@@ -35,7 +35,9 @@ export function UserBranchAssignmentsTable({
 }: UserBranchAssignmentsTableProps) {
   return (
     // Keyboard-scrollable at 375 px even when no row holds a button (07's history-table rule).
-    <TableContainer tabIndex={0} role="region" aria-label="Branch assignments">
+    // Not "Branch assignments": the page's section card is the region of that name, and two
+    // landmarks with one name fail axe's landmark-unique.
+    <TableContainer tabIndex={0} role="region" aria-label="Branch assignments table">
       <Table aria-label="Branch assignments" sx={{ minWidth: 560 }}>
         <TableHead>
           <TableRow>

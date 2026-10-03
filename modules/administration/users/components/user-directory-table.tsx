@@ -17,6 +17,9 @@ import type { UserSummary } from '../user-contract';
 import { onboardingState, userStatusLabel } from '../user-rules';
 
 const COLUMNS = ['User', 'Username', 'Onboarding', 'Membership', 'User status'] as const;
+// At most 320 px, and at most 60% of the viewport: at 375 px the card shows about 300 px, so a fixed
+// 320 px cut a long name or email off at the card's edge with its ellipsis out of sight.
+const NAME_MAX_WIDTH = 'min(320px, 60vw)';
 
 interface UserDirectoryTableProps {
   users: readonly UserSummary[];
@@ -63,14 +66,14 @@ export function UserDirectoryTable({ users }: UserDirectoryTableProps) {
                         variant="body2"
                         noWrap
                         title={user.displayName}
-                        sx={{ display: 'block', maxWidth: 320, fontWeight: 700 }}
+                        sx={{ display: 'block', maxWidth: NAME_MAX_WIDTH, fontWeight: 700 }}
                       >
                         {user.displayName}
                         <LinkPendingIndicator />
                       </Link>
                       <TruncatedText
                         value={user.email}
-                        maxWidth={320}
+                        maxWidth={NAME_MAX_WIDTH}
                         variant="caption"
                         color="textSecondary"
                       />

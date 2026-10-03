@@ -115,6 +115,13 @@ const fact = (page: Page, label: string) =>
     .filter({ hasText: label })
     .locator('xpath=following-sibling::dd[1]');
 
+/** How many lines an element's text takes: its height over its line height. */
+const lineCount = (locator: Locator) =>
+  locator.evaluate((element) => {
+    const lineHeight = parseFloat(getComputedStyle(element).lineHeight);
+    return Math.round(element.getBoundingClientRect().height / lineHeight);
+  });
+
 /** A toast: MUI alerts in the toast region; Next's route announcer is an alert too. */
 const toast = (page: Page, text: string) => page.getByRole('alert').filter({ hasText: text });
 
@@ -211,6 +218,31 @@ test.describe('users: directory and lifecycle', () => {
     ).toBeVisible();
   });
 
+  test('caps a long name and email to the card on a narrow screen, so the ellipsis stays visible', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openDirectory(page);
+
+    const row = rowsOf(page, 'Users').filter({ hasText: 'wanjiru.long' });
+    const name = row.getByRole('link', { name: WANJIRU });
+    const email = row.getByText(/^wanjiru\.njeri\.kamau-otieno/);
+    const width = async (locator: Locator) => (await locator.boundingBox())?.width ?? 0;
+
+    // Positive control: a wide screen shows the full 320 px, so the cap below is the narrow one.
+    expect(await width(name)).toBeGreaterThan(300);
+    expect(await width(email)).toBeGreaterThan(300);
+
+    // At 375 px the card shows about 300 px: the name and the email stop at 60% of the viewport
+    // (225 px), inside it, not at 320 px beyond its edge.
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect.poll(() => width(name)).toBeLessThanOrEqual(0.6 * 375 + 1);
+    await expect.poll(() => width(email)).toBeLessThanOrEqual(0.6 * 375 + 1);
+    await expect(name).toBeVisible();
+  });
+
   test('approves a user with no sign-in identity: provisioning starts (202)', async ({
     context,
     page,
@@ -286,6 +318,33 @@ test.describe('users: directory and lifecycle', () => {
     await expect(approve).toHaveAccessibleDescription(USER_MAKER_CHECKER_BLOCKED);
     await expect(mainText(page, USER_MAKER_CHECKER_BLOCKED)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reject & revoke', exact: true })).toBeEnabled();
+  });
+
+  test("keeps the hero's name and email on one line beside a blocked-action reason", async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const subtitle = (text: string) => hero(page).getByText(text, { exact: true });
+
+    // The caption is as wide as its sentence; uncapped, it sized the actions box and squeezed the
+    // title column, so the email broke mid-word and the name wrapped.
+    await enterUser(page, USERS.carol, 'Carol Wambui');
+    await expect(mainText(page, USER_MAKER_CHECKER_BLOCKED)).toBeVisible();
+    expect(await lineCount(page.getByRole('heading', { level: 1 }))).toBe(1);
+    const carolSubtitle = subtitle('carol.wambui · carol.wambui@greenfield.example');
+    expect(await lineCount(carolSubtitle)).toBe(1);
+
+    // Your own record: another long caption, and a 20-character name.
+    await openUser(page, IDS.jane, 'Backend Jane Manager');
+    await expect(mainText(page, OWN_MEMBERSHIP)).toBeVisible();
+    expect(await lineCount(page.getByRole('heading', { level: 1 }))).toBe(1);
+
+    // Positive control: the measure does see a wrap. At 375 px the same subtitle can't fit a line.
+    await openUser(page, USERS.carol, 'Carol Wambui');
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect.poll(() => lineCount(carolSubtitle)).toBeGreaterThan(1);
   });
 
   test('rejects and revokes a provisioning user permanently, checking the reason on the server', async ({
@@ -708,6 +767,24 @@ test.describe('users: access and audit', () => {
     );
   });
 
+  test('moves focus to the record title when Switch to All branches replaces the note', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users');
+    await openDirectory(page, /Head Office/);
+    await openRecord(page, 'Users', 'Felix Omondi');
+    await openTab(page, 'Branch assignments');
+
+    const note = mainText(page, /^Only Head Office is visible with a branch selected\./);
+    await expect(note).toBeVisible({ timeout: 15000 });
+    await press(note.getByRole('button', { name: 'Switch to All branches' }));
+
+    // The switch lands and the note, with its button, goes: focus is on the title, never <body>.
+    await expect(note).toHaveCount(0, { timeout: 15000 });
+    await expect(page.getByRole('heading', { level: 1, name: 'Felix Omondi' })).toBeFocused();
+  });
+
   test('offers only the selected branch, and says nothing is partial when the scan was complete', async ({
     context,
     page,
@@ -969,10 +1046,14 @@ test.describe('users: gating and ids', () => {
     await expect(page.getByRole('button', { name: 'Assign branch' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^Revoke/ })).toHaveCount(0);
     await expect(page.getByRole('columnheader', { name: 'Actions' })).toHaveCount(0);
-    // The section card is a region of the same name, so the table's own is picked by its label.
-    await expect(page.locator('[role="region"][aria-label="Branch assignments"]')).toHaveAttribute(
+    // The table's region has its own name: the section card is the "Branch assignments" region.
+    await expect(page.getByRole('region', { name: 'Branch assignments table' })).toHaveAttribute(
       'tabindex',
       '0',
+    );
+    // The card is the one region of that name: a second would fail axe's landmark-unique.
+    await expect(page.getByRole('region', { name: 'Branch assignments', exact: true })).toHaveCount(
+      1,
     );
   });
 

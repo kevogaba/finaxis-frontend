@@ -160,14 +160,15 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
   // ACTIVE assignments is capped there too, so a capped scan is partial with or without a branch.
   const notices =
     selectedBranch || scan.value.truncated ? (
-      <Box sx={{ px: 4, pt: 3, display: 'grid', gap: 2 }}>
+      <Box sx={{ px: 4, py: 3, display: 'grid', gap: 2 }}>
         {/* role="note": static notices, not alerts announced on every visit to the tab (as the
             settings catalogue's, and distinct from the toast's alert). */}
         {selectedBranch && (
           <Alert severity="info" role="note">
             {branchContextNote(selectedBranch.name, canSwitch)}
             {canSwitch && (
-              <Box sx={{ mt: 2 }}>
+              // The shared button centres itself for a centred state; here it hugs the note's left.
+              <Box sx={{ mt: 2, width: 'fit-content' }}>
                 <SwitchToAllBranchesButton />
               </Box>
             )}

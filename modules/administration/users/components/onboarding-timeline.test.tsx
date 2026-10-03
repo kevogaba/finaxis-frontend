@@ -25,6 +25,21 @@ describe('OnboardingTimeline', () => {
     expect(steps[3]).toHaveTextContent('4. First sign-in');
   });
 
+  it("lets each step's text take the room the chip leaves, so the chip stays at the right (M4)", () => {
+    renderWithProviders(
+      <OnboardingTimeline progress={onboardingProgress('PENDING_APPROVAL', 'DRAFT')} />,
+    );
+
+    const steps = within(screen.getByRole('list', { name: 'Onboarding steps' })).getAllByRole(
+      'listitem',
+    );
+    for (const step of steps) {
+      // A basis of 0 never asks for more than the row holds, so the chip never wraps to a new line.
+      expect(step.firstElementChild).toHaveStyle({ flexGrow: '1', flexShrink: '1' });
+      expect(step.firstElementChild).toHaveStyle({ flexBasis: '0px' });
+    }
+  });
+
   it('adds the provisioning note under the steps', () => {
     renderWithProviders(
       <OnboardingTimeline progress={onboardingProgress('PENDING_APPROVAL', 'PROVISIONING_IDP')} />,

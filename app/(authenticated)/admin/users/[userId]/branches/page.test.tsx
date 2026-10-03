@@ -288,6 +288,20 @@ describe('UserBranchesPage: the record id', () => {
   });
 });
 
+describe('UserBranchesPage: landmarks', () => {
+  it('names the card and the table region differently, so no two landmarks share a name (axe landmark-unique)', async () => {
+    setup({ rows: [row(1, WESTLANDS, 'HOME')] });
+
+    await show();
+
+    // `getByRole` throws on two matches, so each name is held by exactly one region.
+    expect(screen.getByRole('region', { name: 'Branch assignments' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Branch assignments table' })).toBeVisible();
+    // The table keeps its own name: it is not a landmark.
+    expect(screen.getByRole('table', { name: 'Branch assignments' })).toBeInTheDocument();
+  });
+});
+
 describe('UserBranchesPage: the rows', () => {
   it('sorts by branch name, then assignment type, naming an unknown branch by its short id', async () => {
     setup({
@@ -508,6 +522,30 @@ describe('UserBranchesPage: what the list says about itself', () => {
     for (const alert of alerts()) expect(alert).toHaveAttribute('role', 'note');
     expect(screen.queryAllByRole('alert')).toHaveLength(0);
     expect(screen.getAllByRole('note')).toHaveLength(2);
+  });
+
+  it('keeps the switch at the left of its note, not stretched across it (M1)', async () => {
+    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' } });
+
+    await show();
+
+    // The shared button lays itself out for a centred state; its wrapper here hugs its content.
+    expect(switchButton()?.parentElement).toHaveStyle({ width: 'fit-content' });
+  });
+
+  it('leaves room under the last note, so it does not touch the table header (M2)', async () => {
+    setup({
+      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
+      truncated: true,
+      rows: [row(1, HEAD_OFFICE, 'HOME')],
+    });
+
+    await show();
+
+    // Three steps of the theme's spacing under the notes, as above them.
+    const step3 = 'calc(3 * var(--finaxis-spacing))';
+    const notes = alerts()[0]?.parentElement;
+    expect(notes).toHaveStyle({ paddingTop: step3, paddingBottom: step3 });
   });
 
   it('shows only the branch note in a branch context when the scan was complete', async () => {

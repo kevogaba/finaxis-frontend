@@ -36,7 +36,9 @@ export function OnboardingTimeline({ progress }: OnboardingTimelineProps) {
                 borderColor: 'divider',
               }}
             >
-              <Box sx={{ minWidth: 0, flex: '1 1 240px' }}>
+              {/* A basis of 0, not a width: the text takes what the chip leaves, so the chip never
+                  wraps to a line of its own and the status column stays at the right. */}
+              <Box sx={{ minWidth: 0, flex: '1 1 0' }}>
                 <Typography sx={{ fontWeight: 700 }}>{`${index + 1}. ${step.label}`}</Typography>
                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                   {step.detail}

@@ -85,10 +85,13 @@ describe('UserBranchAssignmentsTable', () => {
         .map((header) => header.textContent),
     ).toEqual(['Branch', 'Assignment type', 'Actions']);
     // Keyboard-scrollable at 375 px even when no row holds a button (07's history-table rule).
-    expect(screen.getByRole('region', { name: 'Branch assignments' })).toHaveAttribute(
+    expect(screen.getByRole('region', { name: 'Branch assignments table' })).toHaveAttribute(
       'tabindex',
       '0',
     );
+    // The page's section card is the region named "Branch assignments": two landmarks with one name
+    // fail axe's landmark-unique, so the table's region is named differently.
+    expect(screen.queryByRole('region', { name: 'Branch assignments' })).toBeNull();
     const [westlandsBranch, westlandsType] = within(rowOf('Westlands Branch')).getAllByRole('cell');
     expect(westlandsBranch).toHaveTextContent('Westlands Branch');
     expect(westlandsBranch).toHaveTextContent('WESTLANDS');
