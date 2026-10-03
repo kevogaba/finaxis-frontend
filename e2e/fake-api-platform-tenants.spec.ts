@@ -81,7 +81,7 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
       violations: [{ field: 'admin.phone_e164', code: 'NotBlank' }],
     });
 
-    // BG-07: the backend answers a taken code with a 500, so the app checks first.
+    // BG-07: the backend answers a taken code with a 500, so the app looks it up after a failed create.
     const taken = await request.post(api('/platform/tenants'), {
       headers,
       data: { ...DRAFT, tenant_code: 'acme' },

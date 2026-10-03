@@ -419,8 +419,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     high (`docs/backend-gaps.md` BG-29). One check, `isInstitutionId` (a UUID that is not the
     platform organisation, in any letter case), guards the record, both tabs, amend and every
     tenant Server Action.
-  - A tenant code is checked before the create call, because a duplicate is a backend 500
-    (BG-07); the check reads one page of 100 matches.
+  - The create is posted first; a duplicate tenant code is a backend 500 (BG-07), so only after
+    that failure one lookup (one page of 100 matches) names the cause. A retry with the same
+    idempotency key replays.
   - Approve stays on offer for its maker: the platform context can't read who created or
     submitted a request, so a refusal is explained as permission or maker-checker (BG-08).
   - Amend re-asks the legal name, registration number and first administrator, which the

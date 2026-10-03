@@ -23,7 +23,7 @@ export default async function NewTenantPage() {
     />
   );
 
-  // The code pre-check and the redirect after create both read the directory (BG-31).
+  // The duplicate-code lookup and the redirect after create both read the directory (BG-31).
   if (
     !canAll({ permissions: resolved?.profile.permissions ?? [] }, ['tenant.create', 'tenant.view'])
   ) {

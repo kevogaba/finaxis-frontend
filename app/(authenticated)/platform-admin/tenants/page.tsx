@@ -55,7 +55,7 @@ export default async function TenantDirectoryPage({ searchParams }: TenantDirect
       title="SACCO institutions"
       description="Create, approve, monitor, suspend or deprovision tenant organisations."
       actions={
-        // The code pre-check and the redirect after create both read the directory (BG-31).
+        // The duplicate-code lookup and the redirect after create both read the directory (BG-31).
         canAll(holder, ['tenant.create', 'tenant.view']) ? (
           <Button
             component={NextLink}
