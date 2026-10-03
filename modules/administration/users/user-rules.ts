@@ -37,6 +37,11 @@ function accountBlocked(user: UserStatus): OnboardingState {
   };
 }
 
+/** A user status in words: `humanizeEnum` would print "Provisioning idp". */
+export function userStatusLabel(status: UserStatus): string {
+  return status === 'PROVISIONING_IDP' ? 'Provisioning identity' : humanizeEnum(status);
+}
+
 /** Spec §10.5's onboarding table (contract §F), made total over every status pair. */
 export function onboardingState(membership: MembershipStatus, user: UserStatus): OnboardingState {
   switch (membership) {

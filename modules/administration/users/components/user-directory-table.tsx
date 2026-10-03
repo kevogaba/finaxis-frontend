@@ -14,7 +14,7 @@ import { StatusChip } from '@/components/data-display/status-chip';
 import { TruncatedText } from '@/components/data-display/truncated-text';
 import { initialsOf } from '@/components/shell/initials';
 import type { UserSummary } from '../user-contract';
-import { onboardingState } from '../user-rules';
+import { onboardingState, userStatusLabel } from '../user-rules';
 
 const COLUMNS = ['User', 'Username', 'Onboarding', 'Membership', 'User status'] as const;
 
@@ -93,7 +93,7 @@ export function UserDirectoryTable({ users }: UserDirectoryTableProps) {
                   <StatusChip value={user.membershipStatus} />
                 </TableCell>
                 <TableCell>
-                  <StatusChip value={user.userStatus} />
+                  <StatusChip value={user.userStatus} label={userStatusLabel(user.userStatus)} />
                 </TableCell>
               </TableRow>
             );

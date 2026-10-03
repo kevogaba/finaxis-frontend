@@ -19,6 +19,7 @@ import { hrefWith, toSearchParams } from '@/lib/api/query-string';
 import { UserDirectoryTable } from '@/modules/administration/users/components/user-directory-table';
 import { MEMBERSHIP_STATUSES, USER_STATUSES } from '@/modules/administration/users/user-contract';
 import { hasUserFilters, parseUserListQuery } from '@/modules/administration/users/user-query';
+import { userStatusLabel } from '@/modules/administration/users/user-rules';
 import { listUsers } from '@/modules/administration/users/user-service';
 
 export const metadata: Metadata = { title: 'Users & access' };
@@ -32,7 +33,7 @@ const FIELDS: ToolbarField[] = [
     name: 'userStatus',
     label: 'User status',
     allLabel: 'All user statuses',
-    options: USER_STATUSES.map((value) => ({ value, label: humanizeEnum(value) })),
+    options: USER_STATUSES.map((value) => ({ value, label: userStatusLabel(value) })),
   },
   {
     kind: 'select',

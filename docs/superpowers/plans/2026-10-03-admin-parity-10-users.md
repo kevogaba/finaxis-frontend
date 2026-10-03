@@ -371,6 +371,8 @@ Implementers never execute this section. The controller checks it against the ti
   - `DEFAULT_USER_PAGE_SIZE = 10`, `interface UserListQuery`, `parseUserListQuery(params)`,
     `hasUserFilters(query)`, `userListApiPath(query)`;
   - ★ `onboardingState(membership, user): OnboardingState` and `type OnboardingKey`;
+  - ★ `userStatusLabel(status): string` (a user status in words: `humanizeEnum` would print
+    "Provisioning idp" for PROVISIONING_IDP; the directory, its filter and the record's Profile use it);
   - `onboardingProgress(membership, user): OnboardingProgress`, `type OnboardingStep`,
     `PROVISIONING_NOTE`;
   - ★ `type MembershipAction`, `interface MembershipSubject`, `availableMembershipActions(status, holder)`, `blockedMembershipActions(actions, subject)`, `type MembershipLookup`,
@@ -814,6 +816,11 @@ function accountBlocked(user: UserStatus): OnboardingState {
     label: `Account ${humanizeEnum(user).toLowerCase()}`,
     tone: 'error',
   };
+}
+
+/** A user status in words: `humanizeEnum` would print "Provisioning idp". */
+export function userStatusLabel(status: UserStatus): string {
+  return status === 'PROVISIONING_IDP' ? 'Provisioning identity' : humanizeEnum(status);
 }
 
 /** Spec §10.5's onboarding table (contract §F), made total over every status pair. */
@@ -2037,7 +2044,7 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 **Interfaces:**
 
 - Consumes: Task 1's `parseUserListQuery`, `hasUserFilters`, `USER_STATUSES`,
-  `MEMBERSHIP_STATUSES`, `onboardingState`, `type UserSummary`; Task 2's `listUsers`; the list kit
+  `MEMBERSHIP_STATUSES`, `onboardingState`, `userStatusLabel`, `type UserSummary`; Task 2's `listUsers`; the list kit
   (`ListNavigationProvider`, `ListNavigationProgress`, `ListBusyRegion`, `ListToolbar`,
   `TablePaginationBar`, `EmptyState`, `ErrorState`, `ForbiddenState`, `StatusChip`, `humanizeEnum`,
   `TruncatedText`), `PageHeader`, `NextLink`, `LinkPendingIndicator`, `initialsOf`
@@ -2052,10 +2059,17 @@ create button (the "Invite user" button is layer 11's).
 - [ ] **Step 1: Write the failing table test** — `user-directory-table.test.tsx`
       (`renderWithProviders`):
   - "links each name to the user's record and shows the email under it" — link `Felix Omondi` has
-    `href` `/admin/users/<FELIX>` and `title` `Felix Omondi`; the email text is in the same cell.
-  - "derives the onboarding chip from both statuses" — rows (PENDING_APPROVAL, PROVISIONING_IDP) and
-    (ACTIVE, INVITED) show `Provisioning identity` and `Awaiting first sign-in`.
-  - "humanizes the membership and user statuses" — `Pending approval`, `Draft`.
+    `href` `/admin/users/<FELIX>` and `title` `Felix Omondi`; the email text is in the same cell, with the
+    full value in its `title` (`TruncatedText`).
+  - "derives the onboarding chip from both statuses" — the Onboarding cell (the third; "Provisioning
+    identity" is also the user status, so a row-wide `getByText` would match twice) of rows
+    (PENDING_APPROVAL, PROVISIONING_IDP) and (ACTIVE, INVITED) reads `Provisioning identity` and
+    `Awaiting first sign-in`.
+  - "humanizes the membership and user statuses, each in its own column" — the Membership cell
+    (the fourth) reads `Pending approval` and the User status cell (the fifth) `Draft`: PENDING_APPROVAL
+    is valid in both enums, so the columns are pinned by position.
+  - "words the provisioning user status as an identity, not an acronym" — the PROVISIONING_IDP row's
+    User status cell reads `Provisioning identity`; no text matches `/idp/i`.
   - "hides the initials avatar from assistive technology" — the `FO` text sits inside an
     `aria-hidden="true"` element, and the row's link name is exactly `Felix Omondi`.
   - "is a table named Users with the five headers" — `getByRole('table', { name: 'Users' })` and
@@ -2089,7 +2103,9 @@ create button (the "Invite user" button is layer 11's).
   - Username: `Typography variant="body2" sx={{ fontFamily: 'monospace' }}`.
   - Onboarding: `const state = onboardingState(user.membershipStatus, user.userStatus)` →
     `<StatusChip value={state.key} label={state.label} tone={state.tone} />`.
-  - Membership and User status: `<StatusChip value={…} />` (humanized by the kit).
+  - Membership: `<StatusChip value={user.membershipStatus} />` (humanized by the kit). User status:
+    `<StatusChip value={user.userStatus} label={userStatusLabel(user.userStatus)} />`: the tone still comes
+    from the value, and `userStatusLabel` words PROVISIONING_IDP as "Provisioning identity".
 
 - [ ] **Step 4: Write the page** `app/(authenticated)/admin/users/page.tsx` (mirror the roles page's
       structure: `load(listUsers(query))`, `ForbiddenState` on a 403, `ErrorState` otherwise, the
@@ -2114,7 +2130,7 @@ const fields: ToolbarField[] = [
     name: 'userStatus',
     label: 'User status',
     allLabel: 'All user statuses',
-    options: USER_STATUSES.map((value) => ({ value, label: humanizeEnum(value) })),
+    options: USER_STATUSES.map((value) => ({ value, label: userStatusLabel(value) })),
   },
   {
     kind: 'select',
@@ -2468,7 +2484,7 @@ const at = (iso: string) => {
 Render a `Box sx={{ display: 'grid', gap: 3 }}` of three `SectionCard`s:
 
 1. **Profile** — `DescriptionList` items: `Display name`, `Username`, `Email`, `User status`
-   (`StatusChip`), `Role assignments` (only when `roleCount !== null`), `Branch assignments` (only
+   (`StatusChip` with `label={userStatusLabel(record.userStatus)}`), `Role assignments` (only when `roleCount !== null`), `Branch assignments` (only
    when `scan?.ok`: `branchAssignmentCount(scan.value.items.length, scan.value.truncated, selectedBranch?.name ?? null)`), `User ID` (`<CopyIdButton value={record.id} label="User ID" />`).
 2. **Membership** — without `membership.view`: the muted paragraph "You can't view membership
    details in your current role."; a failed `membership` or `detail` load: `<ErrorState problem={…} />`; not found: "This user's membership couldn't be found."; otherwise
@@ -3145,10 +3161,11 @@ Kiprono | Amina Odhiambo, Victor Otieno, Backend Jane Manager.
 1. "lists users newest first and filters them through the URL" — `13 users`; the `Users` table
    has 11 rows (10 users) and the first data row is Joann Mwangi; the rail link `Users & access` has
    `aria-current="page"`; search `mwangi` + Enter → `searchParams.get('q') === 'mwangi'` and 3 rows,
-   Joann and Ann; Clear filters, then Membership = Pending approval → `searchParams.get('membershipStatus') === 'PENDING_APPROVAL'`, 5 rows (four users), Daniel's showing `Provisioning identity` and Amina's `Awaiting approval`; Clear filters, then `Go to next page` → `searchParams.get('page') === '1'` and
+   Joann and Ann; Clear filters, then Membership = Pending approval → `searchParams.get('membershipStatus') === 'PENDING_APPROVAL'`, 5 rows (four users), Daniel's Onboarding cell showing `Provisioning identity` (his User status cell reads the same, so check the cell, never a row-wide exact `getByText`) and Amina's `Awaiting approval`; Clear filters, then `Go to next page` → `searchParams.get('page') === '1'` and
    4 rows: Amina, Victor and Backend Jane Manager.
 2. "approves a user with no sign-in identity: provisioning starts (202)" — Amina → `act('Approve')`
-   → toast `Approval recorded`; `statusChip('Provisioning identity')`; no `Approve` button;
+   → toast `Approval recorded`; `statusChip('Provisioning identity')` (the hero's onboarding chip; the
+   Overview's User status chip reads the same, so the helper's `.first()` is deliberate); no `Approve` button;
    `Reject & revoke` is focused; the Overview shows `PROVISIONING_NOTE`.
 3. "approves an existing account straight to active (200)" — Brian → `statusChip('Active')`;
    `Suspend` and `Revoke` offered; `Suspend` is focused.

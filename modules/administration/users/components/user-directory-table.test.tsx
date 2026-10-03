@@ -50,24 +50,41 @@ describe('UserDirectoryTable', () => {
     expect(link).toHaveAttribute('title', 'Felix Omondi');
     const cell = link.closest('td');
     expect(cell).not.toBeNull();
-    expect(within(cell as HTMLElement).getByText('felix.omondi@greenfield.example')).toBeVisible();
+    const email = within(cell as HTMLElement).getByText('felix.omondi@greenfield.example');
+    expect(email).toBeVisible();
+    // TruncatedText keeps the full value in `title` and caps the width (a 100-character email).
+    expect(email).toHaveAttribute('title', 'felix.omondi@greenfield.example');
     expect(screen.getByText('felix.omondi')).toBeInTheDocument();
   });
 
   it('derives the onboarding chip from both statuses', () => {
     renderWithProviders(<UserDirectoryTable users={USERS} />);
 
-    expect(within(rowOf('Grace Wanjiru')).getByText('Provisioning identity')).toBeInTheDocument();
-    expect(within(rowOf('Hassan Ali')).getByText('Awaiting first sign-in')).toBeInTheDocument();
-    expect(within(rowOf('Felix Omondi')).getByText('Awaiting approval')).toBeInTheDocument();
+    // The Onboarding cell is the third: "Provisioning identity" is also the user status below.
+    const onboardingOf = (name: string) => within(rowOf(name)).getAllByRole('cell')[2];
+    expect(onboardingOf('Grace Wanjiru')).toHaveTextContent('Provisioning identity');
+    expect(onboardingOf('Hassan Ali')).toHaveTextContent('Awaiting first sign-in');
+    expect(onboardingOf('Felix Omondi')).toHaveTextContent('Awaiting approval');
   });
 
-  it('humanizes the membership and user statuses', () => {
-    renderWithProviders(<UserDirectoryTable users={USERS.slice(0, 1)} />);
+  it('humanizes the membership and user statuses, each in its own column', () => {
+    renderWithProviders(<UserDirectoryTable users={USERS} />);
 
-    const row = rowOf('Felix Omondi');
-    expect(within(row).getByText('Pending approval')).toBeInTheDocument();
-    expect(within(row).getByText('Draft')).toBeInTheDocument();
+    // PENDING_APPROVAL is valid in both enums, so the column is pinned by position.
+    const felix = within(rowOf('Felix Omondi')).getAllByRole('cell');
+    expect(felix[3]).toHaveTextContent('Pending approval');
+    expect(felix[4]).toHaveTextContent('Draft');
+    const hassan = within(rowOf('Hassan Ali')).getAllByRole('cell');
+    expect(hassan[3]).toHaveTextContent('Active');
+    expect(hassan[4]).toHaveTextContent('Invited');
+  });
+
+  it('words the provisioning user status as an identity, not an acronym', () => {
+    renderWithProviders(<UserDirectoryTable users={USERS} />);
+
+    const grace = within(rowOf('Grace Wanjiru')).getAllByRole('cell');
+    expect(grace[4]).toHaveTextContent('Provisioning identity');
+    expect(screen.queryByText(/idp/i)).not.toBeInTheDocument();
   });
 
   it('hides the initials avatar from assistive technology', () => {

@@ -21,6 +21,7 @@ import {
   branchAssignmentCount,
   onboardingProgress,
   parseUserId,
+  userStatusLabel,
 } from '@/modules/administration/users/user-rules';
 import {
   countUserRoleAssignments,
@@ -64,7 +65,10 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
     { label: 'Display name', value: record.displayName },
     { label: 'Username', value: record.username },
     { label: 'Email', value: record.email },
-    { label: 'User status', value: <StatusChip value={record.userStatus} /> },
+    {
+      label: 'User status',
+      value: <StatusChip value={record.userStatus} label={userStatusLabel(record.userStatus)} />,
+    },
     ...(roleCount === null ? [] : [{ label: 'Role assignments', value: String(roleCount) }]),
     ...(scan?.ok
       ? [

@@ -32,6 +32,7 @@ import {
   parseUserId,
   roleScopeBranches,
   roleScopeHint,
+  userStatusLabel,
 } from './user-rules';
 
 const ALL = [
@@ -178,6 +179,15 @@ describe('onboardingState', () => {
     ['ACTIVE', 'PROVISIONING_IDP', 'ACCOUNT_NOT_READY', 'Account not ready', 'warning'],
   ] as const)('%s + %s → %s (label and tone)', (membership, user, key, label, tone) => {
     expect(onboardingState(membership, user)).toEqual({ key, label, tone });
+  });
+});
+
+describe('userStatusLabel', () => {
+  it('words PROVISIONING_IDP as an identity, never the acronym', () => {
+    expect(userStatusLabel('PROVISIONING_IDP')).toBe('Provisioning identity');
+    expect(userStatusLabel('DRAFT')).toBe('Draft');
+    expect(userStatusLabel('DEACTIVATING')).toBe('Deactivating');
+    expect(USER_STATUSES.map(userStatusLabel).filter((label) => /idp/i.test(label))).toEqual([]);
   });
 });
 
