@@ -26,6 +26,9 @@ export interface FakeUser {
   displayName: string;
   status: string;
   keycloakSubject: string;
+  /** Layer 10: approval answers 200 when the user already has an identity link, else 202 and the
+   * user becomes PROVISIONING_IDP (contract §E.3). Absent = linked: existing literals stay valid. */
+  identityLinked?: boolean;
 }
 
 export interface FakeMembership {
@@ -37,6 +40,8 @@ export interface FakeMembership {
   primaryBranchId: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Layer 10 maker-checker (approver ≠ inviter); the real API keeps the inviter in the audit log. */
+  invitedBy?: string;
 }
 
 export interface FakeBranch {

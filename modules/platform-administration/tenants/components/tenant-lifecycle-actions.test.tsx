@@ -219,8 +219,9 @@ describe('TenantLifecycleActions', () => {
 
     await waitFor(() => {
       expect(confirm).toHaveAccessibleDescription('Type the tenant code exactly as shown.');
+      // Focus returns in a passive effect after the error renders: wait for it too.
+      expect(confirm).toHaveFocus();
     });
-    expect(confirm).toHaveFocus();
     expect(within(dialog).getByRole('textbox', { name: 'Reason' })).toHaveValue(
       'Merged into Harambee',
     );

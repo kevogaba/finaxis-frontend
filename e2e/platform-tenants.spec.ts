@@ -1,12 +1,23 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   A11Y_CASES,
   applyA11yCase,
   enterAdmin,
   expectA11yCaseApplied,
   expectNoSeriousOrCriticalViolations,
+  mainText,
+  notFoundHeading,
+  openRecord,
+  rowsOf,
+  statusChip,
 } from './support/admin';
-import { addCookie, authenticate, CONTEXT_COOKIE_NAME, selectMuiOption } from './support/auth';
+import {
+  addCookie,
+  authenticate,
+  CONTEXT_COOKIE_NAME,
+  expectHydrated,
+  selectMuiOption,
+} from './support/auth';
 import { IDS, TENANT_SCENARIO_IDS } from './fake-api/scenarios.mts';
 
 async function openDirectory(page: Page) {
@@ -18,28 +29,8 @@ async function openDirectory(page: Page) {
   });
 }
 
-async function openRecord(page: Page, name: string) {
-  await page
-    .getByRole('table', { name: 'Institutions' })
-    .getByRole('link', { name, exact: true })
-    .click();
-  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible({ timeout: 15000 });
-}
-
-// Scoped to `main`, as in branches.spec.ts: a streamed route can briefly exist as a hidden
-// duplicate segment, and `getByRole('main')` resolves only the rendered one.
-const mainText = (page: Page, value: string | RegExp, options?: { exact?: boolean }) =>
-  page.getByRole('main').getByText(value, options);
-// The hero chip and the Overview's Lifecycle row both show the status: `.first()` is load-bearing.
-const statusChip = (page: Page, value: string) => mainText(page, value, { exact: true }).first();
-const rowsOf = (page: Page) => page.getByRole('table', { name: 'Institutions' }).getByRole('row');
 // Reject and Deprovision are alertdialogs once ReasonDialog has 08's V3 tone; the rest are dialogs.
 const dialogOf = (page: Page) => page.getByRole('alertdialog').or(page.getByRole('dialog'));
-// Not-found renders `app/not-found.tsx`. The layout's `notFound()` answers HTTP 200 behind the root
-// loading boundary (as in 08 and 09), so a missing page is asserted by its content, never by
-// `response.status()`.
-const notFoundHeading = (page: Page) =>
-  page.getByRole('heading', { level: 1, name: "We couldn't find that page" });
 
 /** A hero lifecycle action through its dialog; the caller asserts the outcome. */
 async function act(page: Page, label: string, reason?: string) {
@@ -125,17 +116,6 @@ async function expectFocusStopsClearTheBars(page: Page, step: string, minimum: n
   }
 }
 
-/** After a `goto`, a client handler works only once React has hydrated the node (selectMuiOption's
- * poll, for a control that isn't a Select). */
-async function hydrated(locator: Locator) {
-  await expect
-    .poll(
-      () => locator.evaluate((el) => Object.keys(el).some((key) => key.startsWith('__reactProps'))),
-      { timeout: 20000 },
-    )
-    .toBe(true);
-}
-
 test.describe('platform tenants', () => {
   // Every route here can be the first hit of its tree under a cold `next dev` compile.
   test.describe.configure({ timeout: 90000 });
@@ -149,14 +129,14 @@ test.describe('platform tenants', () => {
 
     // BG-29: eight organisations, seven institutions.
     await expect(mainText(page, '7 institutions')).toBeVisible();
-    await expect(rowsOf(page)).toHaveCount(8); // header + 7
-    await expect(rowsOf(page).nth(1)).toContainText('Umoja Teachers SACCO');
-    await expect(rowsOf(page).filter({ hasText: 'PLATFORM' })).toHaveCount(0);
+    await expect(rowsOf(page, 'Institutions')).toHaveCount(8); // header + 7
+    await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Umoja Teachers SACCO');
+    await expect(rowsOf(page, 'Institutions').filter({ hasText: 'PLATFORM' })).toHaveCount(0);
 
     await page.getByRole('searchbox', { name: 'Search' }).fill('pwani');
     await page.getByRole('searchbox', { name: 'Search' }).press('Enter');
     await expect(page).toHaveURL(/q=pwani/, { timeout: 15000 });
-    await expect(rowsOf(page)).toHaveCount(2);
+    await expect(rowsOf(page, 'Institutions')).toHaveCount(2);
     await expect(mainText(page, '1 institution', { exact: true })).toBeVisible();
 
     // Wait for each cleared render (as branches.spec does): the next push builds on it.
@@ -164,14 +144,14 @@ test.describe('platform tenants', () => {
     await expect(mainText(page, '7 institutions')).toBeVisible({ timeout: 15000 });
     await selectMuiOption(page, 'Country', /^Uganda$/);
     await expect(page).toHaveURL(/country=UG/, { timeout: 15000 });
-    await expect(rowsOf(page)).toHaveCount(2);
-    await expect(rowsOf(page).nth(1)).toContainText('Harambee Farmers SACCO');
+    await expect(rowsOf(page, 'Institutions')).toHaveCount(2);
+    await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Harambee Farmers SACCO');
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
     await expect(mainText(page, '7 institutions')).toBeVisible({ timeout: 15000 });
     await selectMuiOption(page, 'Status', /^Suspended$/);
     await expect(page).toHaveURL(/status=SUSPENDED/, { timeout: 15000 });
-    await expect(rowsOf(page).nth(1)).toContainText('Kilimo Bora SACCO');
+    await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Kilimo Bora SACCO');
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
     await expect(mainText(page, '7 institutions')).toBeVisible({ timeout: 15000 });
@@ -179,7 +159,7 @@ test.describe('platform tenants', () => {
     await byName.getByRole('link').click();
     await expect(page).toHaveURL(/sortBy=displayName&sortDir=ASC/, { timeout: 15000 });
     await expect(byName).toHaveAttribute('aria-sort', 'ascending');
-    await expect(rowsOf(page).nth(1)).toContainText('Acme SACCO');
+    await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Acme SACCO');
   });
 
   test.describe('created filters', () => {
@@ -197,7 +177,7 @@ test.describe('platform tenants', () => {
       // Seeded createdAt (08:00 UTC): Umoja 5 Sep, Harambee 4 Sep, Mwangaza 3 Sep, Pwani 20 Aug,
       // Kilimo 10 Aug, Nairobi Metropolitan 1 Aug, Acme 1 Jul.
       const from = page.getByLabel('Created from', { exact: true });
-      await hydrated(from);
+      await expectHydrated(from);
       await from.fill('2026-08-15T00:00');
       await from.press('Enter');
       await expect(page).toHaveURL(
@@ -205,10 +185,12 @@ test.describe('platform tenants', () => {
         { timeout: 15000 },
       );
       await expect(mainText(page, '4 institutions')).toBeVisible({ timeout: 15000 });
-      await expect(rowsOf(page)).toHaveCount(5); // header + 4
-      await expect(rowsOf(page).nth(1)).toContainText('Umoja Teachers SACCO');
-      await expect(rowsOf(page).nth(4)).toContainText('Pwani Fishermen SACCO');
-      await expect(rowsOf(page).filter({ hasText: 'Kilimo Bora SACCO' })).toHaveCount(0);
+      await expect(rowsOf(page, 'Institutions')).toHaveCount(5); // header + 4
+      await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Umoja Teachers SACCO');
+      await expect(rowsOf(page, 'Institutions').nth(4)).toContainText('Pwani Fishermen SACCO');
+      await expect(
+        rowsOf(page, 'Institutions').filter({ hasText: 'Kilimo Bora SACCO' }),
+      ).toHaveCount(0);
 
       // Created to commits on blur (Tab only moves between the field's own segments) and stores
       // the chosen minute's last millisecond.
@@ -222,9 +204,9 @@ test.describe('platform tenants', () => {
         { timeout: 15000 },
       );
       await expect(mainText(page, '2 institutions')).toBeVisible({ timeout: 15000 });
-      await expect(rowsOf(page)).toHaveCount(3); // header + 2
-      await expect(rowsOf(page).nth(1)).toContainText('Mwangaza Savings SACCO');
-      await expect(rowsOf(page).nth(2)).toContainText('Pwani Fishermen SACCO');
+      await expect(rowsOf(page, 'Institutions')).toHaveCount(3); // header + 2
+      await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Mwangaza Savings SACCO');
+      await expect(rowsOf(page, 'Institutions').nth(2)).toContainText('Pwani Fishermen SACCO');
 
       // Both fields show what the URL holds after the render, and Clear filters empties them.
       await expect(page.getByLabel('Created from', { exact: true })).toHaveValue(
@@ -331,7 +313,7 @@ test.describe('platform tenants', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'platform-tenants');
     await openDirectory(page);
-    await openRecord(page, 'Harambee Farmers SACCO');
+    await openRecord(page, 'Institutions', 'Harambee Farmers SACCO');
 
     await expect(await act(page, 'Approve')).toBeHidden();
     await expect(
@@ -354,7 +336,7 @@ test.describe('platform tenants', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'platform-tenants');
     await openDirectory(page);
-    await openRecord(page, 'Mwangaza Savings SACCO');
+    await openRecord(page, 'Institutions', 'Mwangaza Savings SACCO');
 
     await expect(await act(page, 'Reject', 'Duplicate of another request')).toBeHidden();
     // REJECTED offers nothing, so the actions unmount and their cleanup focuses the title.
@@ -371,7 +353,7 @@ test.describe('platform tenants', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'platform-tenants');
     await openDirectory(page);
-    await openRecord(page, 'Acme SACCO');
+    await openRecord(page, 'Institutions', 'Acme SACCO');
 
     await expect(await act(page, 'Suspend', 'Compliance review')).toBeHidden();
     await expect(page.getByRole('button', { name: 'Reactivate', exact: true })).toBeFocused();
@@ -387,7 +369,7 @@ test.describe('platform tenants', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'platform-tenants');
     await openDirectory(page);
-    await openRecord(page, 'Kilimo Bora SACCO');
+    await openRecord(page, 'Institutions', 'Kilimo Bora SACCO');
 
     await page.getByRole('button', { name: 'Deprovision', exact: true }).click();
     const dialog = page.getByRole('alertdialog'); // CRITICAL: irreversible, so an alertdialog
@@ -410,7 +392,7 @@ test.describe('platform tenants', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'platform-tenants');
     await openDirectory(page);
-    await openRecord(page, 'Pwani Fishermen SACCO');
+    await openRecord(page, 'Institutions', 'Pwani Fishermen SACCO');
     await page.getByRole('tab', { name: 'Provisioning' }).click();
     await expect(page).toHaveURL(/\/provisioning$/, { timeout: 15000 });
     await expect(mainText(page, 'KEYCLOAK_UNAVAILABLE')).toBeVisible();
@@ -435,7 +417,7 @@ test.describe('platform tenants', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'platform-tenants');
     await openDirectory(page);
-    await openRecord(page, 'Umoja Teachers SACCO');
+    await openRecord(page, 'Institutions', 'Umoja Teachers SACCO');
 
     await page.getByRole('link', { name: 'Amend draft' }).click();
     await expect(
@@ -524,7 +506,7 @@ test.describe('platform tenants', () => {
 
     await expect(mainText(page, '1 institution', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Create tenant draft' })).toHaveCount(0);
-    await openRecord(page, 'Acme SACCO');
+    await openRecord(page, 'Institutions', 'Acme SACCO');
     await expect(page.getByRole('button', { name: /^(Suspend|Deprovision)$/ })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Provisioning' }).click();
     await expect(page).toHaveURL(/\/provisioning$/, { timeout: 15000 });
@@ -571,7 +553,7 @@ test.describe('platform tenants', () => {
       ).toBeVisible({
         timeout: 15000,
       });
-      await hydrated(page.getByRole('button', { name: 'Continue' }));
+      await expectHydrated(page.getByRole('button', { name: 'Continue' }));
       // Fields keep a readable width on a wide screen, as the branch and role forms do.
       const codeField = await page.getByRole('textbox', { name: 'Tenant code' }).boundingBox();
       expect(codeField?.width).toBeLessThanOrEqual(640);
@@ -614,7 +596,7 @@ test.describe('platform tenants', () => {
       await expectNoSeriousOrCriticalViolations(page);
       // The error summary and the invalid fields; Continue is a client handler.
       const proceed = page.getByRole('button', { name: 'Continue' });
-      await hydrated(proceed);
+      await expectHydrated(proceed);
       await proceed.click();
       await expect(mainText(page, /^Check these fields/)).toBeVisible();
       await expectNoSeriousOrCriticalViolations(page);
@@ -647,7 +629,7 @@ test.describe('platform tenants', () => {
 
       // Acme is ACTIVE: the CRITICAL deprovision dialog, open.
       const deprovision = page.getByRole('button', { name: 'Deprovision', exact: true });
-      await hydrated(deprovision);
+      await expectHydrated(deprovision);
       await deprovision.click();
       await expect(dialogOf(page)).toBeVisible();
       // MUI's Fade sets `opacity` on the dialog's transition container, and axe blends ancestor

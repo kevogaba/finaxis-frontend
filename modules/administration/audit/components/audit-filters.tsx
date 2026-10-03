@@ -1,5 +1,6 @@
 import { ListToolbar, type ToolbarChip } from '@/components/data-display/list-toolbar';
 import { AUDIT_ENTITY_TYPES, actionsForEntityType } from '../audit-vocabulary';
+import { AuditActorPicker } from './audit-actor-picker';
 
 interface AuditFiltersProps {
   entityType: string | undefined;
@@ -7,6 +8,10 @@ interface AuditFiltersProps {
   actorChip: ToolbarChip | null;
   entityChip?: ToolbarChip | null;
   action?: string;
+  /** Offers the Actor search (it reads `/tenant/users`, so it needs `user.view`). */
+  actorSearch?: boolean;
+  /** The applied actor filter: the search starts over, empty, each time it changes. */
+  actorId?: string;
   /** The zone the table/drawer render times in — passed through so the From/To fields can show a
    * helper naming the browser's own zone when it differs (entry stays in local time). */
   timeZone: string;
@@ -18,6 +23,8 @@ export function AuditFilters({
   actorChip,
   entityChip,
   action,
+  actorSearch = false,
+  actorId,
   timeZone,
 }: AuditFiltersProps) {
   const chips = [actorChip, entityChip ?? null].filter(
@@ -52,6 +59,8 @@ export function AuditFilters({
         // minute's last millisecond is stored, not its first (L06-M22).
         { kind: 'datetime', name: 'occurredTo', label: 'To', endOfMinute: true },
       ]}
-    />
+    >
+      {actorSearch && <AuditActorPicker actorId={actorId} />}
+    </ListToolbar>
   );
 }

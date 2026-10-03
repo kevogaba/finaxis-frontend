@@ -136,9 +136,9 @@ app/
 ├── (public)/login/page.tsx  # Split-screen login page (Better Auth Keycloak sign-in)
 ├── (authenticated)/          # Server-guarded routes: layout.tsx validates session + context
 │   ├── layout.tsx             # Authoritative auth guard for /admin, /profile, /platform-admin
-│   ├── admin/                 # Overview, Business date, Audit trail, Branches, and Roles &
-│   │                            # permissions pages; later layers add Approval queue and Users &
-│   │                            # access as their own nav items (spec §8)
+│   ├── admin/                 # Overview, Users & access, Branches, Roles & permissions,
+│   │                            # Settings, Business date, and Audit trail pages; a later layer
+│   │                            # adds the Approval queue as its own nav item (spec §8)
 │   │   ├── layout.tsx           # Redirects a platform context to /platform-admin
 │   │   ├── business-date/page.tsx # Current date/status hero, close-of-business actions, history
 │   │   ├── audit/page.tsx       # Audit trail: entity/action/date filters, pagination, an event
@@ -146,10 +146,15 @@ app/
 │   │   ├── branches/            # Branch directory (search, status/type filters, sortable headers),
 │   │   │                          # create draft (new/), and the record ([branchId]/: layout hero +
 │   │   │                          # lifecycle actions; Overview, Users, and Audit tabs)
-│   │   └── roles/               # Role directory (search, status/type filters, sortable headers),
-│   │                              # create (new/), and the record ([roleId]/: hero + Edit and
-│   │                              # Activate/Deactivate; Overview, Permissions, Assignments, and
-│   │                              # Audit tabs; edit/)
+│   │   ├── roles/               # Role directory (search, status/type filters, sortable headers),
+│   │   │                          # create (new/), and the record ([roleId]/: hero + Edit and
+│   │   │                          # Activate/Deactivate; Overview, Permissions, Assignments, and
+│   │   │                          # Audit tabs; edit/)
+│   │   ├── settings/page.tsx    # Settings catalogue: read-only controls, reset to default
+│   │   └── users/               # Users & access: directory (search, user and membership status
+│   │                              # filters), and the record ([userId]/: hero membership
+│   │                              # lifecycle; Overview, Roles & access, Branch assignments and
+│   │                              # Audit tabs)
 │   ├── platform-admin/         # Platform workspace, gated to the platform organisation's context
 │   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
 │   │   └── tenants/             # SACCO institutions: directory (search, status/country/created
@@ -209,8 +214,12 @@ modules/
 │                                # Server Actions, and components (modules/administration/branches/);
 │                                # roles/ holds the role, permission-catalogue and role-assignment
 │                                # contract, list query, rules, service, Server Actions, and
-│                                # components (modules/administration/roles/); users/ holds tenant
-│                                # user search for pickers (modules/administration/users/)
+│                                # components (modules/administration/roles/); users/ holds the
+│                                # users and membership contract, directory query, onboarding and
+│                                # action rules, service, membership Server Actions, user search
+│                                # for pickers, and components (modules/administration/users/);
+│                                # settings/ holds the settings catalogue's contract, rules,
+│                                # service and Server Actions (modules/administration/settings/)
 ├── platform-administration/   # Platform module + navigation; tenants/ holds the institution
 │                                # contract, directory query, lifecycle rules, service, Server
 │                                # Actions, and components (modules/platform-administration/tenants/);
@@ -224,13 +233,15 @@ components/
 │                                # ContextSelectionForm, useContextSelection, context-api,
 │                                # PaginationControls, SwitchToAllBranchesButton
 ├── data-display/               # Reusable list and record building blocks: ListToolbar
-│                                # (search/select/datetime), TablePaginationBar, StatusChip,
-│                                # DescriptionList, TruncatedText, EmptyState, ErrorState,
-│                                # useListNavigation; the record kit (layer 07b) RecordHero,
-│                                # RecordTabs (link tabs as nested routes), CopyIdButton,
-│                                # ForbiddenState/BranchContextState, ConfirmDialog; SectionCard and
-│                                # ReasonDialog (07); AssignmentDrawer (08); focusRecordTitle (09);
-│                                # WizardForm and its Stepper theme (16)
+│                                # (search/select/datetime, plus extra controls as children, e.g.
+│                                # the audit trail's actor picker), TablePaginationBar,
+│                                # StatusChip, DescriptionList, TruncatedText, EmptyState,
+│                                # ErrorState, useListNavigation; the record kit (layer 07b)
+│                                # RecordHero, RecordTabs (link tabs as nested routes),
+│                                # CopyIdButton, ForbiddenState/BranchContextState,
+│                                # ConfirmDialog; SectionCard and ReasonDialog (07);
+│                                # AssignmentDrawer (08); focusRecordTitle (09); WizardForm and
+│                                # its Stepper theme (16)
 ├── navigation/                 # next/link client re-export (Next.js 16 RSC boundary workaround)
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle, ToastProvider
 └── shell/                      # AppShell, header, drawer, context switcher dialog, app switcher,
@@ -252,7 +263,7 @@ e2e/
 │                                # `scenarios.mts` seed data, `state.mts` run state,
 │                                # `idempotency.mts`'s `sendIdempotent` (Idempotency-Key replay/
 │                                # reuse), `audit-log.mts`'s `recordAuditEvent`)
-├── support/                     # Shared spec helpers (`auth.ts`, `admin.ts`)
+├── support/                     # Shared spec helpers (`auth.ts`, `admin.ts`, `fake-api.ts`)
 └── *.spec.ts                    # Playwright specs
 docs/authentication/            # Architecture, Keycloak setup, security, session-model docs
 docs/deployment.md               # VPS/Coolify deployment
@@ -326,9 +337,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   backend stays the authority. The rail's collapsed/expanded preference persists in a
   `finaxis_nav` cookie read server-side (`app/(authenticated)/layout.tsx`) so first paint already
   renders the right rail width.
-- Administration currently ships the Overview, Business date, Audit trail, Branches, and Roles &
-  permissions pages; Approval queue and Users & access are built out (with real
-  data, not placeholders) as their own layers land, each registering its own item in
+- Administration currently ships the Overview, Users & access, Branches, Roles & permissions,
+  Settings, Business date, and Audit trail pages; the Approval queue is built out (with real
+  data, not placeholders) when its layer lands, registering its own item in
   `modules/administration/administration-navigation.ts`.
 - Business date (`/admin/business-date`, `modules/administration/business-date/`) reads
   `GET /tenant/business-date` and `GET /tenant/business-date/history` and renders the current date,
@@ -350,8 +361,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - Only structured filters exist (entity type, entity, action, actor, date range) — no
     free-text, outcome, severity, branch, or event-type filter, because the backend doesn't
     expose one yet (`docs/backend-gaps.md` BG-16).
-  - An actor is filtered by clicking their name on a visible row, not by a search box, until a
-    users directory ships a picker.
+  - An actor is filtered by picking a user in the Actor search (the first 10 matches; it needs
+    `user.view`) or by clicking their name on a visible row. The picker (`AuditActorPicker`) takes
+    the applied `actorId`, so its search starts over, empty, when the filter changes, and it
+    refocuses its input after its own pick lands (never for a filter change it did not make).
   - Actor and entity names are resolved only for the IDs on the current page (deduplicated,
     bounded lookups); an actor or entity not resolvable falls back to their id.
   - The branch lookup used to label rows is bounded to the first 500 branches in the tenant.
@@ -409,6 +422,49 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - A description can be replaced but not removed (BG-34).
   - The Audit tab shows the role's own changes. Assignment changes are audited per assignment
     (BG-16).
+- Settings (`/admin/settings`, `modules/administration/settings/`) reads the catalogue and the
+  tenant's stored keys in one bounded read. Editing ships disabled behind `SETTINGS_EDIT_ENABLED`
+  because the platform can't save changes yet (`docs/backend-gaps.md` BG-04); reset to default
+  works. The two maker-checker switches and automatic advance are shown read-only with honest
+  labels (BG-12).
+- Users & access (`/admin/users`, `modules/administration/users/`) lists the tenant's users
+  from `GET /tenant/users` (search, user status and membership status filters; newest first,
+  no sort) and opens a record with the membership lifecycle (approve, reject and revoke,
+  suspend, reactivate, revoke) and Overview, Roles & access, Branch assignments and Audit tabs.
+  The Audit tab offers up to four views: User record, Account, Membership (once the membership
+  is found) and Performed by. Known limits:
+  - The directory shows only what user summaries carry, and the onboarding state is derived
+    from the membership and user statuses (`docs/backend-gaps.md` BG-09, BG-11).
+  - A user's membership is found by searching memberships for their email (at most 5 pages of
+    100 matches) and matching the user id exactly; their branch assignments come from a scan of
+    at most 500 active assignments, marked partial when it stops early (with or without a
+    selected branch), and only the selected branch shows while one is selected (BG-09, BG-03).
+    Assign branch offers the first 100 active branches (only the selected one while a branch is
+    selected).
+  - Approve is disabled, with the reason, for the user's inviter (when `audit.view` can show
+    who that was) and for a blocked account, and withheld once approval ran. Other refusals are
+    explained: a 403 as permission or maker-checker (BG-08), a 500 by its likely causes, such as
+    a missing active role (BG-07). "Provisioning identity" can stay put with no resend (BG-11).
+  - Reject & revoke and Revoke are permanent: the email can't be invited again (BG-28).
+    Suspend and Revoke are disabled on your own record (BG-35). Revoking your own branch
+    assignment from the Branch assignments tab shows no self warning (layer 08's
+    `RevokeAssignmentButton` has no `self` prop, unlike the Roles & access revoke); at the
+    selected branch it invalidates your context, and the next request goes to context selection.
+  - A branch-scoped role offers only branches the user is assigned to; a partial scan that found
+    none says so instead of claiming none. When a capped scan did find one of their branches, the
+    One branch choice lists only the branches it found, so others beyond the first 500 may be
+    missing and nothing says so (`RoleScopeFields` shows its hint only while no branch is
+    offered). Role assignment changes are audited per assignment and branch assignment changes on
+    the branch, so the Audit tab can't show them (BG-16).
+  - A count or list that couldn't be read says so rather than vanishing or reading as none: the
+    Overview's role and branch counts show `Couldn't be loaded` (with the request reference) and
+    leave a row out only when you may not read it; a capped scan that found nothing reads
+    `None found (partial)`; the Branch assignments empty state names what could not be seen (a
+    selected branch, a capped scan); and an empty role index (a failed read) reads "Roles couldn't
+    be loaded", not "no active roles".
+  - No phone, member number, last activity, MFA or profile edit (BG-17).
+  - The toolbar search commits on Enter or blur, and backend `validation_failed` violations
+    aren't mapped onto form fields (BG-09).
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) manages SACCO institutions through
   `modules/platform-administration/tenants/`: the directory, the create-draft wizard, amend, the
@@ -430,8 +486,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - The overview, and the tenant branch and user reads in `platform-administration-service.ts`,
     are layer 17's.
 - Beyond context discovery/selection, profile retrieval, Platform Administration's institutions, and
-  Administration's Branches and Roles & permissions above, other domain API modules (e.g. Users &
-  access) are not connected yet.
+  Administration's Users & access, Branches, Roles & permissions and Settings above, these are not
+  connected yet: the Approval queue (layer 12), the Invite user wizard (layer 11), the
+  Administration overview's operational sections (layer 14), and Platform Administration's
+  overview, tenant branches and users, and platform users (layer 17).
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
   `/forgot-password` are placeholders; the first three routes resolve to the app's `not-found`
   page until real content exists.
@@ -442,8 +500,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
 
 1. Add Keycloak claim mappers and enforce authorization/permissions server-side, instead of
    treating UI-shown roles as informational only.
-2. Build out Administration's remaining pages (Approval queue, Users & access) against real data,
-   each registering its own navigation item.
+2. Build out the Approval queue and the Invite user wizard (layers 12 and 11) against real data,
+   each registering what it needs.
 3. Extend Platform Administration with tenant branches and users, platform users, and the KPI
    overview (layer 17).
 4. Replace the temporary `FinaxisLogo` mark with the official brand asset.
