@@ -906,6 +906,317 @@ function platformTenantsScenario(): RunState {
   };
 }
 
+/** Layer 10 seed IDs (lane rules §5). Assignments use …0002nn, role assignments …0003nn, audit
+ * events …0004nn. */
+export const USER_SCENARIO_IDS = {
+  victor: '10000000-0000-4000-8000-000000000001',
+  victorMembership: '10000000-0000-4000-8000-000000000002',
+  amina: '10000000-0000-4000-8000-000000000003',
+  aminaMembership: '10000000-0000-4000-8000-000000000004',
+  brian: '10000000-0000-4000-8000-000000000005',
+  brianMembership: '10000000-0000-4000-8000-000000000006',
+  carol: '10000000-0000-4000-8000-000000000007',
+  carolMembership: '10000000-0000-4000-8000-000000000008',
+  daniel: '10000000-0000-4000-8000-000000000009',
+  danielMembership: '10000000-0000-4000-8000-00000000000a',
+  esther: '10000000-0000-4000-8000-00000000000b',
+  estherMembership: '10000000-0000-4000-8000-00000000000c',
+  felix: '10000000-0000-4000-8000-00000000000d',
+  felixMembership: '10000000-0000-4000-8000-00000000000e',
+  gladys: '10000000-0000-4000-8000-00000000000f',
+  gladysMembership: '10000000-0000-4000-8000-000000000010',
+  hassan: '10000000-0000-4000-8000-000000000011',
+  hassanMembership: '10000000-0000-4000-8000-000000000012',
+  wanjiru: '10000000-0000-4000-8000-000000000013',
+  wanjiruMembership: '10000000-0000-4000-8000-000000000014',
+  ann: '10000000-0000-4000-8000-000000000015',
+  annMembership: '10000000-0000-4000-8000-000000000016',
+  joann: '10000000-0000-4000-8000-000000000017',
+  joannMembership: '10000000-0000-4000-8000-000000000018',
+  teller: '10000000-0000-4000-8000-000000000019',
+  supervisor: '10000000-0000-4000-8000-00000000001a',
+  loansOfficer: '10000000-0000-4000-8000-00000000001b',
+  aminaTeller: '10000000-0000-4000-8000-000000000301',
+  felixBranchTeller: '10000000-0000-4000-8000-000000000307',
+} as const;
+
+/** Real TENANT_ADMIN codes (contract §J), granted only in `users`, so `default` stays the read-only
+ * gating scenario for the users record. */
+const USER_ADMIN_CODES = [
+  'user.approve',
+  'membership.suspend',
+  'membership.reactivate',
+  'membership.revoke',
+  'user.assign_role',
+  'user.revoke_role',
+  'user.assign_branch',
+  'user.revoke_branch',
+];
+
+/** 100 characters: the backend's display-name maximum (contract §D). */
+const LONG_USER_NAME =
+  'Wanjiru Njeri Kamau-Otieno Achieng Muthoni Wambui Chebet Jepkoech Nyambura Akinyi Atieno Wairimu Ayo';
+
+function userAuditEvent(
+  id: string,
+  entityType: string,
+  entityId: string,
+  action: string,
+  actorUserId: string,
+  occurredAt: string,
+): FakeAuditEvent {
+  return {
+    id,
+    organisationId: IDS.greenfield,
+    occurredAt,
+    actorUserId,
+    actorType: 'USER',
+    branchId: null,
+    entityType,
+    entityId,
+    action,
+    outcome: 'SUCCESS',
+    severity: 'INFO',
+    reason: null,
+    beforeJson: null,
+    afterJson: null,
+    metadataJson: '{}',
+  };
+}
+
+/**
+ * Layer 10: a copy of `default` plus twelve people, one per onboarding state. Victor is the other
+ * administrator and the inviter of Amina, Brian, Daniel and Felix; Jane invited Carol, so she can't
+ * approve her. Amina, Carol and Daniel have no identity link (approval is a 202); Brian has one
+ * (a 200). Ann's email sits inside Joann's, and Wanjiru's name is the 100-character maximum.
+ * The fake lists newest first, so the directory reads Joann … Victor, then Jane.
+ */
+function usersScenario(): RunState {
+  const state = greenfieldTenant();
+  const ids = USER_SCENARIO_IDS;
+  const person = (
+    id: string,
+    username: string,
+    displayName: string,
+    status: string,
+    overrides: Partial<FakeUser> = {},
+  ): FakeUser => ({
+    id,
+    username,
+    email: `${username}@greenfield.example`,
+    displayName,
+    status,
+    keycloakSubject: `e2e-${username}`,
+    ...overrides,
+  });
+  const member = (
+    id: string,
+    userId: string,
+    type: string,
+    status: string,
+    overrides: Partial<FakeMembership> = {},
+  ): FakeMembership => ({
+    ...membership(id, IDS.greenfield, userId),
+    type,
+    status,
+    ...overrides,
+  });
+  const homeAt = (
+    n: number,
+    userId: string,
+    branchId: string,
+    status = 'ACTIVE',
+  ): FakeBranchAssignment => ({
+    ...assignment(
+      `10000000-0000-4000-8000-${String(200 + n).padStart(12, '0')}`,
+      IDS.greenfield,
+      userId,
+      branchId,
+      'HOME',
+    ),
+    status,
+  });
+  const grant = (
+    n: number,
+    userId: string,
+    roleId: string,
+    overrides: Partial<FakeRoleAssignment> = {},
+  ): FakeRoleAssignment => ({
+    ...tenantRoleAssignment(
+      `10000000-0000-4000-8000-${String(300 + n).padStart(12, '0')}`,
+      IDS.greenfield,
+      userId,
+      roleId,
+    ),
+    ...overrides,
+  });
+  const custom = (
+    id: string,
+    code: string,
+    name: string,
+    permissions: string[],
+    createdAt: string,
+    overrides: Partial<FakeRole> = {},
+  ): FakeRole => ({
+    ...role(id, IDS.greenfield, code, name, permissions),
+    systemRole: false,
+    createdAt,
+    updatedAt: createdAt,
+    ...overrides,
+  });
+  const event = (
+    n: number,
+    entityType: string,
+    entityId: string,
+    action: string,
+    actorUserId: string,
+    occurredAt: string,
+  ) =>
+    userAuditEvent(
+      `10000000-0000-4000-8000-${String(400 + n).padStart(12, '0')}`,
+      entityType,
+      entityId,
+      action,
+      actorUserId,
+      occurredAt,
+    );
+  return {
+    ...state,
+    users: [
+      ...state.users,
+      person(ids.victor, 'victor.otieno', 'Victor Otieno', 'ACTIVE'),
+      person(ids.amina, 'amina.odhiambo', 'Amina Odhiambo', 'DRAFT', { identityLinked: false }),
+      person(ids.brian, 'brian.kiprono', 'Brian Kiprono', 'ACTIVE'),
+      person(ids.carol, 'carol.wambui', 'Carol Wambui', 'DRAFT', { identityLinked: false }),
+      person(ids.daniel, 'daniel.mutua', 'Daniel Mutua', 'PROVISIONING_IDP', {
+        identityLinked: false,
+      }),
+      person(ids.esther, 'esther.njoki', 'Esther Njoki', 'INVITED'),
+      person(ids.felix, 'felix.omondi', 'Felix Omondi', 'ACTIVE'),
+      person(ids.gladys, 'gladys.chebet', 'Gladys Chebet', 'ACTIVE'),
+      person(ids.hassan, 'hassan.ali', 'Hassan Ali', 'ACTIVE'),
+      // A long name and a long, nested email for the 375 px a11y cases (index item 4).
+      person(ids.wanjiru, 'wanjiru.long', LONG_USER_NAME, 'ACTIVE', {
+        email:
+          'wanjiru.njeri.kamau-otieno.achieng.muthoni@greenfield-teachers-and-public-service-sacco.example',
+      }),
+      // `ann.mwangi@…` is a substring of `joann.mwangi@…` (Review Focus 1).
+      person(ids.ann, 'ann.mwangi', 'Ann Mwangi', 'ACTIVE'),
+      person(ids.joann, 'joann.mwangi', 'Joann Mwangi', 'ACTIVE'),
+    ],
+    memberships: [
+      ...state.memberships,
+      member(ids.victorMembership, ids.victor, 'ADMIN', 'ACTIVE', {
+        primaryBranchId: IDS.headOffice,
+      }),
+      member(ids.aminaMembership, ids.amina, 'STAFF', 'PENDING_APPROVAL', {
+        invitedBy: ids.victor,
+        primaryBranchId: IDS.westlands,
+      }),
+      member(ids.brianMembership, ids.brian, 'STAFF', 'PENDING_APPROVAL', {
+        invitedBy: ids.victor,
+      }),
+      member(ids.carolMembership, ids.carol, 'STAFF', 'PENDING_APPROVAL', {
+        invitedBy: IDS.jane,
+      }),
+      member(ids.danielMembership, ids.daniel, 'STAFF', 'PENDING_APPROVAL', {
+        invitedBy: ids.victor,
+      }),
+      member(ids.estherMembership, ids.esther, 'STAFF', 'ACTIVE', {
+        primaryBranchId: IDS.headOffice,
+      }),
+      member(ids.felixMembership, ids.felix, 'STAFF', 'ACTIVE', {
+        primaryBranchId: IDS.westlands,
+      }),
+      member(ids.gladysMembership, ids.gladys, 'STAFF', 'SUSPENDED'),
+      member(ids.hassanMembership, ids.hassan, 'STAFF', 'REVOKED'),
+      member(ids.wanjiruMembership, ids.wanjiru, 'AUDITOR', 'ACTIVE'),
+      member(ids.annMembership, ids.ann, 'ADMIN', 'ACTIVE'),
+      member(ids.joannMembership, ids.joann, 'STAFF', 'ACTIVE'),
+    ],
+    branchAssignments: [
+      ...state.branchAssignments,
+      homeAt(1, ids.victor, IDS.headOffice),
+      homeAt(2, ids.amina, IDS.westlands),
+      homeAt(3, ids.brian, IDS.headOffice),
+      homeAt(4, ids.carol, IDS.westlands),
+      homeAt(5, ids.daniel, IDS.westlands),
+      homeAt(6, ids.esther, IDS.headOffice),
+      // Felix's only assignment: revoking it is the last-assignment 409.
+      homeAt(7, ids.felix, IDS.westlands),
+      homeAt(8, ids.gladys, IDS.headOffice),
+      homeAt(9, ids.hassan, IDS.headOffice, 'REVOKED'),
+      homeAt(10, ids.joann, IDS.headOffice),
+    ],
+    roles: [
+      ...state.roles.map((candidate) => ({
+        ...candidate,
+        permissions: [...candidate.permissions, ...USER_ADMIN_CODES],
+      })),
+      custom(
+        ids.teller,
+        'TELLER',
+        'Teller',
+        ['business_date.view', 'branch.view'],
+        '2026-08-01T08:00:00Z',
+      ),
+      custom(
+        ids.supervisor,
+        'SUPERVISOR',
+        'Branch supervisor',
+        ['business_date.view'],
+        '2026-08-05T08:00:00Z',
+      ),
+      custom(
+        ids.loansOfficer,
+        'LOANS_OFFICER',
+        'Loans officer',
+        ['user.view'],
+        '2026-07-20T08:00:00Z',
+        { status: 'DISABLED' },
+      ),
+    ],
+    roleAssignments: [
+      ...state.roleAssignments,
+      grant(1, ids.amina, ids.teller),
+      grant(2, ids.brian, ids.teller),
+      grant(3, ids.carol, ids.teller),
+      grant(4, ids.daniel, ids.teller),
+      grant(5, ids.esther, ids.teller),
+      grant(6, ids.felix, ids.teller),
+      grant(7, ids.felix, ids.teller, { scopeType: 'BRANCH', branchId: IDS.westlands }),
+      grant(8, ids.felix, ids.loansOfficer),
+      grant(9, ids.gladys, ids.teller),
+      grant(10, ids.hassan, ids.teller, { status: 'REVOKED' }),
+    ],
+    auditEvents: [
+      ...state.auditEvents,
+      event(1, 'USER', ids.amina, 'user.invite', ids.victor, '2026-09-20T08:00:00Z'),
+      event(2, 'USER', ids.brian, 'user.invite', ids.victor, '2026-09-21T08:00:00Z'),
+      event(3, 'USER', ids.carol, 'user.invite', IDS.jane, '2026-09-22T08:00:00Z'),
+      event(4, 'USER', ids.daniel, 'user.invite', ids.victor, '2026-09-23T08:00:00Z'),
+      // Felix's history, one event in each of the four audit views.
+      event(5, 'USER', ids.felix, 'user.invite', ids.victor, '2026-08-01T08:00:00Z'),
+      event(
+        6,
+        'MEMBERSHIP',
+        ids.felixMembership,
+        'membership.activate',
+        IDS.jane,
+        '2026-08-02T08:00:00Z',
+      ),
+      event(
+        7,
+        'USER_ACCOUNT',
+        ids.felix,
+        'user.first_login_activation',
+        ids.felix,
+        '2026-08-03T08:00:00Z',
+      ),
+    ],
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -984,6 +1295,29 @@ const BUILDERS = {
     ),
   // Layer 16 (platform tenants).
   'platform-tenants': platformTenantsScenario,
+  // Layer 10 (users). `users-limited` lacks the membership read and audit; `users-read-only` lacks
+  // every lifecycle and assignment code, for the gated-control cases.
+  users: usersScenario,
+  'users-limited': () => withoutPermission(usersScenario(), 'membership.view', 'audit.view'),
+  'users-read-only': () => withoutPermission(usersScenario(), ...USER_ADMIN_CODES),
+  // 500 ACTIVE filler rows appended after the seeds (the fake pages in insertion order): Felix's row
+  // is on page 0 and page 4 still has more, so the scan is truncated (Ruling 8's partial marker).
+  'users-many-assignments': () => {
+    const state = usersScenario();
+    const filler = '10000000-0000-4000-8000-000000000099'; // no user row needed
+    state.branchAssignments.push(
+      ...Array.from({ length: 500 }, (_, n) =>
+        assignment(
+          `10000000-0000-4000-8000-${String(100000 + n).padStart(12, '0')}`,
+          IDS.greenfield,
+          filler,
+          IDS.headOffice,
+          'OPERATE',
+        ),
+      ),
+    );
+    return state;
+  },
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */
