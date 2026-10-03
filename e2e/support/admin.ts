@@ -58,6 +58,13 @@ export const rowsOf = (page: Page, table: string) =>
 export const notFoundHeading = (page: Page) =>
   page.getByRole('heading', { level: 1, name: "We couldn't find that page" });
 
+/** Opens a record from its directory: the exact link in the named table, then its `h1` (bounded: a
+ * record route can be the first hit of its tree under a cold `next dev` compile). */
+export async function openRecord(page: Page, table: string, name: string): Promise<void> {
+  await page.getByRole('table', { name: table }).getByRole('link', { name, exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible({ timeout: 15000 });
+}
+
 export async function expectNoSeriousOrCriticalViolations(page: Page): Promise<void> {
   const results = await new AxeBuilder({ page }).analyze();
   expect(

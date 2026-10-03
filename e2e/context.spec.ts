@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { IDS } from './fake-api/scenarios.mts';
-import { authenticate, selectMuiOption } from './support/auth';
+import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
 
 const ACME_TENANT_ID = '99999999-9999-4999-8999-999999999999';
 
@@ -127,15 +127,7 @@ test.describe('working context', () => {
     // than list Platform's branches under a Greenfield label. A click on the pre-hydration SSR
     // markup is dropped (see selectMuiOption), so wait for React to own the button first.
     const contextButton = page.getByRole('button', { name: /switch organisation or branch/i });
-    await expect
-      .poll(
-        () =>
-          contextButton.evaluate((el) =>
-            Object.keys(el).some((key) => key.startsWith('__reactProps')),
-          ),
-        { timeout: 20000 },
-      )
-      .toBe(true);
+    await expectHydrated(contextButton);
     await contextButton.click();
     const dialog = page.getByRole('dialog', { name: /switch working context/i });
     // First hit of the run's /api/context/organisations route handler (a cold `next dev` compile).
