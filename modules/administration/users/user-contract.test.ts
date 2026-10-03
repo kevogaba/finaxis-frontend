@@ -157,6 +157,15 @@ describe('user contract', () => {
     });
   });
 
+  it.each([
+    ['an unknown user status', { ...wireDetail, user_status: 'BLOCKED' }],
+    ['an unknown membership status', { ...wireDetail, membership_status: 'INVITED' }],
+    ['an unknown membership type', { ...wireDetail, membership_type: 'GUEST' }],
+    ['a malformed organisation id', { ...wireDetail, organisation_id: 'not-a-uuid' }],
+  ])('rejects %s on the detail', (_case, wire) => {
+    expect(membershipDetailSchema.safeParse(wire).success).toBe(false);
+  });
+
   it('rejects a date-only instant on the detail', () => {
     expect(
       membershipDetailSchema.safeParse({ ...wireDetail, created_at: '2026-07-01' }).success,

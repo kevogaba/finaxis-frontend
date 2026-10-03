@@ -16,6 +16,8 @@ import {
   PARTIAL_SCAN_NOTE,
   PROVISIONING_NOTE,
   USER_MAKER_CHECKER_BLOCKED,
+  type MembershipAction,
+  type OnboardingKey,
   accountBlockedNote,
   availableMembershipActions,
   blockedMembershipActions,
@@ -102,6 +104,81 @@ describe('onboardingState', () => {
       expect(onboardingState('REVOKED', user).key, user).toBe('REVOKED');
     }
   });
+
+  // Every pair written out literally from the plan's Ruling 4 (the spec's six rows, "Account
+  // <status>" for a blocked account, "Awaiting approval" for any other pending account, "Account not
+  // ready" for an active membership whose account is neither INVITED nor ACTIVE), never derived
+  // from the rule under test. Typed as a full record, so a new status fails the typecheck here.
+  const EXPECTED_KEY: Record<MembershipStatus, Record<UserStatus, OnboardingKey>> = {
+    PENDING_APPROVAL: {
+      DRAFT: 'AWAITING_APPROVAL',
+      PENDING_APPROVAL: 'AWAITING_APPROVAL',
+      PROVISIONING_IDP: 'PROVISIONING_IDENTITY',
+      INVITED: 'AWAITING_APPROVAL',
+      ACTIVE: 'AWAITING_APPROVAL',
+      SUSPENDED: 'ACCOUNT_BLOCKED',
+      LOCKED: 'ACCOUNT_BLOCKED',
+      DEACTIVATING: 'ACCOUNT_BLOCKED',
+      DEACTIVATED: 'ACCOUNT_BLOCKED',
+      ARCHIVED: 'ACCOUNT_BLOCKED',
+    },
+    ACTIVE: {
+      DRAFT: 'ACCOUNT_NOT_READY',
+      PENDING_APPROVAL: 'ACCOUNT_NOT_READY',
+      PROVISIONING_IDP: 'ACCOUNT_NOT_READY',
+      INVITED: 'AWAITING_FIRST_SIGN_IN',
+      ACTIVE: 'ACTIVE',
+      SUSPENDED: 'ACCOUNT_BLOCKED',
+      LOCKED: 'ACCOUNT_BLOCKED',
+      DEACTIVATING: 'ACCOUNT_BLOCKED',
+      DEACTIVATED: 'ACCOUNT_BLOCKED',
+      ARCHIVED: 'ACCOUNT_BLOCKED',
+    },
+    SUSPENDED: {
+      DRAFT: 'SUSPENDED',
+      PENDING_APPROVAL: 'SUSPENDED',
+      PROVISIONING_IDP: 'SUSPENDED',
+      INVITED: 'SUSPENDED',
+      ACTIVE: 'SUSPENDED',
+      SUSPENDED: 'SUSPENDED',
+      LOCKED: 'SUSPENDED',
+      DEACTIVATING: 'SUSPENDED',
+      DEACTIVATED: 'SUSPENDED',
+      ARCHIVED: 'SUSPENDED',
+    },
+    REVOKED: {
+      DRAFT: 'REVOKED',
+      PENDING_APPROVAL: 'REVOKED',
+      PROVISIONING_IDP: 'REVOKED',
+      INVITED: 'REVOKED',
+      ACTIVE: 'REVOKED',
+      SUSPENDED: 'REVOKED',
+      LOCKED: 'REVOKED',
+      DEACTIVATING: 'REVOKED',
+      DEACTIVATED: 'REVOKED',
+      ARCHIVED: 'REVOKED',
+    },
+  };
+
+  it.each(MEMBERSHIP_STATUSES)(
+    'pins the key of every user status under the %s membership',
+    (membership) => {
+      for (const user of USER_STATUSES) {
+        expect(onboardingState(membership, user).key, `${membership} ${user}`).toBe(
+          EXPECTED_KEY[membership][user],
+        );
+      }
+    },
+  );
+
+  it.each([
+    ['PENDING_APPROVAL', 'PENDING_APPROVAL', 'AWAITING_APPROVAL', 'Awaiting approval', 'warning'],
+    ['PENDING_APPROVAL', 'INVITED', 'AWAITING_APPROVAL', 'Awaiting approval', 'warning'],
+    ['ACTIVE', 'PENDING_APPROVAL', 'ACCOUNT_NOT_READY', 'Account not ready', 'warning'],
+    ['ACTIVE', 'PROVISIONING_IDP', 'ACCOUNT_NOT_READY', 'Account not ready', 'warning'],
+  ] as const)('%s + %s → %s (label and tone)', (membership, user, key, label, tone) => {
+    expect(onboardingState(membership, user)).toEqual({ key, label, tone });
+  });
 });
 
 describe('onboardingProgress', () => {
@@ -173,17 +250,38 @@ describe('onboardingProgress', () => {
     );
   });
 
-  it('shows steps or one sentence for every status pair, never both', () => {
+  // The seven in-flight pairs (plan Ruling 4); the other 33 have stopped or are blocked.
+  const IN_FLIGHT = [
+    ['PENDING_APPROVAL', 'DRAFT'],
+    ['PENDING_APPROVAL', 'PENDING_APPROVAL'],
+    ['PENDING_APPROVAL', 'PROVISIONING_IDP'],
+    ['PENDING_APPROVAL', 'INVITED'],
+    ['PENDING_APPROVAL', 'ACTIVE'],
+    ['ACTIVE', 'INVITED'],
+    ['ACTIVE', 'ACTIVE'],
+  ];
+
+  it('shows the steps for exactly the seven in-flight pairs and one sentence for the other 33, never both', () => {
+    let steps = 0;
     for (const membership of MEMBERSHIP_STATUSES) {
       for (const user of USER_STATUSES) {
+        const label = `${membership} ${user}`;
         const progress = onboardingProgress(membership, user);
+        const inFlight = IN_FLIGHT.some(([m, u]) => m === membership && u === user);
+        expect(progress.kind, label).toBe(inFlight ? 'steps' : 'note');
         if (progress.kind === 'steps') {
-          expect(progress.steps, `${membership} ${user}`).toHaveLength(4);
+          steps += 1;
+          expect(progress.steps, label).toHaveLength(4);
+          // The only text a timeline carries is the provisioning note, under the third step.
+          const provisioning = membership === 'PENDING_APPROVAL' && user === 'PROVISIONING_IDP';
+          expect(progress.note, label).toBe(provisioning ? PROVISIONING_NOTE : null);
         } else {
-          expect(progress.note.length, `${membership} ${user}`).toBeGreaterThan(0);
+          expect('steps' in progress, label).toBe(false);
+          expect(progress.note.length, label).toBeGreaterThan(0);
         }
       }
     }
+    expect(steps).toBe(7);
   });
 });
 
@@ -216,26 +314,42 @@ describe('availableMembershipActions', () => {
     const only = (...codes: string[]) => ({ permissions: ['membership.view', ...codes] });
     expect(availableMembershipActions(pending, only('membership.revoke'))).toEqual(['reject']);
     expect(availableMembershipActions(pending, only('user.approve'))).toEqual(['approve']);
-    expect(availableMembershipActions(pending, only())).toEqual([]);
-    expect(
-      availableMembershipActions(
-        { membershipStatus: 'ACTIVE', userStatus: 'ACTIVE' },
-        only('membership.suspend'),
-      ),
-    ).toEqual(['suspend']);
-    expect(
-      availableMembershipActions(
-        { membershipStatus: 'SUSPENDED', userStatus: 'ACTIVE' },
-        only('membership.reactivate'),
-      ),
-    ).toEqual(['reactivate']);
-    expect(
-      availableMembershipActions(
-        { membershipStatus: 'SUSPENDED', userStatus: 'ACTIVE' },
-        only('membership.revoke'),
-      ),
-    ).toEqual(['revoke']);
   });
+
+  // 4 statuses × 5 holders (membership.view alone, then with exactly one lifecycle code), the
+  // expected actions written out literally from the plan's Ruling 5 matrix.
+  const SINGLE_CODE: [MembershipStatus, string[], MembershipAction[]][] = [
+    ['PENDING_APPROVAL', [], []],
+    ['PENDING_APPROVAL', ['user.approve'], ['approve']],
+    ['PENDING_APPROVAL', ['membership.suspend'], []],
+    ['PENDING_APPROVAL', ['membership.reactivate'], []],
+    ['PENDING_APPROVAL', ['membership.revoke'], ['reject']],
+    ['ACTIVE', [], []],
+    ['ACTIVE', ['user.approve'], []],
+    ['ACTIVE', ['membership.suspend'], ['suspend']],
+    ['ACTIVE', ['membership.reactivate'], []],
+    ['ACTIVE', ['membership.revoke'], ['revoke']],
+    ['SUSPENDED', [], []],
+    ['SUSPENDED', ['user.approve'], []],
+    ['SUSPENDED', ['membership.suspend'], []],
+    ['SUSPENDED', ['membership.reactivate'], ['reactivate']],
+    ['SUSPENDED', ['membership.revoke'], ['revoke']],
+    ['REVOKED', [], []],
+    ['REVOKED', ['user.approve'], []],
+    ['REVOKED', ['membership.suspend'], []],
+    ['REVOKED', ['membership.reactivate'], []],
+    ['REVOKED', ['membership.revoke'], []],
+  ];
+
+  it.each(SINGLE_CODE)(
+    '%s with membership.view and %j offers %j',
+    (membershipStatus, codes, expected) => {
+      const holder = { permissions: ['membership.view', ...codes] };
+      expect(
+        availableMembershipActions({ membershipStatus, userStatus: 'ACTIVE' }, holder),
+      ).toEqual(expected);
+    },
+  );
 
   it('offers nothing for a code that belongs to a different status', () => {
     const holder = { permissions: ['membership.view', 'membership.suspend'] };
