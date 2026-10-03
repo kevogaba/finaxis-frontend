@@ -4,12 +4,14 @@ import { createHash } from 'node:crypto';
 import { refresh } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
+import { BackendApiError } from '@/auth/backend-api';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiDelete, apiPatch, apiPost } from '@/lib/api/tenant-api';
 import { UUID_PATTERN, uuidSchema } from '@/lib/api/wire';
 import { ROLE_SCOPE_TYPES, roleCreatedSchema } from './role-contract';
 import { MAX_GRANTS_PER_SUBMIT, roleDraftSchema } from './role-rules';
+import { getRole } from './role-service';
 
 const idempotencyKey = z.uuid();
 
@@ -205,12 +207,25 @@ const assignInput = z
     path: ['branchId'],
   });
 
+/** A frontend-only problem code: the role is no longer ACTIVE (BG-27). */
+const ROLE_INACTIVE = 'role_inactive';
+
 export async function assignRole(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const result = await runServerAction(assignInput, formData, (input) =>
-    apiPost(
+  const read = { failed: false };
+  const result = await runServerAction(assignInput, formData, async (input) => {
+    // BG-27: the backend doesn't check the role's status, so a role deactivated since the drawer
+    // opened would still get an ACTIVE assignment. Re-reading narrows that race; only the backend
+    // can close it. Fail closed: a role that can't be read isn't assigned. The original error
+    // propagates, so a lost session still redirects and the support reference survives.
+    const role = await getRole(input.roleId).catch((error: unknown) => {
+      read.failed = true;
+      throw error;
+    });
+    if (role.status !== 'ACTIVE') throw new BackendApiError(409, { code: ROLE_INACTIVE });
+    return apiPost(
       '/api/v1/tenant/role-assignments',
       {
         user_id: input.userId,
@@ -220,11 +235,19 @@ export async function assignRole(
         branch_id: input.scopeType === 'BRANCH' ? (input.branchId ?? null) : null,
       },
       input.idempotencyKey,
-    ),
+    );
+  });
+  if (read.failed && !result.ok) {
+    return { ...result, formError: "Couldn't check the role's status. Try again." };
+  }
+  const named = explain(
+    result,
+    ROLE_INACTIVE,
+    "This role is no longer active, so it can't be assigned. Refresh the page and check its status.",
   );
   // 409 = this guard OR a revoked membership, an inactive institution or a race: hedge.
   return explain(
-    result,
+    named,
     'conflict',
     "This user can't be given the role here. For one branch, they must already be assigned to that branch — assign them under Branches first. Their membership may also be revoked; refresh and check.",
   );

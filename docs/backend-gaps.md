@@ -338,6 +338,8 @@ in the OpenAPI.
 No role delete; `ARCHIVED` is never written; activate/deactivate work from any state; a DISABLED role
 can be assigned (it grants nothing). The roles page offers assignment only for ACTIVE roles and has
 no delete. Suggested: archive/delete for unused custom roles and a status check on assignment.
+The assign action also re-reads the role's status before posting, which narrows the race but cannot
+close it: the backend must check.
 
 ### BG-28 — Terminal states without recovery · P2
 
