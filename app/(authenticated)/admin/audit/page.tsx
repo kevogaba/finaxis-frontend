@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import Paper from '@mui/material/Paper';
+import { getCurrentContextProfile } from '@/auth/context-service';
+import { can } from '@/auth/permissions';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { TablePaginationBar } from '@/components/data-display/table-pagination-bar';
@@ -66,11 +68,14 @@ export default async function AuditTrailPage({ searchParams }: AuditPageProps) {
   // No page-level session check: every read below goes through apiGet -> backendApi ->
   // getKeycloakAccessToken, which throws BackendApiError(401) without a Better Auth session, and
   // load() sends that to /login. The (authenticated) layout validates the session too.
-  const [events, timeZone, branches] = await Promise.all([
+  const [events, timeZone, branches, selected] = await Promise.all([
     load(listAuditEvents(query)),
     getOrganisationTimeZone(),
     getBranchIndex(),
+    getCurrentContextProfile(),
   ]);
+  // The Actor search reads /tenant/users, which needs user.view.
+  const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
 
   const header = (
     <PageHeader
@@ -194,6 +199,8 @@ export default async function AuditTrailPage({ searchParams }: AuditPageProps) {
             resultLabel={`${total} ${total === 1 ? 'event' : 'events'}`}
             actorChip={actorChip}
             entityChip={entityChip}
+            actorSearch={can(holder, 'user.view')}
+            actorId={query.actorId}
             timeZone={timeZone}
           />
           <ListNavigationProgress />

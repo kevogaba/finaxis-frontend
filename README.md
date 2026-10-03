@@ -350,8 +350,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - Only structured filters exist (entity type, entity, action, actor, date range) — no
     free-text, outcome, severity, branch, or event-type filter, because the backend doesn't
     expose one yet (`docs/backend-gaps.md` BG-16).
-  - An actor is filtered by clicking their name on a visible row, not by a search box, until a
-    users directory ships a picker.
+  - An actor is filtered by picking a user in the Actor search (the first 10 matches; it needs
+    `user.view`) or by clicking their name on a visible row.
   - Actor and entity names are resolved only for the IDs on the current page (deduplicated,
     bounded lookups); an actor or entity not resolvable falls back to their id.
   - The branch lookup used to label rows is bounded to the first 500 branches in the tenant.
