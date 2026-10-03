@@ -190,6 +190,7 @@ describe('AssignUserBranchButton', () => {
     renderButton({ branches: LONE_BRANCH });
 
     const drawer = await openDrawer(user);
+    expectScoped(drawer);
     await user.click(within(drawer).getByRole('button', { name: 'Assign branch' }));
 
     const type = await within(drawer).findByRole('combobox', { name: /^Assignment type/ });
@@ -198,6 +199,12 @@ describe('AssignUserBranchButton', () => {
     });
     expect(type).toBeInvalid();
     expect(within(drawer).getByRole('combobox', { name: /^Branch/ })).toBeValid();
+    // The submit that failed carried the organisation and the key, and the drawer still holds that key.
+    const sent = assignBranchUser.mock.calls[0]?.[1] as FormData;
+    expect(sent.get('contextOrganisationId')).toBe(ORG);
+    expect(sent.get('idempotencyKey')).toMatch(UUID);
+    expectScoped(drawer);
+    expect(hidden('idempotencyKey', drawer)).toBe(sent.get('idempotencyKey'));
   });
 
   it('says when the branch list stops at 100', async () => {
@@ -232,6 +239,9 @@ describe('AssignUserBranchButton', () => {
     renderButton({ branches: LONE_BRANCH, truncated: true });
 
     const drawer = await openDrawer(user);
+    expectScoped(drawer);
+    // Positive control: before the failure the same drawer does show the note.
+    expect(drawer).toHaveTextContent(TRUNCATED_NOTE);
     await user.click(within(drawer).getByRole('button', { name: 'Assign branch' }));
 
     const branch = await within(drawer).findByRole('combobox', { name: /^Branch/ });
@@ -239,6 +249,7 @@ describe('AssignUserBranchButton', () => {
       expect(branch).toHaveAccessibleDescription('Choose a branch.');
     });
     expect(drawer).not.toHaveTextContent(TRUNCATED_NOTE);
+    expectScoped(drawer);
   });
 
   it('assigns the chosen branch with the user, the type, the key and the organisation, then confirms', async () => {
