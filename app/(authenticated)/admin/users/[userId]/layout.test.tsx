@@ -12,6 +12,13 @@ import {
   USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
 import { renderWithProviders } from '@/test/test-utils';
+import type { SelectedContextProfile } from '@/auth/context-service';
+
+// A real SelectedContextProfile, checked by the type: the context could not be resolved.
+const CONTEXT_NOT_SELECTED = {
+  kind: 'redirect-to-context-selection',
+  reason: 'invalid-context',
+} satisfies SelectedContextProfile;
 
 const { findUserMembership, getCurrentContextProfile, getUser, getUserInviter, router } =
   vi.hoisted(() => ({
@@ -137,11 +144,32 @@ describe('UserRecordLayout: the record', () => {
       'href',
       '/admin/users',
     );
-    // The account's own state first, then the membership's, in words.
+    // The two hero chips, in words (their source and order are pinned by the next test).
     expect(screen.getByText('Active', { selector: '.MuiChip-label' })).toBeInTheDocument();
     expect(screen.getByText('Membership active')).toBeInTheDocument();
     expect(screen.getByText('Tab body')).toBeInTheDocument();
   });
+
+  // Task 1's onboarding table, as literals. Every row's onboarding label differs from the account
+  // status's own wording, so a hero that showed the account status (or swapped the two chips) fails.
+  it.each([
+    ['PENDING_APPROVAL', 'DRAFT', 'Awaiting approval', 'Membership pending approval'],
+    ['ACTIVE', 'INVITED', 'Awaiting first sign-in', 'Membership active'],
+    ['PENDING_APPROVAL', 'LOCKED', 'Account locked', 'Membership pending approval'],
+    ['ACTIVE', 'DRAFT', 'Account not ready', 'Membership active'],
+    ['REVOKED', 'ACTIVE', 'Revoked', 'Membership revoked'],
+  ])(
+    'heads a %s membership of a %s account with its onboarding state, then the membership status',
+    async (membershipStatus, userStatus, onboarding, membership) => {
+      setup({ membershipStatus, userStatus });
+
+      await show();
+
+      expect(
+        screen.getAllByText(/./, { selector: '.MuiChip-label' }).map((chip) => chip.textContent),
+      ).toEqual([onboarding, membership]);
+    },
+  );
 
   it('names a user whose identity is still being provisioned in words, never "Provisioning idp"', async () => {
     setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'PROVISIONING_IDP' });
@@ -225,7 +253,7 @@ describe('UserRecordLayout: the tabs', () => {
 
   it('offers the Overview alone when the context did not resolve', async () => {
     setup();
-    getCurrentContextProfile.mockResolvedValue({ kind: 'unresolved' });
+    getCurrentContextProfile.mockResolvedValue(CONTEXT_NOT_SELECTED);
 
     await show();
 

@@ -1,4 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SelectedContextProfile } from '@/auth/context-service';
+
+// A real SelectedContextProfile, checked by the type: the context could not be resolved.
+const CONTEXT_NOT_SELECTED = {
+  kind: 'redirect-to-context-selection',
+  reason: 'invalid-context',
+} satisfies SelectedContextProfile;
 
 // Lettered at its end, so its upper-case form differs from it (Ruling 16).
 const FELIX = '10000000-0000-4000-8000-00000000000d';
@@ -98,7 +105,7 @@ describe.each(Object.entries(routes))('%s', (_name, render) => {
     vi.resetAllMocks();
     for (const read of Object.values(reads))
       read.mockRejectedValue(new Error('unreachable backend'));
-    reads.getCurrentContextProfile.mockResolvedValue({ kind: 'unresolved' });
+    reads.getCurrentContextProfile.mockResolvedValue(CONTEXT_NOT_SELECTED);
   });
 
   it.each(['not-a-uuid', '../x', 'new', '', `${FELIX}x`])(

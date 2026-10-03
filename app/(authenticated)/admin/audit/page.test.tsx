@@ -3,6 +3,13 @@ import type { ComponentProps } from 'react';
 import { screen } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import type { AuditFilters } from '@/modules/administration/audit/components/audit-filters';
+import type { SelectedContextProfile } from '@/auth/context-service';
+
+// A real SelectedContextProfile, checked by the type: the context could not be resolved.
+const CONTEXT_NOT_SELECTED = {
+  kind: 'redirect-to-context-selection',
+  reason: 'invalid-context',
+} satisfies SelectedContextProfile;
 
 const { filters, getCurrentContextProfile, listAuditEvents } = vi.hoisted(() => ({
   // The props the page handed the filter bar, one entry per render of it.
@@ -98,7 +105,7 @@ describe('AuditTrailPage: the actor search', () => {
   });
 
   it('is not offered when the context did not resolve', async () => {
-    getCurrentContextProfile.mockResolvedValue({ kind: 'unresolved' });
+    getCurrentContextProfile.mockResolvedValue(CONTEXT_NOT_SELECTED);
 
     await show();
 

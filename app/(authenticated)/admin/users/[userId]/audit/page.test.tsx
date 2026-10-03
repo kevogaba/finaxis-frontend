@@ -3,6 +3,13 @@ import type { ComponentProps } from 'react';
 import { BackendApiError } from '@/auth/backend-api';
 import type { RecordAuditTab } from '@/modules/administration/audit/components/record-audit-tab';
 import { renderWithProviders } from '@/test/test-utils';
+import type { SelectedContextProfile } from '@/auth/context-service';
+
+// A real SelectedContextProfile, checked by the type: the context could not be resolved.
+const CONTEXT_NOT_SELECTED = {
+  kind: 'redirect-to-context-selection',
+  reason: 'invalid-context',
+} satisfies SelectedContextProfile;
 
 const { findUserMembership, getCurrentContextProfile, getUser, tabs } = vi.hoisted(() => ({
   findUserMembership: vi.fn(),
@@ -155,7 +162,7 @@ describe('UserAuditPage: the four views', () => {
 
   it('offers no membership view when the context did not resolve', async () => {
     setup();
-    getCurrentContextProfile.mockResolvedValue({ kind: 'unresolved' });
+    getCurrentContextProfile.mockResolvedValue(CONTEXT_NOT_SELECTED);
 
     const tab = await show();
 

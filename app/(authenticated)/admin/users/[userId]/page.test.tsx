@@ -32,7 +32,9 @@ vi.mock('@/auth/context-service', () => ({
   getCurrentContextProfile: () => getCurrentContextProfile() as unknown,
 }));
 vi.mock('@/lib/api/lookups', () => ({
-  getOrganisationTimeZone: () => Promise.resolve('Africa/Nairobi'),
+  // Not the zone vitest.config.ts pins for the runner (Africa/Nairobi), and with no daylight saving,
+  // so only the organisation's own zone can produce the times asserted below.
+  getOrganisationTimeZone: () => Promise.resolve('Asia/Kolkata'),
   getBranchIndex: () => getBranchIndex() as unknown,
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
@@ -164,7 +166,7 @@ describe('UserOverviewPage: the profile', () => {
     ).toBeInTheDocument();
   });
 
-  it('words a user status the way the hero does, never "Provisioning idp"', async () => {
+  it('words the account status in full in the Profile, never "Provisioning idp"', async () => {
     setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'PROVISIONING_IDP' });
 
     await show();
@@ -188,6 +190,15 @@ describe('UserOverviewPage: the profile', () => {
     expect(hasFact(card('Profile'), 'User status')).toBe(true); // it did render
     expect(hasFact(card('Profile'), 'Role assignments')).toBe(false);
     expect(countUserRoleAssignments).not.toHaveBeenCalled();
+  });
+
+  it('shows a user with no roles as a count of 0, not as a missing row', async () => {
+    setup({ roleCount: 0 });
+
+    await show();
+
+    expect(countUserRoleAssignments).toHaveBeenCalledWith(FELIX);
+    expect(fact(card('Profile'), 'Role assignments')).toHaveTextContent(/^0$/);
   });
 });
 
@@ -260,12 +271,12 @@ describe('UserOverviewPage: the membership card', () => {
     expect(fact(card('Membership'), 'Primary branch')).toHaveTextContent(
       /^Westlands Branch \(WESTLANDS\)$/,
     );
-    // 08:00Z and 09:30Z, three hours ahead.
-    expect(fact(card('Membership'), 'Created (Africa/Nairobi)')).toHaveTextContent(
-      /^01 Aug 2026 · 11:00$/,
+    // 08:00Z and 09:30Z, five and a half hours ahead: not the runner's own zone.
+    expect(fact(card('Membership'), 'Created (Asia/Kolkata)')).toHaveTextContent(
+      /^01 Aug 2026 · 13:30$/,
     );
-    expect(fact(card('Membership'), 'Updated (Africa/Nairobi)')).toHaveTextContent(
-      /^02 Aug 2026 · 12:30$/,
+    expect(fact(card('Membership'), 'Updated (Asia/Kolkata)')).toHaveTextContent(
+      /^02 Aug 2026 · 15:00$/,
     );
     expect(
       within(fact(card('Membership'), 'Membership ID')).getByRole('button', {
