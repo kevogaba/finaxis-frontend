@@ -558,7 +558,10 @@ describe('copy constants', () => {
     );
     expect(ACCESS_DESCRIPTION).toMatch(/^Roles this user holds\./);
     expect(NO_ACTIVE_ROLES).toMatch(/Roles & permissions/);
-    expect(PARTIAL_SCAN_NOTE).toMatch(/first 500/);
+    // Context-neutral: the same note covers an institution scan and one forced to a selected branch.
+    expect(PARTIAL_SCAN_NOTE).toBe(
+      "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 branch assignments were checked.",
+    );
   });
 });
 

@@ -259,7 +259,7 @@ export const ACCESS_DESCRIPTION =
 export const NO_ACTIVE_ROLES =
   'There are no active roles to assign. Create or activate one under Roles & permissions.';
 export const PARTIAL_SCAN_NOTE =
-  "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 in this institution were checked.";
+  "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 branch assignments were checked.";
 
 /** `canSwitch`: the signed-in user has more than one ACTIVE branch, so All branches is open. */
 export function branchContextNote(branchName: string, canSwitch: boolean): string {

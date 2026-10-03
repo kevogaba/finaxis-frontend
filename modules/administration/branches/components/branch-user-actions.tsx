@@ -84,6 +84,11 @@ interface RevokeAssignmentButtonProps {
   assignmentId: string;
   userLabel: string;
   typeLabel: string;
+  /**
+   * Names the branch when the row doesn't make it obvious: a user's assignments differ by branch
+   * (WCAG 2.4.6), so the Users tab passes it. Without it every string is as the branch page had it.
+   */
+  branchLabel?: string;
   /** I2: the organisation the page rendered for; forwarded to `ConfirmDialog` as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -92,9 +97,11 @@ export function RevokeAssignmentButton({
   assignmentId,
   userLabel,
   typeLabel,
+  branchLabel,
   contextOrganisationId,
 }: RevokeAssignmentButtonProps) {
   const notify = useToast();
+  const at = branchLabel ? ` at ${branchLabel}` : '';
   const [open, setOpen] = useState(false);
   // I3 (PF6): a successful revoke removes this row — and this component — on the next render, so
   // the fallback always runs from the unmount cleanup. See branch-lifecycle-actions.tsx's own
@@ -115,7 +122,7 @@ export function RevokeAssignmentButton({
         size="small"
         variant="outlined"
         color="error"
-        aria-label={`Revoke ${userLabel}'s ${typeLabel} assignment`}
+        aria-label={`Revoke ${userLabel}'s ${typeLabel} assignment${at}`}
         onClick={() => {
           setOpen(true);
         }}
@@ -125,8 +132,8 @@ export function RevokeAssignmentButton({
       <ConfirmDialog
         open={open}
         tone="error"
-        title={`Revoke ${userLabel}'s assignment?`}
-        description={`${userLabel} loses the ${typeLabel} assignment at this branch immediately.`}
+        title={`Revoke ${userLabel}'s assignment${at}?`}
+        description={`${userLabel} loses the ${typeLabel} assignment at ${branchLabel ?? 'this branch'} immediately.`}
         confirmLabel="Revoke"
         action={revokeBranchAssignment}
         contextOrganisationId={contextOrganisationId}
