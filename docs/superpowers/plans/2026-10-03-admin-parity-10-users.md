@@ -765,8 +765,12 @@ Plus, each as its own `it`:
   `['user.assign_branch', 'branch_assignment.view', 'branch.view']` on `PENDING_APPROVAL` → true.
 - `roleScopeBranches` "offers a branch held twice (HOME and OPERATE) once, sorted by label";
   "narrows to the selected branch in a branch context" (`[]` when the user isn't assigned there).
-- `roleScopeHint`: offered > 0 → `undefined`; unreadable →
-  `"Their branch assignments can't be read here, so only institution scope is available."`; selected
+- `roleScopeHint` (input `{ readable, offered, truncated, selectedBranchName }`): offered > 0 → `undefined`
+  (also when `truncated`); unreadable →
+  `"Their branch assignments can't be read here, so only institution scope is available."` (also when
+  `truncated`); a capped scan (`truncated`) that offered nothing, with or without a selected branch →
+  `"Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here."`
+  (Ruling 8: a capped scan says it is partial); otherwise selected
   branch "Westlands Branch" → `"They aren't assigned to Westlands Branch. Assign them there first to give a branch-scoped role."`; otherwise `"Assign them to a branch first to give a branch-scoped role."`.
 - `branchAssignmentCount`: `(2, false, null)` → `'2'`; `(500, true, null)` →
   `'At least 500 (partial)'`; `(1, false, 'Westlands Branch')` → `'1 at Westlands Branch'`;
@@ -1071,14 +1075,21 @@ export function roleScopeBranches(
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/** Why "One branch" is disabled, or undefined while a branch is on offer. `truncated` is the scan's
+ * ceiling flag: a user held outside the window looks unassigned, so the hint says the scan was
+ * partial instead of claiming they have no branch (Ruling 8). */
 export function roleScopeHint(input: {
   readable: boolean;
   offered: number;
+  truncated: boolean;
   selectedBranchName: string | null;
 }): string | undefined {
   if (input.offered > 0) return undefined;
   if (!input.readable) {
     return "Their branch assignments can't be read here, so only institution scope is available.";
+  }
+  if (input.truncated) {
+    return 'Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here.';
   }
   if (input.selectedBranchName) {
     return `They aren't assigned to ${input.selectedBranchName}. Assign them there first to give a branch-scoped role.`;
@@ -2663,6 +2674,7 @@ const scopeBranches = scan?.ok
 const branchHint = roleScopeHint({
   readable: scan?.ok ?? false,
   offered: scopeBranches.length,
+  truncated: scan?.ok === true && scan.value.truncated,
   selectedBranchName: selectedBranch?.name ?? null,
 });
 ```

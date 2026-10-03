@@ -287,14 +287,21 @@ export function roleScopeBranches(
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/** Why "One branch" is disabled, or undefined while a branch is on offer. `truncated` is the scan's
+ * ceiling flag: a user held outside the window looks unassigned, so the hint says the scan was
+ * partial instead of claiming they have no branch (Ruling 8). */
 export function roleScopeHint(input: {
   readable: boolean;
   offered: number;
+  truncated: boolean;
   selectedBranchName: string | null;
 }): string | undefined {
   if (input.offered > 0) return undefined;
   if (!input.readable) {
     return "Their branch assignments can't be read here, so only institution scope is available.";
+  }
+  if (input.truncated) {
+    return 'Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here.';
   }
   if (input.selectedBranchName) {
     return `They aren't assigned to ${input.selectedBranchName}. Assign them there first to give a branch-scoped role.`;

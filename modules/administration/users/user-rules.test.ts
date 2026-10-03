@@ -584,25 +584,66 @@ describe('roleScopeBranches', () => {
 });
 
 describe('roleScopeHint', () => {
+  const CAPPED =
+    'Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here.';
+
   it('says nothing while a branch is on offer', () => {
-    expect(roleScopeHint({ readable: true, offered: 2, selectedBranchName: null })).toBeUndefined();
     expect(
-      roleScopeHint({ readable: false, offered: 1, selectedBranchName: 'Westlands Branch' }),
+      roleScopeHint({ readable: true, offered: 2, truncated: false, selectedBranchName: null }),
+    ).toBeUndefined();
+    expect(
+      roleScopeHint({
+        readable: false,
+        offered: 1,
+        truncated: false,
+        selectedBranchName: 'Westlands Branch',
+      }),
+    ).toBeUndefined();
+    // A capped scan that still found a branch has nothing to explain: the branch is offered.
+    expect(
+      roleScopeHint({ readable: true, offered: 1, truncated: true, selectedBranchName: null }),
     ).toBeUndefined();
   });
 
   it('explains an unreadable scan, a selected branch the user is not at, and no assignment', () => {
-    expect(roleScopeHint({ readable: false, offered: 0, selectedBranchName: null })).toBe(
-      "Their branch assignments can't be read here, so only institution scope is available.",
-    );
     expect(
-      roleScopeHint({ readable: true, offered: 0, selectedBranchName: 'Westlands Branch' }),
+      roleScopeHint({ readable: false, offered: 0, truncated: false, selectedBranchName: null }),
+    ).toBe("Their branch assignments can't be read here, so only institution scope is available.");
+    expect(
+      roleScopeHint({
+        readable: true,
+        offered: 0,
+        truncated: false,
+        selectedBranchName: 'Westlands Branch',
+      }),
     ).toBe(
       "They aren't assigned to Westlands Branch. Assign them there first to give a branch-scoped role.",
     );
-    expect(roleScopeHint({ readable: true, offered: 0, selectedBranchName: null })).toBe(
-      'Assign them to a branch first to give a branch-scoped role.',
-    );
+    expect(
+      roleScopeHint({ readable: true, offered: 0, truncated: false, selectedBranchName: null }),
+    ).toBe('Assign them to a branch first to give a branch-scoped role.');
+  });
+
+  it('says a capped scan is partial instead of claiming the user has no branch (Ruling 8)', () => {
+    // The scan stopped at its ceiling with rows unread, so "not assigned" would be a guess; the
+    // sentence holds with or without a selected branch.
+    expect(
+      roleScopeHint({ readable: true, offered: 0, truncated: true, selectedBranchName: null }),
+    ).toBe(CAPPED);
+    expect(
+      roleScopeHint({
+        readable: true,
+        offered: 0,
+        truncated: true,
+        selectedBranchName: 'Westlands Branch',
+      }),
+    ).toBe(CAPPED);
+  });
+
+  it('keeps the unreadable explanation ahead of the capped one', () => {
+    expect(
+      roleScopeHint({ readable: false, offered: 0, truncated: true, selectedBranchName: null }),
+    ).toBe("Their branch assignments can't be read here, so only institution scope is available.");
   });
 });
 

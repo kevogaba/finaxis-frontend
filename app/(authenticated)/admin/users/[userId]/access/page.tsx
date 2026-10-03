@@ -76,6 +76,7 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
   const branchHint = roleScopeHint({
     readable: scan?.ok ?? false,
     offered: scopeBranches.length,
+    truncated: scan?.ok === true && scan.value.truncated,
     selectedBranchName: selectedBranch?.name ?? null,
   });
   const assignOffered = canAssign && roleOptions.length > 0;
