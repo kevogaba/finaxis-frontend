@@ -71,6 +71,9 @@ export interface FakeRole {
   permissions: string[];
   createdAt: string;
   updatedAt: string;
+  /** Layer 09: when each code was granted at runtime; a seeded code reads as granted at
+   * `createdAt`. Optional, so existing `FakeRole` literals (07b's access spec) stay valid. */
+  grantedAt?: Record<string, string>;
 }
 
 export interface FakeRoleAssignment {
