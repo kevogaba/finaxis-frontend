@@ -424,6 +424,8 @@ Suggested: return each permission with its scope (tenant or the branch ids) on `
   itself would be irreversible.
 - **Frontend handling:** the user record shows Suspend and Revoke disabled on the signed-in user's
   own record, with the reason; revoking your own role assignment warns in its confirmation
-  (layer 09).
+  (layer 09). Revoking your own branch assignment from the user record's Branch assignments tab
+  shows no such warning (layer 08's `RevokeAssignmentButton` has no `self` prop); at the selected
+  branch it invalidates your context (§E.4).
 - **Suggested change:** document the guard if one exists; otherwise refuse a self-suspend and a
   self-revoke with a 409 and a specific code.

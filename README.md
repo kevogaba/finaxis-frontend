@@ -364,7 +364,7 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - An actor is filtered by picking a user in the Actor search (the first 10 matches; it needs
     `user.view`) or by clicking their name on a visible row. The picker (`AuditActorPicker`) takes
     the applied `actorId`, so its search starts over, empty, when the filter changes, and it
-    refocuses its input after its own pick.
+    refocuses its input after its own pick lands (never for a filter change it did not make).
   - Actor and entity names are resolved only for the IDs on the current page (deduplicated,
     bounded lookups); an actor or entity not resolvable falls back to their id.
   - The branch lookup used to label rows is bounded to the first 500 branches in the tenant.
@@ -446,10 +446,22 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     explained: a 403 as permission or maker-checker (BG-08), a 500 by its likely causes, such as
     a missing active role (BG-07). "Provisioning identity" can stay put with no resend (BG-11).
   - Reject & revoke and Revoke are permanent: the email can't be invited again (BG-28).
-    Suspend and Revoke are disabled on your own record (BG-35).
-  - A branch-scoped role offers only branches the user is assigned to; a partial scan says so
-    instead of claiming none. Role assignment changes are audited per assignment and branch
-    assignment changes on the branch, so the Audit tab can't show them (BG-16).
+    Suspend and Revoke are disabled on your own record (BG-35). Revoking your own branch
+    assignment from the Branch assignments tab shows no self warning (layer 08's
+    `RevokeAssignmentButton` has no `self` prop, unlike the Roles & access revoke); at the
+    selected branch it invalidates your context, and the next request goes to context selection.
+  - A branch-scoped role offers only branches the user is assigned to; a partial scan that found
+    none says so instead of claiming none. When a capped scan did find one of their branches, the
+    One branch choice lists only the branches it found, so others beyond the first 500 may be
+    missing and nothing says so (`RoleScopeFields` shows its hint only while no branch is
+    offered). Role assignment changes are audited per assignment and branch assignment changes on
+    the branch, so the Audit tab can't show them (BG-16).
+  - A count or list that couldn't be read says so rather than vanishing or reading as none: the
+    Overview's role and branch counts show `Couldn't be loaded` (with the request reference) and
+    leave a row out only when you may not read it; a capped scan that found nothing reads
+    `None found (partial)`; the Branch assignments empty state names what could not be seen (a
+    selected branch, a capped scan); and an empty role index (a failed read) reads "Roles couldn't
+    be loaded", not "no active roles".
   - No phone, member number, last activity, MFA or profile edit (BG-17).
   - The toolbar search commits on Enter or blur, and backend `validation_failed` violations
     aren't mapped onto form fields (BG-09).
@@ -474,8 +486,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - The overview, and the tenant branch and user reads in `platform-administration-service.ts`,
     are layer 17's.
 - Beyond context discovery/selection, profile retrieval, Platform Administration's institutions, and
-  Administration's Users & access, Branches, Roles & permissions and Settings above, the Approval
-  queue is not connected yet.
+  Administration's Users & access, Branches, Roles & permissions and Settings above, these are not
+  connected yet: the Approval queue (layer 12), the Invite user wizard (layer 11), the
+  Administration overview's operational sections (layer 14), and Platform Administration's
+  overview, tenant branches and users, and platform users (layer 17).
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
   `/forgot-password` are placeholders; the first three routes resolve to the app's `not-found`
   page until real content exists.

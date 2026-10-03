@@ -218,11 +218,22 @@ ones with their defaults):
    (`MEMBERSHIP_UNAVAILABLE`, refresh); the Overview shows a failure with its reference.
 8. **Branch scan** (BG-09): `listUserBranchAssignments(userId)` reads
    `GET /tenant/branch-assignments?status=ACTIVE&page=N&size=100` for N = 0..4 and keeps the user's
-   rows, de-duplicated by id (the order is unspecified); `truncated` is true when page 4 still has
-   more, and the tab and the Overview say "partial" (the Overview's count in a branch context reads
-   `At least N at <branch> (partial)`, never a bare `0 at <branch>`). In a branch context the backend
-   forces the selected branch, so the tab says only that branch is visible and offers Switch to All
-   branches when the user has more than one ACTIVE branch.
+   rows, de-duplicated by id (the order is unspecified, so a row can also be skipped: even an
+   uncapped scan is best effort); `truncated` is true when page 4 still has more, and the tab and
+   the Overview say "partial". The Overview's count reads `At least N (partial)`, or
+   `At least N at <branch> (partial)` in a branch context, and `None found (partial)` or
+   `None found at <branch> (partial)` when a capped scan found nothing: never a bare
+   `0 at <branch>` and never "At least 0". The ceiling is one constant, `SCAN_CEILING = 500` in
+   `user-rules.ts`: the service derives its page count from it and every sentence that names it
+   interpolates it. In a branch context the backend forces the selected branch, so the tab says
+   only that branch is visible and offers Switch to All branches when the user has more than one
+   ACTIVE branch. The tab's empty state says only what could be seen
+   (`branchAssignmentsEmptyState`): "No branch assignments" only with no branch selected and a
+   complete scan; with a branch selected "No assignment at <branch>" ("They may be assigned to
+   other branches.", plus "Switch to All branches to see them." when the profile can switch); after
+   a capped scan "No branch assignments found" ("Only the first 500 branch assignments were
+   checked, so they may be assigned beyond them."), which wins the title even in a branch context.
+   "Assign a branch so they can work there." follows those hedges when Assign branch is offered.
 9. **Approve outcome** (question Q2, default): no kit change. The toast says "Approval recorded"; the
    refreshed record tells 200 from 202 by state ("Active" vs "Provisioning identity", plus the
    Overview's provisioning note).
@@ -262,6 +273,15 @@ ones with their defaults):
 17. **Branch context on the Branch assignments tab:** an info `Alert` with Switch to All branches
     above the selected branch's rows, not the full-page `BranchContextState` the handoff proposed:
     the tab can still show (and revoke) the rows at the selected branch.
+18. **A read that failed says so** (the final fix wave). The Overview leaves the Role assignments
+    and Branch assignments rows out only when the holder isn't permitted to read them; a permitted
+    read that failed shows `Couldn't be loaded` (with `Reference: <request id>` when the problem has
+    one, never backend text). `countUserRoleAssignments` rejects, and the page settles it with
+    `load()` like the other two reads (a 401 or a stale context redirects). On Roles & access,
+    `getRoleIndex` answers an empty map on any failure and every tenant has system roles, so an
+    empty index while an assignment could be offered reads `ROLES_UNAVAILABLE` ("Roles couldn't be
+    loaded, so none can be assigned right now. Refresh to try again."), and `NO_ACTIVE_ROLES` is
+    kept for a non-empty index with no ACTIVE role.
 
 ## Review Focus
 
@@ -380,11 +400,14 @@ Implementers never execute this section. The controller checks it against the ti
     `membershipActionsNote(holder, lookup)`;
   - copy constants `NO_MEMBERSHIP_VIEW`, `MEMBERSHIP_MISSING`, `MEMBERSHIP_UNAVAILABLE`,
     `OWN_MEMBERSHIP`, `USER_MAKER_CHECKER_BLOCKED`, `ACCESS_DESCRIPTION`, `NO_ACTIVE_ROLES`,
-    `PARTIAL_SCAN_NOTE`, `accountBlockedNote(status)`, `branchContextNote(name, canSwitch)`;
+    `ROLES_UNAVAILABLE`, `PARTIAL_SCAN_NOTE`, `accountBlockedNote(status)`,
+    `branchContextNote(name, canSwitch)`; `SCAN_CEILING = 500` (the most rows a scan reads;
+    `user-service.ts` derives its page count from it);
   - `canAssignUserRole(status, holder)`, `canAssignUserBranch(status, holder)`;
   - `interface SelectOption { id: string; label: string }` (structurally 09's `BranchOption`),
     `roleScopeBranches(rows, selectedBranchId, label)`, `roleScopeHint(input)`,
-    `branchAssignmentCount(count, truncated, selectedBranchName)`;
+    `branchAssignmentCount(count, truncated, selectedBranchName)`,
+    `branchAssignmentsEmptyState({ selectedBranchName, truncated, canSwitch, assignOffered })`;
   - `pageOfItems(items, paging): Page<T>`; ★ `parseUserId(param): string | null`.
 
 - [ ] **Step 1: Write the failing contract test**
@@ -770,12 +793,28 @@ Plus, each as its own `it`:
   `"Their branch assignments can't be read here, so only institution scope is available."` (also when
   `truncated`); a capped scan (`truncated`) that offered nothing, with or without a selected branch →
   `"Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here."`
-  (Ruling 8: a capped scan says it is partial); otherwise selected
+  (Ruling 8: a capped scan says it is partial; the number is `SCAN_CEILING`'s); otherwise selected
   branch "Westlands Branch" → `"They aren't assigned to Westlands Branch. Assign them there first to give a branch-scoped role."`; otherwise `"Assign them to a branch first to give a branch-scoped role."`.
 - `branchAssignmentCount`: `(2, false, null)` → `'2'`; `(500, true, null)` →
   `'At least 500 (partial)'`; `(1, false, 'Westlands Branch')` → `'1 at Westlands Branch'`;
   `(3, true, 'Westlands Branch')` → `'At least 3 at Westlands Branch (partial)'` (a capped scan stays
-  partial in a branch context: the selected branch can hold more than 500 ACTIVE assignments).
+  partial in a branch context: the selected branch can hold more than 500 ACTIVE assignments). A
+  capped scan that found nothing is `'None found (partial)'` and
+  `'None found at Westlands Branch (partial)'`, never "At least 0", while a complete scan of 0
+  stays `'0'` and `'0 at Westlands Branch'`.
+- `branchAssignmentsEmptyState` (every combination of selected branch, `truncated`, `canSwitch` and
+  `assignOffered`): no branch and a complete scan → title `No branch assignments` with the
+  description `This user has no branch assignments.` (or the offer
+  `Assign a branch so they can work there.` when Assign is offered); a selected branch → title
+  `No assignment at Head Office` with `They may be assigned to other branches.`, then
+  `Switch to All branches to see them.` only when `canSwitch`, then the offer; a capped scan →
+  title `No branch assignments found` with the sentence
+  `Only the first 500 branch assignments were checked, so they may be assigned beyond them.` and
+  the offer; both → the capped title (it wins) with the capped sentence, the branch sentences and
+  the offer, never "No assignment at".
+- Copy pins: `NO_ACTIVE_ROLES` and `ROLES_UNAVAILABLE` exactly (the second is for an empty role
+  index); `SCAN_CEILING` is 500 and `PARTIAL_SCAN_NOTE` and the capped `roleScopeHint` contain
+  whatever it is.
 - `pageOfItems` over 23 items: page 2 of size 10 → 3 items, `{ number: 2, size: 10, totalItems: 23, totalPages: 3, hasNext: false, hasPrevious: true }`; page 3 → no items and
   `lastPageIfPastEnd(page)` is 2; no items → `totalPages: 0`.
 - `parseUserId`: lower-cases `10000000-0000-4000-8000-00000000000D`; `null` for `'not-a-uuid'`,
@@ -1042,12 +1081,20 @@ export function canAssignUserBranch(status: MembershipStatus, holder: Permission
   );
 }
 
+/** The most branch assignments (or memberships) a scan reads: the backend can't filter either by user
+ * (BG-09), so a scan pages through at most this many rows. Client-safe, so the copy that names the
+ * ceiling and the service that enforces it (`SCAN_PAGES` in user-service.ts) can't drift apart. */
+export const SCAN_CEILING = 500;
+
 export const ACCESS_DESCRIPTION =
   'Roles this user holds. Institution scope applies everywhere; branch scope only while that branch is selected.';
 export const NO_ACTIVE_ROLES =
   'There are no active roles to assign. Create or activate one under Roles & permissions.';
-export const PARTIAL_SCAN_NOTE =
-  "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 branch assignments were checked.";
+/** `getRoleIndex` answers an empty map on any failure, and every tenant has system roles, so an empty
+ * index is a failed read, not "no roles". */
+export const ROLES_UNAVAILABLE =
+  "Roles couldn't be loaded, so none can be assigned right now. Refresh to try again.";
+export const PARTIAL_SCAN_NOTE = `This list may be incomplete: the platform can't filter branch assignments by user, so only the first ${SCAN_CEILING} branch assignments were checked.`;
 
 /** `canSwitch`: the signed-in user has more than one ACTIVE branch, so All branches is open. */
 export function branchContextNote(branchName: string, canSwitch: boolean): string {
@@ -1089,7 +1136,7 @@ export function roleScopeHint(input: {
     return "Their branch assignments can't be read here, so only institution scope is available.";
   }
   if (input.truncated) {
-    return 'Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here.';
+    return `Only the first ${SCAN_CEILING} branch assignments were checked and none of theirs was among them, so only institution scope is offered here.`;
   }
   if (input.selectedBranchName) {
     return `They aren't assigned to ${input.selectedBranchName}. Assign them there first to give a branch-scoped role.`;
@@ -1105,11 +1152,53 @@ export function branchAssignmentCount(
   // A capped scan is partial in a branch context too: the backend forces the search to the selected
   // branch (§E.4), and a branch with more than 500 ACTIVE assignments can hide the user's row.
   if (selectedBranchName) {
-    return truncated
-      ? `At least ${count} at ${selectedBranchName} (partial)`
-      : `${count} at ${selectedBranchName}`;
+    if (!truncated) return `${count} at ${selectedBranchName}`;
+    return count === 0
+      ? `None found at ${selectedBranchName} (partial)`
+      : `At least ${count} at ${selectedBranchName} (partial)`;
   }
-  return truncated ? `At least ${count} (partial)` : String(count);
+  if (!truncated) return String(count);
+  return count === 0 ? 'None found (partial)' : `At least ${count} (partial)`;
+}
+
+/** The Branch assignments tab's empty state. "No branch assignments" is a fact only when everything
+ * could be seen: with a branch selected only that branch is visible (§E.4), and a capped scan hides
+ * the rows past its ceiling (Ruling 8). A capped scan wins the title even in a branch context, since
+ * "No assignment at <branch>" would be a guess there too. */
+export function branchAssignmentsEmptyState(input: {
+  selectedBranchName: string | null;
+  truncated: boolean;
+  /** The signed-in user has more than one ACTIVE branch, so All branches is open to them. */
+  canSwitch: boolean;
+  /** An Assign branch button is on the tab. */
+  assignOffered: boolean;
+}): { title: string; description: string } {
+  const { selectedBranchName, truncated, canSwitch, assignOffered } = input;
+  const offer = 'Assign a branch so they can work there.';
+  if (!selectedBranchName && !truncated) {
+    return {
+      title: 'No branch assignments',
+      description: assignOffered ? offer : 'This user has no branch assignments.',
+    };
+  }
+  const description: string[] = [];
+  if (truncated) {
+    description.push(
+      `Only the first ${SCAN_CEILING} branch assignments were checked, so they may be assigned beyond them.`,
+    );
+  }
+  if (selectedBranchName) {
+    description.push('They may be assigned to other branches.');
+    if (canSwitch) description.push('Switch to All branches to see them.');
+  }
+  if (assignOffered) description.push(offer);
+  return {
+    title:
+      selectedBranchName && !truncated
+        ? `No assignment at ${selectedBranchName}`
+        : 'No branch assignments found',
+    description: description.join(' '),
+  };
 }
 
 /** Server-side paging of a bounded, already filtered list (the scan's rows for one user), so the
@@ -1190,7 +1279,8 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
   - ★ `listUserBranchAssignments = cache((userId: string) => Promise<UserBranchScan>)` with
     `interface UserBranchScan { items: BranchAssignment[]; truncated: boolean }`;
   - ★ `getUserInviter(userId: string): Promise<string | null>`;
-  - `countUserRoleAssignments(userId: string): Promise<number | null>`;
+  - `countUserRoleAssignments(userId: string): Promise<number>` (rejects when the read fails: the
+    page settles it with `load()`, so a failure is never mistaken for "not permitted");
   - ★ Server Actions `approveMembership`, `suspendMembership`, `reactivateMembership`,
     `revokeMembership`, each `(previous: ActionResult | null, formData: FormData) => Promise<ActionResult>`, reading `idempotencyKey`, `membershipId` and (except approve) `reason`;
   - copy `APPROVE_FORBIDDEN`, `APPROVE_FAILED`, `REVOKE_FAILED` (local to the actions file; tests
@@ -1230,10 +1320,11 @@ not `expect.anything()`); `getUser`/`getMembership` "reject a malformed id befor
 (path `/api/v1/tenant/branch-assignments?status=ACTIVE&page=0&size=100`, never a `branch_id`),
 "keeps a row repeated across pages once" (the same id on pages 0 and 1 → one item), "marks the scan truncated when the fifth page still has more" (5 calls, `truncated: true`) and "is
 complete when a page ends the scan" (`truncated: false`); `getUserInviter` "reads the user.invite
-event's actor" (`listAuditEvents` called with `{ entityType: 'USER', entityId: USER, action: 'user.invite', page: 0, size: 1 }`) and "is null when the audit read fails";
-`countUserRoleAssignments` "counts ACTIVE assignments with one size-1 read"
-(`listRoleAssignments({ userId: USER, status: 'ACTIVE' }, { page: 0, size: 1 })`) and "is null when
-unreadable".
+event's actor" (`listAuditEvents` called with `{ entityType: 'USER', entityId: USER, action: 'user.invite', page: 0, size: 1 }`), "is null when the audit read fails" and "is null for a malformed id, without reading
+the audit log"; `countUserRoleAssignments` "counts ACTIVE assignments with one size-1 read"
+(`listRoleAssignments({ userId: USER, status: 'ACTIVE' }, { page: 0, size: 1 })`) and "rejects when
+unreadable" (never a quiet null); `listUserBranchAssignments` "reads SCAN_CEILING rows at most, as
+pages of 100".
 
 - [ ] **Step 2: Run it to verify it fails** — form U. Expected: FAIL (module not found).
 
@@ -1259,6 +1350,7 @@ import {
   type MembershipSummary,
 } from './user-contract';
 import { userListApiPath, type UserListQuery } from './user-query';
+import { SCAN_CEILING } from './user-rules';
 
 export function listUsers(query: UserListQuery) {
   return apiGet(userListApiPath(query), userPageSchema);
@@ -1272,9 +1364,10 @@ export const getUser = cache(async (userId: string) => {
 });
 
 const SCAN_PAGE_SIZE = 100;
-// ponytail: at most 5 pages of 100 per scan, like the lookup indexes (spec §6.3). The backend has
-// no user_id filter on memberships or branch assignments (BG-09).
-const SCAN_PAGES = 5;
+// ponytail: at most SCAN_CEILING rows (5 pages of 100) per scan, like the lookup indexes (spec §6.3).
+// The backend has no user_id filter on memberships or branch assignments (BG-09). The ceiling is
+// shared with user-rules.ts, whose copy names it.
+const SCAN_PAGES = SCAN_CEILING / SCAN_PAGE_SIZE;
 
 /** BG-09: memberships can't be filtered by user. `q` is a case-insensitive substring over username,
  * email and name, with `%` and `_` as wildcards (contract §A), so the hits are a superset: match
@@ -1312,7 +1405,9 @@ export interface UserBranchScan {
  * search to that branch (§E.4), so the result is that branch's rows only. 12 reuses it. */
 export const listUserBranchAssignments = cache(async (userId: string): Promise<UserBranchScan> => {
   const id = uuidSchema.parse(userId).toLowerCase();
-  // By id: the order is unspecified (`sort_*` is ignored), so a row can repeat across pages.
+  // By id: the order is unspecified (`sort_*` is ignored), so with LIMIT/OFFSET paging and no order a
+  // row can repeat across pages or be skipped. Even an uncapped scan (`truncated: false`) is best
+  // effort, not a proof of completeness (BG-09).
   const rows = new Map<string, BranchAssignment>();
   for (let page = 0; page < SCAN_PAGES; page += 1) {
     const result = await apiGet(
@@ -1326,12 +1421,13 @@ export const listUserBranchAssignments = cache(async (userId: string): Promise<U
 });
 
 /** BG-08: the inviter is only in the audit log (`user.invite`, contract §G maker lookups); null
- * without `audit.view` or when no event is readable (08's getBranchMaker). */
+ * without `audit.view` or when no event is readable (08's getBranchMaker). A malformed id is null
+ * too, with no read. */
 export async function getUserInviter(userId: string): Promise<string | null> {
   try {
     const events = await listAuditEvents({
       entityType: 'USER',
-      entityId: userId,
+      entityId: uuidSchema.parse(userId),
       action: 'user.invite',
       page: 0,
       size: 1,
@@ -1342,14 +1438,11 @@ export async function getUserInviter(userId: string): Promise<string | null> {
   }
 }
 
-/** BG-15: one `size=1` read; null when unreadable. */
-export async function countUserRoleAssignments(userId: string): Promise<number | null> {
-  try {
-    const page = await listRoleAssignments({ userId, status: 'ACTIVE' }, { page: 0, size: 1 });
-    return page.page.totalItems;
-  } catch {
-    return null;
-  }
+/** BG-15: one `size=1` read. Rejects when it fails, so the caller settles it with `load()` and can
+ * say it failed instead of treating a failure as "not permitted" (never a quiet null). */
+export async function countUserRoleAssignments(userId: string): Promise<number> {
+  const page = await listRoleAssignments({ userId, status: 'ACTIVE' }, { page: 0, size: 1 });
+  return page.page.totalItems;
 }
 ```
 
@@ -1703,11 +1796,9 @@ function tenantAccess(context: RouteContext): AccessContext {
 
 /** Contract §A: `q` is a case-insensitive substring in which `%` and `_` stay LIKE wildcards. */
 function likeMatcher(q: string): RegExp {
-  const pattern = [...q]
-    .map((char) =>
-      char === '%' ? '.*' : char === '_' ? '.' : char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-    )
-    .join('');
+  const pattern = q.replace(/[.*+?^${}()|[\]\\%_]/g, (char) =>
+    char === '%' ? '.*' : char === '_' ? '.' : `\\${char}`,
+  );
   return new RegExp(pattern, 'i');
 }
 
@@ -2026,8 +2117,10 @@ membership and user is a fresh object (never a shared fixture), `createdAt`/`upd
 ```
 
 - [ ] **Step 7: Lift the fake-spec helpers** into `e2e/support/fake-api.ts`: `FAKE_API_URL`,
-      `api(path)` and `contextFor(request, scenario, branchId)`, copied verbatim from
-      `e2e/fake-api-roles.spec.ts` (Task 10 switches the two older specs to it).
+      `api(path)` and `contextFor(request, scenario, branchId)`, copied from
+      `e2e/fake-api-roles.spec.ts` (Task 10 switches the two older specs to it). `scenario` is typed
+      with the fake's `ScenarioName`, so a misspelled scenario is a type error rather than an empty
+      answer from the fake.
 
 - [ ] **Step 8: Format and run** — form P on the four `.mts` files; form E on
       `e2e/fake-api-users.spec.ts e2e/fake-api.spec.ts e2e/fake-api-branches.spec.ts`. Expected:
@@ -2112,13 +2205,22 @@ create button (the "Invite user" button is layer 11's).
       variant="body2"
       noWrap
       title={user.displayName}
-      sx={{ display: 'block', maxWidth: 320, fontWeight: 700 }}
+      sx={{ display: 'block', maxWidth: NAME_MAX_WIDTH, fontWeight: 700 }}
     >
       {user.displayName}
       <LinkPendingIndicator />
     </Link>
-    <TruncatedText value={user.email} maxWidth={320} variant="caption" color="textSecondary" />
+    <TruncatedText
+      value={user.email}
+      maxWidth={NAME_MAX_WIDTH}
+      variant="caption"
+      color="textSecondary"
+    />
     ```
+
+    with `const NAME_MAX_WIDTH = 'min(320px, 60vw)'`: at most 320 px and at most 60% of the viewport,
+    since at 375 px the card shows about 300 px and a fixed 320 px cut a long name or email off at
+    the card's edge with its ellipsis out of sight (a string is accepted by both).
 
   - Username: `Typography variant="body2" sx={{ fontFamily: 'monospace' }}`.
   - Onboarding: `const state = onboardingState(user.membershipStatus, user.userStatus)` →
@@ -2289,7 +2391,9 @@ note text and no button). `renderActions` defaults `blocked` to `{}`.
       `modules/platform-administration/tenants/components/provisioning-timeline.tsx` (each step a
       row with `` `${index + 1}. ${step.label}` ``, its detail muted, and a `StatusChip` with the
       state's label and tone), but give the `ol` `role="list"` (its `listStyle: 'none'` drops list
-      semantics in WebKit) and `aria-label="Onboarding steps"`. A `note` renders below the list, or
+      semantics in WebKit) and `aria-label="Onboarding steps"`. Each row's text box has
+      `flex: '1 1 0'` (a basis of 0, not a width) so the chip never wraps to a line of its own and
+      the status column stays at the right at 375 px. A `note` renders below the list, or
       alone for `kind: 'note'`, as `Typography variant="body2" sx={{ color: 'text.secondary', px: 4.5, py: 3.5 }}`.
 
 - [ ] **Step 5: Implement `UserLifecycleActions`** — mirror
@@ -2298,8 +2402,12 @@ note text and no button). `renderActions` defaults `blocked` to `{}`.
       `focusRecordTitle`); the first action `contained`, the rest `outlined`; `reject` and `revoke`
       `color="error"`; an action in `blocked` is `disabled` with `aria-describedby` naming its
       caption: one caption per distinct reason
-      (``Typography variant="caption" id={`user-action-blocked-${index}`} sx={{ color: 'text.secondary', flexBasis: '100%', textAlign: 'right' }}``); the `note` as one more caption the same way. Each
-      dialog is keyed by its action. Approve uses `ConfirmDialog` (children: the hidden
+      (``Typography variant="caption" id={`user-action-blocked-${index}`} sx={{ color: 'text.secondary', flexBasis: '100%', textAlign: 'right', textWrap: 'pretty' }}``);
+      the `note` as one more caption the same way. The actions box is capped at
+      `maxWidth: { md: 320 }` (from `md`, where the hero is a row): uncapped, a long caption's
+      one-line width sized the box and squeezed the title column, so the name wrapped and the
+      email broke mid-word. 08's `branch-lifecycle-actions.tsx` has the same structure and is left
+      as it is. Each dialog is keyed by its action. Approve uses `ConfirmDialog` (children: the hidden
       `membershipId` input); every other action uses `ReasonDialog` with
       `fields={() => <input type="hidden" name="membershipId" value={membershipId} />}`,
       `tone={copy.destructive ? 'error' : 'default'}`. Both pass `contextOrganisationId`. On success:
@@ -2490,7 +2598,8 @@ const holder = { permissions: selected.kind === 'resolved' ? selected.profile.pe
 const selectedBranch = selected.kind === 'resolved' ? selected.context.branch : null;
 const [membership, roleCount, scan] = await Promise.all([
   can(holder, 'membership.view') ? load(findUserMembership(record.id, record.email)) : null,
-  can(holder, 'role_assignment.view') ? countUserRoleAssignments(record.id) : null,
+  // null: not permitted (the row is left out). A Loaded failure: permitted, but the read failed.
+  can(holder, 'role_assignment.view') ? load(countUserRoleAssignments(record.id)) : null,
   can(holder, 'branch_assignment.view') ? load(listUserBranchAssignments(record.id)) : null,
 ]);
 const detail =
@@ -2504,15 +2613,20 @@ const at = (iso: string) => {
 Render a `Box sx={{ display: 'grid', gap: 3 }}` of three `SectionCard`s:
 
 1. **Profile** — `DescriptionList` items: `Display name`, `Username`, `Email`, `User status`
-   (`StatusChip` with `label={userStatusLabel(record.userStatus)}`), `Role assignments` (only when `roleCount !== null`), `Branch assignments` (only
-   when `scan?.ok`: `branchAssignmentCount(scan.value.items.length, scan.value.truncated, selectedBranch?.name ?? null)`), `User ID` (`<CopyIdButton value={record.id} label="User ID" />`).
+   (`StatusChip` with `label={userStatusLabel(record.userStatus)}`), `Role assignments` (left out
+   when `roleCount === null`, a holder who can't read them; the count, or `Couldn't be loaded` when
+   the read failed), `Branch assignments` (left out when `scan === null`; when `scan.ok`
+   `branchAssignmentCount(scan.value.items.length, scan.value.truncated, selectedBranch?.name ?? null)`,
+   else `Couldn't be loaded`), `User ID` (`<CopyIdButton value={record.id} label="User ID" />`).
 2. **Membership** — without `membership.view`: the muted paragraph "You can't view membership
    details in your current role."; a failed `membership` or `detail` load: `<ErrorState problem={…} />`; not found: "This user's membership couldn't be found."; otherwise
    `DescriptionList` items `Membership type` (`humanizeEnum(type)`), `Membership status`
    (`StatusChip`), `Primary branch` (`branches.get(id)` → `` `${name} (${code})` ``, else
    `shortId(id)`, else `None`), `` `Created (${timeZone})` `` and `` `Updated (${timeZone})` ``
    (`at(…)`), `Membership ID` (`CopyIdButton`, label `Membership ID`). The paragraphs use
-   `Typography variant="body2" sx={{ color: 'text.secondary', px: 4.5, py: 3.5 }}`.
+   `Typography variant="body2" sx={{ color: 'text.secondary', px: 4.5, py: 3.5 }}`. A failed count
+   shows `Couldn't be loaded`, plus `Reference: <request id>` as a caption when the problem has one
+   (Ruling 18): never the backend's text.
 3. **Onboarding** — `<OnboardingTimeline progress={onboardingProgress(record.membershipStatus, record.userStatus)} />`.
 
 - [ ] **Step 8: Run** — form U on `modules/administration/users`. Expected: PASS.
@@ -2545,12 +2659,12 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
   `AssignUserRoleButton`) and `user-role-actions.test.tsx`
 - Create: `modules/administration/users/components/user-role-assignments-table.tsx` (server) and
   `user-role-assignments-table.test.tsx`
-- Create: `app/(authenticated)/admin/users/[userId]/access/page.tsx`
+- Create: `app/(authenticated)/admin/users/[userId]/access/page.tsx` and `page.test.tsx`
 
 **Interfaces:**
 
 - Consumes: Task 1's `parseUserId`, `canAssignUserRole`, `roleScopeBranches`, `roleScopeHint`,
-  `ACCESS_DESCRIPTION`, `NO_ACTIVE_ROLES`, `type SelectOption`; Task 2's `getUser`,
+  `ACCESS_DESCRIPTION`, `NO_ACTIVE_ROLES`, `ROLES_UNAVAILABLE`, `type SelectOption`; Task 2's `getUser`,
   `listUserBranchAssignments`; 09's `listRoleAssignments`, `assignRole`, `RoleScopeFields`,
   `RevokeRoleAssignmentButton`, `canRevokeRoleAssignments`, `isAssignmentRevocable`, `scopeLabel`,
   `type RoleScopeType`; `getRoleIndex`, `getBranchIndex`; `AssignmentDrawer`, `SectionCard`,
@@ -2617,6 +2731,20 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 - "renders no revoke for a row the context can't revoke" and "has no Actions column without
   canRevoke".
 
+`[userId]/access/page.test.tsx` (mock the services as `branches/page.test.tsx` does; written with
+the page, completed in the final fix wave, each case proven by a mutation of the page): the id
+guard (not-found before any read; a valid id read in its lower-case form); the assign offer
+(`ROLES_UNAVAILABLE` for an empty role index, `NO_ACTIVE_ROLES` for an index with no ACTIVE role,
+neither when nothing could be assigned anyway, and no Assign role button in either case); the
+branch-scope hint's wiring (no `branch_assignment.view` → no scan read and a Scope description
+containing "can't be read here"; a failed scan reads the same; a capped scan that found nothing →
+the partial hint; a complete scan in a branch context → "They aren't assigned to <branch>"; held
+branches offered once each, narrowed to the selected branch); the rows (names from the indexes,
+short-id fallbacks, a `Disabled` chip, the revoke's gating by `canRevokeRoleAssignments` and
+`isAssignmentRevocable`, the self warning, the organisation and the assignment id forwarded to the
+drawer and the revoke); and paging (the page the backend answered, the past-the-end redirect
+keeping `size` and the lower-case id).
+
 - [ ] **Step 3: Run them to verify they fail** — form U. Expected: FAIL.
 
 - [ ] **Step 4: Implement `AssignUserRoleButton`** — mirror 09's `AssignRoleButton`: a contained
@@ -2679,8 +2807,11 @@ const branchHint = roleScopeHint({
 });
 ```
 
-The `SectionCard` is titled `Roles & access`, with the description `NO_ACTIVE_ROLES` when `canAssign && roleOptions.length === 0`, else `ACCESS_DESCRIPTION`, and the `AssignUserRoleButton` action when
-`canAssign && roleOptions.length > 0`. A failed list renders `ForbiddenState` (403) or `ErrorState`
+The `SectionCard` is titled `Roles & access`. Its description, when
+`canAssign && roleOptions.length === 0`, is `ROLES_UNAVAILABLE` if the role index is empty
+(`roles.size === 0`: `getRoleIndex` answers an empty map on any failure and every tenant has system
+roles, Ruling 18) and `NO_ACTIVE_ROLES` if it is not; otherwise `ACCESS_DESCRIPTION`. The
+`AssignUserRoleButton` action shows when `canAssign && roleOptions.length > 0`. A failed list renders `ForbiddenState` (403) or `ErrorState`
 in the card; a page past the end redirects through
 ``hrefWith(`/admin/users/${userId}/access`, query, { page })``. Rows map each assignment to
 `{ assignmentId: row.id, roleName: roles.get(row.roleId)?.name ?? shortId(row.roleId), roleCode: roles.get(row.roleId)?.code ?? null, roleStatus: roles.get(row.roleId)?.status ?? null, scopeType: row.scopeType, branchLabel: row.branchId ? (branches.get(row.branchId)?.name ?? shortId(row.branchId)) : 'All branches', revocable: isAssignmentRevocable(row, selectedBranch?.id ?? null) }`; the table gets `self={record.id === resolved?.profile.user_id}` and
@@ -2721,7 +2852,7 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 **Interfaces:**
 
 - Consumes: Task 1's `parseUserId`, `canAssignUserBranch`, `pageOfItems`, `PARTIAL_SCAN_NOTE`,
-  `branchContextNote`, `type SelectOption`; Task 2's `getUser`, `listUserBranchAssignments`; 08's
+  `branchContextNote`, `branchAssignmentsEmptyState`, `type SelectOption`; Task 2's `getUser`, `listUserBranchAssignments`; 08's
   `assignBranchUser`, `RevokeAssignmentButton`, `canRevokeAssignments`, `listBranches`,
   `BRANCH_ASSIGNMENT_TYPES`; `SwitchToAllBranchesButton`; `getBranchIndex`; the kit as in Task 6;
   MUI `Alert`.
@@ -2770,7 +2901,10 @@ description={`${userLabel} loses the ${typeLabel} assignment at ${branchLabel ??
       humanized and the helper `A label only — it grants no permissions.`.
 
 - [ ] **Step 5: Implement `UserBranchAssignmentsTable`** — mirror 08's `BranchUsersTable`
-      (`Table aria-label="Branch assignments" sx={{ minWidth: 560 }}`): `Branch` (`TruncatedText`
+      (`Table aria-label="Branch assignments" sx={{ minWidth: 560 }}` inside a `TableContainer`
+      region labelled `Branch assignments table`, not "Branch assignments": the page's section card
+      is the region of that name, and two landmarks with one name fail axe's `landmark-unique`; the
+      Roles & access table has no such clash): `Branch` (`TruncatedText`
       name, code as a `textSecondary` caption), `Assignment type` (`StatusChip`), and `Actions` when
       `canRevoke`: `RevokeAssignmentButton` with `userLabel={userName}`,
       `typeLabel={humanizeEnum(assignmentType)}`, `branchLabel={branchName}`.
@@ -2831,15 +2965,26 @@ in the card. Otherwise:
 - Sort the scan's rows by branch name, then assignment type (names from `getBranchIndex`, else
   `shortId`), page them with `pageOfItems(rows, parsePaging(query, 10))`, and redirect a page past
   the end through ``hrefWith(`/admin/users/${userId}/branches`, query, { page })``.
-- Above the table, inside `Box sx={{ px: 4, pt: 3 }}`: with a branch selected,
-  `<Alert severity="info">` holding `branchContextNote(selectedBranch.name, canSwitch)`, where
-  `canSwitch` is the profile having more than one ACTIVE branch (the branch layout's PF1 check), and
-  then a `SwitchToAllBranchesButton` below the text (inside the Alert's children, never its
-  `action` prop); and, whenever `scan.value.truncated` (with or without a branch selected: Ruling 8,
-  the backend forces a scan to the selected branch, and a branch with more than 500 ACTIVE
-  assignments is capped there too), a second `<Alert severity="info">{PARTIAL_SCAN_NOTE}</Alert>`
-  below it.
-- The table, or `<EmptyState title="No branch assignments" description={canAssign ? 'Assign a branch so they can work there.' : 'This user has no branch assignments.'} />`, then
+- Above the table, inside `Box sx={{ px: 4, py: 3, display: 'grid', gap: 2 }}` (`py`, so the last
+  note doesn't touch the table header): with a branch selected,
+  `<Alert severity="info" role="note">` holding `branchContextNote(selectedBranch.name, canSwitch)`,
+  where `canSwitch` is the profile having more than one ACTIVE branch (the branch layout's PF1
+  check), and then a `SwitchToAllBranchesButton` below the text (inside the Alert's children, never
+  its `action` prop), wrapped in `<Box sx={{ mt: 2, width: 'fit-content' }}>` (the shared button
+  lays itself out for a centred state, so unwrapped it sits in the middle of the left-aligned note);
+  and, whenever `scan.value.truncated` (with or without a branch selected: Ruling 8, the backend
+  forces a scan to the selected branch, and a branch with more than 500 ACTIVE assignments is
+  capped there too), a second `<Alert severity="info" role="note">{PARTIAL_SCAN_NOTE}</Alert>`
+  below it. Both Alerts are `role="note"`, as the settings catalogue's are
+  (`modules/administration/settings/components/settings-catalogue.tsx`): static notices, not alerts
+  announced on every visit to the tab, and distinct from the toast's `alert`.
+  `SwitchToAllBranchesButton` (shared with 08's `ForbiddenState`) moves focus to the record title
+  once a switch succeeds, since the button leaves the page with the note, and not on its "All
+  branches unavailable" outcome.
+- The table, or
+  `<EmptyState {...branchAssignmentsEmptyState({ selectedBranchName: selectedBranch?.name ?? null, truncated: scan.value.truncated, canSwitch, assignOffered })} />`
+  (Ruling 8: no "No branch assignments" claim when a branch is selected or the scan was capped),
+  where `assignOffered` is `canAssign && options.length > 0`, then
   `<TablePaginationBar page={paged.page} />`.
 
 - [ ] **Step 7: Run** — form U on `modules/administration/users` and
@@ -2883,7 +3028,7 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 - Produces:
   - `ListToolbar({ …, children?: ReactNode })` (additive);
   - `AuditActorPicker({ actorId }: { actorId?: string })` (the applied actor, a plain string: the picker restarts
-    on it and keeps keyboard focus across the restart);
+    on it and keeps keyboard focus across the restart after its own pick lands);
   - `AuditFilters({ …, actorSearch?: boolean, actorId?: string })` (additive);
   - the route `/admin/users/[userId]/audit`.
 
@@ -2935,7 +3080,10 @@ it('filters by the chosen user and returns to the first page', async () => {
 re-render with the new `actorId` leaves focus on the `Actor` input (fix round: the first design's remount
 dropped it to `<body>`); `audit-actor-picker.test.tsx` adds the controls (a first render with an applied
 actor, a filter that changed without a pick here, and a user who moved on all leave focus alone;
-re-picking the applied actor makes no navigation and clears the stale name).
+re-picking the applied actor makes no navigation and clears the stale name); and, from the final
+fix wave, a pick whose navigation never landed is forgotten, so a later actor change (Back) takes no
+focus, nor does the superseded pick's actor landing later; a new pick that lands after a stale one
+still takes focus; and of two picks made before either landed, the latest takes focus when it lands.
 
 - [ ] **Step 3: Run them to verify they fail** — form U. Expected: FAIL.
 
@@ -2953,16 +3101,21 @@ import { UserPicker } from '@/modules/administration/users/components/user-picke
  * `actorId` and returns to the first page; the toolbar's chip shows and removes the filter. The
  * search restarts (a fresh `UserPicker`, keyed on the applied actor) each time the filter changes,
  * which replaces the focused input: after this picker's OWN choice, focus goes back to the new input
- * once the filter lands (a filter that changed any other way, or a user who moved on, never takes it). */
+ * once the filter lands (a filter that changed any other way, or a user who moved on, never takes it).
+ * The request names the actor it was made for, so a pick whose navigation never landed (superseded)
+ * can't take focus for a later, unrelated change. */
 export function AuditActorPicker({ actorId }: { actorId?: string }) {
   const navigate = useListNavigation();
   const box = useRef<HTMLDivElement>(null);
-  const refocus = useRef(false);
+  // The actor this picker's own choice asked for; consumed by the next change of the applied filter.
+  const refocusFor = useRef<string | null>(null);
   // Re-picking the applied actor changes no URL, so the stale name is cleared by bumping this.
   const [resets, setResets] = useState(0);
   useEffect(() => {
-    if (!refocus.current) return;
-    refocus.current = false;
+    const wanted = refocusFor.current;
+    refocusFor.current = null;
+    // Not our pick landing (Back, a chip removed, or a superseded pick's actor): nothing to restore.
+    if (wanted === null || wanted !== actorId) return;
     const active = document.activeElement;
     if (active && active !== document.body && !box.current?.contains(active)) return;
     box.current?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus();
@@ -2975,7 +3128,7 @@ export function AuditActorPicker({ actorId }: { actorId?: string }) {
         label="Actor"
         onChange={(chosen) => {
           if (!chosen) return;
-          refocus.current = true;
+          refocusFor.current = chosen.id;
           if (chosen.id === actorId) {
             setResets((count) => count + 1);
             return;
@@ -3079,7 +3232,10 @@ Prove it: make one tab page `return null` on a bad id instead of `notFound()` �
 - [ ] **Step 7: Rewrite the README limitation** under the Audit trail bullet: "An actor is filtered
       by clicking their name on a visible row, not by a search box, until a users directory ships a
       picker." becomes "An actor is filtered by picking a user in the Actor search (the first 10
-      matches; it needs `user.view`) or by clicking their name on a visible row."
+      matches; it needs `user.view`) or by clicking their name on a visible row. The picker
+      (`AuditActorPicker`) takes the applied `actorId`, so its search starts over, empty, when the
+      filter changes, and it refocuses its input after its own pick lands (never for a filter change
+      it did not make)."
 
 - [ ] **Step 8: Run** — form U on `modules/administration/audit components/data-display` and
       `'app/(authenticated)/admin/users'`; form E on `e2e/audit.spec.ts`. Expected: PASS. Check
@@ -3238,7 +3394,7 @@ Kiprono | Amina Odhiambo, Victor Otieno, Backend Jane Manager.
    `Suspend` focused; the Audit tab's default view (region `Audit trail`) shows `Suspended membership`
    and `Reactivated membership`.
 7. "revokes a suspended membership and every assignment" — Gladys: Revoke (reason `Left the SACCO`,
-   an `alertdialog`) → `Revoked`, no lifecycle button, the `h1` focused; Roles & access shows `No roles assigned`; Branch assignments shows `No branch assignments`.
+   an `alertdialog`) → `Revoked`, no lifecycle button, the `h1` focused; Roles & access shows `No roles assigned`; Branch assignments shows `No branch assignments` (institution level, a complete scan, nothing to assign: the one case where that claim is a fact, Ruling 8).
 8. "disables Suspend and Revoke on your own record" — `IDS.jane`: `Suspend` and `Revoke` are both
    disabled, each with the accessible description `OWN_MEMBERSHIP`.
 9. "shows each user's own membership facts, even when emails nest" — Ann's
@@ -3288,14 +3444,19 @@ Kiprono | Amina Odhiambo, Victor Otieno, Backend Jane Manager.
 18. "canonicalises a mixed-case user id" — `/admin/users/${USERS.felix.toUpperCase()}` shows the
     `h1` `Felix Omondi`, and its Audit tab shows `Invited user` (the fake compares ids exactly, so
     only the lower-casing makes this pass).
-19. "marks a scan that hit its ceiling as partial" (`users-many-assignments`) — Felix's Overview
-    reads `Branch assignments` `At least 1 (partial)`; his Branch assignments tab shows
-    `PARTIAL_SCAN_NOTE` and 2 rows (Westlands, Home). A second leg selects the branch that holds the
-    511 filler assignments (Head Office; check the seed in `scenarios.mts` and the fake's branch
-    filter before pinning anything) and asserts the tab shows BOTH `branchContextNote` and
-    `PARTIAL_SCAN_NOTE` (Ruling 6: a capped scan is partial in a branch context too) and the
-    Overview count carries the hedge (`At least N at <branch> (partial)`); pin the exact N from the
-    fake, never guess it.
+19. "marks a scan that hit its ceiling as partial" (`users-many-assignments`: 500 filler
+    assignments and the 11 seeded ACTIVE ones, 511 in all, 506 of them at Head Office) — Felix's
+    Overview reads `Branch assignments` `At least 1 (partial)`; his Branch assignments tab shows
+    `PARTIAL_SCAN_NOTE` and 2 rows (Westlands, Home). Ann holds nothing in the window: her tab shows
+    `PARTIAL_SCAN_NOTE` and the empty state `No branch assignments found` with the beyond-the-ceiling
+    sentence and the offer, never `No branch assignments`, and her role drawer's hint is the partial
+    one. A second test selects Head Office (check the seed in `scenarios.mts` and the fake's branch
+    filter before pinning anything) and asserts Joann's tab shows BOTH `branchContextNote` and
+    `PARTIAL_SCAN_NOTE` (Ruling 8: a capped scan is partial in a branch context too) and her
+    Overview count carries the hedge (`At least 1 at Head Office (partial)`). Felix holds none
+    there: his count reads `None found at Head Office (partial)` and his tab says
+    `No branch assignments found`, never `No assignment at Head Office`. Pin the exact figures from
+    the fake, never guess them.
 
 **`describe('users: accessibility')`** — one test per `A11Y_CASES` entry (scenario `users`):
 `applyA11yCase` before navigating; after each surface settles, `expectA11yCaseApplied` and
@@ -3368,22 +3529,37 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
        from `GET /tenant/users` (search, user status and membership status filters; newest first,
        no sort) and opens a record with the membership lifecycle (approve, reject and revoke,
        suspend, reactivate, revoke) and Overview, Roles & access, Branch assignments and Audit tabs.
-       Known limits:
+       The Audit tab offers up to four views: User record, Account, Membership (once the membership
+       is found) and Performed by. Known limits:
        - The directory shows only what user summaries carry, and the onboarding state is derived
          from the membership and user statuses (`docs/backend-gaps.md` BG-09, BG-11).
        - A user's membership is found by searching memberships for their email (at most 5 pages of
          100 matches) and matching the user id exactly; their branch assignments come from a scan of
-         at most 500 active assignments, marked partial when it stops early, and only the selected
-         branch shows while one is selected (BG-09, BG-03). Assign branch offers the first 100
-         active branches.
+         at most 500 active assignments, marked partial when it stops early (with or without a
+         selected branch), and only the selected branch shows while one is selected (BG-09, BG-03).
+         Assign branch offers the first 100 active branches (only the selected one while a branch is
+         selected).
        - Approve is disabled, with the reason, for the user's inviter (when `audit.view` can show
-         who that was) and for a blocked account, and withheld once approval ran; other refusals
-         are explained as permission or maker-checker (BG-08, BG-07). "Provisioning identity" can
-         stay put with no resend (BG-11).
+         who that was) and for a blocked account, and withheld once approval ran. Other refusals are
+         explained: a 403 as permission or maker-checker (BG-08), a 500 by its likely causes, such as
+         a missing active role (BG-07). "Provisioning identity" can stay put with no resend (BG-11).
        - Reject & revoke and Revoke are permanent: the email can't be invited again (BG-28).
-         Suspend and Revoke are disabled on your own record (BG-35).
-       - A branch-scoped role offers only branches the user is assigned to. Branch assignment
-         changes are audited on the branch, so the Audit tab can't show them (BG-16).
+         Suspend and Revoke are disabled on your own record (BG-35). Revoking your own branch
+         assignment from the Branch assignments tab shows no self warning (layer 08's
+         `RevokeAssignmentButton` has no `self` prop, unlike the Roles & access revoke); at the
+         selected branch it invalidates your context, and the next request goes to context selection.
+       - A branch-scoped role offers only branches the user is assigned to; a partial scan that found
+         none says so instead of claiming none. When a capped scan did find one of their branches, the
+         One branch choice lists only the branches it found, so others beyond the first 500 may be
+         missing and nothing says so (`RoleScopeFields` shows its hint only while no branch is
+         offered). Role assignment changes are audited per assignment and branch assignment changes on
+         the branch, so the Audit tab can't show them (BG-16).
+       - A count or list that couldn't be read says so rather than vanishing or reading as none: the
+         Overview's role and branch counts show `Couldn't be loaded` (with the request reference) and
+         leave a row out only when you may not read it; a capped scan that found nothing reads
+         `None found (partial)`; the Branch assignments empty state names what could not be seen (a
+         selected branch, a capped scan); and an empty role index (a failed read) reads "Roles couldn't
+         be loaded", not "no active roles".
        - No phone, member number, last activity, MFA or profile edit (BG-17).
        - The toolbar search commits on Enter or blur, and backend `validation_failed` violations
          aren't mapped onto form fields (BG-09).
@@ -3392,7 +3568,11 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
   7. "Beyond context discovery/selection, profile retrieval, Platform Administration's institutions,
      and Administration's Branches and Roles & permissions above, other domain API modules (e.g.
      Users & access) are not connected yet." becomes "… and Administration's Users & access,
-     Branches, Roles & permissions and Settings above, the Approval queue is not connected yet."
+     Branches, Roles & permissions and Settings above, these are not connected yet: the Approval
+     queue (layer 12), the Invite user wizard (layer 11), the Administration overview's operational
+     sections (layer 14), and Platform Administration's overview, tenant branches and users, and
+     platform users (layer 17)." (a closed sentence must name everything still unconnected, as the
+     Next steps below do).
   8. Step 2 of "Next recommended implementation steps" becomes "Build out the Approval queue and the
      Invite user wizard (layers 12 and 11) against real data, each registering what it needs."
 
@@ -3443,7 +3623,9 @@ Check `git diff AGENTS.md` for a `next dev` header rewrite before staging (AGENT
   itself would be irreversible.
 - **Frontend handling:** the user record shows Suspend and Revoke disabled on the signed-in user's
   own record, with the reason; revoking your own role assignment warns in its confirmation
-  (layer 09).
+  (layer 09). Revoking your own branch assignment from the user record's Branch assignments tab
+  shows no such warning (layer 08's `RevokeAssignmentButton` has no `self` prop); at the selected
+  branch it invalidates your context (§E.4).
 - **Suggested change:** document the guard if one exists; otherwise refuse a self-suspend and a
   self-revoke with a 409 and a specific code.
 ```
