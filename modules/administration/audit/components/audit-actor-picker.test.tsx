@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import { AuditActorPicker } from './audit-actor-picker';
 
@@ -19,6 +19,7 @@ vi.mock('next/navigation', async (importOriginal) => {
 });
 
 const VICTOR = '10000000-0000-4000-8000-00000000000a';
+const JANE = '10000000-0000-4000-8000-000000000001';
 const VICTOR_OPTION = {
   id: VICTOR,
   displayName: 'Victor Otieno',
@@ -158,6 +159,49 @@ describe('AuditActorPicker', () => {
 
     expect(screen.getByRole('button', { name: 'Elsewhere' })).toHaveFocus();
     expect(actorInput()).not.toHaveFocus();
+  });
+
+  it('forgets a pick whose navigation never landed, so a later actor change does not take focus', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderWithProviders(<AuditActorPicker />);
+    await pickByKeyboard(user);
+    expect(router.push).toHaveBeenCalledTimes(1);
+
+    // The push to Victor never lands (another filter change superseded it), and focus falls to
+    // <body> (the control that held it was replaced).
+    act(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    expect(document.body).toHaveFocus();
+
+    // Back lands on a URL filtered by Jane: an actor change this picker did not make.
+    rerender(<AuditActorPicker actorId={JANE} />);
+    expect(actorInput()).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
+
+    // Nor does the pick that never landed come back to life if its actor lands later by another route.
+    rerender(<AuditActorPicker actorId={VICTOR} />);
+    expect(actorInput()).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
+  });
+
+  it('takes focus again for a new pick that lands, after a stale one was forgotten', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderWithProviders(<AuditActorPicker />);
+    await pickByKeyboard(user);
+    act(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    rerender(<AuditActorPicker actorId={JANE} />);
+    expect(document.body).toHaveFocus();
+
+    // The user picks Victor again on the fresh picker, and that navigation does land.
+    await pickByKeyboard(user);
+    expect(router.push).toHaveBeenCalledTimes(2);
+    rerender(<AuditActorPicker actorId={VICTOR} />);
+
+    expect(actorInput()).toHaveValue('');
+    expect(actorInput()).toHaveFocus();
   });
 
   it('does not navigate when the actor already applied is picked again, and clears the stale name', async () => {
