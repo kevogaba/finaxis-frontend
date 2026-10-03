@@ -156,7 +156,9 @@ tackled separately in the platform repository.
   `branch_id` (`RoleAssignmentController`'s `requireNotNull`, source f74e44b; the contract's 409 is
   from 7a7f4c3).
 - **Frontend handling:** pre-validation of every known trigger (e.g. membership lookup by email before
-  inviting, tenant-code uniqueness check, sort allow-lists) and a generic error showing `request_id`.
+  inviting, sort allow-lists), a tenant-code lookup after a failed create to name a duplicate (the
+  create goes first, so a replayed create is never turned away), and a generic error showing
+  `request_id`.
 - **Suggested change:** map domain precondition failures to 404/409/422 with specific codes.
 
 ### BG-08 — Maker not exposed; ambiguous 403 · P1

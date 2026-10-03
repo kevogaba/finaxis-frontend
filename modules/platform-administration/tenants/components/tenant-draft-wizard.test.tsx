@@ -249,7 +249,7 @@ describe('TenantDraftWizard', () => {
     expect(screen.getByRole('region', { name: 'Institution' })).toHaveTextContent('Kenya');
     await user.click(screen.getByRole('button', { name: 'Create draft' }));
 
-    // BG-07: the pre-check's refusal returns the wizard to the code, focused.
+    // BG-07: the duplicate-code refusal returns the wizard to the code, focused.
     const code = await screen.findByRole('textbox', { name: 'Tenant code' });
     await waitFor(() => {
       expect(code).toHaveFocus();
@@ -292,6 +292,56 @@ describe('TenantDraftWizard', () => {
     // One key per wizard: the retry replays safely (index item 2).
     expect(second?.get('idempotencyKey')).toBe(first?.get('idempotencyKey'));
     expect(second?.get('tenantCode')).toBe('tujenge-traders');
+  });
+
+  it('returns to the institution after a currency refusal, where the settings step still shows its own', async () => {
+    const user = userEvent.setup();
+    const refused = "The platform can't settle in this currency.";
+    createTenantDraft.mockResolvedValueOnce({
+      ok: false,
+      formError: `${refused} Choose another base currency, or clear the base currency setting.`,
+      fieldErrors: { baseCurrencyCode: refused, baseCurrencySetting: refused },
+      code: 'accounting.currency_invalid',
+      requestId: null,
+    });
+    renderWithProviders(
+      <TenantDraftWizard
+        defaults={{
+          ...EMPTY_TENANT_DRAFT,
+          tenantCode: 'acme',
+          displayName: 'Tujenge Traders SACCO',
+          countryCode: 'KE',
+          baseCurrencyCode: 'KES',
+          timezone: 'Africa/Nairobi',
+          adminEmail: 'amina@tujenge.example',
+          adminUsername: 'amina.otieno',
+          adminDisplayName: 'Amina Otieno',
+          adminPhone: '+254712000140',
+          baseCurrencySetting: 'KES',
+        }}
+        options={OPTIONS}
+      />,
+    );
+
+    await next(user, 'First administrator');
+    await next(user, 'Initial settings');
+    await next(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Create draft' }));
+
+    // The earliest marked step, with its field marked.
+    expect(await screen.findByRole('heading', { level: 2, name: 'Institution' })).toBeVisible();
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: 'Base currency' })).toHaveAccessibleDescription(
+        refused,
+      );
+    });
+
+    // Moving on keeps the other mark, so the administrator sees which value to clear.
+    await next(user, 'First administrator');
+    await next(user, 'Initial settings');
+    expect(
+      screen.getByRole('combobox', { name: 'Base currency setting' }),
+    ).toHaveAccessibleDescription(refused);
   });
 
   it('focuses a refused choice field, and Edit on the review returns to its step with the answers kept', async () => {

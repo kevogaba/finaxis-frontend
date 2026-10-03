@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
 
@@ -140,7 +140,7 @@ describe('tenant actions', () => {
         }),
       ),
     ).rejects.toThrow(`NEXT_REDIRECT:/platform-admin/tenants/${TENANT}`);
-    expect(tenantCodeTaken).toHaveBeenCalledWith('tujenge-traders');
+    expect(tenantCodeTaken).not.toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledWith(
       '/api/v1/platform/tenants',
       {
@@ -152,18 +152,75 @@ describe('tenant actions', () => {
     );
   });
 
-  it('refuses a taken tenant code before the create call, on the code field (BG-07)', async () => {
-    tenantCodeTaken.mockResolvedValueOnce(true);
+  describe('a duplicate tenant code (BG-07)', () => {
+    const create = () => actions.createTenantDraft(null, form({ ...FIELDS, idempotencyKey: KEY }));
+    // The backend's answer to a duplicate code: a 500 with the generic code, as any bug would be.
+    const duplicate = () =>
+      new BackendApiError(500, { code: 'internal_error', requestId: 'req-3' });
 
-    const result = await actions.createTenantDraft(null, form({ ...FIELDS, idempotencyKey: KEY }));
-
-    expect(result).toMatchObject({
-      ok: false,
-      code: 'tenant_code_taken',
-      formError: 'This tenant code is already in use. Choose another.',
-      fieldErrors: { tenantCode: 'This code is already in use.' },
+    afterEach(() => {
+      tenantCodeTaken.mockReset();
     });
-    expect(apiPost).not.toHaveBeenCalled();
+
+    it('replays the create before looking at the directory, so a lost response is not stranded', async () => {
+      // The first attempt created the draft but its response was lost. The retry carries the same
+      // key, so the backend replays it; the draft's own code must not turn the retry away.
+      tenantCodeTaken.mockResolvedValue(true);
+      apiPost.mockResolvedValueOnce({ organisation_id: TENANT, status: 'DRAFT' });
+
+      await expect(create()).rejects.toThrow(`NEXT_REDIRECT:/platform-admin/tenants/${TENANT}`);
+
+      expect(tenantCodeTaken).not.toHaveBeenCalled();
+      expect(apiPost).toHaveBeenCalledTimes(1);
+      expect(apiPost).toHaveBeenCalledWith('/api/v1/platform/tenants', expect.anything(), KEY);
+    });
+
+    it('names a taken code, on the code field, when the create fails and the directory holds it', async () => {
+      apiPost.mockRejectedValueOnce(duplicate());
+      tenantCodeTaken.mockResolvedValueOnce(true);
+
+      expect(await create()).toMatchObject({
+        ok: false,
+        code: 'tenant_code_taken',
+        formError: 'This tenant code is already in use. Choose another.',
+        fieldErrors: { tenantCode: 'This code is already in use.' },
+      });
+      expect(apiPost).toHaveBeenCalledWith('/api/v1/platform/tenants', expect.anything(), KEY);
+      expect(tenantCodeTaken).toHaveBeenCalledWith('tujenge-traders');
+    });
+
+    it.each([
+      ['the directory does not hold the code', () => tenantCodeTaken.mockResolvedValueOnce(false)],
+      [
+        'the directory cannot be read',
+        () => tenantCodeTaken.mockRejectedValueOnce(new Error('socket hang up')),
+      ],
+    ])('keeps the original failure when %s', async (_name, arrange) => {
+      apiPost.mockRejectedValueOnce(duplicate());
+      arrange();
+
+      expect(await create()).toEqual({
+        ok: false,
+        formError: 'generic',
+        fieldErrors: {},
+        code: 'internal_error',
+        requestId: 'req-3',
+      });
+    });
+
+    it.each([
+      [422, 'invalid_operation'],
+      [409, 'conflict'],
+      [403, 'forbidden'],
+      [500, 'something_else'],
+      [500, null],
+      [502, null],
+    ])('does not look at the directory for a %s (%s)', async (status, code) => {
+      apiPost.mockRejectedValueOnce(new BackendApiError(status, { code }));
+
+      expect(await create()).toMatchObject({ ok: false, code });
+      expect(tenantCodeTaken).not.toHaveBeenCalled();
+    });
   });
 
   it('names the currency and value 422s without echoing the backend', async () => {
@@ -207,7 +264,49 @@ describe('tenant actions', () => {
     });
   });
 
-  it('validates on the server too: a bad phone never reaches the pre-check or the backend', async () => {
+  describe('accounting.currency_invalid', () => {
+    const REFUSED = "The platform can't settle in this currency.";
+    const refused = () =>
+      new BackendApiError(422, { code: 'accounting.currency_invalid', requestId: 'req-2' });
+
+    it('marks both currency fields on create when an initial currency setting was sent', async () => {
+      apiPost.mockRejectedValueOnce(refused());
+      const result = await actions.createTenantDraft(
+        null,
+        form({ ...FIELDS, idempotencyKey: KEY, baseCurrencySetting: 'USD' }),
+      );
+      expect(result).toMatchObject({
+        code: 'accounting.currency_invalid',
+        requestId: 'req-2',
+        formError:
+          "The platform can't settle in this currency. Choose another base currency, or clear the base currency setting.",
+      });
+      expect(result).toHaveProperty('fieldErrors', {
+        baseCurrencyCode: REFUSED,
+        baseCurrencySetting: REFUSED,
+      });
+    });
+
+    it('marks only the institution currency on create when no setting was sent', async () => {
+      apiPost.mockRejectedValueOnce(refused());
+      const result = await actions.createTenantDraft(
+        null,
+        form({ ...FIELDS, idempotencyKey: KEY, defaultTimezoneSetting: 'UTC' }),
+      );
+      expect(result).toHaveProperty('fieldErrors', { baseCurrencyCode: REFUSED });
+    });
+
+    it('marks only the institution currency on amend, which sends no settings', async () => {
+      apiPatch.mockRejectedValueOnce(refused());
+      const result = await actions.amendTenantDraft(
+        null,
+        form({ ...FIELDS, idempotencyKey: KEY, tenantId: TENANT, baseCurrencySetting: 'USD' }),
+      );
+      expect(result).toHaveProperty('fieldErrors', { baseCurrencyCode: REFUSED });
+    });
+  });
+
+  it('validates on the server too: a bad phone never reaches the backend or the directory', async () => {
     const result = await actions.createTenantDraft(
       null,
       form({ ...FIELDS, idempotencyKey: KEY, adminPhone: '0712000140' }),

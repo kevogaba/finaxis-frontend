@@ -18,7 +18,7 @@ export const getTenant = cache(async (tenantId: string) => {
 });
 
 /**
- * BG-07: a duplicate `tenant_code` fails with a 500, so create checks first. `q` is a
+ * BG-07: a duplicate `tenant_code` fails with a 500, so a failed create looks it up. `q` is a
  * case-insensitive substring match on code or name (contract §A; codes hold no `%` or `_`), so the
  * codes are compared exactly here, ignoring case. ponytail: one page of 100 matches — a code buried
  * deeper still reaches the 500.

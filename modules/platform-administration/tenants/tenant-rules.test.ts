@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   availableTenantActions,
   canRetryBootstrap,
@@ -174,6 +174,40 @@ describe('country, currency and timezone choices', () => {
     expect(options.countries[0]).toEqual({ value: 'KEN', label: 'KEN' });
     expect(options.currencies.filter((option) => option.value === 'KES')).toHaveLength(1);
     expect(options.timeZones[0]).toEqual({ value: 'Mars/Olympus', label: 'Mars/Olympus' });
+  });
+
+  describe('UTC', () => {
+    const zones = (current?: { timezone: string }) =>
+      tenantFormOptions(current && { countryCode: 'KE', baseCurrencyCode: 'KES', ...current })
+        .timeZones;
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    // Intl.supportedValuesOf('timeZone') lists neither, though isTimeZone and the backend accept both.
+    it('offers UTC and Etc/UTC, once each, in the sorted list', () => {
+      const values = zones().map((option) => option.value);
+      expect(values).toContain('UTC');
+      expect(values).toContain('Etc/UTC');
+      expect(new Set(values).size).toBe(values.length);
+      expect(values).toEqual([...values].sort());
+      expect(zones()).toContainEqual({ value: 'UTC', label: 'UTC' });
+      expect(zones()).toContainEqual({ value: 'Etc/UTC', label: 'Etc/UTC' });
+    });
+
+    it('does not repeat a zone the runtime list already holds', () => {
+      vi.spyOn(Intl, 'supportedValuesOf').mockImplementation((key) =>
+        key === 'timeZone' ? ['Africa/Nairobi', 'UTC'] : ['KES'],
+      );
+      expect(zones().map((option) => option.value)).toEqual(['Africa/Nairobi', 'Etc/UTC', 'UTC']);
+    });
+
+    it('lists a stored UTC once, in place', () => {
+      const values = zones({ timezone: 'UTC' }).map((option) => option.value);
+      expect(values.filter((value) => value === 'UTC')).toHaveLength(1);
+      expect(values).toEqual([...values].sort());
+    });
   });
 });
 

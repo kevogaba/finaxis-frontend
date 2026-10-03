@@ -268,7 +268,7 @@ test.describe('platform tenants', () => {
     }
   });
 
-  test('creates a draft, refusing a taken code before the create call, then explains the maker-checker refusal', async ({
+  test('creates a draft, naming a taken code after the create fails, then explains the maker-checker refusal', async ({
     context,
     page,
   }, testInfo) => {
@@ -299,7 +299,8 @@ test.describe('platform tenants', () => {
     await next(page, 'Review');
     await page.getByRole('button', { name: 'Create draft' }).click();
 
-    // BG-07: the code is checked before the POST, and the wizard returns to its step.
+    // BG-07: the create fails with the 500, the directory confirms the code, and the wizard
+    // returns to its step.
     await expect(page.getByRole('heading', { level: 2, name: 'Institution' })).toBeVisible({
       timeout: 15000,
     });

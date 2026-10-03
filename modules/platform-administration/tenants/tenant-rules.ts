@@ -208,13 +208,25 @@ export function withCurrent(options: TenantOption[], value: string | undefined):
     : options;
 }
 
+/** `Intl` lists neither UTC alias, though `isTimeZone` and the backend's ZoneId accept both. */
+const UTC_ZONES = ['UTC', 'Etc/UTC'];
+
+/** The runtime's zones plus the UTC aliases it omits, sorted and unique. */
+function timeZoneOptions(current: string | undefined): TenantOption[] {
+  const zones = new Set([...Intl.supportedValuesOf('timeZone'), ...UTC_ZONES]);
+  return withCurrent(
+    [...zones].sort().map((value) => ({ value, label: value })),
+    current,
+  );
+}
+
 export function tenantFormOptions(
   current?: Pick<TenantDetail, 'countryCode' | 'baseCurrencyCode' | 'timezone'>,
 ): TenantFormOptions {
   return {
     countries: withCurrent(countryOptions(), current?.countryCode),
     currencies: settingOptions('base_currency', current?.baseCurrencyCode ?? null),
-    timeZones: settingOptions('default_timezone', current?.timezone ?? null),
+    timeZones: timeZoneOptions(current?.timezone),
   };
 }
 

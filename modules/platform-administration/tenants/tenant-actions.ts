@@ -22,7 +22,7 @@ const idempotencyKey = z.uuid();
 /** BG-29: the reserved platform organisation is no institution, so no action can target it (in any
  * letter case: isInstitutionId). A malformed id gets the same refusal. */
 const tenantId = z.string().refine(isInstitutionId, 'Choose an institution.');
-/** A frontend-only problem code for create's pre-check (BG-07: the backend's answer is a 500). */
+/** A frontend-only problem code for a duplicate tenant code (BG-07: the backend's answer is a 500). */
 const TENANT_CODE_TAKEN = 'tenant_code_taken';
 
 // No `|| null` transform: `reasoned()` tests the value, and a trimmed '' is falsy, so a blank
@@ -41,8 +41,13 @@ const requiredReason = z
 
 /** Create and amend share these causes (contract §D, §I). Each 422 names its likely field and
  * hedges. Only create sends settings, so only its copy points at the base currency setting and the
- * initial settings. */
-function explainDraft(result: ActionResult, withSettings: boolean): ActionResult {
+ * initial settings. The currency 422 can come from either currency, so when create sent the
+ * initial one (`currencySettingSent`), both fields are marked. */
+function explainDraft(
+  result: ActionResult,
+  withSettings: boolean,
+  currencySettingSent = false,
+): ActionResult {
   const taken = explain(
     result,
     TENANT_CODE_TAKEN,
@@ -55,7 +60,12 @@ function explainDraft(result: ActionResult, withSettings: boolean): ActionResult
     withSettings
       ? "The platform can't settle in this currency. Choose another base currency, or clear the base currency setting."
       : "The platform can't settle in this currency. Choose another base currency.",
-    { baseCurrencyCode: "The platform can't settle in this currency." },
+    {
+      baseCurrencyCode: "The platform can't settle in this currency.",
+      ...(currencySettingSent && {
+        baseCurrencySetting: "The platform can't settle in this currency.",
+      }),
+    },
   );
   return explain(
     currency,
@@ -66,35 +76,53 @@ function explainDraft(result: ActionResult, withSettings: boolean): ActionResult
   );
 }
 
+const isDuplicateCodeFailure = (error: unknown) =>
+  error instanceof BackendApiError && error.status === 500 && error.code === 'internal_error';
+
+/** The lookup only disambiguates a failure, so an unreadable directory leaves the original error. */
+const codeTaken = (code: string) => tenantCodeTaken(code).catch(() => false);
+
 export async function createTenantDraft(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
+  const sent = { currencySetting: false };
   const result = await runServerAction(
     tenantDraftSchema.extend({ idempotencyKey }),
     formData,
     async (input) => {
-      if (await tenantCodeTaken(input.tenantCode)) {
-        // A frontend-detected condition travels as a typed problem, so runServerAction maps it like
-        // any other (precedent: tenant-api.ts's synthesized 403 for a missing context token).
-        throw new BackendApiError(409, { code: TENANT_CODE_TAKEN });
-      }
-      const draft = tenantDraftResultSchema.parse(
-        await apiPost(
+      const settings = initialSettings(input);
+      sent.currencySetting = Boolean(settings.base_currency);
+      let created: unknown;
+      try {
+        created = await apiPost(
           BASE,
           {
             ...tenantDraftBody(input),
-            initial_settings: initialSettings(input),
+            initial_settings: settings,
             business_date: isoToBusinessDate(input.businessDate),
           },
           input.idempotencyKey,
-        ),
-      );
+        );
+      } catch (error) {
+        // BG-07: a duplicate code is a 500 `internal_error`, which any bug is too, so the directory
+        // tells them apart, and only after the create failed: a retry that replays a create whose
+        // response was lost (same key) must reach the POST, not meet its own draft in the
+        // directory. A failed mutation rolls back its idempotency key (the contract), so a retry
+        // with the same key after this failure is safe.
+        if (isDuplicateCodeFailure(error) && (await codeTaken(input.tenantCode))) {
+          // A frontend-detected condition travels as a typed problem, so runServerAction maps it
+          // like any other (precedent: tenant-api.ts's synthesized 403 for a missing context token).
+          throw new BackendApiError(409, { code: TENANT_CODE_TAKEN });
+        }
+        throw error;
+      }
+      const draft = tenantDraftResultSchema.parse(created);
       // Rethrown by runServerAction (unstable_rethrow): the client navigates to the new record.
       redirect(`/platform-admin/tenants/${draft.tenantId}`);
     },
   );
-  return explainDraft(result, true);
+  return explainDraft(result, true, sent.currencySetting);
 }
 
 export async function amendTenantDraft(
