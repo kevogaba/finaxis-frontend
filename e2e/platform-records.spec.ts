@@ -1,6 +1,10 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
+  A11Y_CASES,
+  applyA11yCase,
   enterAdmin,
+  expectA11yCaseApplied,
+  expectNoSeriousOrCriticalViolations,
   mainText,
   notFoundHeading,
   openRecord,
@@ -11,6 +15,8 @@ import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
 import { IDS, RECORD_SCENARIO_IDS as R, TENANT_SCENARIO_IDS as T } from './fake-api/scenarios.mts';
 
 const ACME = `/platform-admin/tenants/${IDS.acme}`;
+const LONG_ACCOUNT_NAME =
+  'Nyokabi Wairimu Kamau-Achieng Muthoni Njeri Chebet Jepkoech Nyambura Akinyi Atieno Wanjiku Mwangi Ay';
 const LONG_BRANCH_NAME =
   'Likoni Ferry Crossing and Mombasa Old Town Customer Service Centre for the Teachers and Allied Staff';
 
@@ -517,4 +523,91 @@ test.describe('platform records: ids', () => {
       `${ACME}/branches`,
     );
   });
+});
+
+const SURFACES = [
+  // `regions`: each landmark name's expected count (rule 21: axe rates landmark-unique moderate,
+  // so the serious/critical scan can't see two landmarks sharing a name).
+  {
+    label: 'branches tab',
+    path: `${ACME}/branches`,
+    heading: 'Acme SACCO',
+    regions: { Branches: 1, 'Branches table': 1 },
+  },
+  {
+    label: 'branch record (100 characters)',
+    path: `${ACME}/branches/${R.acmeLikoni}`,
+    heading: LONG_BRANCH_NAME,
+  },
+  { label: 'branch draft', path: `${ACME}/branches/new`, heading: 'Create branch draft' },
+  {
+    label: 'users tab',
+    path: `${ACME}/users`,
+    heading: 'Acme SACCO',
+    regions: { Users: 1, 'Users table': 1 },
+  },
+  {
+    label: 'user record (100 characters)',
+    path: `${ACME}/users/${R.nyokabi}`,
+    heading: LONG_ACCOUNT_NAME,
+  },
+  {
+    label: 'deactivate dialog',
+    path: `${ACME}/users/${R.esi}`,
+    heading: 'Esi Mensah',
+    open: async (page: Page) => {
+      await page.getByRole('button', { name: 'Deactivate account', exact: true }).click();
+      // Scan once the fade has finished: axe blends ancestor opacity into colour contrast.
+      await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1');
+    },
+  },
+  {
+    label: 'platform users',
+    path: '/platform-admin/users',
+    heading: 'Platform users',
+    regions: { Users: 0, 'Users table': 1 },
+  },
+  {
+    label: 'overview and notifications',
+    path: '/platform-admin',
+    heading: 'Platform overview',
+    regions: { 'Needs attention': 1, 'Needs attention table': 1 },
+    // Two scans: the page, then the open popover.
+    then: async (page: Page) => {
+      await page.getByRole('button', { name: /^Notifications/ }).click();
+      await expect(page.getByRole('dialog', { name: 'Notifications' })).toBeVisible();
+      await expect(page.locator('.MuiPopover-paper')).toHaveCSS('opacity', '1');
+    },
+  },
+] as const;
+
+// The describe's title is what the two --grep chunks select on ("accessibility …(light" and
+// "accessibility …(dark"): the grep text is project, file, describe and test title joined by spaces.
+test.describe('platform records: accessibility', () => {
+  test.describe.configure({ timeout: 60000 });
+
+  for (const surface of SURFACES) {
+    for (const a11yCase of A11Y_CASES) {
+      test(`has no serious or critical violations: ${surface.label} (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
+        context,
+        page,
+      }, testInfo) => {
+        await applyA11yCase(page, a11yCase);
+        await authenticate(context, testInfo, 'platform-records');
+        await enterPlatform(page, surface.path, surface.heading);
+        if ('open' in surface) await surface.open(page);
+        await expectA11yCaseApplied(page, a11yCase);
+        await expectNoSeriousOrCriticalViolations(page);
+        if ('regions' in surface) {
+          for (const [name, count] of Object.entries(surface.regions)) {
+            await expect(page.getByRole('region', { name, exact: true })).toHaveCount(count);
+          }
+        }
+        if ('then' in surface) {
+          await surface.then(page);
+          await expectNoSeriousOrCriticalViolations(page);
+        }
+      });
+    }
+  }
 });
