@@ -106,7 +106,8 @@ export default async function NewInstitutionBranchPage({ params }: NewInstitutio
     <>
       {header(branchCreateDescription(record.displayName))}
       <Paper>
-        <Alert severity="warning" role="note" sx={{ m: 4.5, mb: 0 }}>
+        {/* 604 = BranchDraftForm's 640 px maxWidth less its 2 x 18 px padding: level with the form. */}
+        <Alert severity="warning" role="note" sx={{ m: 4.5, mb: 0, maxWidth: 604 }}>
           {branchCreateWarning(record.displayName)}
         </Alert>
         <InstitutionBranchDraftForm

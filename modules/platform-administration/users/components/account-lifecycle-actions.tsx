@@ -169,6 +169,9 @@ export function AccountLifecycleActions({
               variant={index === 0 ? 'contained' : 'outlined'}
               color={copyFor(id, userName).destructive ? 'error' : 'primary'}
               disabled={reason !== undefined}
+              // The hero's row lets this box shrink to its min-content, one word of a label, so an
+              // unpinned label wrapped onto two lines (gate finding I1), as ReasonDialog's buttons don't.
+              sx={{ whiteSpace: 'nowrap' }}
               aria-describedby={reason === undefined ? undefined : captionId(reason)}
               onClick={() => {
                 setOpen(id);

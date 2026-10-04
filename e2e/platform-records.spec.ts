@@ -193,6 +193,15 @@ test.describe('platform records: institution branches', () => {
     await expect(
       mainText(page, /You must also be an active member of this institution/),
     ).toBeVisible();
+    // The page's warning is no wider than the form it warns about: level with the refusal below it.
+    const main = page.getByRole('main');
+    const warning = await main.getByRole('note').boundingBox();
+    const refusal = await main
+      .getByRole('alert')
+      .filter({ hasText: /You must also be an active member/ })
+      .boundingBox();
+    expect(warning?.x).toBeCloseTo(refusal?.x ?? -1, 0);
+    expect(warning?.width).toBeCloseTo(refusal?.width ?? -1, 0);
     // The refusal keeps what was typed.
     await expect(code).toHaveValue('THIKA');
     await expect(page.getByRole('textbox', { name: 'Branch name' })).toHaveValue(
@@ -323,6 +332,40 @@ test.describe('platform records: users and accounts', () => {
     const box = await suspend.locator('..').boundingBox();
     expect(box).not.toBeNull();
     expect(box?.width).toBeLessThanOrEqual(320);
+  });
+
+  // The hero's row lets the actions box shrink to a single word of its label, so each label wrapped
+  // onto two lines (58 px tall, against 40 px for one) from 900 to 1280 px (gate finding I1).
+  const ONE_LINE = 44;
+  const heightOf = async (locator: Locator) => (await locator.boundingBox())?.height ?? Infinity;
+
+  test("keeps a short name's Reactivate account on one line at 1024 px", async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'platform-records');
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await enterPlatform(page, `/platform-admin/users/${R.sara}`, 'Sara Wanjiku');
+
+    const reactivate = page.getByRole('button', { name: 'Reactivate account', exact: true });
+    await expect(reactivate).toBeVisible();
+    expect(await heightOf(reactivate)).toBeLessThanOrEqual(ONE_LINE);
+  });
+
+  test("keeps a 100-character name's account actions on one line at 1280 px", async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'platform-records');
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await enterPlatform(page, `${ACME}/users/${R.nyokabi}`, LONG_ACCOUNT_NAME);
+
+    // The long title takes the row's width and squeezes both buttons.
+    for (const name of ['Suspend account', 'Deactivate account']) {
+      const button = page.getByRole('button', { name, exact: true });
+      await expect(button).toBeVisible();
+      expect(await heightOf(button)).toBeLessThanOrEqual(ONE_LINE);
+    }
   });
 
   test("hides what a read-only role can't do", async ({ context, page }, testInfo) => {

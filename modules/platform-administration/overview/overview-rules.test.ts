@@ -4,6 +4,8 @@ import {
   activeInstitutionCount,
   attentionView,
   DRAFTS_HREF,
+  KPI,
+  OVERVIEW_DESCRIPTION,
   PENDING_HREF,
   pendingApprovalNotifications,
   type AttentionRead,
@@ -168,5 +170,14 @@ describe('pendingApprovalNotifications', () => {
       total: null,
       entries: [],
     });
+  });
+});
+
+describe('the overview copy', () => {
+  it('keeps the page description true of every tile, and the platform-organisation note on the Active tile', () => {
+    // Gate finding M2: the description said "Counts leave out the platform organisation itself",
+    // which the Platform operators tile contradicts (it counts that organisation's own members).
+    expect(OVERVIEW_DESCRIPTION).not.toMatch(/platform organisation/i);
+    expect(KPI.active.caption).toBe('Leaves out the platform organisation itself');
   });
 });

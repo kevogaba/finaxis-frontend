@@ -86,7 +86,7 @@ export function attentionView(
 }
 
 export const OVERVIEW_DESCRIPTION =
-  "Institutions by lifecycle, the platform's operators, and the requests waiting for someone. Counts leave out the platform organisation itself.";
+  "Institutions by lifecycle, the platform's operators, and the requests waiting for someone.";
 export const ATTENTION_DESCRIPTION =
   'Institutions waiting for approval, then drafts, oldest first.';
 

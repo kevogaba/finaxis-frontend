@@ -251,6 +251,16 @@ describe('AccountLifecycleActions', () => {
     expect(css).toMatch(/@media[^{]*\(min-width:\s*900px\)\s*\{[^}]*max-width:\s*320px/);
   });
 
+  it('keeps every action label on one line, however narrow the hero leaves the box', () => {
+    // The hero's row lets this box shrink to its min-content, a single word of the label. Without
+    // `white-space: nowrap` each label wrapped onto two lines at 900 to 1280 px (gate finding I1).
+    renderActions({ actions: ['suspend', 'deactivate'] });
+
+    for (const name of ['Suspend account', 'Deactivate account']) {
+      expect(getComputedStyle(screen.getByRole('button', { name })).whiteSpace).toBe('nowrap');
+    }
+  });
+
   it('moves focus to Reactivate account after a suspend', async () => {
     const user = userEvent.setup();
     suspendAccount.mockResolvedValueOnce({ ok: true });
