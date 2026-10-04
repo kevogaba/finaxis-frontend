@@ -10,7 +10,7 @@ export default function Loading() {
       aria-live="polite"
     >
       <CircularProgress aria-hidden="true" />
-      <Typography variant="body2" color="text.secondary">
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
         Loading…
       </Typography>
     </Box>

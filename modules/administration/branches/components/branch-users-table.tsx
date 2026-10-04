@@ -47,7 +47,7 @@ export function BranchUsersTable({
                     value={row.email}
                     maxWidth={280}
                     variant="caption"
-                    color="text.secondary"
+                    color="textSecondary"
                   />
                 )}
               </TableCell>

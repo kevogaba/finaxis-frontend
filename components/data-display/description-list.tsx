@@ -40,7 +40,7 @@ export function DescriptionList({ items, columns = 2 }: DescriptionListProps) {
             borderColor: 'divider',
           }}
         >
-          <Typography component="dt" variant="body2" color="text.secondary">
+          <Typography component="dt" variant="body2" sx={{ color: 'text.secondary' }}>
             {item.label}
           </Typography>
           <Typography

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen, waitFor, within } from '@testing-library/react';
+import { ownStyle } from '@/test/own-style';
 import { renderWithProviders } from '@/test/test-utils';
 import type { Permission } from '../role-contract';
 import { MAX_GRANTS_PER_SUBMIT } from '../role-rules';
@@ -71,6 +72,23 @@ describe('PermissionChecklist', () => {
     expect(screen.getByRole('checkbox', { name: /^Start close of business/ })).not.toBeChecked();
     // Filtered-out rows keep their selection.
     expect(codesField()?.value).toBe('business_date.advance,role.view');
+  });
+
+  it('mutes the low-risk labels and keeps the high-risk ones in the error colour', () => {
+    renderWithProviders(
+      <form>
+        <PermissionChecklist permissions={CATALOGUE} truncated={false} />
+      </form>,
+    );
+
+    // MUI v9 drops a dotted palette path in Typography's `color`, so the muted one is `textSecondary`.
+    const low = screen.getAllByText('Low');
+    expect(low).toHaveLength(2);
+    for (const label of low) {
+      expect(ownStyle(label, 'color')).toContain('--finaxis-palette-text-secondary');
+    }
+    expect(ownStyle(screen.getByText('Critical'), 'color')).toContain('--finaxis-palette-error');
+    expect(ownStyle(screen.getByText('High'), 'color')).toContain('--finaxis-palette-error');
   });
 
   it('caps the selection at 25 and says when the catalogue was truncated', async () => {

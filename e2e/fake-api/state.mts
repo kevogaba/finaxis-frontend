@@ -13,6 +13,10 @@ export interface FakeOrganisation {
   bootstrapFailureCode: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Maker-checker only (approve ≠ creator and submitter, contract §E.2); the real API keeps both
+   * on its bootstrap record. */
+  createdBy?: string;
+  submittedBy?: string;
 }
 
 export interface FakeUser {

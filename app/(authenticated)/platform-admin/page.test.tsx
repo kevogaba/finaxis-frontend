@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BackendApiError } from '@/auth/backend-api';
 import { renderWithProviders, screen } from '@/test/test-utils';
 
 const { getCurrentContextProfile, listTenants } = vi.hoisted(() => ({
@@ -6,17 +7,27 @@ const { getCurrentContextProfile, listTenants } = vi.hoisted(() => ({
   listTenants: vi.fn(),
 }));
 
-vi.mock('next/headers', () => ({ headers: vi.fn(() => new Headers()) }));
+vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('@/auth/context-service', () => ({
   getCurrentContextProfile: (...args: unknown[]) => getCurrentContextProfile(...args) as unknown,
 }));
-vi.mock('@/modules/platform-administration/platform-administration-service', () => ({
-  platformAdministrationService: {
-    listTenants: (...args: unknown[]) => listTenants(...args) as unknown,
-  },
+vi.mock('@/modules/platform-administration/tenants/tenant-service', () => ({
+  listTenants: (...args: unknown[]) => listTenants(...args) as unknown,
 }));
 
 const { default: PlatformOverviewPage } = await import('./page');
+
+const directory = (totalItems: number) => ({
+  items: [],
+  page: {
+    number: 0,
+    size: 1,
+    totalItems,
+    totalPages: totalItems,
+    hasNext: totalItems > 1,
+    hasPrevious: false,
+  },
+});
 
 describe('PlatformOverviewPage', () => {
   beforeEach(() => {
@@ -25,105 +36,56 @@ describe('PlatformOverviewPage', () => {
       context: {
         branch: { id: 'branch-1', name: 'Platform HQ' },
         module: { id: 'platform-administration', name: 'Platform Administration' },
-        organization: {
-          id: 'platform-org-1',
-          name: 'Finaxis Platform',
-        },
+        organization: { id: 'platform-org-1', name: 'Finaxis Platform' },
       },
       kind: 'resolved',
     });
-    listTenants.mockResolvedValue({
-      items: [
-        {
-          id: 'tenant-1',
-          tenantCode: 'ACME',
-          displayName: 'Acme SACCO',
-          countryCode: 'KE',
-          baseCurrencyCode: 'KES',
-          timezone: 'Africa/Nairobi',
-          status: 'ACTIVE',
-          bootstrapStatus: 'SUCCESS',
-          createdAt: '2026-07-01T08:00:00Z',
-          updatedAt: '2026-07-24T08:00:00Z',
-        },
-      ],
-      page: {
-        number: 0,
-        size: 25,
-        totalItems: 1,
-        totalPages: 1,
-        hasNext: false,
-        hasPrevious: false,
-      },
-    });
   });
 
-  it('renders the overview heading, active platform context, and live resource links', async () => {
-    const ui = await PlatformOverviewPage({ searchParams: Promise.resolve({}) });
-    renderWithProviders(ui);
+  it('counts the institutions from one size-1 read, leaving out the platform organisation (BG-29)', async () => {
+    listTenants.mockResolvedValueOnce(directory(2));
+    renderWithProviders(await PlatformOverviewPage());
 
     expect(
       screen.getByRole('heading', { level: 1, name: 'Platform overview' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Active platform context')).toBeInTheDocument();
-    expect(screen.getByText('Finaxis Platform')).toBeInTheDocument();
+    // The card titles sit directly under the h1: h2, not skipped levels (axe heading-order).
+    expect(screen.getByRole('heading', { level: 2, name: 'Finaxis Platform' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'SACCO institutions' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Platform HQ')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open tenant directory' })).toHaveAttribute(
-      'href',
-      '/platform-admin/tenants',
-    );
-    expect(screen.getByText(/1 tenant is available from the live directory/i)).toBeInTheDocument();
-  });
-
-  it('stays useful when the live tenant directory is currently empty', async () => {
-    listTenants.mockResolvedValueOnce({
-      items: [],
-      page: {
-        number: 0,
-        size: 25,
-        totalItems: 0,
-        totalPages: 0,
-        hasNext: false,
-        hasPrevious: false,
-      },
+    expect(screen.getByText('1 SACCO institution is in the directory.')).toBeInTheDocument();
+    // The navigation and the directory's h1 call them SACCO institutions, and the directory now
+    // creates and changes them: nothing here says tenants, live or read-only.
+    expect(screen.queryByText(/read-only|live directory|Live tenant/i)).toBeNull();
+    expect(listTenants).toHaveBeenCalledWith({
+      sort: { by: 'createdAt', dir: 'DESC' },
+      page: 0,
+      size: 1,
     });
-
-    const ui = await PlatformOverviewPage({ searchParams: Promise.resolve({}) });
-    renderWithProviders(ui);
-
-    expect(
-      screen.getByText(/no tenants are available in the live directory yet/i),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open tenant directory' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open SACCO institutions' })).toHaveAttribute(
       'href',
       '/platform-admin/tenants',
     );
   });
 
-  it('renders a backend error state without dropping the navigation links', async () => {
-    listTenants.mockRejectedValueOnce(new Error('Upstream platform service unavailable.'));
+  it('says the directory is empty when only the platform organisation exists', async () => {
+    listTenants.mockResolvedValueOnce(directory(1));
+    renderWithProviders(await PlatformOverviewPage());
 
-    const ui = await PlatformOverviewPage({ searchParams: Promise.resolve({}) });
-    renderWithProviders(ui);
-
-    expect(screen.getByText(/live tenant data is temporarily unavailable/i)).toBeInTheDocument();
-    expect(screen.getByText('Upstream platform service unavailable.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open tenant directory' })).toHaveAttribute(
-      'href',
-      '/platform-admin/tenants',
-    );
+    expect(screen.getByText('No SACCO institutions have been created yet.')).toBeInTheDocument();
   });
 
-  it('falls back to default pagination instead of crashing on an invalid page size', async () => {
-    const ui = await PlatformOverviewPage({ searchParams: Promise.resolve({ size: '101' }) });
-    renderWithProviders(ui);
+  it('renders the safe error state with its reference, keeping the directory link', async () => {
+    listTenants.mockRejectedValueOnce(new BackendApiError(503, { requestId: 'req-9' }));
+    renderWithProviders(await PlatformOverviewPage());
 
-    expect(
-      screen.getByRole('heading', { level: 1, name: 'Platform overview' }),
-    ).toBeInTheDocument();
-    expect(listTenants).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ page: 0, size: 25 }),
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText('Reference: req-9')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open SACCO institutions' })).toHaveAttribute(
+      'href',
+      '/platform-admin/tenants',
     );
   });
 });

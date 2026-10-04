@@ -37,11 +37,15 @@ function textPairs(scheme: Scheme): [string, string, string][] {
     [`${name} on paper`, color, scheme.background.paper] as [string, string, string],
     [`${name} on default`, color, scheme.background.default] as [string, string, string],
   ]);
-  const onSoft: [string, string, string][] = Object.entries(scheme.status).map(([name, bg]) => [
-    `text.secondary on ${name}`,
-    scheme.text.secondary,
-    bg,
-  ]);
+  const onSoft: [string, string, string][] = [
+    ...Object.entries(scheme.status).map(([name, bg]): [string, string, string] => [
+      `text.secondary on ${name}`,
+      scheme.text.secondary,
+      bg,
+    ]),
+    // The active wizard step's label (MuiStepLabel) sits on the info tint (MuiStep).
+    ['text.primary on infoBg', scheme.text.primary, scheme.status.infoBg],
+  ];
   return [
     ...neutral,
     ...semantic,

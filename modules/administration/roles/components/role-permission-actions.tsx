@@ -27,8 +27,9 @@ import {
 } from '../role-contract';
 import { MAX_GRANTS_PER_SUBMIT, groupByModule } from '../role-rules';
 
+// `textSecondary`, not `text.secondary`: MUI v9 drops a dotted palette path in Typography's `color`.
 const riskColor = (risk: PermissionRiskLevel) =>
-  risk === 'CRITICAL' || risk === 'HIGH' ? 'error' : 'text.secondary';
+  risk === 'CRITICAL' || risk === 'HIGH' ? 'error' : 'textSecondary';
 
 interface PermissionChecklistProps {
   /** Grantable entries: the ACTIVE catalogue codes the role doesn't hold yet. */
@@ -114,7 +115,7 @@ export function PermissionChecklist({ permissions, truncated, error }: Permissio
           ))}
         </TextField>
       </Box>
-      <Typography variant="caption" color="text.secondary" role="status">
+      <Typography variant="caption" role="status" sx={{ color: 'text.secondary' }}>
         {selected.size} selected
         {full ? ` — up to ${MAX_GRANTS_PER_SUBMIT} at a time` : ''}
       </Typography>
@@ -127,7 +128,7 @@ export function PermissionChecklist({ permissions, truncated, error }: Permissio
         <Alert severity="info">Only the first 100 catalogue permissions are listed.</Alert>
       )}
       {groups.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {options.length === 0
             ? 'Every catalogue permission is already granted.'
             : 'No permissions match these filters.'}

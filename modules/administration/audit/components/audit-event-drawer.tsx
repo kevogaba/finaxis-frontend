@@ -50,7 +50,7 @@ function JsonBlock({
           {value}
         </Box>
       ) : (
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {empty}
         </Typography>
       )}
@@ -115,7 +115,7 @@ export function AuditEventDrawer({
         }}
       >
         <Box>
-          <Typography variant="overline" component="p" color="text.secondary">
+          <Typography variant="overline" component="p" sx={{ color: 'text.secondary' }}>
             {detail.occurred}
           </Typography>
           <Typography id="audit-event-title" component="h2" variant="h4">

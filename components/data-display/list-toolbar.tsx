@@ -313,9 +313,8 @@ export function ListToolbar({ fields, resultLabel, chips = [], timeZone }: ListT
       </Link>
       <Typography
         variant="caption"
-        color="text.secondary"
         role="status"
-        sx={{ ml: 'auto', alignSelf: 'center' }}
+        sx={{ color: 'text.secondary', ml: 'auto', alignSelf: 'center' }}
       >
         {resultLabel}
       </Typography>

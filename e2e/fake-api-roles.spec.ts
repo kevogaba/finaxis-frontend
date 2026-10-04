@@ -50,6 +50,19 @@ test.describe('fake API roles (contract §E.3)', () => {
     );
   });
 
+  test('answers an off-list sort_by as a 500, including names every object inherits', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'roles', null);
+    // BG-07: a name from Object.prototype is no sort key, on the roles list and the catalogue.
+    for (const path of ['/tenant/roles', '/tenant/permissions']) {
+      for (const sortBy of ['toString', 'constructor', '__proto__']) {
+        const refused = await request.get(api(`${path}?sort_by=${sortBy}`), { headers });
+        expect(refused.status(), `${path} ${sortBy}`).toBe(500);
+      }
+    }
+  });
+
   test('keeps system roles immutable and edits a custom one', async ({ request }) => {
     const headers = await contextFor(request, 'roles', null);
     const system = await request.patch(api(`/tenant/roles/${IDS.tenantAdminRole}`), {

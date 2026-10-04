@@ -155,8 +155,7 @@ export function ContextSwitcherDialog({
         <Typography
           variant="overline"
           component="span"
-          color="text.secondary"
-          sx={{ display: 'block' }}
+          sx={{ color: 'text.secondary', display: 'block' }}
         >
           Organisation and branch
         </Typography>
@@ -164,7 +163,7 @@ export function ContextSwitcherDialog({
       </DialogTitle>
       <DialogContent>
         <Stack spacing={3}>
-          <Typography color="text.secondary">
+          <Typography sx={{ color: 'text.secondary' }}>
             Choosing an organisation or branch switches to it straight away. Available actions
             depend on your active membership and branch assignment; All branches lets multi-branch
             users administer every branch at institution level.

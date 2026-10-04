@@ -51,7 +51,7 @@ export function BusinessDateHistoryTable({
               <TableRow key={`${entry.occurredAt}-${index}`} hover>
                 <TableCell>
                   <Typography variant="body2">{when.date}</Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                     {when.time}
                   </Typography>
                 </TableCell>
