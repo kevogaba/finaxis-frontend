@@ -72,7 +72,7 @@ test.describe('platform records: institution branches', () => {
     // Header + five branches, newest first: Likoni (20 Aug) leads.
     await expect(rowsOf(page, 'Branches')).toHaveCount(6);
     await expect(rowsOf(page, 'Branches').nth(1)).toContainText(LONG_BRANCH_NAME);
-    await expect(mainText(page, '5 branches')).toBeVisible();
+    await expect(mainText(page, '5 branches', { exact: true })).toBeVisible();
 
     // The name cap (rule 12; e2e/users.spec.ts's check): the 100-character name stops at
     // min(320px, 60vw), inside a 375 px card.
@@ -149,6 +149,13 @@ test.describe('platform records: institution branches', () => {
       ),
     ).toBeVisible();
 
+    await expect(
+      mainText(
+        page,
+        'The draft is created in Acme SACCO. Its own administrators then submit it and activate it.',
+      ),
+    ).toBeVisible();
+
     await page.getByRole('textbox', { name: 'Branch code' }).fill('THIKA');
     await page.getByRole('textbox', { name: 'Branch name' }).fill('Thika Road Branch');
     const create = page.getByRole('button', { name: 'Create draft' });
@@ -160,6 +167,8 @@ test.describe('platform records: institution branches', () => {
       timeout: 15000,
     });
     await expect(statusChip(page, 'Draft')).toBeVisible();
+    // The platform can't move a draft on: only the copy-id button is offered, no lifecycle action.
+    await expect(page.getByRole('main').getByRole('button')).toHaveCount(1);
     await expect(page).toHaveURL((url) => /\/branches\/[0-9a-f-]{36}$/.test(url.pathname));
   });
 
@@ -224,7 +233,7 @@ test.describe('platform records: users and accounts', () => {
 
     // Header + eight members of Acme (Jane, Achieng, Baraka, Chebet, Daudi, Esi, Faraji, Nyokabi).
     await expect(rowsOf(page, 'Users')).toHaveCount(9);
-    await expect(mainText(page, '8 users')).toBeVisible();
+    await expect(mainText(page, '8 users', { exact: true })).toBeVisible();
 
     await selectMuiOption(page, 'User status', /^Suspended$/);
     await expectParam(page, 'userStatus', 'SUSPENDED');
@@ -306,6 +315,8 @@ test.describe('platform records: users and accounts', () => {
     await expect(deactivate).toBeDisabled();
     await expect(suspend).toHaveAccessibleDescription(why);
     await expect(deactivate).toHaveAccessibleDescription(why);
+    // The reason is visible text, not only a description a screen reader reads.
+    await expect(mainText(page, why, { exact: true })).toBeVisible();
 
     // As layer 10's visual pass found: an uncapped caption sizes the actions box (its one-line
     // width) and squeezes the title column, so the box stays within 320 px.
@@ -513,7 +524,9 @@ test.describe('platform records: ids', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Mombasa Road Branch' })).toBeVisible({
       timeout: 15000,
     });
-    // The parent and the way back are built from lower-cased ids.
+    // The record resolves from the upper-cased id (lower-cased before the read: the fake's lookup
+    // is case-sensitive). Its links are canonical; Acme's id has no letters, so the tenant id's
+    // canonicalisation is pinned by records-id-guard.test.tsx, not here.
     await expect(page.getByRole('main').getByRole('link', { name: 'Head Office' })).toHaveAttribute(
       'href',
       `${ACME}/branches/${R.acmeHeadOffice}`,
