@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useActionState, useEffect, useState } from 'react';
+import { startTransition, useActionState, useEffect, useRef, useState } from 'react';
 import { unstable_rethrow } from 'next/navigation';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -89,6 +89,7 @@ export function BranchDraftForm({
       timezone: defaultTimeZone,
     },
   });
+  const submitRef = useRef<HTMLButtonElement>(null);
   const [state, formAction, pending] = useActionState<ActionResult | null, FormData>(
     async (previous, formData) => {
       try {
@@ -119,7 +120,12 @@ export function BranchDraftForm({
   // in two separate commits, and a caller that reads the field error first could observe the form
   // before the Alert commit lands.
   useEffect(() => {
-    if (failure) applyFieldErrors(setError, failure.fieldErrors, FIELDS);
+    if (!failure) return;
+    applyFieldErrors(setError, failure.fieldErrors, FIELDS);
+    // A failure that names no field (BG-18's 403, a 409, a network error) leaves applyFieldErrors
+    // nothing to focus, and Create draft went disabled while it held focus, so focus fell to
+    // <body> and the next Tab starts past the form (gate finding I2). ReasonDialog does the same.
+    if (!FIELDS.some((name) => failure.fieldErrors[name] !== undefined)) submitRef.current?.focus();
   }, [failure, setError]);
 
   const onValid = (values: BranchDraftValues) => {
@@ -257,7 +263,7 @@ export function BranchDraftForm({
         <Button component={NextLink} href={cancelHref} variant="outlined" disabled={pending}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" loading={pending}>
+        <Button ref={submitRef} type="submit" variant="contained" loading={pending}>
           Create draft
         </Button>
       </Box>

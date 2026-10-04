@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import { UUID_PATTERN } from '@/lib/api/wire';
 import { BranchDraftForm } from './branch-draft-form';
@@ -23,6 +23,13 @@ const CONFLICT = {
   fieldErrors: { branchCode: 'This code may already be in use.' },
   code: 'conflict',
   requestId: 'req-3',
+};
+const FORBIDDEN = {
+  ok: false,
+  formError: "The platform can't create a branch in an institution you aren't a member of.",
+  fieldErrors: {},
+  code: 'forbidden',
+  requestId: 'req-9',
 };
 const sent = (call: number) => createBranchDraft.mock.calls[call]?.[1] as FormData | undefined;
 
@@ -162,6 +169,55 @@ describe('BranchDraftForm', () => {
       'href',
       `/platform-admin/tenants/${TENANT}/branches`,
     );
+  });
+
+  describe('keyboard focus after a failed submit (gate finding I2)', () => {
+    /** Submits with the action held open, and models what a browser does to the focused submit
+     * button the moment it goes disabled: focus drops to `<body>`. jsdom keeps it on the disabled
+     * button (its `blur()` is a no-op there), so focus goes to a field and is blurred instead. */
+    async function submitThenSettle(result: unknown) {
+      const user = userEvent.setup();
+      let settle: (value: unknown) => void = () => undefined;
+      createBranchDraft.mockReturnValueOnce(
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+      );
+      const form = renderForm();
+      await user.type(form.code, 'THIKA');
+      await user.type(form.name, 'Thika Road Branch');
+      await user.click(form.create);
+      await waitFor(() => {
+        expect(form.create).toBeDisabled();
+      });
+      form.code.focus();
+      form.code.blur();
+      expect(document.body).toHaveFocus();
+      await act(async () => {
+        settle(result);
+        await Promise.resolve();
+      });
+      return form;
+    }
+
+    it('puts focus back on Create draft when the failure names no field (BG-18)', async () => {
+      const { create } = await submitThenSettle(FORBIDDEN);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('req-9');
+      await waitFor(() => {
+        expect(create).toHaveFocus();
+      });
+    });
+
+    it('leaves focus on the field a failure names, not on Create draft', async () => {
+      const { code, create } = await submitThenSettle(CONFLICT);
+
+      expect(await screen.findByText('This code may already be in use.')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(code).toHaveFocus();
+      });
+      expect(create).not.toHaveFocus();
+    });
   });
 
   it('says why the parent list is incomplete, in place of "Optional."', () => {

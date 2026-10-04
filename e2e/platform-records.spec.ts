@@ -209,6 +209,32 @@ test.describe('platform records: institution branches', () => {
     );
   });
 
+  test('keeps keyboard focus on Create draft after the platform refuses the draft', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'platform-records');
+    await enterPlatform(
+      page,
+      `/platform-admin/tenants/${T.pwani}/branches/new`,
+      'Create branch draft',
+    );
+
+    await page.getByRole('textbox', { name: 'Branch code' }).fill('THIKA');
+    await page.getByRole('textbox', { name: 'Branch name' }).fill('Thika Road Branch');
+    const create = page.getByRole('button', { name: 'Create draft' });
+    await expectHydrated(create);
+    // Enter on the button itself: it goes disabled while it holds focus, so the browser drops focus
+    // to <body>, and a refusal that names no field (BG-18) gives nothing else to take it back.
+    await create.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(
+      mainText(page, /You must also be an active member of this institution/),
+    ).toBeVisible();
+    await expect(create).toBeFocused();
+  });
+
   test("offers no branch draft for an institution that isn't active", async ({
     context,
     page,
