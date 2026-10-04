@@ -1865,7 +1865,12 @@ const deactivateInput = accountInput
  * deactivating it can't be undone. A hand-crafted request is refused too, before any call. */
 async function refuseOwnAccount(userId: string): Promise<void> {
   const selected = await getCurrentContextProfile();
-  if (selected.kind === 'resolved' && selected.profile.user_id.toLowerCase() === userId) {
+  // Fail closed: without a resolved profile we can't tell whose account this is, so a lost session
+  // or a stale context reaches the redirect before any call.
+  if (selected.kind !== 'resolved') {
+    throw new BackendApiError(403, { code: 'invalid_active_tenant_context' });
+  }
+  if (selected.profile.user_id.toLowerCase() === userId) {
     throw new BackendApiError(409, { code: OWN_ACCOUNT_CODE });
   }
 }

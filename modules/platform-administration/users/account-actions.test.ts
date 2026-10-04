@@ -359,6 +359,35 @@ describe('account actions', () => {
       },
     );
 
+    it('refuses your own account whatever the letter case of the profile id', async () => {
+      getCurrentContextProfile.mockResolvedValue({
+        ...resolvedProfile(ORGANISATION),
+        profile: { user_id: SELF.toUpperCase(), permissions: [] },
+      });
+      for (const name of ['suspendAccount', 'deactivateAccount'] as const) {
+        const result = await actions[name](
+          null,
+          form({ ...VALID, userId: SELF, contextOrganisationId: ORGANISATION }),
+        );
+        expect(result).toMatchObject({ ok: false, code: OWN_ACCOUNT_CODE, formError: OWN_ACCOUNT });
+      }
+      expect(apiPost).not.toHaveBeenCalled();
+    });
+
+    it('refuses when it cannot tell who you are, before any call', async () => {
+      getCurrentContextProfile.mockResolvedValue({
+        kind: 'redirect-to-context-selection',
+        reason: 'invalid-context',
+      });
+      await expect(
+        actions.suspendAccount(
+          null,
+          form({ idempotencyKey: KEY, userId: USER, reason: 'Fraud review' }),
+        ),
+      ).rejects.toThrow('NEXT_REDIRECT:/select-context');
+      expect(apiPost).not.toHaveBeenCalled();
+    });
+
     it("does not refuse someone else's account", async () => {
       const result = await actions.suspendAccount(
         null,
