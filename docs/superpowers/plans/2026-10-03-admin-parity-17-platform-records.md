@@ -5399,8 +5399,12 @@ sixth paging exception).
 Only a person signs in; automation never types credentials; reads first (handoff §3.9). The reads,
 in the platform context: the overview's five counts against `GET
 /platform/tenants?status=…&size=1` by hand (the active count is the raw total minus one); an
-institution's Branches and Users tabs, one branch and one user record; Platform users. Then, **only
-with the person's explicit approval each time**:
+institution's Branches and Users tabs, one branch and one user record; Platform users; and the
+cross-institution reads: open institution A's branch URL with institution B's branch id, and A's
+user URL with B's user id, and expect the not-found page both times (the pages rely on the backend
+scoping the read to the institution in the URL, which only the fake API proves). Then the writes,
+**only with the person's explicit approval each time** (creating a branch draft and Deactivate are
+PERMANENT, so approval is asked again for every one, never once for the whole check):
 
 - **Branch draft** at an institution where the operator is an active member with `branch.create`: it
   is permanent (no delete, BG-01); use code `LIVECHK17` and name it as a test. Elsewhere, expect the

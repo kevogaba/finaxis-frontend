@@ -103,6 +103,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   when it may be partial, and the options are a picker's option set, not a data-listing directory
   — no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-10-03-admin-parity-10-users.md`, Rulings 8 and 11).
+  The platform overview's Needs attention table
+  (`modules/platform-administration/overview`'s `attentionView`) is a sixth, named exception: a
+  bounded preview of at most 5 institutions pending approval and 5 drafts, oldest first, each
+  with a link to the paginated, filtered institution directory ("View all N …") when there are
+  more. The overview's counts come from the reads' `totalItems` (`size=1` or the five-row
+  preview's total), with no scan. It is no licence for an unbounded list (plan
+  `docs/superpowers/plans/2026-10-03-admin-parity-17-platform-records.md`, Ruling 10).
 - A context-scoped read goes through `lib/api/tenant-api.ts`'s `apiGet(path, schema)`, where
   `schema` is a snake_case zod schema defined in the domain's own `<domain>-contract.ts` (e.g.
   `modules/administration/audit/audit-contract.ts`) that transforms the wire shape to camelCase.
