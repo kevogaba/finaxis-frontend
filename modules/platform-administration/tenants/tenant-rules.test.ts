@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { BOOTSTRAP_STATUSES } from './tenant-contract';
 import {
   availableTenantActions,
+  bootstrapStatusLabel,
   canRetryBootstrap,
+  countryLabel,
   countryName,
   currencyLabel,
   EMPTY_TENANT_DRAFT,
@@ -109,6 +112,19 @@ describe('provisioningTimeline', () => {
   });
 });
 
+describe('bootstrapStatusLabel', () => {
+  it('words every bootstrap status', () => {
+    expect(BOOTSTRAP_STATUSES.map(bootstrapStatusLabel)).toEqual([
+      'Not started',
+      'Waiting for approval',
+      'Queued',
+      'Setting up the first administrator',
+      'Completed',
+      'Failed',
+    ]);
+  });
+});
+
 describe('visibleTenantTotal (BG-29)', () => {
   it('always leaves the platform organisation out of an unfiltered count', () => {
     expect(visibleTenantTotal(8, false, false)).toBe(7);
@@ -129,6 +145,11 @@ describe('country, currency and timezone choices', () => {
     expect(countryName('KEN')).toBe('KEN');
     expect(currencyLabel('KES')).toBe('KES · Kenyan Shilling');
     expect(currencyLabel('K')).toBe('K');
+  });
+
+  it('writes a country as its code, then its name, like a currency', () => {
+    expect(countryLabel('KE')).toBe('KE · Kenya');
+    expect(countryLabel('UG')).toBe('UG · Uganda');
   });
 
   it('lists every nameable country by name, every currency and every zone', () => {

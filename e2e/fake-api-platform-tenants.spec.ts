@@ -256,4 +256,26 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
     expect(refused.status()).toBe(403);
     expect(await refused.json()).toMatchObject({ code: 'forbidden' });
   });
+
+  test("answers an unknown tenant's suspend and a rejected tenant's code with a 500 (BG-07, BG-28)", async ({
+    request,
+  }) => {
+    const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
+
+    // BG-07: suspend, like reject, answers an unknown tenant with a 500 rather than a 404.
+    const unknown = await request.post(
+      api('/platform/tenants/00000000-0000-4000-8000-0000000000ff/suspend'),
+      { headers, data: { reason: 'Compliance review' } },
+    );
+    expect(unknown.status()).toBe(500);
+    expect(await unknown.json()).toMatchObject({ code: 'internal_error' });
+
+    // BG-28: a rejected tenant keeps its code, so a new draft under it is a 500 too (BG-07).
+    const taken = await request.post(api('/platform/tenants'), {
+      headers,
+      data: { ...DRAFT, tenant_code: 'nairobi-metro-teachers' },
+    });
+    expect(taken.status()).toBe(500);
+    expect(await taken.json()).toMatchObject({ code: 'internal_error' });
+  });
 });

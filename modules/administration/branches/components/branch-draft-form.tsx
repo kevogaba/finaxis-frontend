@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useActionState, useEffect, useState } from 'react';
+import { startTransition, useActionState, useEffect, useRef, useState } from 'react';
 import { unstable_rethrow } from 'next/navigation';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,7 +10,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import NextLink from '@/components/navigation/next-link';
-import type { ActionResult } from '@/lib/api/action-result';
+import type { ActionResult, FormAction } from '@/lib/api/action-result';
 import { applyFieldErrors } from '@/lib/apply-field-errors';
 import { createBranchDraft } from '../branch-actions';
 import { BRANCH_TYPE_SUGGESTIONS } from '../branch-contract';
@@ -40,6 +40,15 @@ interface BranchDraftFormProps {
   /** The organisation the page rendered with (I2): sent only when present, so `runServerAction`
    * can refuse a submit made after the user switched organisation in another tab. */
   contextOrganisationId?: string;
+  /** The Server Action submitted: 08's tenant create by default. Layer 17's client wrapper passes
+   * the platform one (a Server Component never passes a function, AGENTS.md). */
+  action?: FormAction;
+  /** Where Cancel goes. */
+  cancelHref?: string;
+  /** Extra hidden fields the action needs, e.g. layer 17's `tenantId`. */
+  hiddenFields?: Readonly<Record<string, string>>;
+  /** Replaces the Parent branch helper "Optional." when the options couldn't load or were capped. */
+  parentsNote?: string;
 }
 
 function timeZones(defaultTimeZone: string): string[] {
@@ -57,6 +66,10 @@ export function BranchDraftForm({
   parents,
   defaultTimeZone,
   contextOrganisationId,
+  action = createBranchDraft,
+  cancelHref = '/admin/branches',
+  hiddenFields,
+  parentsNote,
 }: BranchDraftFormProps) {
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [zones] = useState(() => timeZones(defaultTimeZone));
@@ -76,10 +89,11 @@ export function BranchDraftForm({
       timezone: defaultTimeZone,
     },
   });
+  const submitRef = useRef<HTMLButtonElement>(null);
   const [state, formAction, pending] = useActionState<ActionResult | null, FormData>(
     async (previous, formData) => {
       try {
-        return await createBranchDraft(previous, formData);
+        return await action(previous, formData);
       } catch (caught) {
         // The success path is a Server Action redirect(), which must keep propagating rather
         // than being swallowed as a form failure (07 I1's defect class).
@@ -106,13 +120,19 @@ export function BranchDraftForm({
   // in two separate commits, and a caller that reads the field error first could observe the form
   // before the Alert commit lands.
   useEffect(() => {
-    if (failure) applyFieldErrors(setError, failure.fieldErrors, FIELDS);
+    if (!failure) return;
+    applyFieldErrors(setError, failure.fieldErrors, FIELDS);
+    // A failure that names no field (BG-18's 403, a 409, a network error) leaves applyFieldErrors
+    // nothing to focus, and Create draft went disabled while it held focus, so focus fell to
+    // <body> and the next Tab starts past the form (gate finding I2). ReasonDialog does the same.
+    if (!FIELDS.some((name) => failure.fieldErrors[name] !== undefined)) submitRef.current?.focus();
   }, [failure, setError]);
 
   const onValid = (values: BranchDraftValues) => {
     const formData = new FormData();
     formData.set('idempotencyKey', idempotencyKey);
     for (const name of FIELDS) formData.set(name, values[name]);
+    for (const [name, value] of Object.entries(hiddenFields ?? {})) formData.set(name, value);
     if (contextOrganisationId) formData.set('contextOrganisationId', contextOrganisationId);
     startTransition(() => {
       formAction(formData);
@@ -209,7 +229,7 @@ export function BranchDraftForm({
                 inputRef={field.ref}
                 onBlur={field.onBlur}
                 error={Boolean(errors.parentBranchId)}
-                helperText={errors.parentBranchId?.message ?? 'Optional.'}
+                helperText={errors.parentBranchId?.message ?? parentsNote ?? 'Optional.'}
               />
             )}
           />
@@ -240,10 +260,10 @@ export function BranchDraftForm({
         )}
       />
       <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 2 }}>
-        <Button component={NextLink} href="/admin/branches" variant="outlined" disabled={pending}>
+        <Button component={NextLink} href={cancelHref} variant="outlined" disabled={pending}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" loading={pending}>
+        <Button ref={submitRef} type="submit" variant="contained" loading={pending}>
           Create draft
         </Button>
       </Box>

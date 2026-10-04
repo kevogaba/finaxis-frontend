@@ -1,8 +1,6 @@
 import type { ServerResponse } from 'node:http';
-import { problem, sendJson, sendNoContent } from './http.mts';
+import { UUID, problem, sendJson, sendNoContent } from './http.mts';
 import type { RouteContext } from './router.mts';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function respond(
   res: ServerResponse,

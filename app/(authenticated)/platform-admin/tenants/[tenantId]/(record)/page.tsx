@@ -6,7 +6,11 @@ import { StatusChip } from '@/components/data-display/status-chip';
 import { load } from '@/lib/api/load';
 import { formatInstant } from '@/lib/format';
 import { isInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
-import { countryName, currencyLabel } from '@/modules/platform-administration/tenants/tenant-rules';
+import {
+  bootstrapStatusLabel,
+  countryLabel,
+  currencyLabel,
+} from '@/modules/platform-administration/tenants/tenant-rules';
 import { getTenant } from '@/modules/platform-administration/tenants/tenant-service';
 
 interface TenantOverviewPageProps {
@@ -30,13 +34,20 @@ export default async function TenantOverviewPage({ params }: TenantOverviewPageP
   const items: DescriptionItem[] = [
     { label: 'Display name', value: record.displayName },
     { label: 'Tenant code', value: record.tenantCode },
-    { label: 'Country', value: `${countryName(record.countryCode)} (${record.countryCode})` },
+    { label: 'Country', value: countryLabel(record.countryCode) },
     { label: 'Base currency', value: currencyLabel(record.baseCurrencyCode) },
     { label: 'Timezone', value: record.timezone },
     { label: 'Lifecycle', value: <StatusChip value={record.status} /> },
     {
       label: 'Provisioning',
-      value: record.bootstrapStatus ? <StatusChip value={record.bootstrapStatus} /> : 'Not tracked',
+      value: record.bootstrapStatus ? (
+        <StatusChip
+          value={record.bootstrapStatus}
+          label={bootstrapStatusLabel(record.bootstrapStatus)}
+        />
+      ) : (
+        'Not tracked'
+      ),
     },
     { label: 'Created (UTC)', value: utc(record.createdAt) },
     { label: 'Updated (UTC)', value: utc(record.updatedAt) },

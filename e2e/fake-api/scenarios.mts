@@ -1219,6 +1219,199 @@ function usersScenario(): RunState {
   };
 }
 
+/** Layer 17 seed IDs (lane rules §5): users …a*, branches …b*, memberships …c*, roles …d*. */
+export const RECORD_SCENARIO_IDS = {
+  peter: '17000000-0000-4000-8000-0000000000a1',
+  sara: '17000000-0000-4000-8000-0000000000a2',
+  achieng: '17000000-0000-4000-8000-0000000000a3',
+  baraka: '17000000-0000-4000-8000-0000000000a4',
+  chebet: '17000000-0000-4000-8000-0000000000a5',
+  daudi: '17000000-0000-4000-8000-0000000000a6',
+  esi: '17000000-0000-4000-8000-0000000000a7',
+  faraji: '17000000-0000-4000-8000-0000000000a8',
+  nyokabi: '17000000-0000-4000-8000-0000000000a9',
+  acmeHeadOffice: '17000000-0000-4000-8000-0000000000b1',
+  acmeMombasaRoad: '17000000-0000-4000-8000-0000000000b2',
+  acmeNakuru: '17000000-0000-4000-8000-0000000000b3',
+  acmeKisumu: '17000000-0000-4000-8000-0000000000b4',
+  acmeLikoni: '17000000-0000-4000-8000-0000000000b5',
+  pwaniHeadOffice: '17000000-0000-4000-8000-0000000000b6',
+  acmeAdminRole: '17000000-0000-4000-8000-0000000000d1',
+  janeAcmeRoleAssignment: '17000000-0000-4000-8000-0000000000d2',
+  achiengTenantRoleAssignment: '17000000-0000-4000-8000-0000000000d3',
+  achiengBranchRoleAssignment: '17000000-0000-4000-8000-0000000000d4',
+  achiengRevokedRoleAssignment: '17000000-0000-4000-8000-0000000000d5',
+  esiTenantRoleAssignment: '17000000-0000-4000-8000-0000000000d6',
+} as const;
+
+/** Real platform codes (PLATFORM_SUPER_ADMIN holds all 80, contract §J), granted only in
+ * `platform-records`, so that `platform-operator` and `platform-tenants` don't change. */
+const PLATFORM_RECORD_CODES = ['branch.create', 'user.suspend', 'user.activate', 'user.deactivate'];
+
+/** 100 characters: the backend's display-name and branch-name maxima (contract §D). */
+const LONG_ACCOUNT_NAME =
+  'Nyokabi Wairimu Kamau-Achieng Muthoni Njeri Chebet Jepkoech Nyambura Akinyi Atieno Wanjiku Mwangi Ay';
+const LONG_BRANCH_NAME =
+  'Likoni Ferry Crossing and Mombasa Old Town Customer Service Centre for the Teachers and Allied Staff';
+
+/**
+ * Layer 17: a copy of `platform-tenants` (an institution in every lifecycle state, and
+ * `tenant.approve`) plus Acme's branches and users, Pwani's head office, two more platform
+ * members, and Jane as an active ADMIN of Acme only, with `branch.create` there: a platform branch
+ * draft succeeds at Acme and is refused at Pwani (BG-18). Esi belongs to Acme and Pwani, so an
+ * account change shows in both.
+ */
+function platformRecordsScenario(): RunState {
+  const state = platformTenantsScenario();
+  const ids = RECORD_SCENARIO_IDS;
+  const person = (
+    id: string,
+    username: string,
+    displayName: string,
+    status: string,
+    domain: string,
+    overrides: Partial<FakeUser> = {},
+  ): FakeUser => ({
+    id,
+    username,
+    email: `${username}@${domain}`,
+    displayName,
+    status,
+    keycloakSubject: `e2e-${username}`,
+    ...overrides,
+  });
+  const member = (
+    n: number,
+    organisationId: string,
+    userId: string,
+    type: string,
+    status = 'ACTIVE',
+  ): FakeMembership => ({
+    ...membership(`17000000-0000-4000-8000-0000000000c${n.toString(16)}`, organisationId, userId),
+    type,
+    status,
+  });
+  const at = (date: string, overrides: Partial<FakeBranch> = {}) => ({
+    createdAt: date,
+    updatedAt: date,
+    ...overrides,
+  });
+  return {
+    ...state,
+    users: [
+      ...state.users,
+      person(ids.peter, 'peter.kamau', 'Peter Kamau', 'ACTIVE', 'finaxis.example'),
+      person(ids.sara, 'sara.wanjiku', 'Sara Wanjiku', 'SUSPENDED', 'finaxis.example'),
+      person(ids.achieng, 'achieng.odera', 'Achieng Odera', 'ACTIVE', 'acme.example'),
+      person(ids.baraka, 'baraka.mwita', 'Baraka Mwita', 'SUSPENDED', 'acme.example'),
+      person(ids.chebet, 'chebet.kiprop', 'Chebet Kiprop', 'INVITED', 'acme.example'),
+      person(ids.daudi, 'daudi.hamisi', 'Daudi Hamisi', 'DRAFT', 'acme.example'),
+      person(ids.esi, 'esi.mensah', 'Esi Mensah', 'ACTIVE', 'acme.example'),
+      person(ids.faraji, 'faraji.juma', 'Faraji Juma', 'DEACTIVATED', 'acme.example'),
+      person(ids.nyokabi, 'nyokabi.wairimu', LONG_ACCOUNT_NAME, 'ACTIVE', 'acme.example', {
+        email: 'nyokabi.wairimu.kamau.achieng.muthoni.njeri.chebet@acmeteacherssavings.example',
+      }),
+    ],
+    // Newest first is reverse seed order: Acme lists Nyokabi … Achieng, then Jane; the platform
+    // lists Sara, Peter, then Jane.
+    memberships: [
+      ...state.memberships,
+      member(1, IDS.platformOrganisation, ids.peter, 'ADMIN'),
+      member(2, IDS.platformOrganisation, ids.sara, 'ADMIN'),
+      member(3, IDS.acme, IDS.jane, 'ADMIN'),
+      member(4, IDS.acme, ids.achieng, 'STAFF'),
+      member(5, IDS.acme, ids.baraka, 'STAFF'),
+      member(6, IDS.acme, ids.chebet, 'STAFF'),
+      member(7, IDS.acme, ids.daudi, 'STAFF', 'PENDING_APPROVAL'),
+      member(8, IDS.acme, ids.esi, 'STAFF'),
+      member(9, TENANT_SCENARIO_IDS.pwani, ids.esi, 'STAFF'),
+      member(10, IDS.acme, ids.faraji, 'STAFF'),
+      member(11, IDS.acme, ids.nyokabi, 'STAFF'),
+    ],
+    branches: [
+      ...state.branches,
+      { ...branch(ids.acmeHeadOffice, IDS.acme, 'HEAD_OFFICE', 'Head Office', 'HEAD_OFFICE') },
+      {
+        ...branch(ids.acmeMombasaRoad, IDS.acme, 'MOMBASA_RD', 'Mombasa Road Branch', 'OPERATIONS'),
+        ...at('2026-07-10T08:00:00Z', { parentBranchId: ids.acmeHeadOffice }),
+      },
+      {
+        ...branch(ids.acmeNakuru, IDS.acme, 'NAKURU', 'Nakuru Branch', 'OPERATIONS'),
+        createdAt: '2026-07-20T08:00:00Z',
+        updatedAt: '2026-08-01T09:30:00Z',
+        status: 'SUSPENDED',
+        statusReason: 'Premises under renovation',
+      },
+      {
+        ...branch(ids.acmeKisumu, IDS.acme, 'KISUMU', 'Kisumu Branch', 'OPERATIONS'),
+        ...at('2026-08-15T08:00:00Z', { status: 'DRAFT' }),
+      },
+      {
+        ...branch(ids.acmeLikoni, IDS.acme, 'LIKONI', LONG_BRANCH_NAME, 'OPERATIONS'),
+        ...at('2026-08-20T08:00:00Z', { parentBranchId: ids.acmeMombasaRoad }),
+      },
+      {
+        ...branch(
+          ids.pwaniHeadOffice,
+          TENANT_SCENARIO_IDS.pwani,
+          'HEAD_OFFICE',
+          'Head Office',
+          'HEAD_OFFICE',
+        ),
+        ...at('2026-08-20T08:00:00Z'),
+      },
+    ],
+    roles: [
+      ...state.roles.map((candidate) =>
+        candidate.id === IDS.platformAdminRole
+          ? { ...candidate, permissions: [...candidate.permissions, ...PLATFORM_RECORD_CODES] }
+          : candidate,
+      ),
+      // `audit.view` and `role_assignment.view` let Jane, as an Acme member, read what a platform
+      // action wrote in Acme's records (BG-06) with the same bearer.
+      role(ids.acmeAdminRole, IDS.acme, 'TENANT_ADMIN', 'Tenant admin', [
+        'auth.select_organisation',
+        'branch.view',
+        'branch.create',
+        'audit.view',
+        'role_assignment.view',
+      ]),
+    ],
+    roleAssignments: [
+      ...state.roleAssignments,
+      tenantRoleAssignment(ids.janeAcmeRoleAssignment, IDS.acme, IDS.jane, ids.acmeAdminRole),
+      // Achieng holds two ACTIVE assignments (tenant and branch scope) and one already REVOKED, and
+      // Esi one ACTIVE: deactivating Achieng revokes exactly her two (contract §G).
+      tenantRoleAssignment(
+        ids.achiengTenantRoleAssignment,
+        IDS.acme,
+        ids.achieng,
+        ids.acmeAdminRole,
+      ),
+      {
+        ...tenantRoleAssignment(
+          ids.achiengBranchRoleAssignment,
+          IDS.acme,
+          ids.achieng,
+          ids.acmeAdminRole,
+        ),
+        scopeType: 'BRANCH',
+        branchId: ids.acmeMombasaRoad,
+      },
+      {
+        ...tenantRoleAssignment(
+          ids.achiengRevokedRoleAssignment,
+          IDS.acme,
+          ids.achieng,
+          ids.acmeAdminRole,
+        ),
+        status: 'REVOKED',
+      },
+      tenantRoleAssignment(ids.esiTenantRoleAssignment, IDS.acme, ids.esi, ids.acmeAdminRole),
+    ],
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -1319,6 +1512,26 @@ const BUILDERS = {
       ),
     );
     return state;
+  },
+  // Layer 17 (platform records). `platform-records-read-only` has the same data without the four
+  // mutation codes and without tenant.approve (no badge) on the platform role, for the gated-control
+  // cases. Only the platform role loses them: Jane keeps branch.create at Acme, so a refused
+  // platform branch draft there proves the platform gate, not BG-18.
+  'platform-records': platformRecordsScenario,
+  'platform-records-read-only': () => {
+    const state = platformRecordsScenario();
+    const stripped: readonly string[] = [...PLATFORM_RECORD_CODES, 'tenant.approve'];
+    return {
+      ...state,
+      roles: state.roles.map((candidate) =>
+        candidate.id === IDS.platformAdminRole
+          ? {
+              ...candidate,
+              permissions: candidate.permissions.filter((code) => !stripped.includes(code)),
+            }
+          : candidate,
+      ),
+    };
   },
 } satisfies Record<string, () => RunState>;
 

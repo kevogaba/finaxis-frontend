@@ -60,6 +60,21 @@ export function canRetryBootstrap(
   );
 }
 
+const BOOTSTRAP_LABELS: Record<BootstrapStatus, string> = {
+  DRAFT: 'Not started',
+  PENDING_ACTIVATION: 'Waiting for approval',
+  QUEUED: 'Queued',
+  PROVISIONING_IDENTITY: 'Setting up the first administrator',
+  COMPLETED: 'Completed',
+  FAILED: 'Failed',
+};
+
+/** The bootstrap in words: `humanizeEnum` reads "Draft" for a request that never
+ * started provisioning, a rejected one included. */
+export function bootstrapStatusLabel(status: BootstrapStatus): string {
+  return BOOTSTRAP_LABELS[status];
+}
+
 export interface ProvisioningStep {
   label: string;
   detail: string;
@@ -171,6 +186,11 @@ export function countryName(code: string): string {
   } catch {
     return code;
   }
+}
+
+/** `KE · Kenya`: the code first, like a currency (`KES · Kenyan Shilling`). */
+export function countryLabel(code: string): string {
+  return `${code} · ${countryName(code)}`;
 }
 
 /** Regions `Intl` names that aren't countries to put on an institution. */

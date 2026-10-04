@@ -1,5 +1,6 @@
 import DomainOutlined from '@mui/icons-material/DomainOutlined';
 import HomeOutlined from '@mui/icons-material/HomeOutlined';
+import ManageAccountsOutlined from '@mui/icons-material/ManageAccountsOutlined';
 import type { WorkspaceNavigationItem } from '@/components/shell/workspace-navigation';
 
 export const platformAdministrationNavigationItems: readonly WorkspaceNavigationItem[] = [
@@ -9,5 +10,11 @@ export const platformAdministrationNavigationItems: readonly WorkspaceNavigation
     label: 'SACCO institutions',
     icon: DomainOutlined,
     requiresAny: ['tenant.view'],
+  },
+  {
+    href: '/platform-admin/users',
+    label: 'Platform users',
+    icon: ManageAccountsOutlined,
+    requiresAny: ['user.view'],
   },
 ];

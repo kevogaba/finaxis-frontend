@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
+/** A UUID in its 8-4-4-4-12 text form, either case (the backend's UUID decode ignores case). */
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface Violation {
   field: string;
   code: string;

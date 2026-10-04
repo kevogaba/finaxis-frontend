@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import { tabsClasses } from '@mui/material/Tabs';
 import { renderWithProviders } from '@/test/test-utils';
@@ -110,5 +110,98 @@ describe('RecordTabs', () => {
 
     vi.unstubAllGlobals();
     Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+  });
+
+  describe("after MUI's own scroll animation (gate finding M1)", () => {
+    // MUI's scroll-into-view animation is already running when the scroll buttons arrive, and it
+    // writes its stale target on every frame for about 300 ms: a nudge made while it runs is undone
+    // (375 px full load of an institution's Users tab: scrollLeft 119 set at 1080 ms, then 39
+    // written every frame). So the nudge is repeated once the animation has finished.
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+    });
+
+    /** The same stubs as above, with the selected Audit tab overflowing the scroller by 30 px. */
+    function renderOverflowing() {
+      pathname = '/admin/branches/b1/audit';
+      const instances: { callback: () => void; observe: ReturnType<typeof vi.fn> }[] = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          callback: () => void;
+          observe = vi.fn();
+          unobserve = vi.fn();
+          disconnect = vi.fn();
+          constructor(callback: () => void) {
+            this.callback = callback;
+            instances.push(this);
+          }
+        },
+      );
+      Element.prototype.scrollIntoView = () => undefined;
+      vi.useFakeTimers();
+
+      const view = renderWithProviders(<RecordTabs label="Sections" tabs={TABS} />);
+      const ours = instances.find((instance) => {
+        const target = instance.observe.mock.calls[0]?.[0] as HTMLElement | undefined;
+        return target?.classList.contains(tabsClasses.scroller) === true;
+      });
+      const scroller = document.querySelector<HTMLElement>(`.${tabsClasses.scroller}`);
+      if (!ours || !scroller) throw new Error('No tab scroller observed');
+      vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue(new DOMRect(40, 0, 295, 48));
+      vi.spyOn(screen.getByRole('tab', { name: 'Audit' }), 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(285, 0, 80, 48),
+      );
+      scroller.scrollLeft = 100;
+      return {
+        ...view,
+        scroller,
+        resize: () => {
+          ours.callback();
+        },
+      };
+    }
+
+    it('nudges again once the animation is over, undoing what it wrote', () => {
+      const { scroller, resize } = renderOverflowing();
+
+      resize();
+      expect(scroller.scrollLeft).toBe(130);
+
+      // MUI's animation then writes its own (stale) target.
+      scroller.scrollLeft = 100;
+      vi.advanceTimersByTime(349);
+      expect(scroller.scrollLeft).toBe(100);
+      vi.advanceTimersByTime(1);
+      expect(scroller.scrollLeft).toBe(130);
+    });
+
+    it('nudges once per settled resize, not once per resize', () => {
+      const { scroller, resize } = renderOverflowing();
+
+      resize();
+      vi.advanceTimersByTime(200);
+      scroller.scrollLeft = 100;
+      resize();
+      scroller.scrollLeft = 100;
+      // The first resize's timer would fire at 350; the second's replaced it, so it fires at 550.
+      vi.advanceTimersByTime(200);
+      expect(scroller.scrollLeft).toBe(100);
+      vi.advanceTimersByTime(150);
+      expect(scroller.scrollLeft).toBe(130);
+    });
+
+    it('leaves nothing scheduled behind when it unmounts', () => {
+      const { scroller, resize, unmount } = renderOverflowing();
+
+      resize();
+      scroller.scrollLeft = 100;
+      unmount();
+      vi.advanceTimersByTime(1000);
+
+      expect(scroller.scrollLeft).toBe(100);
+    });
   });
 });

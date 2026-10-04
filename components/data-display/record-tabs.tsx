@@ -7,6 +7,9 @@ import Tab from '@mui/material/Tab';
 import Tabs, { tabsClasses } from '@mui/material/Tabs';
 import NextLink from '@/components/navigation/next-link';
 
+/** MUI's tab scroll animation lasts `transitions.duration.standard` (300 ms), plus a margin. */
+const SCROLL_ANIMATION_MS = 350;
+
 export interface RecordTab {
   /** A nested route; the record root is the Overview tab. */
   href: string;
@@ -49,6 +52,10 @@ export function RecordTabs({ label, tabs }: RecordTabsProps) {
   // an already-in-view tab pushed back out by the buttons' combined width. Once the scroller's own
   // size settles, nudge the active tab back into view ourselves — by moving only the scroller
   // horizontally: `scrollIntoView` (even with `block: 'nearest'`) can also scroll the page.
+  // That animation is still running when the buttons arrive, and writes its stale target on every
+  // frame until it ends (`transitions.duration.standard`, 300 ms), undoing the nudge: on a 375 px
+  // full load of a four-tab record the strip stayed at scrollLeft 39 of 119. So nudge once more
+  // when it is over (350 ms after the scroller's size last changed).
   useEffect(() => {
     if (active === false) return undefined;
     const scroller = navRef.current?.querySelector<HTMLElement>(`.${tabsClasses.scroller}`);
@@ -64,11 +71,18 @@ export function RecordTabs({ label, tabs }: RecordTabsProps) {
         scroller.scrollLeft += rect.right - view.right;
       }
     };
+    let afterAnimation: number | undefined;
+    const settle = () => {
+      scrollActiveTabIntoView();
+      window.clearTimeout(afterAnimation);
+      afterAnimation = window.setTimeout(scrollActiveTabIntoView, SCROLL_ANIMATION_MS);
+    };
     try {
-      const observer = new ResizeObserver(scrollActiveTabIntoView);
+      const observer = new ResizeObserver(settle);
       observer.observe(scroller);
       return () => {
         observer.disconnect();
+        window.clearTimeout(afterAnimation);
       };
     } catch {
       // ponytail: jsdom (unit tests) has no ResizeObserver; every real browser does.

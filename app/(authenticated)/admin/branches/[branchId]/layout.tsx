@@ -73,10 +73,13 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
   const holder = { permissions: resolved?.profile.permissions ?? [] };
   const actions = availableBranchActions(record.status, holder);
   // BG-08: the drafter is only in the audit log — look it up only when Activate is on offer.
-  const maker =
+  // load() redirects on a lost session or a stale context; any other failure leaves the drafter
+  // unknown and Activate on offer, where the backend's maker-checker 403 (BG-08) is the guard.
+  const makerRead =
     actions.includes('activate') && can(holder, 'audit.view')
-      ? await getBranchMaker(branchId)
+      ? await load(getBranchMaker(branchId))
       : null;
+  const maker = makerRead?.ok ? makerRead.value : null;
   const base = `/admin/branches/${branchId}`;
 
   return (

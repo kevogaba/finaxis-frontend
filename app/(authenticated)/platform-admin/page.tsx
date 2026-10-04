@@ -1,111 +1,140 @@
-import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import Button from '@mui/material/Button';
-import Card from '@mui/material/Card';
-import CardActions from '@mui/material/CardActions';
-import CardContent from '@mui/material/CardContent';
-import Grid from '@mui/material/Grid';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
-import NextLink from '@/components/navigation/next-link';
+import type { ReactNode } from 'react';
+import Box from '@mui/material/Box';
+import Paper from '@mui/material/Paper';
+import AdminPanelSettingsOutlined from '@mui/icons-material/AdminPanelSettingsOutlined';
+import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
+import EditNoteOutlined from '@mui/icons-material/EditNoteOutlined';
+import HourglassEmptyOutlined from '@mui/icons-material/HourglassEmptyOutlined';
+import PauseCircleOutlined from '@mui/icons-material/PauseCircleOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { ErrorState } from '@/components/data-display/error-state';
-import { load } from '@/lib/api/load';
-import { PlatformPageShell } from '@/modules/platform-administration/components/platform-page-shell';
-import { platformAdministrationModule } from '@/modules/platform-administration/platform-administration-module';
-import { DEFAULT_TENANT_SORT } from '@/modules/platform-administration/tenants/tenant-query';
-import { visibleTenantTotal } from '@/modules/platform-administration/tenants/tenant-rules';
-import { listTenants } from '@/modules/platform-administration/tenants/tenant-service';
+import { can } from '@/auth/permissions';
+import { ForbiddenState } from '@/components/data-display/forbidden-state';
+import { KpiTile } from '@/components/data-display/kpi-tile';
+import type { StatusTone } from '@/components/data-display/status-chip';
+import { PageHeader } from '@/components/shell/page-header';
+import { isPlatformOrganisation } from '@/config/application-context';
+import { load, type Loaded } from '@/lib/api/load';
+import { AttentionCard } from '@/modules/platform-administration/overview/components/attention-card';
+import {
+  activeInstitutionCount,
+  ATTENTION_PREVIEW_SIZE,
+  attentionView,
+  KPI,
+  OVERVIEW_DESCRIPTION,
+} from '@/modules/platform-administration/overview/overview-rules';
+import {
+  countPlatformOperators,
+  countTenantsInStatus,
+  listTenantsInStatus,
+} from '@/modules/platform-administration/overview/overview-service';
 
-export const metadata: Metadata = { title: 'Platform Overview' };
+export const metadata: Metadata = { title: 'Platform overview' };
 
-function describeTenantDirectoryState(totalItems: number): string {
-  if (totalItems === 0) {
-    return 'No SACCO institutions have been created yet.';
-  }
-
-  return `${totalItems} SACCO institution${totalItems === 1 ? ' is' : 's are'} in the directory.`;
+/** A tile's value: a failed read is `null` with its reference, never 0 (rule 9). */
+function tileValue<T>(read: Loaded<T>, count: (value: T) => number) {
+  return read.ok
+    ? { value: count(read.value), reference: null }
+    : { value: null, reference: read.problem.requestId };
 }
 
+/** Spec §11.4: five counts and the requests waiting for someone. The layout keeps every other
+ * context out. */
 export default async function PlatformOverviewPage() {
-  const selectedContext = await getCurrentContextProfile();
-
-  if (selectedContext.kind !== 'resolved') {
-    redirect('/select-context');
+  const selected = await getCurrentContextProfile();
+  const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
+  const tenants = can(holder, 'tenant.view');
+  const users = can(holder, 'user.view');
+  const header = (
+    <PageHeader
+      eyebrow="Platform administration"
+      title="Platform overview"
+      description={OVERVIEW_DESCRIPTION}
+    />
+  );
+  if (!tenants && !users) {
+    return (
+      <>
+        {header}
+        <Paper>
+          <ForbiddenState />
+        </Paper>
+      </>
+    );
   }
 
-  if (selectedContext.context.module.id !== platformAdministrationModule.id) {
-    redirect('/admin');
-  }
+  // Five reads in parallel (BG-15: `size=1` counts; the previews' totals are their tiles' counts).
+  const [active, pending, drafts, suspended, operators] = await Promise.all([
+    tenants ? load(countTenantsInStatus('ACTIVE')) : null,
+    tenants ? load(listTenantsInStatus('PENDING_APPROVAL', ATTENTION_PREVIEW_SIZE)) : null,
+    tenants ? load(listTenantsInStatus('DRAFT', ATTENTION_PREVIEW_SIZE)) : null,
+    tenants ? load(countTenantsInStatus('SUSPENDED')) : null,
+    users ? load(countPlatformOperators()) : null,
+  ]);
 
-  // Only the count is shown, so one row is enough (BG-15: no aggregate counts).
-  const directory = await load(listTenants({ sort: DEFAULT_TENANT_SORT, page: 0, size: 1 }));
+  const tile = (
+    key: keyof typeof KPI,
+    read: { value: number | null; reference: string | null },
+    tone: StatusTone,
+    icon: ReactNode,
+  ) => (
+    <KpiTile
+      key={key}
+      id={`kpi-${key}`}
+      label={KPI[key].label}
+      value={read.value}
+      reference={read.reference}
+      caption={KPI[key].caption}
+      icon={icon}
+      tone={tone}
+      link={{ href: KPI[key].href, label: KPI[key].link }}
+    />
+  );
+  const total = (page: { page: { totalItems: number } }) => page.page.totalItems;
 
   return (
-    <PlatformPageShell
-      title="Platform overview"
-      description="Confirm the active platform context and open the SACCO institutions workspace."
-    >
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card variant="outlined" sx={{ height: '100%' }}>
-            <CardContent>
-              <Stack spacing={1}>
-                <Typography variant="overline" sx={{ color: 'text.secondary' }}>
-                  Active platform context
-                </Typography>
-                <Typography component="h2" variant="h6" sx={{ fontWeight: 700 }}>
-                  {selectedContext.context.organization.name}
-                </Typography>
-                <Stack direction="row" spacing={1}>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    Branch:
-                  </Typography>
-                  <Typography variant="body2">
-                    {selectedContext.context.branch?.name ?? 'All branches'}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" spacing={1}>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    Module:
-                  </Typography>
-                  <Typography variant="body2">{selectedContext.context.module.name}</Typography>
-                </Stack>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card variant="outlined" sx={{ height: '100%' }}>
-            <CardContent>
-              <Stack spacing={1.25}>
-                <Typography variant="overline" sx={{ color: 'text.secondary' }}>
-                  Institution operations
-                </Typography>
-                <Typography component="h2" variant="h6" sx={{ fontWeight: 700 }}>
-                  SACCO institutions
-                </Typography>
-                {directory.ok ? (
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    {describeTenantDirectoryState(
-                      // BG-29: the total includes the reserved platform organisation.
-                      visibleTenantTotal(directory.value.page.totalItems, false, false),
-                    )}
-                  </Typography>
-                ) : (
-                  <ErrorState problem={directory.problem} />
-                )}
-              </Stack>
-            </CardContent>
-            <CardActions>
-              <Button component={NextLink} href="/platform-admin/tenants" size="small">
-                Open SACCO institutions
-              </Button>
-            </CardActions>
-          </Card>
-        </Grid>
-      </Grid>
-    </PlatformPageShell>
+    <>
+      {header}
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 3,
+          gridTemplateColumns: {
+            xs: 'minmax(0, 1fr)',
+            sm: 'repeat(2, minmax(0, 1fr))',
+            lg: 'repeat(5, minmax(0, 1fr))',
+          },
+          mb: 4,
+        }}
+      >
+        {active &&
+          tile(
+            'active',
+            tileValue(active, activeInstitutionCount),
+            'success',
+            <CheckCircleOutlined />,
+          )}
+        {pending &&
+          tile('pending', tileValue(pending, total), 'warning', <HourglassEmptyOutlined />)}
+        {drafts && tile('drafts', tileValue(drafts, total), 'info', <EditNoteOutlined />)}
+        {suspended &&
+          tile(
+            'suspended',
+            tileValue(suspended, (count) => count),
+            'error',
+            <PauseCircleOutlined />,
+          )}
+        {operators &&
+          tile(
+            'operators',
+            tileValue(operators, (count) => count),
+            'default',
+            <AdminPanelSettingsOutlined />,
+          )}
+      </Box>
+      {pending && drafts && (
+        <AttentionCard view={attentionView(pending, drafts, isPlatformOrganisation)} />
+      )}
+    </>
   );
 }

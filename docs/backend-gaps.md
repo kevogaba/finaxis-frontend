@@ -53,7 +53,7 @@ tackled separately in the platform repository.
 | BG-32 | P2       | Documentation drift in the platform repository                                                     |
 | BG-33 | P2       | Permission codes in /auth/me carry no scope                                                        |
 | BG-34 | P2       | Role update accepts a blank name; an empty description clears it                                   |
-| BG-35 | P2       | No documented self-lockout guard: a member may suspend or revoke themselves                        |
+| BG-35 | P2       | No documented self-lockout guard: a user may suspend, revoke or deactivate themselves              |
 
 ## Details
 
@@ -204,7 +204,9 @@ tackled separately in the platform repository.
 - **Gap:** No endpoint lists all users or fetches a global user by ID; `/platform/users` only has
   suspend, reactivate, deactivate.
 - **Frontend handling:** "Platform users" lists the platform organisation's members
-  (`/platform/tenants/{PLATFORM}/users`); tenant users are reachable per tenant.
+  (`/platform/tenants/{PLATFORM}/users`) and opens the same account record as an institution's
+  user; an institution's users are on its record's Users tab. Nobody can be found across
+  institutions (layer 17).
 - **Suggested change:** `GET /platform/users` (search, status filter, memberships per user) and
   `GET /platform/users/{id}`.
 
@@ -257,7 +259,9 @@ tackled separately in the platform repository.
 
 - **Gap:** No counts for role users, role permissions, branch users, tenant branches, or tenant users.
   Deriving them costs one `size=1` call per count per row against a 600 reads/min budget.
-- **Frontend handling:** counts only on record pages (one call each); lists don't show them.
+- **Frontend handling:** counts only on record pages (one call each); lists don't show them. The
+  platform overview reads five counts the same way (`size=1`, or the total of a five-row preview)
+  (layer 17).
 - **Suggested change:** include counts on summary DTOs or add a counts endpoint.
 
 ### BG-16 — Audit search and recording · P1
@@ -291,7 +295,9 @@ tackled separately in the platform repository.
 - **Gap:** `POST /platform/tenants/{id}/branches` checks `branch.create` in PLATFORM **and** inside the
   tenant (`BranchProvisioningService.kt:38-42`), so it returns 403 unless the platform administrator is
   an active member of that tenant.
-- **Frontend handling:** create-draft on the platform tenant record warns about the requirement.
+- **Frontend handling:** "Create branch draft" appears only for an ACTIVE institution and a holder
+  of `branch.create` and `branch.view`; the form warns that the platform also needs you to be a
+  member there, and a 403 is explained in those words (layer 17).
 - **Suggested change:** authorize platform-context branch creation with the platform permission alone.
 
 ### BG-19 — No global search · P2
@@ -312,8 +318,9 @@ readiness endpoint returning named checks and their status.
 
 ### BG-22 — No notifications · P2
 
-No notification feed. The header badge counts actionable approvals from two list reads. Suggested: a
-notifications/inbox endpoint.
+No notification feed. The platform bell counts institutions pending approval with one `size=1` read,
+for holders of `tenant.approve` and `tenant.view` (layer 17); the tenant badge is layer 12's.
+Suggested: a notifications/inbox endpoint.
 
 ### BG-23 — Context discovery inconsistencies · P2
 
@@ -364,7 +371,9 @@ reuse/release of rejected codes.
 `GET /platform/tenants` includes the reserved PLATFORM organisation. The frontend filters it out,
 so a page can show one fewer row. The result count subtracts it whenever it is known to be included
 (always when unfiltered, and when its row is on the page), so a filtered count can read one high;
-its record URL shows the not-found page. Suggested: exclude it server-side.
+its record URL shows the not-found page. The overview's active count subtracts it exactly once: it
+is always ACTIVE while anyone works in the platform context (layer 17). Suggested: exclude it
+server-side.
 
 ### BG-30 — Error envelope inconsistencies · P2
 
@@ -419,17 +428,20 @@ Suggested: return each permission with its scope (tenant or the branch ids) on `
 - **Suggested change:** validate `role_name` as `CreateRoleRequest` does, and document whether
   `""` clears the description.
 
-### BG-35 — No documented self-lockout guard on memberships · P2
+### BG-35 — No documented self-lockout guard on memberships and accounts · P2
 
 - **Gap:** The contract documents no guard against a caller suspending or revoking their own
-  membership, or revoking their own role assignments (§E.3 names none; source 7a7f4c3). Without
-  one, a self-suspend ends the session's context at once, because every request re-validates an
-  ACTIVE membership (§A), and a self-revoke is permanent (BG-28). Not probed live: the probe
-  itself would be irreversible.
+  membership, or revoking their own role assignments (§E.3 names none; source 7a7f4c3). Nor is one
+  documented for `POST /platform/users/{id}/suspend` or `/deactivate` (§E.2), where a
+  self-deactivate would be permanent. Without one, a self-suspend ends the session's context at
+  once, because every request re-validates an ACTIVE membership (§A), and a self-revoke is
+  permanent (BG-28). Not probed live: the probe itself would be irreversible.
 - **Frontend handling:** the user record shows Suspend and Revoke disabled on the signed-in user's
   own record, with the reason; revoking your own role assignment warns in its confirmation
   (layer 09). Revoking your own branch assignment from the user record's Branch assignments tab
   shows no such warning (layer 08's `RevokeAssignmentButton` has no `self` prop); at the selected
-  branch it invalidates your context (§E.4).
+  branch it invalidates your context (§E.4). The platform user record shows Suspend account and
+  Deactivate account disabled on your own account, and their Server Actions refuse it before any
+  call (layer 17).
 - **Suggested change:** document the guard if one exists; otherwise refuse a self-suspend and a
   self-revoke with a 409 and a specific code.

@@ -10,6 +10,7 @@ import {
   reasonField,
   sendJson,
   stringField,
+  UUID,
 } from '../http.mts';
 import type { Violation } from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
@@ -40,7 +41,7 @@ function reachableBranch(access: AccessContext, branchId: string): FakeBranch {
   return branch;
 }
 
-const detailWire = (branch: FakeBranch) => ({
+export const branchDetailWire = (branch: FakeBranch) => ({
   id: branch.id,
   organisation_id: branch.organisationId,
   branch_code: branch.code,
@@ -56,6 +57,50 @@ const detailWire = (branch: FakeBranch) => ({
   created_at: branch.createdAt,
   updated_at: branch.updatedAt,
 });
+
+export const BRANCH_DRAFT_KEYS = [
+  'branch_code',
+  'branch_name',
+  'branch_type',
+  'parent_branch_id',
+  'timezone',
+  'address',
+];
+
+/** CreateBranch (contract §D): required strings are `invalid_json` when missing, and so is a
+ * `parent_branch_id` that is no UUID (the DTO's decode fails); the code pattern and name size are
+ * `validation_failed`. A parent is returned in its canonical lower-case form, as the decode would
+ * give it. Shared with the platform route. */
+export function draftBranchFields(body: Record<string, unknown>) {
+  const code = stringField(body, 'branch_code', { required: true }) ?? '';
+  const name = stringField(body, 'branch_name', { required: true }) ?? '';
+  const type = stringField(body, 'branch_type', { required: true }) ?? '';
+  const timezone = stringField(body, 'timezone', { required: true }) ?? '';
+  const rawParent = stringField(body, 'parent_branch_id', { required: false });
+  if (rawParent !== null && !UUID.test(rawParent)) {
+    throw problem(400, 'invalid_json', 'Malformed request body.');
+  }
+  const parentId = rawParent?.toLowerCase() ?? null;
+  const violations: Violation[] = [];
+  if (!BRANCH_CODE.test(code)) {
+    violations.push({
+      field: 'branch_code',
+      code: 'Pattern',
+      message: 'must match "^[A-Z0-9_-]{2,20}$"',
+    });
+  }
+  if (name.trim().length < 2 || name.length > 100) {
+    violations.push({
+      field: 'branch_name',
+      code: 'Size',
+      message: 'size must be between 2 and 100',
+    });
+  }
+  if (violations.length > 0) {
+    throw problem(400, 'validation_failed', 'Validation failed.', violations);
+  }
+  return { code, name, type, timezone, parentId };
+}
 
 const assignmentWire = (row: FakeBranchAssignment) => ({
   id: row.id,
@@ -117,7 +162,7 @@ function transition(
         action,
         reason,
       });
-      return detailWire(branch);
+      return branchDetailWire(branch);
     });
   });
 }
@@ -126,43 +171,18 @@ export const branchRoutes: Route[] = [
   route('GET', '/api/v1/branches/:branch_id', (context) => {
     const access = tenantAccess(context);
     requirePermission(access, 'branch.view');
-    sendJson(context.res, 200, detailWire(reachableBranch(access, context.params.branch_id ?? '')));
+    sendJson(
+      context.res,
+      200,
+      branchDetailWire(reachableBranch(access, context.params.branch_id ?? '')),
+    );
   }),
 
   route('POST', '/api/v1/branches', async (context) => {
     const access = tenantAccess(context);
     requirePermission(access, 'branch.create');
-    const body = objectBody(await readBody(context.req), [
-      'branch_code',
-      'branch_name',
-      'branch_type',
-      'parent_branch_id',
-      'timezone',
-      'address',
-    ]);
-    const code = stringField(body, 'branch_code', { required: true }) ?? '';
-    const name = stringField(body, 'branch_name', { required: true }) ?? '';
-    const type = stringField(body, 'branch_type', { required: true }) ?? '';
-    const timezone = stringField(body, 'timezone', { required: true }) ?? '';
-    const parentId = stringField(body, 'parent_branch_id', { required: false });
-    const violations: Violation[] = [];
-    if (!BRANCH_CODE.test(code)) {
-      violations.push({
-        field: 'branch_code',
-        code: 'Pattern',
-        message: 'must match "^[A-Z0-9_-]{2,20}$"',
-      });
-    }
-    if (name.trim().length < 2 || name.length > 100) {
-      violations.push({
-        field: 'branch_name',
-        code: 'Size',
-        message: 'size must be between 2 and 100',
-      });
-    }
-    if (violations.length > 0) {
-      throw problem(400, 'validation_failed', 'Validation failed.', violations);
-    }
+    const body = objectBody(await readBody(context.req), BRANCH_DRAFT_KEYS);
+    const { code, name, type, timezone, parentId } = draftBranchFields(body);
     sendIdempotent(
       context,
       body,
