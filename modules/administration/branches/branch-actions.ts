@@ -125,7 +125,7 @@ export async function closeBranch(
 
 const assignInput = z.object({
   idempotencyKey,
-  branchId: uuidSchema,
+  branchId: z.string().regex(UUID_PATTERN, 'Choose a branch.'),
   userId: z.string().regex(UUID_PATTERN, 'Choose a user.'),
   assignmentType: z.enum(BRANCH_ASSIGNMENT_TYPES, { error: 'Choose an assignment type.' }),
 });

@@ -177,6 +177,25 @@ describe('branch actions', () => {
     expect(apiPost).not.toHaveBeenCalled();
   });
 
+  it("names a missing branch, for the user record's visible branch select", async () => {
+    const schemas: z.ZodType[] = [];
+    runServerAction.mockImplementationOnce((given: z.ZodType) => {
+      schemas.push(given);
+      return Promise.resolve({ ok: true });
+    });
+    await actions.assignBranchUser(null, form({}));
+    const fields = { idempotencyKey: KEY, userId: USER, assignmentType: 'OPERATE' };
+
+    for (const branchId of ['', 'not-a-uuid']) {
+      const parsed = schemas[0]?.safeParse({ ...fields, branchId });
+      expect(parsed?.error?.issues).toContainEqual(
+        expect.objectContaining({ path: ['branchId'], message: 'Choose a branch.' }),
+      );
+    }
+    // A chosen branch raises no branchId issue, and the same input is otherwise valid.
+    expect(schemas[0]?.safeParse({ ...fields, branchId: BRANCH }).success).toBe(true);
+  });
+
   it("revokes with DELETE and explains a member's last assignment", async () => {
     await actions.revokeBranchAssignment(
       null,

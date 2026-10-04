@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { ReasonDialog } from '@/components/data-display/reason-dialog';
 import { useToast } from '@/components/providers/toast-provider';
 import type { FormAction } from '@/lib/api/action-result';
@@ -80,19 +81,6 @@ function copyFor(id: BranchLifecycleAction, name: string, selectedHere: boolean)
 }
 
 const BLOCKED_ID = 'branch-activate-blocked';
-
-/**
- * I3's fallback (PF6) when a transition leaves no enabled trigger behind: RecordHero (frozen kit)
- * exposes no ref or id for its `<h1>`, so this finds it by DOM query and makes it a focus target.
- * ponytail: DOM-query ceiling — replace with a RecordHero focus-target prop (refactor(kit)) if
- * another record page needs the same fallback.
- */
-export function focusRecordTitle(): void {
-  const heading = document.querySelector<HTMLElement>('main h1');
-  if (!heading) return;
-  heading.tabIndex = -1;
-  heading.focus();
-}
 
 interface BranchLifecycleActionsProps {
   branchId: string;

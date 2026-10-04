@@ -65,6 +65,65 @@ describe('RoleScopeFields', () => {
       'true',
     );
   });
+
+  it('explains a disabled one-branch scope with the hint', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <form>
+        <RoleScopeFields
+          branches={[]}
+          branchHint="Assign them to a branch first to give a branch-scoped role."
+          fieldErrors={{}}
+        />
+      </form>,
+    );
+
+    // The hint is the Scope field's own description, after the tenant help it extends.
+    const scope = screen.getByRole('combobox', { name: 'Scope' });
+    expect(scope).toHaveAccessibleDescription(
+      'Applies at every branch and at institution level. Assign them to a branch first to give a branch-scoped role.',
+    );
+    await user.click(scope);
+    expect(screen.getByRole('option', { name: 'One branch' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  it('shows no hint while a branch is offered', () => {
+    renderWithProviders(
+      <form>
+        <RoleScopeFields
+          branches={[{ id: WESTLANDS, label: 'Westlands Branch (WESTLANDS)' }]}
+          branchHint="Assign them to a branch first to give a branch-scoped role."
+          fieldErrors={{}}
+        />
+      </form>,
+    );
+
+    const scope = screen.getByRole('combobox', { name: 'Scope' });
+    expect(scope).toHaveAccessibleDescription('Applies at every branch and at institution level.');
+    expect(screen.queryByText(/Assign them to a branch first/)).toBeNull();
+  });
+
+  it('keeps the branch-scope help, not the hint, once one branch is chosen', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <form>
+        <RoleScopeFields
+          branches={[{ id: WESTLANDS, label: 'Westlands Branch (WESTLANDS)' }]}
+          branchHint="Assign them to a branch first to give a branch-scoped role."
+          fieldErrors={{}}
+        />
+      </form>,
+    );
+
+    await user.click(screen.getByRole('combobox', { name: 'Scope' }));
+    await user.click(screen.getByRole('option', { name: 'One branch' }));
+    expect(screen.getByRole('combobox', { name: 'Scope' })).toHaveAccessibleDescription(
+      'Applies only while that branch is selected. The user must already be assigned to it.',
+    );
+  });
 });
 
 describe('AssignRoleButton', () => {

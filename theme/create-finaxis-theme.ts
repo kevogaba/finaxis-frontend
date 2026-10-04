@@ -436,7 +436,7 @@ export function createFinaxisTheme() {
         },
       },
       // A record's title is focused programmatically when a lifecycle transition leaves no other
-      // control behind (branch-lifecycle-actions.tsx's `focusRecordTitle`, PF6/V7) — Typography
+      // control behind (`components/data-display/focus-record-title.ts`, PF6/V7) — Typography
       // isn't a ButtonBase, so it never gets the theme-wide `.Mui-focusVisible` ring either; spread
       // the same resolved ring as the TablePagination select above instead of the browser default.
       MuiTypography: {
