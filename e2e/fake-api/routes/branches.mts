@@ -10,6 +10,7 @@ import {
   reasonField,
   sendJson,
   stringField,
+  UUID,
 } from '../http.mts';
 import type { Violation } from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
@@ -66,14 +67,20 @@ export const BRANCH_DRAFT_KEYS = [
   'address',
 ];
 
-/** CreateBranch (contract §D): required strings are `invalid_json` when missing, the code pattern
- * and name size are `validation_failed`. Shared with the platform route. */
+/** CreateBranch (contract §D): required strings are `invalid_json` when missing, and so is a
+ * `parent_branch_id` that is no UUID (the DTO's decode fails); the code pattern and name size are
+ * `validation_failed`. A parent is returned in its canonical lower-case form, as the decode would
+ * give it. Shared with the platform route. */
 export function draftBranchFields(body: Record<string, unknown>) {
   const code = stringField(body, 'branch_code', { required: true }) ?? '';
   const name = stringField(body, 'branch_name', { required: true }) ?? '';
   const type = stringField(body, 'branch_type', { required: true }) ?? '';
   const timezone = stringField(body, 'timezone', { required: true }) ?? '';
-  const parentId = stringField(body, 'parent_branch_id', { required: false });
+  const rawParent = stringField(body, 'parent_branch_id', { required: false });
+  if (rawParent !== null && !UUID.test(rawParent)) {
+    throw problem(400, 'invalid_json', 'Malformed request body.');
+  }
+  const parentId = rawParent?.toLowerCase() ?? null;
   const violations: Violation[] = [];
   if (!BRANCH_CODE.test(code)) {
     violations.push({

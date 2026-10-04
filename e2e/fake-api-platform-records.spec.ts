@@ -31,6 +31,21 @@ interface ProblemBody {
   violations: { field: string }[] | null;
 }
 
+interface AssignmentRow {
+  id: string;
+  user_id: string;
+  scope_type: string;
+  status: string;
+}
+
+interface AuditRow {
+  actor_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  reason: string | null;
+}
+
 const read = async <T>(response: APIResponse): Promise<T> => (await response.json()) as T;
 
 /** A fresh run of `scenario` in the platform context (the platform operator has one branch, which
@@ -42,6 +57,18 @@ async function signIn(request: APIRequestContext, scenario: ScenarioName = 'plat
     /** A mutation carries a fresh Idempotency-Key unless the test pins one. */
     post: (path: string, data?: Record<string, unknown>, key: string = randomUUID()) =>
       request.post(api(path), { headers: { ...headers, 'Idempotency-Key': key }, data }),
+    /** The same run (the bearer is the run), read as a member of one institution: what a platform
+     * action wrote in that tenant's own records, which the platform context can't read (BG-06). */
+    asTenant: async (organisationId: string) => {
+      const bearer = { Authorization: headers.Authorization ?? '' };
+      const selected = await request.post(api('/auth/select-organisation'), {
+        headers: bearer,
+        data: { organisation_id: organisationId },
+      });
+      const { context_token: token } = await read<{ context_token: string }>(selected);
+      const tenant = { ...bearer, 'X-Active-Organisation-Context': token };
+      return { get: (path: string) => request.get(api(path), { headers: tenant }) };
+    },
   };
 }
 
@@ -178,6 +205,83 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     expect(body.violations?.[0]?.field).toBe('branch_code');
   });
 
+  test('refuses a malformed parent_branch_id as invalid_json before any other check (contract §D)', async ({
+    request,
+  }) => {
+    const { get, post } = await signIn(request);
+
+    // `parent_branch_id` is a `uuid?`: the DTO's decode fails, so it is a decode error, not a 404.
+    await expectProblem(
+      await post(acme('/branches'), { ...DRAFT, branch_code: 'MERU', parent_branch_id: 'nope' }),
+      400,
+      'invalid_json',
+    );
+    // Before the field checks: a short code is `validation_failed` on its own.
+    await expectProblem(
+      await post(acme('/branches'), { ...DRAFT, branch_code: 'a', parent_branch_id: 'nope' }),
+      400,
+      'invalid_json',
+    );
+
+    // The controls: the UUID decode ignores case, and null or absent is no parent.
+    const upper = R.acmeHeadOffice.toUpperCase();
+    expect(upper).not.toBe(R.acmeHeadOffice);
+    const upperParent = await post(acme('/branches'), {
+      ...DRAFT,
+      branch_code: 'MERU',
+      parent_branch_id: upper,
+    });
+    expect(upperParent.status()).toBe(201);
+    const { branch_id: childId } = await read<{ branch_id: string }>(upperParent);
+    expect(await read(await get(acme(`/branches/${childId}`)))).toMatchObject({
+      parent_branch_id: R.acmeHeadOffice,
+    });
+    expect(
+      (
+        await post(acme('/branches'), { ...DRAFT, branch_code: 'NYERI', parent_branch_id: null })
+      ).status(),
+    ).toBe(201);
+  });
+
+  test("records a platform draft in the institution's audit log, once and only on success", async ({
+    request,
+  }) => {
+    const { post, asTenant } = await signIn(request);
+    const atAcme = await asTenant(IDS.acme);
+    const drafts = async () =>
+      (
+        await read<Paged<AuditRow>>(
+          await atAcme.get('/tenant/audit-events?action=branch.create_draft'),
+        )
+      ).items;
+    expect(await drafts()).toEqual([]);
+    const key = randomUUID();
+
+    const created = await post(acme('/branches'), DRAFT, key);
+    expect(created.status()).toBe(201);
+    const { branch_id: branchId } = await read<{ branch_id: string }>(created);
+    expect(await drafts()).toMatchObject([
+      {
+        action: 'branch.create_draft',
+        resource_type: 'BRANCH',
+        resource_id: branchId,
+        actor_id: IDS.jane,
+        reason: null,
+      },
+    ]);
+
+    // A replay by the same key, a refusal at Pwani, and a taken code each add nothing.
+    const replay = await post(acme('/branches'), DRAFT, key);
+    expect(replay.headers()['idempotency-replayed']).toBe('true');
+    await expectProblem(
+      await post(`/platform/tenants/${T.pwani}/branches`, DRAFT),
+      403,
+      'forbidden',
+    );
+    await expectProblem(await post(acme('/branches'), DRAFT), 409, 'conflict');
+    expect(await drafts()).toHaveLength(1);
+  });
+
   test("lists users per institution, newest first, and the platform's own members", async ({
     request,
   }) => {
@@ -236,6 +340,78 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     expect(reactivated.status()).toBe(200);
     expect(await read(reactivated)).toEqual({ user_id: R.esi, status: 'ACTIVE' });
     await expectProblem(await post(reactivate, {}), 409, 'conflict');
+  });
+
+  test("deactivation revokes the account's role assignments and audits each in its own institution", async ({
+    request,
+  }) => {
+    const { post, asTenant } = await signIn(request);
+    const atAcme = await asTenant(IDS.acme);
+    const assignmentsOf = async (userId: string) =>
+      (
+        await read<Paged<AssignmentRow>>(
+          await atAcme.get(`/tenant/role-assignments?user_id=${userId}`),
+        )
+      ).items;
+    const statusesOf = async (userId: string) =>
+      Object.fromEntries((await assignmentsOf(userId)).map((row) => [row.id, row.status]));
+    const revocations = async () =>
+      (
+        await read<Paged<AuditRow>>(
+          await atAcme.get('/tenant/audit-events?action=user.deactivation_assignment_revoked'),
+        )
+      ).items;
+    const base = `/platform/users/${R.achieng}`;
+    const active = {
+      [R.achiengTenantRoleAssignment]: 'ACTIVE',
+      [R.achiengBranchRoleAssignment]: 'ACTIVE',
+      [R.achiengRevokedRoleAssignment]: 'REVOKED',
+    };
+    expect(await statusesOf(R.achieng)).toEqual(active);
+
+    // Suspending leaves every assignment, and a deactivation refused for the wrong state revokes
+    // nothing and records nothing.
+    expect((await post(`${base}/suspend`, { reason: 'Fraud review' })).status()).toBe(200);
+    expect(await statusesOf(R.achieng)).toEqual(active);
+    await expectProblem(
+      await post(`${base}/deactivate`, { reason: 'Left the platform' }),
+      409,
+      'conflict',
+    );
+    expect(await statusesOf(R.achieng)).toEqual(active);
+    expect(await revocations()).toEqual([]);
+    expect((await post(`${base}/reactivate`, {})).status()).toBe(200);
+    expect(await statusesOf(R.achieng)).toEqual(active);
+
+    const key = randomUUID();
+    const reason = 'Left the platform';
+    expect((await post(`${base}/deactivate`, { reason }, key)).status()).toBe(200);
+    // Both ACTIVE assignments (tenant and branch scope) are revoked; the REVOKED one and another
+    // user's stay as they were.
+    expect(await statusesOf(R.achieng)).toEqual({
+      [R.achiengTenantRoleAssignment]: 'REVOKED',
+      [R.achiengBranchRoleAssignment]: 'REVOKED',
+      [R.achiengRevokedRoleAssignment]: 'REVOKED',
+    });
+    expect(await statusesOf(R.esi)).toEqual({ [R.esiTenantRoleAssignment]: 'ACTIVE' });
+    const rows = await revocations();
+    expect(rows.map((row) => row.resource_id).sort()).toEqual(
+      [R.achiengTenantRoleAssignment, R.achiengBranchRoleAssignment].sort(),
+    );
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        action: 'user.deactivation_assignment_revoked',
+        resource_type: 'USER_ROLE_ASSIGNMENT',
+        actor_id: IDS.jane,
+        reason,
+      });
+    }
+
+    // A replay by the key and a deactivation of a DEACTIVATED account add nothing.
+    const replay = await post(`${base}/deactivate`, { reason }, key);
+    expect(replay.headers()['idempotency-replayed']).toBe('true');
+    await expectProblem(await post(`${base}/deactivate`, { reason }), 409, 'conflict');
+    expect(await revocations()).toHaveLength(2);
   });
 
   test('deactivates for good', async ({ request }) => {

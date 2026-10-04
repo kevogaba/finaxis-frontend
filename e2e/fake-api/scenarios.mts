@@ -1238,6 +1238,10 @@ export const RECORD_SCENARIO_IDS = {
   pwaniHeadOffice: '17000000-0000-4000-8000-0000000000b6',
   acmeAdminRole: '17000000-0000-4000-8000-0000000000d1',
   janeAcmeRoleAssignment: '17000000-0000-4000-8000-0000000000d2',
+  achiengTenantRoleAssignment: '17000000-0000-4000-8000-0000000000d3',
+  achiengBranchRoleAssignment: '17000000-0000-4000-8000-0000000000d4',
+  achiengRevokedRoleAssignment: '17000000-0000-4000-8000-0000000000d5',
+  esiTenantRoleAssignment: '17000000-0000-4000-8000-0000000000d6',
 } as const;
 
 /** Real platform codes (PLATFORM_SUPER_ADMIN holds all 80, contract §J), granted only in
@@ -1363,15 +1367,47 @@ function platformRecordsScenario(): RunState {
           ? { ...candidate, permissions: [...candidate.permissions, ...PLATFORM_RECORD_CODES] }
           : candidate,
       ),
+      // `audit.view` and `role_assignment.view` let Jane, as an Acme member, read what a platform
+      // action wrote in Acme's records (BG-06) with the same bearer.
       role(ids.acmeAdminRole, IDS.acme, 'TENANT_ADMIN', 'Tenant admin', [
         'auth.select_organisation',
         'branch.view',
         'branch.create',
+        'audit.view',
+        'role_assignment.view',
       ]),
     ],
     roleAssignments: [
       ...state.roleAssignments,
       tenantRoleAssignment(ids.janeAcmeRoleAssignment, IDS.acme, IDS.jane, ids.acmeAdminRole),
+      // Achieng holds two ACTIVE assignments (tenant and branch scope) and one already REVOKED, and
+      // Esi one ACTIVE: deactivating Achieng revokes exactly her two (contract §G).
+      tenantRoleAssignment(
+        ids.achiengTenantRoleAssignment,
+        IDS.acme,
+        ids.achieng,
+        ids.acmeAdminRole,
+      ),
+      {
+        ...tenantRoleAssignment(
+          ids.achiengBranchRoleAssignment,
+          IDS.acme,
+          ids.achieng,
+          ids.acmeAdminRole,
+        ),
+        scopeType: 'BRANCH',
+        branchId: ids.acmeMombasaRoad,
+      },
+      {
+        ...tenantRoleAssignment(
+          ids.achiengRevokedRoleAssignment,
+          IDS.acme,
+          ids.achieng,
+          ids.acmeAdminRole,
+        ),
+        status: 'REVOKED',
+      },
+      tenantRoleAssignment(ids.esiTenantRoleAssignment, IDS.acme, ids.esi, ids.acmeAdminRole),
     ],
   };
 }

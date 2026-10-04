@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { requireContext, requirePermission, requirePlatformContext } from '../access.mts';
 import type { AccessContext } from '../access.mts';
+import { recordAuditEvent } from '../audit-log.mts';
 import { objectBody, problem, readBody, reasonField, sendJson } from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
 import { route } from '../router.mts';
@@ -79,9 +80,25 @@ function accountTransition(
     }
     sendIdempotent(context, body, () => {
       if (user.status !== from) throw problem(409, 'conflict', `The account must be ${from}.`);
-      // ponytail: deactivation also revokes the user's role assignments (contract §G); nothing in
-      // the platform workspace reads them, so the fake leaves them.
       user.status = to;
+      if (path === 'deactivate') {
+        // Contract §G: deactivation revokes every ACTIVE role assignment of the account, in every
+        // organisation and at either scope, one `user.deactivation_assignment_revoked` row each in
+        // that assignment's own organisation's log (BG-06). The contract doesn't say who the actor
+        // of these rows is, so the fake records the calling operator. Suspend and reactivate leave
+        // the assignments, and so do branch assignments and memberships.
+        for (const assignment of context.state.roleAssignments) {
+          if (assignment.userId !== user.id || assignment.status !== 'ACTIVE') continue;
+          assignment.status = 'REVOKED';
+          recordAuditEvent(context.state, access, {
+            entityType: 'USER_ROLE_ASSIGNMENT',
+            entityId: assignment.id,
+            action: 'user.deactivation_assignment_revoked',
+            reason,
+            organisationId: assignment.organisationId,
+          });
+        }
+      }
       return { user_id: user.id, status: to };
     });
   });
@@ -148,7 +165,15 @@ export const platformRecordRoutes: Route[] = [
           draftedBy: access.claims.userId,
         };
         branches.push(created);
-        // ponytail: no audit row; it lands in the tenant's log, which the platform can't read (BG-06).
+        // Written to the tenant's own log (BG-06: unreadable from the platform context), with the
+        // calling operator as the actor and branch, as the tenant route does.
+        recordAuditEvent(context.state, access, {
+          entityType: 'BRANCH',
+          entityId: created.id,
+          action: 'branch.create_draft',
+          reason: null,
+          organisationId: tenant.id,
+        });
         return { branch_id: created.id, status: 'DRAFT' };
       },
       201,
