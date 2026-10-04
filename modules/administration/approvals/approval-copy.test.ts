@@ -36,6 +36,10 @@ describe('the decisions', () => {
     expect(
       approvalOutcome({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'PROVISIONING_IDP' }),
     ).toBe('provisioning');
+    // The membership status alone decides: a revoked or suspended echo is never "queued".
+    expect(approvalOutcome({ membershipStatus: 'REVOKED', userStatus: 'PROVISIONING_IDP' })).toBe(
+      'recorded',
+    );
     expect(approvalOutcome(null)).toBe('recorded');
   });
 });

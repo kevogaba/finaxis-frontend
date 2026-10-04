@@ -38,6 +38,8 @@ describe('the queue', () => {
     [['branch.activate', 'branch.view'], ['Branch activation']],
     // Each tab needs its read code too: a decision without its read-back lists nothing.
     [['user.approve', 'branch.activate'], []],
+    // And the reverse: the read codes alone decide nothing.
+    [['user.view', 'branch.view'], []],
     [[], []],
   ])('offers the tabs %j allows: %j', (permissions, labels) => {
     expect(approvalQueueTabs({ permissions }).map((tab) => tab.label)).toEqual(labels);
@@ -67,6 +69,7 @@ describe('the queue', () => {
 
   it('compares user ids without letter case, and never matches an unknown one', () => {
     expect(isSameUser(ME.toUpperCase(), ME)).toBe(true);
+    expect(isSameUser(ME, ME.toUpperCase())).toBe(true);
     expect(isSameUser(VICTOR, ME)).toBe(false);
     expect(isSameUser(null, ME)).toBe(false);
     expect(isSameUser(null, null)).toBe(false);
@@ -163,6 +166,9 @@ describe('where a branch activation stands', () => {
     expect(
       availableBranchDecisions('PENDING_APPROVAL', { permissions: ['branch.activate'] }),
     ).toEqual([]);
+    expect(availableBranchDecisions('PENDING_APPROVAL', { permissions: ['branch.view'] })).toEqual(
+      [],
+    );
   });
 
   it('disables Activate for its drafter', () => {
