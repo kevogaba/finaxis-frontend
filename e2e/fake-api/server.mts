@@ -8,6 +8,7 @@ import { auditRoutes } from './routes/audit.mts';
 import { branchRoutes } from './routes/branches.mts';
 import { businessDateRoutes } from './routes/business-date.mts';
 import { platformTenantRoutes } from './routes/platform-tenants.mts';
+import { roleRoutes } from './routes/roles.mts';
 import { settingsRoutes } from './routes/settings.mts';
 import { tenantReadRoutes } from './routes/tenant-reads.mts';
 import { stateForToken } from './state.mts';
@@ -21,6 +22,7 @@ const routes: Route[] = [
   ...businessDateRoutes,
   ...branchRoutes,
   ...settingsRoutes,
+  ...roleRoutes,
 ];
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {

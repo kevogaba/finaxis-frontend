@@ -245,6 +245,21 @@ mutation reads its result back and also needs that view permission, otherwise 40
 | POST `/branches/{id}/reactivate`                   | optional `{reason}`                                                                                                                      | BranchDetail                                                               | `branch.reactivate` (B) + `branch.view`                                       | SUSPENDED → ACTIVE; organisation ACTIVE                                                                                                                                                                                     |
 | POST `/branches/{id}/close`                        | CloseBranch                                                                                                                              | BranchDetail                                                               | `branch.close` (B) + `branch.view`                                            | ACTIVE/SUSPENDED → CLOSED; 409 with active assignments or active child branches                                                                                                                                             |
 
+Role endpoint notes (layer 09, from backend source at f74e44b). Source reading only (no UI path to probe it live):
+
+- `PATCH /tenant/roles/{id}`: `role_name` isn't validated, so a blank value is stored (BG-34). A
+  non-null `description`, `""` included, replaces the stored one; `null` keeps it.
+- `DELETE /tenant/roles/{id}/permissions/{rpid}`: a system role is a 409. The grant lookup runs
+  first, so a grant on another role is still a 404.
+- `POST /tenant/roles/{id}/permissions`: repeating a grant returns the existing grant (no 409).
+- `POST /tenant/role-assignments`: BRANCH scope with no `branch_id` reaches `requireNotNull`
+  before the 409 guard, so it is a 500 (BG-07). A repeat returns the existing ACTIVE row as a 201.
+- `DELETE /tenant/role-assignments/{id}`: revoking a REVOKED assignment is a no-op that returns
+  it (200).
+- Audit: role status changes write `role.activate`/`role.deactivate` on ROLE. Assignments write
+  `user.assign_role`/`user.revoke_role` on `USER_ROLE_ASSIGNMENT`, keyed by the assignment id, so
+  a role's own history doesn't include who was assigned it.
+
 ### E.4 Institution-level (no branch selected) versus branch-selected context
 
 - Permissions: a branch-selected context adds BRANCH-scope grants for that branch; institution level

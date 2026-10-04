@@ -5,7 +5,8 @@ import { BackendApiError } from '@/auth/backend-api';
 const apiGet = vi.fn();
 vi.mock('./tenant-api', () => ({ apiGet: (...args: unknown[]) => apiGet(...args) as unknown }));
 
-const { getBranchIndex, getOrganisationTimeZone, resolveUserNames } = await import('./lookups');
+const { getBranchIndex, getOrganisationTimeZone, getRoleIndex, resolveUserNames } =
+  await import('./lookups');
 
 /** Parses `raw` with whatever schema the call site passes, so a schema miss rejects like the real `apiGet`. */
 const wire =
@@ -104,5 +105,87 @@ describe('lookups', () => {
     apiGet.mockImplementationOnce(wire({ timezone: 'Africa/Nairobi' }));
     await expect(getOrganisationTimeZone()).resolves.toBe('Africa/Nairobi');
     expect(apiGet).toHaveBeenCalledWith('/api/v1/tenant', expect.anything());
+  });
+
+  it('indexes roles by id across pages, sorted by name, keeping an unknown status', async () => {
+    apiGet
+      .mockImplementationOnce(
+        wire({
+          items: [
+            {
+              id: 'r1',
+              role_code: 'TELLER',
+              role_name: 'Teller',
+              system_role: false,
+              status: 'ACTIVE',
+            },
+          ],
+          page: envelope(0, true),
+        }),
+      )
+      .mockImplementationOnce(
+        wire({
+          items: [
+            {
+              id: 'r2',
+              role_code: 'TENANT_ADMIN',
+              role_name: 'Tenant admin',
+              system_role: true,
+              status: 'RETIRED',
+            },
+          ],
+          page: envelope(1, false),
+        }),
+      );
+
+    const index = await getRoleIndex();
+
+    expect(index.get('r1')).toEqual({
+      name: 'Teller',
+      code: 'TELLER',
+      status: 'ACTIVE',
+      systemRole: false,
+    });
+    // A lookup never blanks every name over one status it doesn't know.
+    expect(index.get('r2')).toEqual({
+      name: 'Tenant admin',
+      code: 'TENANT_ADMIN',
+      status: 'RETIRED',
+      systemRole: true,
+    });
+    expect(apiGet).toHaveBeenCalledTimes(2);
+    expect(apiGet).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/tenant/roles?page=0&size=100&sort_by=roleName&sort_dir=ASC',
+      expect.anything(),
+    );
+  });
+
+  it('leaves the role index empty without role.view', async () => {
+    apiGet.mockRejectedValueOnce(new BackendApiError(403));
+    await expect(getRoleIndex()).resolves.toEqual(new Map());
+  });
+
+  it('leaves the role index empty when a later page fails', async () => {
+    apiGet
+      .mockImplementationOnce(
+        wire({
+          items: [
+            {
+              id: 'r1',
+              role_code: 'TELLER',
+              role_name: 'Teller',
+              system_role: false,
+              status: 'ACTIVE',
+            },
+          ],
+          page: envelope(0, true),
+        }),
+      )
+      .mockRejectedValueOnce(new BackendApiError(503));
+
+    await expect(getRoleIndex()).resolves.toEqual(new Map());
+    // Page 1 was read: the failure came after page 0 had filled the index.
+    expect(apiGet).toHaveBeenCalledTimes(2);
   });
 });
