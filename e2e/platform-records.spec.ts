@@ -569,7 +569,12 @@ const SURFACES = [
     path: `${ACME}/users/${R.esi}`,
     heading: 'Esi Mensah',
     open: async (page: Page) => {
-      await page.getByRole('button', { name: 'Deactivate account', exact: true }).click();
+      const trigger = page.getByRole('button', { name: 'Deactivate account', exact: true });
+      await expectHydrated(trigger);
+      await trigger.click();
+      await expect(
+        page.getByRole('alertdialog', { name: "Deactivate Esi Mensah's account?" }),
+      ).toBeVisible();
       // Scan once the fade has finished: axe blends ancestor opacity into colour contrast.
       await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1');
     },
@@ -587,7 +592,9 @@ const SURFACES = [
     regions: { 'Needs attention': 1, 'Needs attention table': 1 },
     // Two scans: the page, then the open popover.
     then: async (page: Page) => {
-      await page.getByRole('button', { name: /^Notifications/ }).click();
+      const bell = page.getByRole('button', { name: /^Notifications/ });
+      await expectHydrated(bell);
+      await bell.click();
       await expect(page.getByRole('dialog', { name: 'Notifications' })).toBeVisible();
       await expect(page.locator('.MuiPopover-paper')).toHaveCSS('opacity', '1');
     },
@@ -608,6 +615,9 @@ test.describe('platform records: accessibility', () => {
         await applyA11yCase(page, a11yCase);
         await authenticate(context, testInfo, 'platform-records');
         await enterPlatform(page, surface.path, surface.heading);
+        // The bell streams behind its own Suspense boundary: every scan and the 375 px page-width
+        // check include the finished header.
+        await expect(page.getByRole('button', { name: /^Notifications/ })).toBeVisible();
         if ('open' in surface) await surface.open(page);
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);

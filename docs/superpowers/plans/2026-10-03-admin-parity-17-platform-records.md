@@ -2447,7 +2447,7 @@ function platformRecordsScenario(): RunState {
       person(ids.esi, 'esi.mensah', 'Esi Mensah', 'ACTIVE', 'acme.example'),
       person(ids.faraji, 'faraji.juma', 'Faraji Juma', 'DEACTIVATED', 'acme.example'),
       person(ids.nyokabi, 'nyokabi.wairimu', LONG_ACCOUNT_NAME, 'ACTIVE', 'acme.example', {
-        email: 'nyokabi.wairimu.kamau-achieng.muthoni.njeri.chebet@acme-teachers-savings.example',
+        email: 'nyokabi.wairimu.kamau.achieng.muthoni.njeri.chebet@acmeteacherssavings.example',
       }),
     ],
     // Newest first is reverse seed order: Acme lists Nyokabi … Achieng, then Jane; the platform
