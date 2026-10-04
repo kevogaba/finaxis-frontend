@@ -100,6 +100,51 @@ test.describe('platform records: institution branches', () => {
     expect(param(page, 'status')).toBe('SUSPENDED');
   });
 
+  test("draws the theme's 2 px focus ring on the keyboard-scrollable branches table", async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'platform-records');
+    await enterPlatform(page, `${ACME}/branches`, 'Acme SACCO');
+    // At 375 px the 760 px table overflows its card, so the region really is a keyboard stop.
+    await page.setViewportSize({ width: 375, height: 812 });
+
+    const region = page.getByRole('region', { name: 'Branches table' });
+    await expect(region).toHaveAttribute('tabindex', '0');
+    const search = page.getByRole('searchbox', { name: 'Search' });
+    await expectHydrated(search);
+    await search.focus();
+    for (let press = 0; press < 15; press += 1) {
+      await page.keyboard.press('Tab');
+      if (await region.evaluate((element) => element === document.activeElement)) break;
+    }
+    await expect(region).toBeFocused();
+
+    // The browser's own ring is `outline: auto` at 1 px; every other control has the theme's 2 px
+    // solid ring (gate finding M4). The region sits flush in a card that clips its overflow, so the
+    // ring's outer edge must stay inside that card or it is cut off on three sides.
+    const ring = await region.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const width = parseFloat(style.outlineWidth);
+      const reach = Math.max(0, parseFloat(style.outlineOffset) + width);
+      let card = element.parentElement;
+      while (card && getComputedStyle(card).overflowX === 'visible') card = card.parentElement;
+      const box = element.getBoundingClientRect();
+      const room = card?.getBoundingClientRect();
+      const border = card ? parseFloat(getComputedStyle(card).borderLeftWidth) : 0;
+      return {
+        style: style.outlineStyle,
+        width,
+        clipped: room
+          ? box.left - reach < room.left + border ||
+            box.right + reach > room.right - border ||
+            box.bottom + reach > room.bottom - border
+          : false,
+      };
+    });
+    expect(ring).toEqual({ style: 'solid', width: 2, clipped: false });
+  });
+
   test('opens a branch read-only, in UTC, and follows its parent', async ({
     context,
     page,
@@ -358,6 +403,50 @@ test.describe('platform records: users and accounts', () => {
     const box = await suspend.locator('..').boundingBox();
     expect(box).not.toBeNull();
     expect(box?.width).toBeLessThanOrEqual(320);
+  });
+
+  test('scrolls the selected Users tab into view after a full load at 375 px', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'platform-records');
+    await enterPlatform(page, `${ACME}/users`, 'Acme SACCO');
+
+    // A FULL load, now the context is chosen: MUI's scroll animation is already running when the
+    // scroll buttons arrive, and used to undo the tab strip's own nudge (gate finding M1).
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`${ACME}/users`);
+    const tab = page
+      .getByRole('navigation', { name: 'Acme SACCO sections' })
+      .getByRole('tab', { name: 'Users', selected: true });
+    await expect(tab).toBeVisible({ timeout: 15000 });
+
+    // Inside the scroller's rect, and still there three frames later: a nudge that the animation
+    // overwrites on its next frame must not pass for settled.
+    const insideScroller = () =>
+      tab.evaluate(async (element) => {
+        const scroller = element.closest('.MuiTabs-scroller');
+        if (!scroller) return false;
+        const inside = () => {
+          const view = scroller.getBoundingClientRect();
+          const rect = element.getBoundingClientRect();
+          return rect.left >= view.left - 1 && rect.right <= view.right + 1;
+        };
+        const before = inside();
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                resolve();
+              });
+            }),
+          );
+        });
+        return before && inside();
+      });
+    await expect
+      .poll(insideScroller, { timeout: 10000, message: 'the selected tab inside the tab scroller' })
+      .toBe(true);
   });
 
   // The hero's row lets the actions box shrink to a single word of its label, so each label wrapped

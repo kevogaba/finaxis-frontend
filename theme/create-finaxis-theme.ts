@@ -446,6 +446,21 @@ export function createFinaxisTheme() {
           }),
         },
       },
+      // A horizontally scrolling table container is a keyboard stop of its own
+      // (`tabIndex={0} role="region"`, layers 07, 10, 17): a plain div, so it got the browser's
+      // 1px `outline: auto` instead of the house ring. Spread the same resolved ring as above, but
+      // inset (3px, as MUI insets a Tab): the region sits flush in a card that clips its overflow
+      // (SectionCard), which cut an outset ring off on three sides.
+      MuiTableContainer: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            '&[tabindex="0"]:focus-visible':
+              theme.focusVisible === false
+                ? undefined
+                : { ...theme.focusVisible, outlineOffset: '-3px' },
+          }),
+        },
+      },
       MuiTabs: {
         styleOverrides: {
           root: ({ theme }) => ({
