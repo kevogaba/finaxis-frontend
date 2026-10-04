@@ -449,8 +449,10 @@ export function createFinaxisTheme() {
       // A horizontally scrolling table container is a keyboard stop of its own
       // (`tabIndex={0} role="region"`, layers 07, 10, 17): a plain div, so it got the browser's
       // 1px `outline: auto` instead of the house ring. Spread the same resolved ring as above, but
-      // inset (3px, as MUI insets a Tab): the region sits flush in a card that clips its overflow
-      // (SectionCard), which cut an outset ring off on three sides.
+      // inset by 3px (MUI insets a Tab's ring too, by 6px): the region sits flush in a card that
+      // clips its overflow (SectionCard), which cut an outset ring off on three sides. Limit: a
+      // table with a sticky header (Branches, Users) shows no ring on its top edge, because the
+      // sticky head cells paint over it; the other three sides carry the full 2px ring.
       MuiTableContainer: {
         styleOverrides: {
           root: ({ theme }) => ({
