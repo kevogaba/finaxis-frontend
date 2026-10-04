@@ -341,6 +341,22 @@ describe('PlatformOverviewPage', () => {
     expect(countPlatformOperators).not.toHaveBeenCalled();
   });
 
+  it("shows a refused count as couldn't be loaded, never hiding its tile", async () => {
+    setup({
+      suspended: new BackendApiError(403, { requestId: 'req-f' }),
+      operators: new BackendApiError(403, { requestId: 'req-g' }),
+    });
+
+    await show();
+
+    // A 403 while the view code is held is a failed read (Ruling 9): the tile stays and says so.
+    expect(screen.getAllByRole('group')).toHaveLength(5);
+    expect(tile('Suspended').getByText(KPI_UNAVAILABLE)).toBeInTheDocument();
+    expect(tile('Suspended').getByText('Reference: req-f')).toBeInTheDocument();
+    expect(tile('Platform operators').getByText(KPI_UNAVAILABLE)).toBeInTheDocument();
+    expect(tile('Platform operators').getByText('Reference: req-g')).toBeInTheDocument();
+  });
+
   // AGENTS.md: a page settles a read with load(), which redirects on a lost session or a stale
   // context. A tile that swallowed it would show "Couldn't be loaded" on a page that can't recover.
   describe.each([

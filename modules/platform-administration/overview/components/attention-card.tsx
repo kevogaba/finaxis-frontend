@@ -21,7 +21,7 @@ export function AttentionCard({ view }: { view: AttentionView }) {
   return (
     <SectionCard title="Needs attention" description={ATTENTION_DESCRIPTION}>
       {view.failures.map((failure) => (
-        <Alert key={failure} severity="error" sx={{ mx: 4, mt: 3 }}>
+        <Alert key={failure} severity="error" sx={{ mx: 4, my: 3 }}>
           {failure}
         </Alert>
       ))}
