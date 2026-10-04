@@ -20,12 +20,13 @@ const CONTEXT_NOT_SELECTED = {
   reason: 'invalid-context',
 } satisfies SelectedContextProfile;
 
-const { findUserMembership, getCurrentContextProfile, getUser, getUserInviter, router } =
+const { findUserMembership, getCurrentContextProfile, getUser, getUserInviter, redirect, router } =
   vi.hoisted(() => ({
     findUserMembership: vi.fn(),
     getCurrentContextProfile: vi.fn(),
     getUser: vi.fn(),
     getUserInviter: vi.fn(),
+    redirect: vi.fn(),
     // One stable router object, as in table-pagination-bar.test.tsx.
     router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
   }));
@@ -36,6 +37,7 @@ vi.mock('next/navigation', async (importOriginal) => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
   },
+  redirect: (to: string) => redirect(to) as unknown,
   usePathname: () => '/admin/users/10000000-0000-4000-8000-00000000000d',
   useRouter: () => router,
 }));
@@ -83,8 +85,8 @@ interface Setup {
   userStatus?: string;
   /** What the membership lookup settles with; an Error rejects it. */
   membership?: { id: string } | null | Error;
-  /** What the inviter read settles with. */
-  inviter?: string | null;
+  /** What the inviter read settles with; an Error rejects it. */
+  inviter?: string | null | Error;
 }
 
 /** Programs every service the layout reads. A test names only what it varies. */
@@ -111,7 +113,8 @@ function setup({
   });
   if (membership instanceof Error) findUserMembership.mockRejectedValue(membership);
   else findUserMembership.mockResolvedValue(membership);
-  getUserInviter.mockResolvedValue(inviter);
+  if (inviter instanceof Error) getUserInviter.mockRejectedValue(inviter);
+  else getUserInviter.mockResolvedValue(inviter);
 }
 
 async function show(userId = FELIX, children: ReactNode = <p>Tab body</p>) {
@@ -130,6 +133,9 @@ const button = (name: string) => screen.queryByRole('button', { name });
 
 beforeEach(() => {
   vi.resetAllMocks();
+  redirect.mockImplementation((to: string) => {
+    throw new Error(`NEXT_REDIRECT:${to}`);
+  });
 });
 
 describe('UserRecordLayout: the record', () => {
@@ -318,6 +324,50 @@ describe('UserRecordLayout: the membership actions', () => {
     // Rejecting is not approving: it stays available.
     expect(button('Reject & revoke')).toBeEnabled();
   });
+
+  // AGENTS.md: a page settles a read with load(), which redirects on a lost session or a stale
+  // context. A quiet null here would render a stale page with Approve enabled.
+  it.each([
+    ['a 401', new BackendApiError(401), '/login?reason=session_expired'],
+    [
+      'a stale context',
+      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
+      '/select-context',
+    ],
+  ])(
+    'redirects, rendering nothing, when the inviter read fails with %s',
+    async (_n, failure, to) => {
+      setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'DRAFT', inviter: failure });
+
+      await expect(
+        UserRecordLayout({ children: <p>Tab body</p>, params: Promise.resolve({ userId: FELIX }) }),
+      ).rejects.toThrow(`NEXT_REDIRECT:${to}`);
+
+      expect(getUserInviter).toHaveBeenCalledWith(FELIX);
+      expect(redirect).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  // The backend's maker-checker 409 is the guard when the inviter can't be read, so an ordinary
+  // failure (a permission that changed, a 5xx) leaves Approve on offer rather than blocking it.
+  it.each([
+    ['a 403', new BackendApiError(403, { code: 'forbidden' })],
+    ['a 5xx', new BackendApiError(500, { requestId: 'req-3' })],
+  ])(
+    'renders the record, with Approve on offer, when the inviter read fails with %s',
+    async (_n, failure) => {
+      setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'DRAFT', inviter: failure });
+
+      await show();
+
+      expect(getUserInviter).toHaveBeenCalledWith(FELIX);
+      expect(redirect).not.toHaveBeenCalled();
+      expect(screen.getByRole('heading', { level: 1, name: 'Felix Omondi' })).toBeInTheDocument();
+      expect(button('Approve')).toBeEnabled();
+      expect(screen.queryByText(USER_MAKER_CHECKER_BLOCKED)).not.toBeInTheDocument();
+      expect(screen.getByText('Tab body')).toBeInTheDocument();
+    },
+  );
 
   it('leaves Approve enabled when someone else invited them (the control for the case above)', async () => {
     setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'DRAFT', inviter: VICTOR });

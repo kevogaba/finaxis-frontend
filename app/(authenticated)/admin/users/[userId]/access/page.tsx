@@ -9,7 +9,7 @@ import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { SectionCard } from '@/components/data-display/section-card';
 import { TablePaginationBar } from '@/components/data-display/table-pagination-bar';
 import { load } from '@/lib/api/load';
-import { getBranchIndex, getRoleIndex } from '@/lib/api/lookups';
+import { getBranchIndex, getRoleIndexScan, ROLE_INDEX_CEILING } from '@/lib/api/lookups';
 import { lastPageIfPastEnd, parsePaging } from '@/lib/api/paging';
 import { hrefWith, toSearchParams } from '@/lib/api/query-string';
 import { shortId } from '@/lib/format';
@@ -28,6 +28,8 @@ import {
   ROLES_UNAVAILABLE,
   roleScopeBranches,
   roleScopeHint,
+  rolesCappedHint,
+  rolesCappedNoneActive,
 } from '@/modules/administration/users/user-rules';
 import { getUser, listUserBranchAssignments } from '@/modules/administration/users/user-service';
 
@@ -42,15 +44,16 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
   const userId = parseUserId((await params).userId);
   if (!userId) notFound(); // rule 7: before any read, like the layout (16's tab pages)
   const query = toSearchParams(await searchParams);
-  const [user, selected, assignments, roles, branches] = await Promise.all([
+  const [user, selected, assignments, roleScan, branches] = await Promise.all([
     load(getUser(userId)), // cached: the layout's read
     getCurrentContextProfile(),
     load(listRoleAssignments({ userId, status: 'ACTIVE' }, parsePaging(query, 10))),
-    getRoleIndex(), // empty without role.view: names fall back to short ids
+    getRoleIndexScan(), // empty without role.view: names fall back to short ids
     getBranchIndex(), // empty without branch.view: names fall back to short ids
   ]);
   if (!user.ok) return null; // the layout renders the failure
 
+  const { index: roles, truncated: rolesTruncated } = roleScan;
   const record = user.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
   const holder = { permissions: resolved?.profile.permissions ?? [] };
@@ -81,9 +84,19 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
     selectedBranchName: selectedBranch?.name ?? null,
   });
   const assignOffered = canAssign && roleOptions.length > 0;
-  // `getRoleIndex` answers an empty map on any failure and every tenant has system roles, so an empty
-  // index means the read failed: never "there are no active roles".
-  const noRoleOffered = roles.size === 0 ? ROLES_UNAVAILABLE : NO_ACTIVE_ROLES;
+  // The index holds the first ROLE_INDEX_CEILING roles by name: a capped scan is never presented as
+  // the whole catalogue (AGENTS.md, the fifth paging exception), so the picker says so.
+  const roleHint =
+    assignOffered && rolesTruncated ? rolesCappedHint(ROLE_INDEX_CEILING) : undefined;
+  // `getRoleIndexScan` answers an empty map on any failure and every tenant has system roles, so an
+  // empty index means the read failed: never "there are no active roles". Past the ceiling, "none"
+  // is only true of the roles that were read.
+  const noRoleOffered =
+    roles.size === 0
+      ? ROLES_UNAVAILABLE
+      : rolesTruncated
+        ? rolesCappedNoneActive(ROLE_INDEX_CEILING)
+        : NO_ACTIVE_ROLES;
 
   const card = (content: ReactNode) => (
     <SectionCard
@@ -95,6 +108,7 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
             userId={userId}
             userName={record.displayName}
             roles={roleOptions}
+            roleHint={roleHint}
             branches={scopeBranches}
             branchHint={branchHint}
             contextOrganisationId={contextOrganisationId}

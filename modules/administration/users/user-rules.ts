@@ -240,7 +240,7 @@ export function membershipActionsNote(
   return lookup === 'failed' ? MEMBERSHIP_UNAVAILABLE : null;
 }
 
-/** A REVOKED membership takes no assignment (409). The role select reads `getRoleIndex`, which
+/** A REVOKED membership takes no assignment (409). The role select reads the role index, which
  * needs `role.view`. */
 export function canAssignUserRole(status: MembershipStatus, holder: PermissionHolder): boolean {
   return status !== 'REVOKED' && canAll(holder, ['user.assign_role', 'role.view']);
@@ -263,10 +263,20 @@ export const ACCESS_DESCRIPTION =
   'Roles this user holds. Institution scope applies everywhere; branch scope only while that branch is selected.';
 export const NO_ACTIVE_ROLES =
   'There are no active roles to assign. Create or activate one under Roles & permissions.';
-/** `getRoleIndex` answers an empty map on any failure, and every tenant has system roles, so an empty
+/** The role index answers an empty map on any failure, and every tenant has system roles, so an empty
  * index is a failed read, not "no roles". */
 export const ROLES_UNAVAILABLE =
   "Roles couldn't be loaded, so none can be assigned right now. Refresh to try again.";
+/** The role index stops at a ceiling (`ROLE_INDEX_CEILING` in lib/api/lookups.ts, server-only, so
+ * the page passes it in): past it the picker offers only the first roles by name, and says so. */
+export function rolesCappedHint(ceiling: number): string {
+  return `Only the first ${ceiling} roles by name are offered here; roles after that can't be assigned from this page.`;
+}
+/** The capped index held no ACTIVE role, but roles beyond it were never read: "none are active"
+ * would be a capped scan presented as the whole catalogue. */
+export function rolesCappedNoneActive(ceiling: number): string {
+  return `None of the first ${ceiling} roles by name is active, and roles after that can't be assigned from this page.`;
+}
 export const PARTIAL_SCAN_NOTE = `This list may be incomplete: the platform can't filter branch assignments by user, so only the first ${SCAN_CEILING} branch assignments were checked.`;
 
 /** `canSwitch`: the signed-in user has more than one ACTIVE branch, so All branches is open. */

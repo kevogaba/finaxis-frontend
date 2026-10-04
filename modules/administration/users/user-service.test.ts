@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ZodType } from 'zod';
+import { BackendApiError } from '@/auth/backend-api';
 import { branchAssignmentPageSchema } from '@/modules/administration/branches/branch-contract';
 import {
   membershipDetailSchema,
@@ -270,9 +271,15 @@ describe('user service', () => {
       await expect(service.getUserInviter(ANN)).resolves.toBeNull();
     });
 
-    it('is null when the audit read fails', async () => {
-      listAuditEvents.mockRejectedValueOnce(new Error('forbidden'));
-      await expect(service.getUserInviter(ANN)).resolves.toBeNull();
+    // Never a quiet null: a 401 or a stale-context failure must reach the caller's `load()`, which
+    // redirects on it; the caller decides what any other failure means.
+    it.each([
+      ['a 401', new BackendApiError(401, { code: 'unauthorized' })],
+      ['a stale context', new BackendApiError(403, { code: 'invalid_active_tenant_context' })],
+      ['a 5xx', new BackendApiError(500, { requestId: 'req-1' })],
+    ])("rejects with the audit read's own error on %s", async (_name, failure) => {
+      listAuditEvents.mockRejectedValueOnce(failure);
+      await expect(service.getUserInviter(ANN)).rejects.toBe(failure);
     });
 
     it('is null for a malformed id, without reading the audit log', async () => {

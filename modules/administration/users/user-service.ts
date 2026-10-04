@@ -88,21 +88,21 @@ export const listUserBranchAssignments = cache(async (userId: string): Promise<U
 });
 
 /** BG-08: the inviter is only in the audit log (`user.invite`, contract §G maker lookups); null
- * without `audit.view` or when no event is readable (08's getBranchMaker). A malformed id is null
- * too, with no read. */
+ * when no event is readable. A malformed id is null too, with no read. Every read failure
+ * REJECTS (like `countUserRoleAssignments`), so the caller settles it with `load()`, which redirects
+ * on a lost session or a stale context; it decides what any other failure means (never a quiet
+ * null here). */
 export async function getUserInviter(userId: string): Promise<string | null> {
-  try {
-    const events = await listAuditEvents({
-      entityType: 'USER',
-      entityId: uuidSchema.parse(userId),
-      action: 'user.invite',
-      page: 0,
-      size: 1,
-    });
-    return events.items[0]?.actorUserId ?? null;
-  } catch {
-    return null;
-  }
+  const id = uuidSchema.safeParse(userId);
+  if (!id.success) return null;
+  const events = await listAuditEvents({
+    entityType: 'USER',
+    entityId: id.data,
+    action: 'user.invite',
+    page: 0,
+    size: 1,
+  });
+  return events.items[0]?.actorUserId ?? null;
 }
 
 /** BG-15: one `size=1` read. Rejects when it fails, so the caller settles it with `load()` and can

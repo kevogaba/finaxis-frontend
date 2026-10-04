@@ -124,6 +124,33 @@ const lineCount = (locator: Locator) =>
     return Math.round(element.getBoundingClientRect().height / lineHeight);
   });
 
+/** Tabs from `from` until `target` holds focus: a scroll container that no Tab stop reaches can't
+ * be scrolled from the keyboard. A bounded walk, so a missing stop fails rather than hangs. */
+async function tabTo(page: Page, from: Locator, target: Locator) {
+  await from.focus();
+  for (let press = 0; press < 15; press += 1) {
+    await page.keyboard.press('Tab');
+    if (await target.evaluate((element) => element === document.activeElement)) return;
+  }
+  throw new Error('Tab never reached the target in 15 presses');
+}
+
+/** The browser's keyboard focus ring: `:focus-visible` paints an outline, an unfocused element none. */
+const outlineOf = (locator: Locator) =>
+  locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+  });
+async function expectFocusRing(locator: Locator) {
+  await expect(locator).toBeFocused();
+  const outline = await outlineOf(locator);
+  expect(outline.style).not.toBe('none');
+  expect(outline.width).toBeGreaterThan(0);
+}
+async function expectNoFocusRing(locator: Locator) {
+  expect((await outlineOf(locator)).style).toBe('none');
+}
+
 /** A toast: MUI alerts in the toast region; Next's route announcer is an alert too. */
 const toast = (page: Page, text: string) => page.getByRole('alert').filter({ hasText: text });
 
@@ -243,6 +270,32 @@ test.describe('users: directory and lifecycle', () => {
     await expect.poll(() => width(name)).toBeLessThanOrEqual(0.6 * 375 + 1);
     await expect.poll(() => width(email)).toBeLessThanOrEqual(0.6 * 375 + 1);
     await expect(name).toBeVisible();
+  });
+
+  test('makes the users table keyboard-scrollable: Tab reaches it, with a visible focus ring', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users');
+    await page.setViewportSize({ width: 375, height: 812 });
+    await openDirectory(page);
+
+    // The table is wider than the card here, so the region really scrolls sideways: without a stop
+    // of its own, a keyboard user could not reach the Onboarding and status columns.
+    const region = page.getByRole('region', { name: 'Users table' });
+    await expect(region).toHaveAttribute('tabindex', '0');
+    expect(await region.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    await expectNoFocusRing(region);
+
+    const search = page.getByRole('searchbox', { name: 'Search' });
+    await expectHydrated(search);
+    await tabTo(page, search, region);
+    await expectFocusRing(region);
+    // The stop is the region, not a row inside it: the next Tab moves on to the first name link.
+    await page.keyboard.press('Tab');
+    await expect(
+      rowsOf(page, 'Users').nth(1).getByRole('link', { name: 'Joann Mwangi', exact: true }),
+    ).toBeFocused();
   });
 
   test('approves a user with no sign-in identity: provisioning starts (202)', async ({
@@ -1236,6 +1289,9 @@ test.describe('users: accessibility', () => {
       await expect(rowsOf(page, 'Users')).toHaveCount(11);
       await expectA11yCaseApplied(page, a11yCase);
       await expectNoSeriousOrCriticalViolations(page);
+      // axe counts landmark-unique as moderate, so the one region of that name is asserted here.
+      await expect(page.getByRole('region', { name: 'Users table' })).toHaveCount(1);
+      await expect(page.getByRole('region', { name: 'Users', exact: true })).toHaveCount(0);
 
       // The 100-character name and a long, nested email: hero, tabs and Overview never scroll the
       // page (index item 4).

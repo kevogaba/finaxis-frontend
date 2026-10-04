@@ -440,7 +440,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     at most 500 active assignments, marked partial when it stops early (with or without a
     selected branch), and only the selected branch shows while one is selected (BG-09, BG-03).
     Assign branch offers the first 100 active branches (only the selected one while a branch is
-    selected).
+    selected). Assign role offers the active roles among the first 500 by name (the role index's
+    ceiling) and says so under the Role field when there are more (BG-09).
   - Approve is disabled, with the reason, for the user's inviter (when `audit.view` can show
     who that was) and for a blocked account, and withheld once approval ran. Other refusals are
     explained: a 403 as permission or maker-checker (BG-08), a 500 by its likely causes, such as

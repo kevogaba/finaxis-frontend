@@ -95,6 +95,17 @@ describe('UserDirectoryTable', () => {
     expect(screen.queryByRole('link', { name: /FO/ })).toBeNull();
   });
 
+  it("holds the table in a named, keyboard-focusable region, so a narrow screen's horizontal scroll is reachable", () => {
+    renderWithProviders(<UserDirectoryTable users={USERS} />);
+
+    const region = screen.getByRole('region', { name: 'Users table' });
+    expect(region).toHaveAttribute('tabindex', '0');
+    // The table is the region's own content and keeps its own name.
+    expect(within(region).getByRole('table', { name: 'Users' })).toBeInTheDocument();
+    // One name per landmark: the table is not also a region named Users (axe's landmark-unique).
+    expect(screen.queryByRole('region', { name: 'Users' })).toBeNull();
+  });
+
   it('is a table named Users with the five headers and no sort links', () => {
     renderWithProviders(<UserDirectoryTable users={USERS} />);
 

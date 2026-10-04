@@ -30,7 +30,15 @@ interface UserDirectoryTableProps {
  * link navigates. */
 export function UserDirectoryTable({ users }: UserDirectoryTableProps) {
   return (
-    <TableContainer sx={{ maxHeight: { md: 'calc(100dvh - 300px)' }, minHeight: 240 }}>
+    // Keyboard-scrollable at 375 px, where the 760 px table overflows (07's history-table rule, as in
+    // the branch assignments table). Not "Users": the table keeps that name, and a landmark and a
+    // table sharing it would read twice; no other region on the page is named "Users table".
+    <TableContainer
+      tabIndex={0}
+      role="region"
+      aria-label="Users table"
+      sx={{ maxHeight: { md: 'calc(100dvh - 300px)' }, minHeight: 240 }}
+    >
       <Table stickyHeader aria-label="Users" sx={{ minWidth: 760 }}>
         <TableHead>
           <TableRow>

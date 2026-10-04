@@ -35,6 +35,8 @@ import {
   parseUserId,
   roleScopeBranches,
   roleScopeHint,
+  rolesCappedHint,
+  rolesCappedNoneActive,
   userStatusLabel,
 } from './user-rules';
 
@@ -571,6 +573,26 @@ describe('copy constants', () => {
     expect(PARTIAL_SCAN_NOTE).toBe(
       "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 branch assignments were checked.",
     );
+  });
+});
+
+describe('the capped role catalogue copy', () => {
+  it('says that only the first roles by name are offered, and that the rest cannot be assigned here', () => {
+    expect(rolesCappedHint(500)).toBe(
+      "Only the first 500 roles by name are offered here; roles after that can't be assigned from this page.",
+    );
+  });
+
+  it('names the ceiling it is given, never a number of its own', () => {
+    expect(rolesCappedHint(120)).toContain('first 120 roles');
+    expect(rolesCappedNoneActive(120)).toContain('first 120 roles');
+  });
+
+  it('says that none of them is active, not that no role is, when the ceiling cut the list short', () => {
+    expect(rolesCappedNoneActive(500)).toBe(
+      "None of the first 500 roles by name is active, and roles after that can't be assigned from this page.",
+    );
+    expect(rolesCappedNoneActive(500)).not.toBe(NO_ACTIVE_ROLES);
   });
 });
 

@@ -16,6 +16,8 @@ interface AssignUserRoleButtonProps {
   userName: string;
   /** The ACTIVE roles on offer (a DISABLED role grants nothing, BG-27). */
   roles: readonly SelectOption[];
+  /** Why the roles on offer may be only some of them, when they are (shown under the Role field). */
+  roleHint?: string;
   /** The branches a BRANCH-scope role may name: the ones the user is already assigned to. */
   branches: readonly SelectOption[];
   /** Why no branch is offered, when none is (shown under the Scope field). */
@@ -30,6 +32,7 @@ export function AssignUserRoleButton({
   userId,
   userName,
   roles,
+  roleHint,
   branches,
   branchHint,
   contextOrganisationId,
@@ -72,7 +75,7 @@ export function AssignUserRoleButton({
               required
               defaultValue={roles.length === 1 ? (roles[0]?.id ?? '') : ''}
               error={Boolean(fieldErrors.roleId)}
-              helperText={fieldErrors.roleId}
+              helperText={fieldErrors.roleId ?? roleHint}
             >
               {roles.map((role) => (
                 <MenuItem key={role.id} value={role.id}>

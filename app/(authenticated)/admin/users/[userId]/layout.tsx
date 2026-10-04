@@ -67,11 +67,14 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
     : null;
   const membershipId = membership?.ok ? (membership.value?.id ?? null) : null;
   const actions = membershipId ? availableMembershipActions(status, holder) : [];
-  // BG-08: the inviter is only in the audit log; look it up only when Approve is on offer.
-  const inviter =
+  // BG-08: the inviter is only in the audit log; look it up only when Approve is on offer. load()
+  // redirects on a lost session or a stale context; any other failure leaves the inviter unknown
+  // and Approve on offer, where the backend's maker-checker 409 is the guard.
+  const inviterRead =
     actions.includes('approve') && can(holder, 'audit.view')
-      ? await getUserInviter(record.id)
+      ? await load(getUserInviter(record.id))
       : null;
+  const inviter = inviterRead?.ok ? inviterRead.value : null;
   const blocked = blockedMembershipActions(actions, {
     ...status,
     self: record.id === resolved?.profile.user_id, // the backend's id, not the URL's (Ruling 6)

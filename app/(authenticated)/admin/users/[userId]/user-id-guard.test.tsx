@@ -24,7 +24,7 @@ const reads = vi.hoisted(() => ({
   listBranches: vi.fn(),
   listAuditEvents: vi.fn(),
   getBranchIndex: vi.fn(),
-  getRoleIndex: vi.fn(),
+  getRoleIndexScan: vi.fn(),
   getOrganisationTimeZone: vi.fn(),
   resolveUserNames: vi.fn(),
 }));
@@ -61,7 +61,8 @@ vi.mock('@/modules/administration/audit/audit-service', () => ({
 }));
 vi.mock('@/lib/api/lookups', () => ({
   getBranchIndex: (...args: unknown[]) => reads.getBranchIndex(...args) as unknown,
-  getRoleIndex: (...args: unknown[]) => reads.getRoleIndex(...args) as unknown,
+  getRoleIndexScan: (...args: unknown[]) => reads.getRoleIndexScan(...args) as unknown,
+  ROLE_INDEX_CEILING: 500,
   getOrganisationTimeZone: (...args: unknown[]) =>
     reads.getOrganisationTimeZone(...args) as unknown,
   resolveUserNames: (...args: unknown[]) => reads.resolveUserNames(...args) as unknown,

@@ -12,7 +12,7 @@ import { renderWithProviders } from '@/test/test-utils';
 const {
   getBranchIndex,
   getCurrentContextProfile,
-  getRoleIndex,
+  getRoleIndexScan,
   getUser,
   listRoleAssignments,
   listUserBranchAssignments,
@@ -20,7 +20,7 @@ const {
 } = vi.hoisted(() => ({
   getBranchIndex: vi.fn(),
   getCurrentContextProfile: vi.fn(),
-  getRoleIndex: vi.fn(),
+  getRoleIndexScan: vi.fn(),
   getUser: vi.fn(),
   listRoleAssignments: vi.fn(),
   listUserBranchAssignments: vi.fn(),
@@ -47,7 +47,9 @@ vi.mock('@/auth/context-service', () => ({
 }));
 vi.mock('@/lib/api/lookups', () => ({
   getBranchIndex: () => getBranchIndex() as unknown,
-  getRoleIndex: () => getRoleIndex() as unknown,
+  getRoleIndexScan: () => getRoleIndexScan() as unknown,
+  // The real value is pinned in lib/api/lookups.test.ts.
+  ROLE_INDEX_CEILING: 500,
 }));
 vi.mock('@/modules/administration/roles/role-service', () => ({
   listRoleAssignments: (...args: unknown[]) => listRoleAssignments(...args) as unknown,
@@ -84,6 +86,10 @@ const UNREADABLE_HINT =
   "Their branch assignments can't be read here, so only institution scope is available.";
 const PARTIAL_HINT =
   'Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here.';
+const ROLES_CAPPED_HINT =
+  "Only the first 500 roles by name are offered here; roles after that can't be assigned from this page.";
+const NONE_ACTIVE_CAPPED =
+  "None of the first 500 roles by name is active, and roles after that can't be assigned from this page.";
 const NO_BRANCH_HINT = 'Assign them to a branch first to give a branch-scoped role.';
 const notAssignedHint = (branch: string) =>
   `They aren't assigned to ${branch}. Assign them there first to give a branch-scoped role.`;
@@ -127,6 +133,8 @@ interface Setup {
   permissions?: string[];
   /** The role index the page reads: empty on any failure (lib/api/lookups.ts). */
   index?: RoleIndex;
+  /** The scan stopped at its ceiling with more roles unread. */
+  rolesTruncated?: boolean;
   branchIndex?: typeof BRANCH_INDEX;
   membershipStatus?: string;
   selectedBranch?: { id: string; name: string } | null;
@@ -148,6 +156,7 @@ interface Setup {
 function setup({
   permissions = ALL_CODES,
   index = TELLER_ROLE,
+  rolesTruncated = false,
   branchIndex = BRANCH_INDEX,
   membershipStatus = 'ACTIVE',
   selectedBranch = null,
@@ -189,7 +198,7 @@ function setup({
   }
   if (scanError) listUserBranchAssignments.mockRejectedValue(scanError);
   else listUserBranchAssignments.mockResolvedValue({ items: scanned, truncated });
-  getRoleIndex.mockResolvedValue(new Map(index));
+  getRoleIndexScan.mockResolvedValue({ index: new Map(index), truncated: rolesTruncated });
   getBranchIndex.mockResolvedValue(new Map(branchIndex));
 }
 
@@ -270,7 +279,7 @@ describe('UserAccessPage: the record id', () => {
       expect(getUser).not.toHaveBeenCalled();
       expect(getCurrentContextProfile).not.toHaveBeenCalled();
       expect(listRoleAssignments).not.toHaveBeenCalled();
-      expect(getRoleIndex).not.toHaveBeenCalled();
+      expect(getRoleIndexScan).not.toHaveBeenCalled();
       expect(getBranchIndex).not.toHaveBeenCalled();
       expect(listUserBranchAssignments).not.toHaveBeenCalled();
     },
@@ -322,7 +331,7 @@ describe('UserAccessPage: the record id', () => {
 
 describe('UserAccessPage: when no role can be offered (1b)', () => {
   it('says the roles could not be loaded, not that there are none, when the role index is empty', async () => {
-    // Every tenant has system roles, so an empty index is a failed read (getRoleIndex swallows it).
+    // Every tenant has system roles, so an empty index is a failed read (getRoleIndexScan swallows it).
     setup({ index: [] });
 
     await show();
@@ -433,6 +442,73 @@ describe('UserAccessPage: offering the assignment', () => {
     expect(drawer).toHaveTextContent('Give Felix Omondi a role. It takes effect immediately.');
     expect(hidden('userId', drawer)).toBe(FELIX);
     expectScoped(drawer);
+  });
+});
+
+describe('UserAccessPage: a capped role catalogue', () => {
+  const roleSelect = (drawer: HTMLElement) =>
+    within(drawer).getByRole('combobox', { name: /^Role/ });
+
+  it('says, under the role select, that only the first roles are offered when the scan was cut short', async () => {
+    setup({ rolesTruncated: true });
+    await show();
+
+    const { drawer } = await openDrawer();
+
+    expect(roleSelect(drawer)).toHaveAccessibleDescription(ROLES_CAPPED_HINT);
+  });
+
+  it('says nothing about a cap when the scan was complete (the control for the case above)', async () => {
+    setup({ rolesTruncated: false });
+    await show();
+
+    const { drawer } = await openDrawer();
+
+    expect(roleSelect(drawer)).toHaveAccessibleDescription('');
+    expect(screen.queryByText(ROLES_CAPPED_HINT)).toBeNull();
+  });
+
+  it('still offers the roles it has, in the capped case', async () => {
+    setup({ rolesTruncated: true, index: TELLER_AND_DISABLED_AUDITOR });
+    await show();
+
+    const { user, drawer } = await openDrawer();
+    await user.click(roleSelect(drawer));
+
+    expect(
+      within(await screen.findByRole('listbox'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Teller (TELLER)']);
+  });
+
+  it('does not claim there are no active roles when none of the first ones is active but more were unread', async () => {
+    setup({ rolesTruncated: true, index: DISABLED_TELLER });
+
+    await show();
+
+    expect(screen.getByText(NONE_ACTIVE_CAPPED)).toBeInTheDocument();
+    expect(screen.queryByText(NO_ACTIVE_ROLES)).toBeNull();
+    expect(assignButton()).toBeNull();
+  });
+
+  it('says nothing about a cap when no role could be assigned anyway', async () => {
+    setup({ rolesTruncated: true, membershipStatus: 'REVOKED' });
+
+    await show();
+
+    expect(screen.getByText(ACCESS_DESCRIPTION)).toBeInTheDocument();
+    expect(screen.queryByText(NONE_ACTIVE_CAPPED)).toBeNull();
+    expect(assignButton()).toBeNull();
+  });
+
+  it('keeps the failed-read wording when the index is empty, even if the flag were set', async () => {
+    setup({ rolesTruncated: true, index: [] });
+
+    await show();
+
+    expect(screen.getByText(ROLES_UNAVAILABLE)).toBeInTheDocument();
+    expect(screen.queryByText(NONE_ACTIVE_CAPPED)).toBeNull();
   });
 });
 

@@ -22,6 +22,8 @@ const WESTLANDS = '44444444-4444-4444-8444-444444444444';
 const ORG = '11111111-1111-4111-8111-111111111111';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HINT = 'Assign them to a branch first to give a branch-scoped role.';
+const ROLE_HINT =
+  "Only the first 500 roles by name are offered here; roles after that can't be assigned from this page.";
 const TWO_ROLES = [
   { id: TELLER, label: 'Teller (TELLER)' },
   { id: SUPERVISOR, label: 'Branch supervisor (SUPERVISOR)' },
@@ -41,9 +43,10 @@ interface Overrides {
   roles?: readonly { id: string; label: string }[];
   branches?: readonly { id: string; label: string }[];
   branchHint?: string;
+  roleHint?: string;
 }
 
-function renderButton({ roles = TWO_ROLES, branches = [], branchHint }: Overrides = {}) {
+function renderButton({ roles = TWO_ROLES, branches = [], branchHint, roleHint }: Overrides = {}) {
   return renderWithProviders(
     <AssignUserRoleButton
       userId={FELIX}
@@ -51,6 +54,7 @@ function renderButton({ roles = TWO_ROLES, branches = [], branchHint }: Override
       roles={roles}
       branches={branches}
       branchHint={branchHint}
+      roleHint={roleHint}
       contextOrganisationId={ORG}
     />,
   );
@@ -117,6 +121,36 @@ describe('AssignUserRoleButton', () => {
       'aria-disabled',
       'true',
     );
+  });
+
+  it('says, under the role select and associated to it, when the roles offered are only some of them', async () => {
+    const user = userEvent.setup();
+    renderButton({ roleHint: ROLE_HINT });
+
+    const drawer = await openDrawer(user);
+    const role = within(drawer).getByRole('combobox', { name: /^Role/ });
+
+    expect(role).toHaveAccessibleDescription(ROLE_HINT);
+    // Associated by id, not merely nearby: assistive tech announces it with the field.
+    const describedBy = role.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy ?? '')).toHaveTextContent(ROLE_HINT);
+    // The hint is the role select's: the scope field keeps its own help.
+    expect(within(drawer).getByRole('combobox', { name: /^Scope/ })).toHaveAccessibleDescription(
+      'Applies at every branch and at institution level.',
+    );
+  });
+
+  it('shows no role help, and no description, when every role is on offer', async () => {
+    const user = userEvent.setup();
+    renderButton({ roleHint: undefined });
+
+    const drawer = await openDrawer(user);
+    const role = within(drawer).getByRole('combobox', { name: /^Role/ });
+
+    expect(role).not.toHaveAttribute('aria-describedby');
+    expect(role).toHaveAccessibleDescription('');
+    expect(screen.queryByText(/roles by name are offered here/)).not.toBeInTheDocument();
   });
 
   it('offers a branch scope the user can hold, with no hint', async () => {

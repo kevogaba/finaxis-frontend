@@ -94,12 +94,22 @@ export interface RoleIndexEntry {
 const ROLE_PAGE_SIZE = 100;
 // ponytail: name-resolution index capped at 500 roles (spec §6.3); beyond that IDs render short.
 const ROLE_PAGE_CEILING = 5;
+/** The most roles the index holds. Callers that offer the roles as options pass it to the copy that
+ * says so when the scan stopped short (`getRoleIndexScan().truncated`). */
+export const ROLE_INDEX_CEILING = ROLE_PAGE_SIZE * ROLE_PAGE_CEILING;
 
-/** Every role by id (spec §6.3), sorted by name. It serves role names for 10's and 12's assignment
- * lists, and the ACTIVE roles for 10's and 11's role pickers. Empty, never partial, on any failure
- * (for example without `role.view`). */
-export const getRoleIndex = cache(async (): Promise<ReadonlyMap<string, RoleIndexEntry>> => {
+export interface RoleIndexScan {
+  index: ReadonlyMap<string, RoleIndexEntry>;
+  /** The scan ran out of pages while the last one it read still said there were more: the index
+   * holds the first `ROLE_INDEX_CEILING` roles by name, not the whole catalogue. */
+  truncated: boolean;
+}
+
+/** Every role by id (spec §6.3), sorted by name, and whether the ceiling cut it short. Empty and not
+ * truncated, never partial, on any failure (for example without `role.view`). One scan per request. */
+export const getRoleIndexScan = cache(async (): Promise<RoleIndexScan> => {
   const index = new Map<string, RoleIndexEntry>();
+  let truncated = false;
   try {
     for (let page = 0; page < ROLE_PAGE_CEILING; page += 1) {
       const result = await apiGet(
@@ -109,15 +119,24 @@ export const getRoleIndex = cache(async (): Promise<ReadonlyMap<string, RoleInde
       result.items.forEach(({ id, entry }) => {
         index.set(id, entry);
       });
-      if (!result.page.hasNext) break;
+      truncated = result.page.hasNext;
+      if (!truncated) break;
     }
   } catch {
     // Empty, never partial, when any page fails (e.g. without role.view); callers fall back to
     // short IDs.
     index.clear();
+    truncated = false;
   }
-  return index;
+  return { index, truncated };
 });
+
+/** The role index without the truncation flag. It serves role names for 10's and 12's assignment
+ * lists, and the ACTIVE roles for 10's and 11's role pickers; a picker that offers them as options
+ * reads `getRoleIndexScan` instead, so it can say when the catalogue was cut short. */
+export const getRoleIndex = cache(
+  async (): Promise<ReadonlyMap<string, RoleIndexEntry>> => (await getRoleIndexScan()).index,
+);
 
 export const getOrganisationTimeZone = cache(async (): Promise<string> => {
   try {
