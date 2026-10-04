@@ -74,6 +74,9 @@ describe('the control checks', () => {
   it('fails the role check only on a read that found none', () => {
     expect(byId('role', checks({ roles: { ok: true, value: 0 } }))?.state).toBe('failed');
     expect(byId('role', checks({ roles: null }))?.state).toBe('platform');
+    expect(byId('role', checks({ roles: null }))?.detail).toBe(
+      `${VERIFIED_ON_APPROVAL} Your role can't view role assignments.`,
+    );
     expect(
       byId('role', checks({ roles: { ok: false, problem: { requestId: null } } }))?.detail,
     ).toBe(`${VERIFIED_ON_APPROVAL} Their roles couldn't be loaded.`);
@@ -97,6 +100,15 @@ describe('the control checks', () => {
     ['no branch_assignment.view', { branches: null }, 'platform'],
   ])('checks the branch assignment of %s: %s', (_case, overrides, state) => {
     expect(byId('branch', checks(overrides))?.state).toBe(state);
+  });
+
+  it('leaves the branch check to the platform when the scan failed or was not permitted, never "none"', () => {
+    expect(
+      byId('branch', checks({ branches: { ok: false, problem: { requestId: 'req-8' } } }))?.detail,
+    ).toBe(`${VERIFIED_ON_APPROVAL} Their branch assignments couldn't be loaded. Reference: req-8`);
+    expect(byId('branch', checks({ branches: null }))?.detail).toBe(
+      `${VERIFIED_ON_APPROVAL} Your role can't view branch assignments.`,
+    );
   });
 
   it('checks a branch for its drafter and the institution only', () => {
