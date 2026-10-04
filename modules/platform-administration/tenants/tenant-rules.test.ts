@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   availableTenantActions,
   canRetryBootstrap,
+  countryLabel,
   countryName,
   currencyLabel,
   EMPTY_TENANT_DRAFT,
@@ -129,6 +130,11 @@ describe('country, currency and timezone choices', () => {
     expect(countryName('KEN')).toBe('KEN');
     expect(currencyLabel('KES')).toBe('KES · Kenyan Shilling');
     expect(currencyLabel('K')).toBe('K');
+  });
+
+  it('writes a country as its code, then its name, like a currency', () => {
+    expect(countryLabel('KE')).toBe('KE · Kenya');
+    expect(countryLabel('UG')).toBe('UG · Uganda');
   });
 
   it('lists every nameable country by name, every currency and every zone', () => {

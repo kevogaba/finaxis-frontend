@@ -173,6 +173,11 @@ export function countryName(code: string): string {
   }
 }
 
+/** `KE · Kenya`: the code first, like a currency (`KES · Kenyan Shilling`). */
+export function countryLabel(code: string): string {
+  return `${code} · ${countryName(code)}`;
+}
+
 /** Regions `Intl` names that aren't countries to put on an institution. */
 const NON_COUNTRIES: ReadonlySet<string> = new Set(['XA', 'XB', 'ZZ', 'QO', 'EU', 'EZ', 'UN']);
 
