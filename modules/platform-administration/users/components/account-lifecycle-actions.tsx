@@ -121,10 +121,10 @@ export function AccountLifecycleActions({
     }
   }, [actionKey]);
 
-  // A success that empties the set (Deactivate leaves only a note) unmounts this component before
-  // the effect above runs for a new render, so the same fallback runs from the cleanup instead.
-  // Aliasing the ref object reads its live value at unmount time, which
-  // react-hooks/exhaustive-deps allows.
+  // A success that leaves neither an action nor a note unmounts this component (AccountRecord drops
+  // it), so the same fallback runs from the cleanup instead. After Deactivate the note keeps it
+  // mounted, and the effect above moves focus to the title. Aliasing the ref object reads its live
+  // value at unmount time, which react-hooks/exhaustive-deps allows.
   useEffect(() => {
     const successRef = succeededRef;
     return () => {

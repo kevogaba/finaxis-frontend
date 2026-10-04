@@ -138,6 +138,12 @@ describe('AccountLifecycleActions', () => {
 
     expect(await within(dialog).findByText(CONFIRM_USERNAME_MISMATCH)).toBeInTheDocument();
     expect(confirm).toHaveValue('esi');
+    // The mismatch is tied to its field: invalid, described by the message, and focused.
+    expect(confirm).toBeInvalid();
+    expect(confirm).toHaveAccessibleDescription(CONFIRM_USERNAME_MISMATCH);
+    await waitFor(() => {
+      expect(confirm).toHaveFocus();
+    });
     await user.clear(confirm);
     await user.type(confirm, USERNAME);
     await user.click(within(dialog).getByRole('button', { name: 'Deactivate account' }));
@@ -295,6 +301,7 @@ describe('AccountLifecycleActions', () => {
     const dialog = screen.getByRole('dialog', { name: `Reactivate ${NAME}'s account?` });
     await user.click(within(dialog).getByRole('button', { name: 'Reactivate account' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Account reactivated');
+    expectScoped(reactivateAccount.mock.calls[0]?.[1] as FormData);
 
     // A disabled button can't take focus, so with nothing enabled left the title is the target.
     rerender(
@@ -331,6 +338,31 @@ describe('AccountLifecycleActions', () => {
         <h1>{NAME}</h1>
       </main>,
     );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: NAME })).toHaveFocus();
+    });
+  });
+
+  it('falls back to the record title when a deactivate leaves only the note', async () => {
+    const user = userEvent.setup();
+    deactivateAccount.mockResolvedValueOnce({ ok: true });
+    const { rerender } = renderActions({ actions: ['suspend', 'deactivate'] });
+
+    await user.click(screen.getByRole('button', { name: 'Deactivate account' }));
+    const dialog = screen.getByRole('alertdialog', { name: `Deactivate ${NAME}'s account?` });
+    await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), 'Left the platform');
+    await user.type(
+      within(dialog).getByRole('textbox', { name: `Type ${USERNAME} to confirm` }),
+      USERNAME,
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Deactivate account' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Account deactivated');
+    expectScoped(deactivateAccount.mock.calls[0]?.[1] as FormData);
+
+    // What AccountRecord renders for a deactivated account: no action, the note (Ruling 5). The
+    // component stays mounted, so the focus effect, not the unmount cleanup, reaches the title.
+    rerender(record({ actions: [], note: ACCOUNT_DEACTIVATED_NOTE }));
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: NAME })).toHaveFocus();
