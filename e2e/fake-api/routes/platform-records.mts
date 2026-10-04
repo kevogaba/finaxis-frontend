@@ -83,10 +83,12 @@ function accountTransition(
       user.status = to;
       if (path === 'deactivate') {
         // Contract §G: deactivation revokes every ACTIVE role assignment of the account, in every
-        // organisation and at either scope, one `user.deactivation_assignment_revoked` row each in
-        // that assignment's own organisation's log (BG-06). The contract doesn't say who the actor
-        // of these rows is, so the fake records the calling operator. Suspend and reactivate leave
-        // the assignments, and so do branch assignments and memberships.
+        // organisation and at either scope, with one `user.deactivation_assignment_revoked` row per
+        // assignment. The contract names neither the log nor the actor of these rows. The fake
+        // writes each in the assignment's own organisation (BG-06's rule for a platform action on
+        // a tenant; BG-06 puts the account's own lifecycle rows under PLATFORM), with the calling
+        // operator as the actor. Suspend and reactivate leave the assignments, and so do branch
+        // assignments and memberships.
         for (const assignment of context.state.roleAssignments) {
           if (assignment.userId !== user.id || assignment.status !== 'ACTIVE') continue;
           assignment.status = 'REVOKED';

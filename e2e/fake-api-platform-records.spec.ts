@@ -270,7 +270,9 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
       },
     ]);
 
-    // A replay by the same key, a refusal at Pwani, and a taken code each add nothing.
+    // A replay by the same key and a taken code each add nothing to Acme's log. (A refusal at
+    // Pwani would write to Pwani's log, which this run can't read, so that step only shows that
+    // Acme's stays untouched.)
     const replay = await post(acme('/branches'), DRAFT, key);
     expect(replay.headers()['idempotency-replayed']).toBe('true');
     await expectProblem(
@@ -402,7 +404,6 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
       expect(row).toMatchObject({
         action: 'user.deactivation_assignment_revoked',
         resource_type: 'USER_ROLE_ASSIGNMENT',
-        actor_id: IDS.jane,
         reason,
       });
     }
