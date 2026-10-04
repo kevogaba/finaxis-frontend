@@ -38,7 +38,7 @@ export function ProfileSection({ title, description, actions, children }: Profil
             {title}
           </Typography>
           {description && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
               {description}
             </Typography>
           )}

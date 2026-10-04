@@ -31,8 +31,12 @@ export interface ApplicationContext {
   branch: ApplicationContextBranch | null;
 }
 
+/**
+ * Case-insensitive: UUID_PATTERN (lib/api/wire.ts) and the env's `z.uuid()` both accept upper
+ * case, so a strict comparison would let an upper-cased platform id pass as an ordinary one.
+ */
 export function isPlatformOrganisation(organisationId: string): boolean {
-  return organisationId === serverEnv.PLATFORM_ORGANISATION_ID;
+  return organisationId.toLowerCase() === serverEnv.PLATFORM_ORGANISATION_ID.toLowerCase();
 }
 
 export function resolveApplicationContextModule(organisationId: string): ApplicationContextModule {

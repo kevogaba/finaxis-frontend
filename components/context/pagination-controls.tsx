@@ -39,7 +39,7 @@ export function PaginationControls({
       >
         Previous
       </Button>
-      <Typography color="text.secondary" variant="body2">
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
         Page {page.number + 1} of {Math.max(page.totalPages, 1)}
       </Typography>
       <Button

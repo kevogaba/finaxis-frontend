@@ -21,6 +21,9 @@
   html {
     height: 100%;
     font-variant-numeric: tabular-nums;
+    /* The sticky app bar is 69 px: a control reached backwards by keyboard must land below it,
+       not under it (WCAG 2.4.11). */
+    scroll-padding-top: 80px;
   }
 
   body {

@@ -98,7 +98,7 @@ export async function RecordAuditTab({
         <Typography id={HEADING_ID} component="h2" variant="h5">
           {title}
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+        <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
           {description}
         </Typography>
       </Box>

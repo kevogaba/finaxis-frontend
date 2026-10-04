@@ -27,7 +27,7 @@ export function PageHeader({ eyebrow, title, description, actions }: PageHeaderP
     >
       <Box sx={{ minWidth: 0 }}>
         {eyebrow && (
-          <Typography variant="overline" component="p" color="text.secondary">
+          <Typography variant="overline" component="p" sx={{ color: 'text.secondary' }}>
             {eyebrow}
           </Typography>
         )}
@@ -35,9 +35,7 @@ export function PageHeader({ eyebrow, title, description, actions }: PageHeaderP
           {title}
         </Typography>
         {description && (
-          <Typography color="text.secondary" sx={{ maxWidth: 730 }}>
-            {description}
-          </Typography>
+          <Typography sx={{ color: 'text.secondary', maxWidth: 730 }}>{description}</Typography>
         )}
       </Box>
       {actions && <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>{actions}</Box>}

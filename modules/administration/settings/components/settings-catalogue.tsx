@@ -75,7 +75,7 @@ function SettingRow({ label, note, value, actions }: SettingRowProps) {
           {label}
         </Typography>
         {note && (
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             {note}
           </Typography>
         )}
@@ -145,7 +145,7 @@ export function SettingsCatalogue({
             </Typography>
           </AccordionSummary>
           <AccordionDetails sx={{ p: 0 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ px: 4.5, pb: 2 }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', px: 4.5, pb: 2 }}>
               Stored keys outside the catalogue, shown read-only.
             </Typography>
             {others.map((setting) => (
@@ -159,7 +159,7 @@ export function SettingsCatalogue({
         </Accordion>
       )}
       {truncated && (
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
           Showing the first 100 settings.
         </Typography>
       )}

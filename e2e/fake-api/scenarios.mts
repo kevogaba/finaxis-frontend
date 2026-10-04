@@ -812,6 +812,100 @@ function rolesScenario(): RunState {
   };
 }
 
+/** Layer 16 seed IDs (lane rules §5). `otherOperator` is only a maker id: no user row needs it. */
+export const TENANT_SCENARIO_IDS = {
+  umoja: '16000000-0000-4000-8000-000000000001',
+  harambee: '16000000-0000-4000-8000-000000000002',
+  mwangaza: '16000000-0000-4000-8000-000000000003',
+  pwani: '16000000-0000-4000-8000-000000000004',
+  kilimo: '16000000-0000-4000-8000-000000000005',
+  nairobiMetro: '16000000-0000-4000-8000-000000000006',
+  otherOperator: '16000000-0000-4000-8000-000000000007',
+} as const;
+
+/** Real platform codes (PLATFORM_SUPER_ADMIN holds all 80, contract §J), granted only here, so that
+ * `platform-operator` stays the read-only gating scenario (e2e/platform-tenants.spec.ts). */
+const PLATFORM_TENANT_CODES = [
+  'tenant.create',
+  'tenant.update_draft',
+  'tenant.submit_for_approval',
+  'tenant.approve',
+  'tenant.reject',
+  'tenant.suspend',
+  'tenant.reactivate',
+  'tenant.deprovision',
+  'tenant.bootstrap_retry',
+];
+
+/**
+ * Layer 16: a copy of `platform-operator` plus one institution per lifecycle state. Jane drafted
+ * Umoja. Another operator drafted Mwangaza and Jane submitted it, so she can't approve it; another
+ * operator drafted and submitted Harambee, so she can. Pwani's bootstrap failed, and the long-named
+ * one was rejected.
+ */
+function platformTenantsScenario(): RunState {
+  const state = platformOperator();
+  const ids = TENANT_SCENARIO_IDS;
+  const on = (date: string) => ({ createdAt: date, updatedAt: date });
+  return {
+    ...state,
+    organisations: [
+      ...state.organisations,
+      organisation(ids.umoja, 'umoja-teachers', 'Umoja Teachers SACCO', {
+        ...on('2026-09-05T08:00:00Z'),
+        status: 'DRAFT',
+        bootstrapStatus: 'DRAFT',
+        createdBy: IDS.jane,
+      }),
+      organisation(ids.harambee, 'harambee-farmers', 'Harambee Farmers SACCO', {
+        ...on('2026-09-04T08:00:00Z'),
+        status: 'PENDING_APPROVAL',
+        bootstrapStatus: 'PENDING_ACTIVATION',
+        countryCode: 'UG',
+        baseCurrencyCode: 'UGX',
+        timezone: 'Africa/Kampala',
+        createdBy: ids.otherOperator,
+        submittedBy: ids.otherOperator,
+      }),
+      organisation(ids.mwangaza, 'mwangaza-savings', 'Mwangaza Savings SACCO', {
+        ...on('2026-09-03T08:00:00Z'),
+        status: 'PENDING_APPROVAL',
+        bootstrapStatus: 'PENDING_ACTIVATION',
+        createdBy: ids.otherOperator,
+        submittedBy: IDS.jane,
+      }),
+      organisation(ids.pwani, 'pwani-fishermen', 'Pwani Fishermen SACCO', {
+        ...on('2026-08-20T08:00:00Z'),
+        bootstrapStatus: 'FAILED',
+        bootstrapFailureCode: 'KEYCLOAK_UNAVAILABLE',
+      }),
+      organisation(ids.kilimo, 'kilimo-bora', 'Kilimo Bora SACCO', {
+        ...on('2026-08-10T08:00:00Z'),
+        status: 'SUSPENDED',
+      }),
+      // A 100-character name, the backend's maximum: the 375 px a11y cases prove it never scrolls
+      // the page (index item 4).
+      organisation(
+        ids.nairobiMetro,
+        'nairobi-metro-teachers',
+        'Nairobi Metropolitan Public Service Teachers and Allied Workers Savings and Credit Co-op Society Ltd',
+        {
+          ...on('2026-08-01T08:00:00Z'),
+          status: 'REJECTED',
+          bootstrapStatus: 'DRAFT',
+          countryCode: 'TZ',
+          baseCurrencyCode: 'TZS',
+          timezone: 'Africa/Dar_es_Salaam',
+        },
+      ),
+    ],
+    roles: state.roles.map((candidate) => ({
+      ...candidate,
+      permissions: [...candidate.permissions, ...PLATFORM_TENANT_CODES],
+    })),
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -888,6 +982,8 @@ const BUILDERS = {
       'role_assignment.view',
       'audit.view',
     ),
+  // Layer 16 (platform tenants).
+  'platform-tenants': platformTenantsScenario,
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */

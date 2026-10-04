@@ -12,23 +12,6 @@ export interface ApiPage<T> {
   page: ApiPageMetadata;
 }
 
-export interface TenantSummary {
-  id: string;
-  tenantCode: string;
-  displayName: string;
-  countryCode: string;
-  baseCurrencyCode?: string;
-  timezone?: string;
-  status: string;
-  bootstrapStatus?: string | null;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface TenantDetail extends TenantSummary {
-  bootstrapFailureCode: string | null;
-}
-
 export interface TenantUserSummary {
   id: string;
   username: string;
@@ -65,18 +48,6 @@ export interface BranchDetail {
 }
 
 export type BranchSummary = BranchDetail;
-
-export interface TenantListQuery {
-  q?: string;
-  status?: string;
-  country?: string;
-  createdFrom?: string;
-  createdTo?: string;
-  page?: number;
-  size?: number;
-  sortBy?: string;
-  sortDir?: 'asc' | 'desc';
-}
 
 export interface UserListQuery {
   q?: string;
