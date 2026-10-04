@@ -23,12 +23,14 @@ const NAME_MAX_WIDTH = 'min(320px, 60vw)';
 
 interface UserDirectoryTableProps {
   users: readonly UserSummary[];
+  /** Where a user's record lives: 10's own by default; layer 17 passes the platform's. */
+  basePath?: string;
 }
 
 /** The users directory (spec §10.5): newest first as the backend returns it, so no header sorts
  * (the endpoint has no sort, contract §E.3). Rows carry no hover highlight, since only the name
  * link navigates. */
-export function UserDirectoryTable({ users }: UserDirectoryTableProps) {
+export function UserDirectoryTable({ users, basePath = '/admin/users' }: UserDirectoryTableProps) {
   return (
     // Keyboard-scrollable at 375 px, where the 760 px table overflows (07's history-table rule, as in
     // the branch assignments table). Not "Users": the table keeps that name, and a landmark and a
@@ -70,7 +72,7 @@ export function UserDirectoryTable({ users }: UserDirectoryTableProps) {
                     <Box sx={{ minWidth: 0 }}>
                       <Link
                         component={NextLink}
-                        href={`/admin/users/${user.id}`}
+                        href={`${basePath}/${user.id}`}
                         variant="body2"
                         noWrap
                         title={user.displayName}
