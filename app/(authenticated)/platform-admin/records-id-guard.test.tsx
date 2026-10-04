@@ -25,6 +25,8 @@ const reads = vi.hoisted(() => ({
   getInstitutionBranchIndex: vi.fn(),
   listInstitutionUsers: vi.fn(),
   getInstitutionUser: vi.fn(),
+  listPlatformUsers: vi.fn(),
+  getPlatformUser: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
@@ -56,6 +58,8 @@ vi.mock('@/modules/platform-administration/branches/institution-branch-service',
 vi.mock('@/modules/platform-administration/users/institution-user-service', () => ({
   listInstitutionUsers: (...args: unknown[]) => reads.listInstitutionUsers(...args) as unknown,
   getInstitutionUser: (...args: unknown[]) => reads.getInstitutionUser(...args) as unknown,
+  listPlatformUsers: (...args: unknown[]) => reads.listPlatformUsers(...args) as unknown,
+  getPlatformUser: (...args: unknown[]) => reads.getPlatformUser(...args) as unknown,
 }));
 // The draft page and the user record import the Server Actions their client components submit;
 // nothing here submits one.
@@ -73,6 +77,7 @@ const { default: BranchRecord } = await import('./tenants/[tenantId]/branches/[b
 const { default: BranchDraftPage } = await import('./tenants/[tenantId]/branches/new/page');
 const { default: UsersTab } = await import('./tenants/[tenantId]/(record)/users/page');
 const { default: InstitutionUserRecord } = await import('./tenants/[tenantId]/users/[userId]/page');
+const { default: PlatformUserRecord } = await import('./users/[userId]/page');
 
 type ReadName = keyof typeof reads;
 
@@ -204,5 +209,34 @@ describe('the institution user record: its own id', () => {
     ).rejects.toThrow('NEXT_NOT_FOUND');
 
     expectNothingRead();
+  });
+});
+
+// The platform user record has no institution id in its route: the platform organisation is the
+// server's own, so only the user id can be wrong (Ruling 4).
+describe('the platform user record', () => {
+  const render = (userId: string) => PlatformUserRecord({ params: Promise.resolve({ userId }) });
+
+  it.each([
+    ['a malformed user id', 'not-a-uuid'],
+    ['a path-like user id', '../x'],
+    ['a user id with a tail', `${USER}x`],
+    ['an empty user id', ''],
+  ])('answers %s with not-found, without reading the backend', async (_case, userId) => {
+    await expect(render(userId)).rejects.toThrow('NEXT_NOT_FOUND');
+
+    expectNothingRead();
+  });
+
+  it('reads an upper-case id in lower case, and in no other', async () => {
+    // Positive control for the cases above: a valid id does read, through the platform organisation.
+    await Promise.resolve(render(USER.toUpperCase())).catch(() => undefined);
+
+    expect(reads.getPlatformUser).toHaveBeenCalledWith(USER);
+    for (const [name, read] of Object.entries(reads)) {
+      for (const call of read.mock.calls) {
+        expect(JSON.stringify(call), name).not.toContain(USER.toUpperCase());
+      }
+    }
   });
 });
