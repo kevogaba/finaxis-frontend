@@ -124,7 +124,12 @@ describe('attentionView', () => {
       'createdAt',
       'ASC',
     ]);
-    expect(new URL(DRAFTS_HREF, 'http://x').searchParams.get('status')).toBe('DRAFT');
+    const drafts = new URL(DRAFTS_HREF, 'http://x').searchParams;
+    expect([drafts.get('status'), drafts.get('sortBy'), drafts.get('sortDir')]).toEqual([
+      'DRAFT',
+      'createdAt',
+      'ASC',
+    ]);
   });
 });
 

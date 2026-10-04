@@ -88,5 +88,7 @@ describe('account rules', () => {
     expect(accountScopeNote('institution')).toContain('in every institution they belong to');
     expect(accountScopeNote('institution')).toContain("this institution's own administrators");
     expect(accountScopeNote('platform')).toContain('in every institution they belong to');
+    // The platform page has no institution of its own to name.
+    expect(accountScopeNote('platform')).not.toContain('this institution');
   });
 });
