@@ -247,7 +247,11 @@ ones with their defaults):
     bounded read (`GET /branches?status=ACTIVE&size=100`, name order, a `ponytail:` ceiling with the
     helper "Only the first 100 active branches are listed." when it has more; only the selected
     branch, labelled with its code, in a branch context). The user is a hidden field; no read-only
-    field is rendered (carry-in f).
+    field is rendered (carry-in f). The role options are the ACTIVE roles among the role index's
+    first `ROLE_INDEX_CEILING` (500) by name (`getRoleIndexScan`, which replaces the plain
+    `getRoleIndex()` read for the options); when the scan stopped at the ceiling, the Role select's
+    helper says so (`rolesCappedHint`) and the no-active-roles line becomes `rolesCappedNoneActive`
+    (Codex round 1, F2).
 12. **Audit tab:** views `user` (USER / user id), `account` (USER_ACCOUNT / user id), `membership`
     (MEMBERSHIP / membership id, only when the membership resolved) and `actor` (`actorId`).
 13. **Actor picker:** `ListToolbar` gains an optional `children` slot (rendered after the fields,

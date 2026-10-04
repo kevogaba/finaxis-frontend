@@ -128,6 +128,7 @@ describe('AssignUserRoleButton', () => {
     renderButton({ roleHint: ROLE_HINT });
 
     const drawer = await openDrawer(user);
+    expectScoped(drawer);
     const role = within(drawer).getByRole('combobox', { name: /^Role/ });
 
     expect(role).toHaveAccessibleDescription(ROLE_HINT);
@@ -146,6 +147,7 @@ describe('AssignUserRoleButton', () => {
     renderButton({ roleHint: undefined });
 
     const drawer = await openDrawer(user);
+    expectScoped(drawer);
     const role = within(drawer).getByRole('combobox', { name: /^Role/ });
 
     expect(role).not.toHaveAttribute('aria-describedby');
@@ -204,16 +206,21 @@ describe('AssignUserRoleButton', () => {
         requestId: null,
       })
       .mockResolvedValueOnce({ ok: true });
-    renderButton({ roles: [{ id: TELLER, label: 'Teller (TELLER)' }] });
+    // A capped catalogue's hint must give way to the server's error, never the other way round.
+    renderButton({ roles: [{ id: TELLER, label: 'Teller (TELLER)' }], roleHint: ROLE_HINT });
 
     const drawer = await openDrawer(user);
     expectScoped(drawer);
+    expect(within(drawer).getByRole('combobox', { name: /^Role/ })).toHaveAccessibleDescription(
+      ROLE_HINT,
+    );
     await user.click(within(drawer).getByRole('button', { name: 'Assign role' }));
 
     const role = await within(drawer).findByRole('combobox', { name: /^Role/ });
     await waitFor(() => {
       expect(role).toHaveAccessibleDescription('Choose a role.');
     });
+    expect(within(drawer).queryByText(ROLE_HINT)).not.toBeInTheDocument();
     expect(role).toBeInvalid();
     expect(screen.getByRole('dialog', { name: 'Assign a role' })).toBeInTheDocument();
     // The lone role stays chosen: a failed submit keeps what was entered (a retry replays safely).

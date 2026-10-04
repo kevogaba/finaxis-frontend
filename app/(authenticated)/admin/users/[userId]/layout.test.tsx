@@ -348,7 +348,7 @@ describe('UserRecordLayout: the membership actions', () => {
     },
   );
 
-  // The backend's maker-checker 409 is the guard when the inviter can't be read, so an ordinary
+  // The backend's maker-checker 403 (BG-08) is the guard when the inviter can't be read, so an ordinary
   // failure (a permission that changed, a 5xx) leaves Approve on offer rather than blocking it.
   it.each([
     ['a 403', new BackendApiError(403, { code: 'forbidden' })],

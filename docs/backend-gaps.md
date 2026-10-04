@@ -182,15 +182,15 @@ tackled separately in the platform repository.
   memberships have no `user_id` filter; `/tenant/users` items lack `membership_id`, `membership_type`,
   and dates; membership items lack names; assignment items are IDs only; branch items lack timezone,
   parent, and dates; tenant items lack currency, timezone, and bootstrap status. Role items lack
-  description and dates. `sort_*` on memberships and branch assignments is accepted but ignored;
-  `/tenant/users` has no sort.
+  description and dates. Roles can be searched (`q`) but not fetched by a set of ids. `sort_*` on
+  memberships and branch assignments is accepted but ignored; `/tenant/users` has no sort.
 - **Frontend handling:** memberships resolved with `q=<email>` (at most 5 pages of 100, matched on
   the user id); a user's branch assignments found by a bounded scan and flagged "partial" (at most
-  500 active assignments); names resolved per visible page; the role index (role names, and the
-  Assign-role picker's options) reads at most the first 500 roles by name, because roles can be
-  searched (`q`) but not looked up by a set of ids, so past 500 the picker says so and a role's name
-  on an assignment falls back to its short id; lists show only what items carry (the role directory
-  shows role, code, type, and status only). The roles page also departs
+  500 active assignments); names resolved per visible page; the role index reads at most the first
+  500 roles by name, because roles can't be looked up by a set of ids, so past 500 a role's name on
+  an assignment falls back to its short id; the Assign-role picker reuses that index rather than
+  searching, so past 500 it says so; lists show only what items carry (the role directory shows
+  role, code, type, and status only). The roles page also departs
   from the prototype in three smaller ways: the Overview's "Active assignments" counts assignments,
   not distinct users; the toolbar search commits on Enter or blur; and backend `validation_failed`
   violations aren't mapped onto form fields (the forms apply the same rules client-side).

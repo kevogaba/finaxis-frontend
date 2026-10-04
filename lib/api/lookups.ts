@@ -131,9 +131,9 @@ export const getRoleIndexScan = cache(async (): Promise<RoleIndexScan> => {
   return { index, truncated };
 });
 
-/** The role index without the truncation flag. It serves role names for 10's and 12's assignment
- * lists, and the ACTIVE roles for 10's and 11's role pickers; a picker that offers them as options
- * reads `getRoleIndexScan` instead, so it can say when the catalogue was cut short. */
+/** The role index without the truncation flag, for callers that only resolve names (12's assignment
+ * lists). A picker that offers roles as options (10's, 11's) reads `getRoleIndexScan`, so it can say
+ * when the catalogue was cut short. */
 export const getRoleIndex = cache(
   async (): Promise<ReadonlyMap<string, RoleIndexEntry>> => (await getRoleIndexScan()).index,
 );

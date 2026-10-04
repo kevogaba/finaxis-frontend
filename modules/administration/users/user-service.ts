@@ -88,7 +88,8 @@ export const listUserBranchAssignments = cache(async (userId: string): Promise<U
 });
 
 /** BG-08: the inviter is only in the audit log (`user.invite`, contract §G maker lookups); null
- * when no event is readable. A malformed id is null too, with no read. Every read failure
+ * when the log holds no such event for them (or it names no actor). A malformed id is null too,
+ * with no read. Every read failure
  * REJECTS (like `countUserRoleAssignments`), so the caller settles it with `load()`, which redirects
  * on a lost session or a stale context; it decides what any other failure means (never a quiet
  * null here). */
