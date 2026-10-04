@@ -57,7 +57,15 @@ export default async function BranchesTab({ params, searchParams }: BranchesTabP
     getCurrentContextProfile(),
     load(listInstitutionBranches(tenantId, query)),
   ]);
-  if (!tenant.ok) return null;
+  // The layout renders the institution's failure and drops this tab; this shows only when the two
+  // reads (the layout's, keyed by the URL as typed, and this one, lower-cased) disagree.
+  if (!tenant.ok) {
+    return (
+      <SectionCard title="Branches" description={BRANCHES_DESCRIPTION}>
+        <ErrorState problem={tenant.problem} />
+      </SectionCard>
+    );
+  }
   const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
 
   const draftButton = canCreateInstitutionBranch(tenant.value.status, holder) ? (

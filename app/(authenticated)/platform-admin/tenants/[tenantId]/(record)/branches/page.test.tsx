@@ -112,7 +112,7 @@ async function show(
     params: Promise.resolve({ tenantId }),
     searchParams: Promise.resolve(searchParams),
   });
-  return { element, ...(element ? renderWithProviders(element) : {}) };
+  return { element, ...renderWithProviders(element) };
 }
 
 /** The CSS Emotion emitted for an element's own class: jsdom folds `min()` into its first operand
@@ -154,7 +154,7 @@ describe('BranchesTab: the list', () => {
     expect(listInstitutionBranches).toHaveBeenCalledWith(T, expect.objectContaining({ page: 0 }));
   });
 
-  it('keeps the section, the table and its scroll region under three different names', async () => {
+  it('keeps one section "Branches" and one region "Branches table" (landmark names differ), and no h1', async () => {
     setup();
 
     await show();
@@ -200,12 +200,14 @@ describe('BranchesTab: the list', () => {
     expect(target.searchParams.get('page')).toBe('1');
   });
 
-  it("renders nothing when the institution can't be read, because the layout shows that failure", async () => {
+  it("shows the failure, with no list, when the institution can't be read here (the layout normally shows it first)", async () => {
     setup({ tenant: new BackendApiError(503, { requestId: 'req-t' }) });
 
-    const { element } = await show();
+    await show();
 
-    expect(element).toBeNull();
+    expect(screen.getByText(/req-t/)).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Branches table' })).toBeNull();
+    expect(draftLink()).toBeNull();
   });
 });
 

@@ -8,8 +8,9 @@ import { renderWithProviders } from '@/test/test-utils';
 
 // Lettered, so their upper-case forms differ from them.
 const T = '17000000-0000-4000-8000-0000000000ac';
-const HEAD = '17000000-0000-4000-8000-0000000000b1';
-const B = '17000000-0000-4000-8000-0000000000b2';
+// Distinct first blocks, so a short id says which id it shortened.
+const HEAD = '17b10000-0000-4000-8000-0000000000b1';
+const B = '17b20000-0000-4000-8000-0000000000b2';
 
 const { getInstitutionBranch, getInstitutionBranchIndex, getTenant, redirect } = vi.hoisted(() => ({
   getInstitutionBranch: vi.fn(),
@@ -157,11 +158,11 @@ describe('InstitutionBranchPage: the record', () => {
   });
 
   it('names the parent by its short id when the index does not hold it', async () => {
-    setup({ branch: { parentBranchId: '17000000-0000-4000-8000-0000000000b9' } });
+    setup({ branch: { parentBranchId: '17b90000-0000-4000-8000-0000000000b9' } });
 
     await open();
 
-    expect(within(fact('Parent branch')).getByRole('link', { name: '17000000' })).toBeVisible();
+    expect(within(fact('Parent branch')).getByRole('link', { name: '17b90000' })).toBeVisible();
   });
 
   it('builds the parent link from the lower-cased id (contract §A)', async () => {
