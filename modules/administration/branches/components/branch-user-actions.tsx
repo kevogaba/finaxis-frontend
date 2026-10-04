@@ -7,12 +7,12 @@ import TextField from '@mui/material/TextField';
 import PersonAddAltOutlined from '@mui/icons-material/PersonAddAltOutlined';
 import { AssignmentDrawer } from '@/components/data-display/assignment-drawer';
 import { ConfirmDialog } from '@/components/data-display/confirm-dialog';
+import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import { useToast } from '@/components/providers/toast-provider';
 import { UserPicker } from '@/modules/administration/users/components/user-picker';
 import { assignBranchUser, revokeBranchAssignment } from '../branch-actions';
 import { BRANCH_ASSIGNMENT_TYPES } from '../branch-contract';
-import { focusRecordTitle } from './branch-lifecycle-actions';
 
 interface AssignBranchUserButtonProps {
   branchId: string;
@@ -84,6 +84,11 @@ interface RevokeAssignmentButtonProps {
   assignmentId: string;
   userLabel: string;
   typeLabel: string;
+  /**
+   * Names the branch when the row doesn't make it obvious: a user's assignments differ by branch
+   * (WCAG 2.4.6), so the Users tab passes it. Without it every string is as the branch page had it.
+   */
+  branchLabel?: string;
   /** I2: the organisation the page rendered for; forwarded to `ConfirmDialog` as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -92,9 +97,11 @@ export function RevokeAssignmentButton({
   assignmentId,
   userLabel,
   typeLabel,
+  branchLabel,
   contextOrganisationId,
 }: RevokeAssignmentButtonProps) {
   const notify = useToast();
+  const at = branchLabel ? ` at ${branchLabel}` : '';
   const [open, setOpen] = useState(false);
   // I3 (PF6): a successful revoke removes this row — and this component — on the next render, so
   // the fallback always runs from the unmount cleanup. See branch-lifecycle-actions.tsx's own
@@ -115,7 +122,7 @@ export function RevokeAssignmentButton({
         size="small"
         variant="outlined"
         color="error"
-        aria-label={`Revoke ${userLabel}'s ${typeLabel} assignment`}
+        aria-label={`Revoke ${userLabel}'s ${typeLabel} assignment${at}`}
         onClick={() => {
           setOpen(true);
         }}
@@ -125,8 +132,8 @@ export function RevokeAssignmentButton({
       <ConfirmDialog
         open={open}
         tone="error"
-        title={`Revoke ${userLabel}'s assignment?`}
-        description={`${userLabel} loses the ${typeLabel} assignment at this branch immediately.`}
+        title={`Revoke ${userLabel}'s assignment${at}?`}
+        description={`${userLabel} loses the ${typeLabel} assignment at ${branchLabel ?? 'this branch'} immediately.`}
         confirmLabel="Revoke"
         action={revokeBranchAssignment}
         contextOrganisationId={contextOrganisationId}

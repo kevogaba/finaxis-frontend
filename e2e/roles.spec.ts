@@ -5,6 +5,9 @@ import {
   enterAdmin,
   expectA11yCaseApplied,
   expectNoSeriousOrCriticalViolations,
+  mainText,
+  openRecord,
+  rowsOf,
   type A11yCase,
 } from './support/admin';
 import { authenticate, selectMuiOption } from './support/auth';
@@ -18,22 +21,10 @@ async function openDirectory(page: Page, branch: RegExp | null = ALL_BRANCHES) {
   await enterAdmin(page, '/admin/roles', { heading: 'Roles & permissions', branch });
 }
 
-async function openRecord(page: Page, name: string) {
-  await page.getByRole('table', { name: 'Roles' }).getByRole('link', { name, exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible({ timeout: 15000 });
-}
-
 async function openTab(page: Page, tab: 'Permissions' | 'Assignments' | 'Audit') {
   await page.getByRole('tab', { name: tab }).click();
   await expect(page).toHaveURL(new RegExp(`/${tab.toLowerCase()}$`), { timeout: 15000 });
 }
-
-// Scoped to `main`, as in branches.spec.ts: a streamed route can briefly leave a hidden duplicate
-// segment, and `getByRole('main')` only resolves the rendered, visible landmark.
-const mainText = (page: Page, value: string | RegExp, options?: { exact?: boolean }) =>
-  page.getByRole('main').getByText(value, options);
-const rowsOf = (page: Page, table: string) =>
-  page.getByRole('table', { name: table }).getByRole('row');
 
 test.describe('roles', () => {
   // A roles route can be the first hit of its tree under a cold `next dev` compile.
@@ -185,7 +176,7 @@ test.describe('roles', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'roles');
     await openDirectory(page);
-    await openRecord(page, 'Teller');
+    await openRecord(page, 'Roles', 'Teller');
 
     await page.getByRole('link', { name: 'Edit', exact: true }).click();
     await expect(page).toHaveURL(/\/edit$/, { timeout: 15000 });
@@ -215,7 +206,7 @@ test.describe('roles', () => {
     );
 
     await page.getByRole('link', { name: 'Back to roles' }).click();
-    await openRecord(page, 'Tenant admin');
+    await openRecord(page, 'Roles', 'Tenant admin');
     await expect(mainText(page, 'TENANT_ADMIN · System role')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^(Deactivate|Activate)$/ })).toHaveCount(0);
@@ -231,7 +222,7 @@ test.describe('roles', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'roles');
     await openDirectory(page);
-    await openRecord(page, 'Teller');
+    await openRecord(page, 'Roles', 'Teller');
     // The Overview's assignment count and the Audit tab are the positive controls for the
     // `roles-limited` case.
     await expect(mainText(page, 'Active assignments')).toBeVisible({ timeout: 15000 });
@@ -274,7 +265,7 @@ test.describe('roles', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'roles');
     await openDirectory(page);
-    await openRecord(page, COMPLIANCE);
+    await openRecord(page, 'Roles', COMPLIANCE);
     await openTab(page, 'Assignments');
 
     await page
@@ -297,7 +288,7 @@ test.describe('roles', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'roles');
     await openDirectory(page);
-    await openRecord(page, 'Teller');
+    await openRecord(page, 'Roles', 'Teller');
     await openTab(page, 'Assignments');
 
     await page
@@ -316,7 +307,7 @@ test.describe('roles', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'roles');
     await openDirectory(page, /Westlands/);
-    await openRecord(page, 'Teller');
+    await openRecord(page, 'Roles', 'Teller');
     await openTab(page, 'Assignments');
 
     await page.getByRole('button', { name: 'Assign role' }).click();
@@ -333,7 +324,7 @@ test.describe('roles', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'roles');
     await openDirectory(page, /Head Office/);
-    await openRecord(page, 'Teller');
+    await openRecord(page, 'Roles', 'Teller');
     await openTab(page, 'Assignments');
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(3, { timeout: 15000 }); // header + 2
 
@@ -354,7 +345,7 @@ test.describe('roles', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'roles');
     await openDirectory(page, /Westlands/);
-    await openRecord(page, 'Teller');
+    await openRecord(page, 'Roles', 'Teller');
     await openTab(page, 'Assignments');
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(3, { timeout: 15000 }); // header + 2
 
@@ -376,7 +367,7 @@ test.describe('roles', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'roles'); // Jane holds user.assign_role and user.view
     await openDirectory(page);
-    await openRecord(page, 'Loans officer');
+    await openRecord(page, 'Roles', 'Loans officer');
     await openTab(page, 'Assignments');
 
     await expect(mainText(page, 'Activate this role to assign it.', { exact: true })).toBeVisible({
@@ -393,7 +384,7 @@ test.describe('roles', () => {
       page.getByRole('link', { name: 'Roles & permissions', exact: true }),
     ).toBeVisible(); // rail
     await expect(page.getByRole('link', { name: 'Create role' })).toHaveCount(0);
-    await openRecord(page, 'Tenant admin');
+    await openRecord(page, 'Roles', 'Tenant admin');
     await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
     await openTab(page, 'Permissions');
     // Default TENANT_ADMIN holds 19 codes: page 1 of 2 at the default size of 10.
@@ -417,7 +408,7 @@ test.describe('roles', () => {
     // `roles-limited` drops role.update, role.activate, role_assignment.view and audit.view.
     await authenticate(context, testInfo, 'roles-limited');
     await openDirectory(page);
-    await openRecord(page, 'Teller');
+    await openRecord(page, 'Roles', 'Teller');
 
     // The hero and Overview have rendered (Deactivate is still granted), so the absences below
     // are settled, not still loading.

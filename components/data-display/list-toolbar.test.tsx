@@ -404,6 +404,32 @@ describe('ListToolbar', () => {
     expect(field).toHaveFocus();
   });
 
+  it('renders extra controls after the fields and before the chips', () => {
+    search = 'q=west&actorId=0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+    renderWithProviders(
+      <ListToolbar
+        fields={SEARCH_FIELDS}
+        resultLabel="3 events"
+        timeZone={NAIROBI}
+        chips={[{ label: 'Actor: Jane', removeParam: 'actorId' }]}
+      >
+        <button type="button">Extra</button>
+      </ListToolbar>,
+    );
+
+    const field = screen.getByRole('searchbox', { name: 'Search' });
+    const extra = screen.getByRole('button', { name: 'Extra' });
+    const chip = screen.getByRole('button', { name: 'Actor: Jane' });
+    const clear = screen.getByRole('link', { name: 'Clear filters' });
+    const follows = (before: HTMLElement, after: HTMLElement) =>
+      Boolean(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(field, extra)).toBe(true);
+    expect(follows(extra, chip)).toBe(true);
+    expect(follows(chip, clear)).toBe(true);
+    // Positive control for the order checks: the helper can say "no".
+    expect(follows(extra, field)).toBe(false);
+  });
+
   it('resets the search box on every URL change, including back to empty (Clear filters)', () => {
     search = '';
     const { rerender } = renderWithProviders(

@@ -18,21 +18,33 @@ export interface BranchOption {
   label: string;
 }
 
+const TENANT_HELP = 'Applies at every branch and at institution level.';
+const BRANCH_HELP =
+  'Applies only while that branch is selected. The user must already be assigned to it.';
+
 interface RoleScopeFieldsProps {
   /** Branches a BRANCH-scope assignment may name: every branch at institution level, only the
    * selected one in a branch context (contract §E.4: another branch is a 404). Empty disables
    * branch scope (Ruling 10). */
   branches: readonly BranchOption[];
   fieldErrors: Partial<Record<string, string>>;
+  /** Why "One branch" is disabled, shown under the Scope field while `branches` is empty. */
+  branchHint?: string;
 }
 
 /**
  * The `scopeType` and `branchId` fields of a role-assignment form. This layer composes them with
  * `UserPicker`; layer 10 composes them with a role picker on the user record. The branch field
  * renders only for BRANCH scope, so TENANT never carries one.
+ *
+ * Uncontrolled, with fixed field names (`scopeType`, `branchId`): it fits a FormData drawer; a
+ * React Hook Form wizard (layer 11) needs added props.
  */
-export function RoleScopeFields({ branches, fieldErrors }: RoleScopeFieldsProps) {
+export function RoleScopeFields({ branches, fieldErrors, branchHint }: RoleScopeFieldsProps) {
   const [scope, setScope] = useState<RoleScopeType>('TENANT');
+  const tenantHelp =
+    branches.length === 0 && branchHint ? `${TENANT_HELP} ${branchHint}` : TENANT_HELP;
+  const helperText = fieldErrors.scopeType ?? (scope === 'TENANT' ? tenantHelp : BRANCH_HELP);
   return (
     <>
       <TextField
@@ -45,12 +57,7 @@ export function RoleScopeFields({ branches, fieldErrors }: RoleScopeFieldsProps)
           setScope(event.target.value === 'BRANCH' ? 'BRANCH' : 'TENANT');
         }}
         error={Boolean(fieldErrors.scopeType)}
-        helperText={
-          fieldErrors.scopeType ??
-          (scope === 'TENANT'
-            ? 'Applies at every branch and at institution level.'
-            : 'Applies only while that branch is selected. The user must already be assigned to it.')
-        }
+        helperText={helperText}
       >
         <MenuItem value="TENANT">Institution (all branches)</MenuItem>
         <MenuItem value="BRANCH" disabled={branches.length === 0}>

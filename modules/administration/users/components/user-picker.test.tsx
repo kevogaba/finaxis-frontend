@@ -31,7 +31,9 @@ describe('UserPicker', () => {
   it('searches once per pause in typing and submits the chosen user id', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(respond({ items: [PETER] }));
     const onChange = vi.fn();
-    const user = userEvent.setup();
+    // No pause between keystrokes: the picker's real 300 ms debounce must see "pet" as one burst,
+    // however loaded the machine is (a default userEvent delay is a real timer per keystroke).
+    const user = userEvent.setup({ delay: null });
     const { container } = renderWithProviders(
       <UserPicker name="userId" label="User" onChange={onChange} />,
     );

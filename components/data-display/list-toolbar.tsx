@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useSyncExternalStore } from 'react';
+import { useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
@@ -51,6 +51,8 @@ interface ListToolbarProps {
   fields: readonly ToolbarField[];
   resultLabel: string;
   chips?: readonly ToolbarChip[];
+  /** Extra controls after the fields, before the chips (e.g. the audit trail's actor search). */
+  children?: ReactNode;
   /** The zone the table/drawer render times in (the organisation's, else UTC). Datetime fields
    * show a helper naming the browser's own zone whenever it differs, since entry stays in local
    * time. */
@@ -168,7 +170,13 @@ function SearchField({
 }
 
 /** Filter bar (prototype `.toolbar`). Every change rewrites the URL and returns to page 0. */
-export function ListToolbar({ fields, resultLabel, chips = [], timeZone }: ListToolbarProps) {
+export function ListToolbar({
+  fields,
+  resultLabel,
+  chips = [],
+  children,
+  timeZone,
+}: ListToolbarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const navigateList = useListNavigation();
@@ -289,6 +297,7 @@ export function ListToolbar({ fields, resultLabel, chips = [], timeZone }: ListT
           />
         );
       })}
+      {children}
       {chips.map((chip) => (
         <Chip
           key={chip.removeParam}

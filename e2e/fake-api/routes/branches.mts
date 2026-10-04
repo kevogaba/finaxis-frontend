@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { requireContext, requirePermission, requireTenantContext } from '../access.mts';
 import type { AccessContext } from '../access.mts';
 import { recordAuditEvent } from '../audit-log.mts';
-import { objectBody, pageOf, problem, readBody, sendJson, stringField } from '../http.mts';
+import {
+  objectBody,
+  pageOf,
+  problem,
+  readBody,
+  reasonField,
+  sendJson,
+  stringField,
+} from '../http.mts';
 import type { Violation } from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
 import { route } from '../router.mts';
@@ -56,16 +64,6 @@ const assignmentWire = (row: FakeBranchAssignment) => ({
   assignment_type: row.type,
   status: row.status,
 });
-
-function reasonField(body: Record<string, unknown>, required: boolean): string | null {
-  const reason = stringField(body, 'reason', { required });
-  if (required && (reason === null || reason.trim().length < 3 || reason.length > 500)) {
-    throw problem(400, 'validation_failed', 'Validation failed.', [
-      { field: 'reason', code: 'Size', message: 'size must be between 3 and 500' },
-    ]);
-  }
-  return reason;
-}
 
 type Guard = (access: AccessContext, branch: FakeBranch) => void;
 

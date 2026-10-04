@@ -5,8 +5,14 @@ import { BackendApiError } from '@/auth/backend-api';
 const apiGet = vi.fn();
 vi.mock('./tenant-api', () => ({ apiGet: (...args: unknown[]) => apiGet(...args) as unknown }));
 
-const { getBranchIndex, getOrganisationTimeZone, getRoleIndex, resolveUserNames } =
-  await import('./lookups');
+const {
+  getBranchIndex,
+  getOrganisationTimeZone,
+  getRoleIndex,
+  getRoleIndexScan,
+  resolveUserNames,
+  ROLE_INDEX_CEILING,
+} = await import('./lookups');
 
 /** Parses `raw` with whatever schema the call site passes, so a schema miss rejects like the real `apiGet`. */
 const wire =
@@ -187,5 +193,88 @@ describe('lookups', () => {
     await expect(getRoleIndex()).resolves.toEqual(new Map());
     // Page 1 was read: the failure came after page 0 had filled the index.
     expect(apiGet).toHaveBeenCalledTimes(2);
+  });
+
+  describe('the role index scan', () => {
+    /** One full page of 100 roles, ids `r<n>`, as the backend would answer page `number`. */
+    const rolePage = (number: number, hasNext: boolean) =>
+      wire({
+        items: Array.from({ length: 100 }, (_unused, i) => {
+          const n = number * 100 + i;
+          return {
+            id: `r${n}`,
+            role_code: `ROLE_${n}`,
+            role_name: `Role ${n}`,
+            system_role: false,
+            status: 'ACTIVE',
+          };
+        }),
+        page: envelope(number, hasNext),
+      });
+
+    it('caps the scan at 500 roles', () => {
+      expect(ROLE_INDEX_CEILING).toBe(500);
+    });
+
+    it('says it was truncated when the last page it may read still has more', async () => {
+      for (let page = 0; page < 5; page += 1) apiGet.mockImplementationOnce(rolePage(page, true));
+
+      const scan = await getRoleIndexScan();
+
+      expect(scan.truncated).toBe(true);
+      expect(scan.index.size).toBe(500);
+      expect(apiGet).toHaveBeenCalledTimes(5); // never a sixth read
+      expect(scan.index.get('r499')).toMatchObject({ name: 'Role 499' });
+    });
+
+    it('is not truncated when the fifth page is the last one (exactly 500 roles)', async () => {
+      for (let page = 0; page < 4; page += 1) apiGet.mockImplementationOnce(rolePage(page, true));
+      apiGet.mockImplementationOnce(rolePage(4, false));
+
+      const scan = await getRoleIndexScan();
+
+      expect(scan.truncated).toBe(false);
+      expect(scan.index.size).toBe(500);
+    });
+
+    it('is not truncated when the catalogue ends early', async () => {
+      apiGet.mockImplementationOnce(rolePage(0, true)).mockImplementationOnce(rolePage(1, false));
+
+      const scan = await getRoleIndexScan();
+
+      expect(scan.truncated).toBe(false);
+      expect(scan.index.size).toBe(200);
+      expect(apiGet).toHaveBeenCalledTimes(2);
+    });
+
+    it('answers the empty index, not truncated, when any page fails (never partial)', async () => {
+      apiGet
+        .mockImplementationOnce(rolePage(0, true))
+        .mockImplementationOnce(rolePage(1, true))
+        .mockRejectedValueOnce(new BackendApiError(503));
+
+      const scan = await getRoleIndexScan();
+
+      expect(scan.index.size).toBe(0);
+      expect(scan.truncated).toBe(false);
+    });
+
+    it('answers the empty index, not truncated, without role.view', async () => {
+      apiGet.mockRejectedValueOnce(new BackendApiError(403));
+
+      const scan = await getRoleIndexScan();
+
+      expect(scan.index.size).toBe(0);
+      expect(scan.truncated).toBe(false);
+    });
+
+    it('serves getRoleIndex from the same scan', async () => {
+      for (let page = 0; page < 5; page += 1) apiGet.mockImplementationOnce(rolePage(page, true));
+
+      const index = await getRoleIndex();
+
+      expect(index.size).toBe(500);
+      expect(index.get('r0')).toMatchObject({ name: 'Role 0', code: 'ROLE_0' });
+    });
   });
 });
