@@ -100,3 +100,11 @@ describe('TenantRecordLayout: the tabs', () => {
     expect(tabNames()).toEqual(tabs);
   });
 });
+
+describe('TenantRecordLayout: the hero', () => {
+  it('writes the subtitle as the tenant code, then the country as the Overview does', async () => {
+    await show(['tenant.view']);
+
+    expect(screen.getByText('acme · KE · Kenya')).toBeInTheDocument();
+  });
+});

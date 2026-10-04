@@ -4,6 +4,9 @@ import { DescriptionList } from '@/components/data-display/description-list';
 import { StatusChip } from '@/components/data-display/status-chip';
 import type { ProvisioningStep } from '../tenant-rules';
 
+export const FAILURE_CODE_NOTE =
+  'The platform stopped setting up this institution and reported this code. Keep it for support.';
+
 interface ProvisioningTimelineProps {
   steps: readonly ProvisioningStep[];
   failureCode: string | null;
@@ -47,9 +50,18 @@ export function ProvisioningTimeline({ steps, failureCode }: ProvisioningTimelin
             {
               label: 'Failure code',
               value: (
-                <Box component="code" sx={{ fontFamily: 'monospace' }}>
-                  {failureCode}
-                </Box>
+                <>
+                  <Box component="code" sx={{ fontFamily: 'monospace' }}>
+                    {failureCode}
+                  </Box>
+                  <Typography
+                    variant="body2"
+                    component="span"
+                    sx={{ display: 'block', color: 'text.secondary', fontWeight: 400 }}
+                  >
+                    {FAILURE_CODE_NOTE}
+                  </Typography>
+                </>
               ),
             },
           ]}

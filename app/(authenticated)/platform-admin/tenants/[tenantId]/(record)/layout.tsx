@@ -16,7 +16,7 @@ import { TenantLifecycleActions } from '@/modules/platform-administration/tenant
 import { isInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
 import {
   availableTenantActions,
-  countryName,
+  countryLabel,
 } from '@/modules/platform-administration/tenants/tenant-rules';
 import { getTenant } from '@/modules/platform-administration/tenants/tenant-service';
 
@@ -68,7 +68,7 @@ export default async function TenantRecordLayout({ children, params }: TenantRec
         avatar={{ kind: 'icon', icon: <DomainOutlined /> }}
         eyebrow={EYEBROW}
         title={record.displayName}
-        subtitle={`${record.tenantCode} · ${countryName(record.countryCode)}`}
+        subtitle={`${record.tenantCode} · ${countryLabel(record.countryCode)}`}
         status={<StatusChip value={record.status} />}
         actions={
           // Undefined, not an empty component: RecordHero renders its actions box whenever the

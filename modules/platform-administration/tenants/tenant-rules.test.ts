@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { BOOTSTRAP_STATUSES } from './tenant-contract';
 import {
   availableTenantActions,
+  bootstrapStatusLabel,
   canRetryBootstrap,
   countryLabel,
   countryName,
@@ -107,6 +109,19 @@ describe('provisioningTimeline', () => {
     });
     expect(provisioningTimeline('ACTIVE', 'COMPLETED')?.[0]?.state.tone).toBe('success');
     expect(provisioningTimeline('DRAFT', 'DRAFT')?.[3]?.state.tone).toBe('default');
+  });
+});
+
+describe('bootstrapStatusLabel', () => {
+  it('words every bootstrap status', () => {
+    expect(BOOTSTRAP_STATUSES.map(bootstrapStatusLabel)).toEqual([
+      'Not started',
+      'Waiting for approval',
+      'Queued',
+      'Setting up the first administrator',
+      'Completed',
+      'Failed',
+    ]);
   });
 });
 

@@ -14,7 +14,7 @@ import { TruncatedText } from '@/components/data-display/truncated-text';
 import type { ListSort } from '@/lib/api/list-sort';
 import { formatInstant } from '@/lib/format';
 import type { TenantSortField, TenantSummary } from '../tenant-contract';
-import { countryName } from '../tenant-rules';
+import { countryLabel } from '../tenant-rules';
 
 /** `null`: not sortable. Status isn't in the backend's allow-list (an unknown sort_by is a 500). */
 const COLUMNS: readonly { field: TenantSortField | null; label: string }[] = [
@@ -82,10 +82,7 @@ export function TenantDirectoryTable({ tenants, sort, sortHref }: TenantDirector
                 </Typography>
               </TableCell>
               <TableCell>
-                <TruncatedText
-                  value={`${tenant.countryCode} · ${countryName(tenant.countryCode)}`}
-                  maxWidth={200}
-                />
+                <TruncatedText value={countryLabel(tenant.countryCode)} maxWidth={200} />
               </TableCell>
               <TableCell>
                 <StatusChip value={tenant.status} />
