@@ -228,11 +228,12 @@ carry a sentence code (BG-30) and show the generic permission copy.
 `global-header.tsx` and every shell file except `platform-notifications.tsx` and the new
 `notifications-menu.tsx`; `lib/api/*`; `auth/*`; `config/*`; `theme/*`; every kit file except the new
 `components/data-display/kpi-tile.tsx`; `modules/administration/**` except the three component files
-named in rule 13 and their tests; `modules/platform-administration/tenants/**` except
+named in rule 13 and their tests, and `branches/branch-service.ts` (+ test) for P-1 (Task 4c Step 3); `modules/platform-administration/tenants/**` except
 `institution-id.ts`, `tenant-rules.ts`, `components/tenant-directory-table.tsx`,
 `components/provisioning-timeline.tsx` and their tests; 16's route files except
 `[tenantId]/(record)/layout.tsx` (and its new `layout.test.tsx`, Task 4b) and
-`[tenantId]/(record)/page.tsx`; the fake API's `access`,
+`[tenantId]/(record)/page.tsx`; 08's `app/(authenticated)/admin/branches/[branchId]/layout.tsx` (+ its new
+test) for P-1 only; the fake API's `access`,
 `audit-log`, `context-token`, `http`, `idempotency`, `router` and `state` `.mts` files; existing e2e
 specs except `e2e/support/fake-api.ts` (one optional parameter) and, in Task 3's droppable commit
 only, `e2e/fake-api-platform-tenants.spec.ts`; the plan index and other layers' plans.
@@ -361,10 +362,10 @@ ruling names its cost if wrong.
 17. **Copy is the plan's.** Every user-visible string below is final; an implementer who finds one
     missing reports NEEDS_CONTEXT instead of inventing it.
 
-## Proposed additions that need the user's yes at the approval gate (not yet in the task list)
+## Approved additions (the user said yes on 2026-10-04)
 
-Two changes outside 17's own scope that rule 21 points at. Neither is in a task until the user says
-yes; each names where it would go.
+Two changes outside 17's own scope that rule 21 points at. The user approved both with the plan;
+both are in the task list, each at the place it names.
 
 **P-1. 08's `getBranchMaker` swallows a lost session.** `getBranchMaker`
 (`modules/administration/branches/branch-service.ts:47-62` at `3320518`) still wraps its audit
@@ -398,10 +399,10 @@ renders a stale page with Activate on offer.
 - Cost if wrong: left alone, a session that expires between the branch read and the drafter read
   shows a stale record whose Activate the backend then refuses (no data harm). Doing it costs about
   an hour (two files changed, one test changed, one test file new).
-- Default: yes.
-- Where: Task 4c, as its own commit after commit C,
+- Decision: yes (approved).
+- Where: Task 4c Step 3, as its own commit D after commit C,
   `fix(branches): let a lost session reach load() from the drafter lookup` (a sixteenth commit
-  block), droppable like 4c; "Files 17 never touches" then gains these exceptions:
+  block; not droppable, unlike C); "Files 17 never touches" gains these exceptions:
   `modules/administration/branches/branch-service.ts(+test)` and
   `app/(authenticated)/admin/branches/[branchId]/layout.tsx` (+ its new test).
 
@@ -437,7 +438,7 @@ each of these overflows horizontally at 375 px (a `minWidth` on its `Table`) and
 - Cost if wrong: left alone, a keyboard user at 375 px scrolls the Branches tab only by focusing
   header links; done with a clashing name, axe would not fail (it rates `landmark-unique`
   moderate), so the region-count assertion is what catches it. Doing it costs about 15 minutes.
-- Default: yes for `BranchDirectoryTable` only. The audit, roles and tenant tables (and the branch
+- Decision: yes (approved), for `BranchDirectoryTable` only. The audit, roles and tenant tables (and the branch
   users table) stay with their own layers; the layer-17 PR description lists them.
 - Where: Task 4a Step 1, commit A.
 
@@ -508,8 +509,8 @@ Task 9a "opens a branch read-only, in UTC").
   `UserDirectoryTable`, whose container is the region "Users table" on the base (Task 5 Step 1
   keeps it; the tab's section is "Users", so the landmark names differ). The Branches tab renders
   08's `BranchDirectoryTable` (`minWidth: 760`), which has no region: every one of its headers is
-  a sort link, so the keyboard reaches each column today, but the region itself is P-2 above,
-  pending the user's yes. Because axe rates `landmark-unique` moderate, Task 9b's matrix asserts
+  a sort link, so the keyboard reaches each column today, but the region itself is P-2 above
+  (approved). Because axe rates `landmark-unique` moderate, Task 9b's matrix asserts
   each region's count on the overview, the Users tab and the Branches tab. The branch and user
   records hold description lists, not tables.
 
@@ -2725,9 +2726,8 @@ interface BranchDraftFormProps {
 // Cancel: href={cancelHref}
 ```
 
-      (`FormAction` comes from `@/lib/api/action-result` as a type import.) If the user approves
-      P-2 at the approval gate (see Proposed additions), the same commit also makes the table's
-      container the region "Branches table". Form U on both files, then form E on
+      (`FormAction` comes from `@/lib/api/action-result` as a type import.) The same commit also
+      makes the table's container the region "Branches table" (P-2, approved). Form U on both files, then form E on
       `e2e/branches.spec.ts`: PASS. Mutation proof (scratch, reverted): hard-code `maxWidth: 320`
       again (the `200px` row fails). Commit A (form C):
 
@@ -3372,7 +3372,7 @@ and `ErrorState` otherwise, never an empty list; the branch record shows UTC wit
 and a failed index or tenant read degrades to a short id, never to a wrong name; the tab passes
 `nameMaxWidth`.
 
-#### Task 4c: 16's carry-ins (Q9; droppable)
+#### Task 4c: 16's carry-ins (Q9; droppable) and the drafter lookup (P-1)
 
 **Files:**
 
@@ -3382,6 +3382,9 @@ and a failed index or tenant read degrades to a short id, never to a wrong name;
 - Modify: `app/(authenticated)/platform-admin/tenants/[tenantId]/(record)/page.tsx`
 - Modify: `app/(authenticated)/platform-admin/tenants/[tenantId]/(record)/layout.tsx` (the hero's
   subtitle) and 4b's `layout.test.tsx`
+- P-1 (Step 3, commit D): modify `modules/administration/branches/branch-service.ts` and its test
+  and `app/(authenticated)/admin/branches/[branchId]/layout.tsx`; create
+  `app/(authenticated)/admin/branches/[branchId]/layout.test.tsx`
 
 - [ ] **Step 1: Tests first.** `tenant-rules.test.ts`
       gains "words every bootstrap status" (`BOOTSTRAP_STATUSES.map(bootstrapStatusLabel)` equals
@@ -3453,12 +3456,61 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
       If anything here fails for a reason outside these items, `git restore` the sub-task and report
       it deferred (it is droppable).
 
-**Gate (4c):** commit C is in, with the two trailers, or the sub-task is reported dropped with its
-reason; `git status --short` is empty.
+- [ ] **Step 3: P-1: let a lost session reach `load()` from the drafter lookup** (commit D; an
+      approved addition, see Approved additions; unlike commit C it is not droppable). Tests first:
+      in `modules/administration/branches/branch-service.test.ts`, keep the happy path and the
+      "no event" rows of "reads the drafter from the branch.create_draft audit event, or null
+      (BG-08)" and replace its `mockRejectedValueOnce(new Error('forbidden'))` row with an
+      `it.each` over a 401, a stale context (`invalid_active_tenant_context`) and a 5xx that
+      expects `getBranchMaker` to REJECT with the read's own error, the rows and assertion copied
+      from `modules/administration/users/user-service.test.ts` ("rejects with the audit read's own
+      error on %s"). Create `app/(authenticated)/admin/branches/[branchId]/layout.test.tsx` on the
+      harness of `app/(authenticated)/admin/users/[userId]/layout.test.tsx` (hoisted `redirect`
+      mock throwing `NEXT_REDIRECT:<to>`, real `unstable_rethrow`, `headers()` mocked, the module's
+      services mocked) with four cases, copied from that file's inviter cases: a 401 from the
+      drafter read redirects to `/login?reason=session_expired` and renders nothing; a stale
+      context redirects to `/select-context`; a 403 and a 5xx each render the record with
+      Activate enabled and no blocked-by-drafter note. Form U on both files: FAIL (the service
+      still answers null; the layout never redirects). Then the change: `getBranchMaker` loses its
+      `try`/`catch` (every read failure rejects; its doc comment says so, like `getUserInviter`'s),
+      and the layout (`[branchId]/layout.tsx`, the `maker` lookup above `const base`) becomes:
+
+```tsx
+// load() redirects on a lost session or a stale context; any other failure leaves the drafter
+// unknown and Activate on offer, where the backend's maker-checker 403 (BG-08) is the guard.
+const makerRead =
+  actions.includes('activate') && can(holder, 'audit.view')
+    ? await load(getBranchMaker(branchId))
+    : null;
+const maker = makerRead?.ok ? makerRead.value : null;
+```
+
+      (import
+      `load` from `@/lib/api/load` if the file doesn't yet). Nothing else in 08's files changes.
+      Form U on both files: PASS; form E on `e2e/branches.spec.ts`: PASS. Mutation proof (scratch,
+      reverted): put the catch back (the 401 and stale-context rows fail); call
+      `getBranchMaker(branchId).catch(() => null)` in the layout instead of `load()` (the two
+      redirect cases fail). Commit D (form C):
+
+```
+fix(branches): let a lost session reach load() from the drafter lookup
+
+getBranchMaker no longer swallows every failure: a lost session or a stale context during the
+drafter lookup now redirects through load(), as the user record's inviter lookup does. Any other
+failure leaves the drafter unknown and Activate on offer, where the backend's maker-checker 403
+(BG-08) is the guard.
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
+```
+
+**Gate (4c):** commit C is in, with the two trailers, or its part is reported dropped with its
+reason; commit D is in, with the two trailers; `git status --short` is empty.
 
 **Review note (4c):** the country now reads `KE · Kenya` in all three places (directory, Overview,
 hero subtitle `<code> · KE · Kenya`); every bootstrap status has a word; the failure-code sentence
-sits under the code, muted, and the code stays visible; nothing else in 16's files changes.
+sits under the code, muted, and the code stays visible; nothing else in 16's files changes. Commit D
+changes only 08's `getBranchMaker`, its test, the branch record layout and that layout's new test.
 
 ---
 
@@ -5054,8 +5106,8 @@ count elsewhere moves; test 9 pins the 320 px cap at 1280 px; test 1 pins the na
       `applyA11yCase`, `expectA11yCaseApplied` and `expectNoSeriousOrCriticalViolations` to the
       spec's `./support/admin` import, then the matrix below. axe rates `landmark-unique` moderate,
       so the serious/critical scan can't see two landmarks sharing a name: each surface that holds
-      a named region asserts its counts, as `e2e/users.spec.ts:1292-1294` does (rule 21). If the
-      user approves P-2, the branches tab's entry gains `'Branches table': 1`.
+      a named region asserts its counts, as `e2e/users.spec.ts:1292-1294` does (rule 21). The branches
+      tab's entry gains `'Branches table': 1` (P-2).
 
 ```ts
 const SURFACES = [
