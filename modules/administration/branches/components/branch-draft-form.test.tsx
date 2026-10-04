@@ -11,6 +11,8 @@ vi.mock('../branch-actions', () => ({
   createBranchDraft: (...args: unknown[]) => createBranchDraft(...args) as unknown,
 }));
 
+const TENANT = '99999999-9999-4999-8999-999999999999';
+const ORG = '00000000-0000-0000-0000-000000000000';
 const PARENTS = [
   { id: '22222222-2222-4222-8222-222222222222', label: 'Head Office (HEAD_OFFICE)' },
 ];
@@ -126,5 +128,65 @@ describe('BranchDraftForm', () => {
       expect(createBranchDraft).toHaveBeenCalledTimes(1);
     });
     expect(sent(0)?.get('contextOrganisationId')).toBe('11111111-1111-4111-8111-111111111111');
+  });
+
+  it('submits through a passed action with its hidden fields, the key and the organisation', async () => {
+    const user = userEvent.setup();
+    const action = vi.fn().mockResolvedValueOnce(CONFLICT).mockResolvedValueOnce({ ok: true });
+    const { code, name, create } = renderForm({
+      action,
+      hiddenFields: { tenantId: TENANT },
+      contextOrganisationId: ORG,
+      cancelHref: `/platform-admin/tenants/${TENANT}/branches`,
+    });
+
+    await user.type(code, 'THIKA');
+    await user.type(name, 'Thika Road Branch');
+    await user.click(create);
+    expect(await screen.findByText('This code may already be in use.')).toBeInTheDocument();
+    expect(code).toHaveValue('THIKA');
+    await user.click(create);
+
+    await waitFor(() => {
+      expect(action).toHaveBeenCalledTimes(2);
+    });
+    const [first, second] = action.mock.calls.map((call) => call[1] as FormData);
+    for (const sent of [first, second]) {
+      expect(sent?.get('tenantId')).toBe(TENANT);
+      expect(sent?.get('contextOrganisationId')).toBe(ORG);
+      expect(sent?.get('idempotencyKey')).toMatch(UUID_PATTERN);
+    }
+    expect(second?.get('idempotencyKey')).toBe(first?.get('idempotencyKey'));
+    expect(createBranchDraft).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute(
+      'href',
+      `/platform-admin/tenants/${TENANT}/branches`,
+    );
+  });
+
+  it('says why the parent list is incomplete, in place of "Optional."', () => {
+    renderForm({ parentsNote: 'Optional. Only the first 500 branches are listed.' });
+    expect(screen.getByRole('combobox', { name: 'Parent branch' })).toHaveAccessibleDescription(
+      'Optional. Only the first 500 branches are listed.',
+    );
+  });
+
+  it('keeps 08\'s own defaults: its tenant action, Cancel to the branch list and "Optional."', async () => {
+    const user = userEvent.setup();
+    createBranchDraft.mockResolvedValueOnce({ ok: true });
+    const { code, name, create } = renderForm();
+
+    expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/admin/branches');
+    expect(screen.getByRole('combobox', { name: 'Parent branch' })).toHaveAccessibleDescription(
+      'Optional.',
+    );
+    await user.type(code, 'THIKA');
+    await user.type(name, 'Thika Road Branch');
+    await user.click(create);
+
+    await waitFor(() => {
+      expect(createBranchDraft).toHaveBeenCalledTimes(1);
+    });
+    expect(sent(0)?.has('tenantId')).toBe(false);
   });
 });

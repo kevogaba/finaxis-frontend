@@ -30,6 +30,13 @@ interface BranchDirectoryTableProps {
   /** Server Component: this function prop never crosses to the client — keep it that way. */
   sortHref: (field: BranchSortField) => string;
   timeZone: string;
+  /** Where a branch's record lives: 08's own by default; layer 17 passes an institution's. */
+  basePath?: string;
+  /** The Created column's header: the platform labels its UTC times (spec §9). */
+  createdLabel?: string;
+  /** The name link's cap: 320 px by default. Layer 17's tab passes `min(320px, 60vw)`, so a long
+   * name's ellipsis stays inside a 375 px card (10's `NAME_MAX_WIDTH`). */
+  nameMaxWidth?: number | string;
 }
 
 /** The branch directory (spec §10.3): every header is a server-built sort link. */
@@ -38,9 +45,21 @@ export function BranchDirectoryTable({
   sort,
   sortHref,
   timeZone,
+  basePath = '/admin/branches',
+  createdLabel = 'Created',
+  nameMaxWidth = 320,
 }: BranchDirectoryTableProps) {
   return (
-    <TableContainer sx={{ maxHeight: { md: 'calc(100dvh - 300px)' }, minHeight: 240 }}>
+    // Keyboard-scrollable at 375 px, where the 760 px table overflows (as 10's users table and 07's
+    // history table). Not "Branches": the table keeps that name, and a landmark and a table sharing
+    // it would read twice; no other region on either page that renders this table is named
+    // "Branches table".
+    <TableContainer
+      tabIndex={0}
+      role="region"
+      aria-label="Branches table"
+      sx={{ maxHeight: { md: 'calc(100dvh - 300px)' }, minHeight: 240 }}
+    >
       <Table stickyHeader aria-label="Branches" sx={{ minWidth: 760 }}>
         <TableHead>
           <TableRow>
@@ -55,7 +74,7 @@ export function BranchDirectoryTable({
                     active={active}
                     direction={direction}
                   >
-                    {label}
+                    {field === 'createdAt' ? createdLabel : label}
                     <LinkPendingIndicator />
                   </TableSortLabel>
                 </TableCell>
@@ -69,11 +88,11 @@ export function BranchDirectoryTable({
               <TableCell>
                 <Link
                   component={NextLink}
-                  href={`/admin/branches/${branch.id}`}
+                  href={`${basePath}/${branch.id}`}
                   variant="body2"
                   noWrap
                   title={branch.branchName}
-                  sx={{ display: 'block', maxWidth: 320, fontWeight: 700 }}
+                  sx={{ display: 'block', maxWidth: nameMaxWidth, fontWeight: 700 }}
                 >
                   {branch.branchName}
                   <LinkPendingIndicator />
