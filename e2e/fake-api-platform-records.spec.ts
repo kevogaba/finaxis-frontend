@@ -140,7 +140,9 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     // same key is refused again rather than replayed.
     const atPwani = `/platform/tenants/${T.pwani}/branches`;
     await expectProblem(await post(atPwani, DRAFT, k2), 403, 'forbidden');
-    await expectProblem(await post(atPwani, DRAFT, k2), 403, 'forbidden');
+    const retry = await post(atPwani, DRAFT, k2);
+    await expectProblem(retry, 403, 'forbidden');
+    expect(retry.headers()['idempotency-replayed']).toBeUndefined();
 
     // The code is taken, whatever the key.
     await expectProblem(await post(acme('/branches'), DRAFT), 409, 'conflict');
@@ -289,6 +291,18 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
       'forbidden',
     );
     await expectProblem(await readOnly.post(acme('/branches'), DRAFT), 403, 'forbidden');
+    // Reactivate and deactivate have their own codes (Sara is SUSPENDED and Esi ACTIVE, so a
+    // miswired gate would answer 200).
+    await expectProblem(
+      await readOnly.post(`/platform/users/${R.sara}/reactivate`, {}),
+      403,
+      'forbidden',
+    );
+    await expectProblem(
+      await readOnly.post(`/platform/users/${R.esi}/deactivate`, { reason: 'Left the platform' }),
+      403,
+      'forbidden',
+    );
     // The control: the read code is still held.
     expect((await readOnly.get(acme('/users'))).status()).toBe(200);
 

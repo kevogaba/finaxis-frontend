@@ -1478,10 +1478,25 @@ const BUILDERS = {
     return state;
   },
   // Layer 17 (platform records). `platform-records-read-only` has the same data without the four
-  // mutation codes and without tenant.approve (no badge), for the gated-control cases.
+  // mutation codes and without tenant.approve (no badge) on the platform role, for the gated-control
+  // cases. Only the platform role loses them: Jane keeps branch.create at Acme, so a refused
+  // platform branch draft there proves the platform gate, not BG-18.
   'platform-records': platformRecordsScenario,
-  'platform-records-read-only': () =>
-    withoutPermission(platformRecordsScenario(), ...PLATFORM_RECORD_CODES, 'tenant.approve'),
+  'platform-records-read-only': () => {
+    const state = platformRecordsScenario();
+    const stripped: readonly string[] = [...PLATFORM_RECORD_CODES, 'tenant.approve'];
+    return {
+      ...state,
+      roles: state.roles.map((candidate) =>
+        candidate.id === IDS.platformAdminRole
+          ? {
+              ...candidate,
+              permissions: candidate.permissions.filter((code) => !stripped.includes(code)),
+            }
+          : candidate,
+      ),
+    };
+  },
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */
