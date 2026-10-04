@@ -3,6 +3,7 @@ import EventOutlined from '@mui/icons-material/EventOutlined';
 import HomeOutlined from '@mui/icons-material/HomeOutlined';
 import Inventory2Outlined from '@mui/icons-material/Inventory2Outlined';
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
+import VerifiedUserOutlined from '@mui/icons-material/VerifiedUserOutlined';
 import type { WorkspaceNavigationItem } from '@/components/shell/workspace-navigation';
 
 /**
@@ -17,6 +18,12 @@ export const administrationNavigationItems: readonly WorkspaceNavigationItem[] =
     label: 'Branches',
     icon: AccountTreeOutlined,
     requiresAny: ['branch.view'],
+  },
+  {
+    href: '/admin/roles',
+    label: 'Roles & permissions',
+    icon: VerifiedUserOutlined,
+    requiresAny: ['role.view'],
   },
   {
     href: '/admin/settings',

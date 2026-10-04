@@ -54,7 +54,19 @@ export function AssignmentDrawer({ open, onClose, ...form }: AssignmentDrawerPro
       open={open}
       onClose={pending ? undefined : onClose}
       // The temporary Drawer's paper already has role="dialog" + aria-modal; add the name.
-      slotProps={{ paper: { 'aria-labelledby': titleId, sx: { width: { xs: '100%', sm: 440 } } } }}
+      slotProps={{
+        paper: {
+          'aria-labelledby': titleId,
+          sx: {
+            width: { xs: '100%', sm: 440 },
+            // The paper is the scroll container and the sticky footer (65px: 12px padding twice,
+            // a 1px border and a 40px button) sits inside it, so a focused control under the footer
+            // counts as visible and is never scrolled into view (WCAG 2.4.11). Reserve the footer
+            // plus a margin below the scrollport.
+            scrollPaddingBottom: '96px',
+          },
+        },
+      }}
     >
       <AssignmentForm {...form} onClose={onClose} onPendingChange={setPending} titleId={titleId} />
     </Drawer>
