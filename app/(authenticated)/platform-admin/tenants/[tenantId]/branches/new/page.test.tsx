@@ -199,9 +199,9 @@ describe('NewInstitutionBranchPage: the form', () => {
 
 describe('NewInstitutionBranchPage: refusals', () => {
   it.each([
-    ['branch.view', ['branch.view']],
-    ['branch.create', ['branch.create']],
-    ['either code', []],
+    ['only branch.view', ['branch.view']],
+    ['only branch.create', ['branch.create']],
+    ['neither code', []],
   ])('refuses without branch.create and branch.view (%s)', async (_label, permissions) => {
     setup({ permissions });
 
@@ -278,13 +278,28 @@ describe('NewInstitutionBranchPage: refusals', () => {
   // Rule 21: a page settles every read with load(), so a lost session or a stale context redirects
   // instead of rendering the form (or its parent list) over a dead session.
   it.each([
-    ['the institution read', 'tenant'],
-    ['the parent index read', 'index'],
-  ] as const)('redirects to login when %s finds the session lost', async (_label, which) => {
-    setup({ [which]: new BackendApiError(401) });
+    ['the institution read', 'tenant', new BackendApiError(401), '/login?reason=session_expired'],
+    ['the parent index read', 'index', new BackendApiError(401), '/login?reason=session_expired'],
+    [
+      'the institution read',
+      'tenant',
+      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
+      '/select-context',
+    ],
+    [
+      'the parent index read',
+      'index',
+      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
+      '/select-context',
+    ],
+  ] as const)(
+    'redirects when %s finds the session or the context lost (%#)',
+    async (_label, which, error, to) => {
+      setup({ [which]: error });
 
-    await expect(
-      NewInstitutionBranchPage({ params: Promise.resolve({ tenantId: ACME }) }),
-    ).rejects.toThrow('NEXT_REDIRECT:/login?reason=session_expired');
-  });
+      await expect(
+        NewInstitutionBranchPage({ params: Promise.resolve({ tenantId: ACME }) }),
+      ).rejects.toThrow(`NEXT_REDIRECT:${to}`);
+    },
+  );
 });
