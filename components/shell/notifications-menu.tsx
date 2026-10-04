@@ -40,6 +40,7 @@ export function NotificationsMenu({
 }: NotificationsMenuProps) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const titleId = useId();
+  const dialogId = useId();
   const open = anchor !== null;
   const message = (text: string) => (
     <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -53,6 +54,7 @@ export function NotificationsMenu({
           aria-label={label}
           aria-haspopup="dialog"
           aria-expanded={open ? 'true' : undefined}
+          aria-controls={open ? dialogId : undefined}
           onClick={(event) => {
             setAnchor(event.currentTarget);
           }}
@@ -72,6 +74,7 @@ export function NotificationsMenu({
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         slotProps={{
           paper: {
+            id: dialogId,
             role: 'dialog',
             'aria-labelledby': titleId,
             sx: { width: 320, maxWidth: 'calc(100vw - 32px)', p: 2.5 },

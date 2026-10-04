@@ -73,12 +73,17 @@ describe('NotificationsMenu', () => {
     const bell = screen.getByRole('button', { name: /^Notifications/ });
     expect(bell).toHaveAttribute('aria-haspopup', 'dialog');
     expect(bell).not.toHaveAttribute('aria-expanded');
+    expect(bell).not.toHaveAttribute('aria-controls');
 
     await user.click(bell);
 
     await waitFor(() => {
       expect(bell).toHaveAttribute('aria-expanded', 'true');
     });
+    expect(bell).toHaveAttribute(
+      'aria-controls',
+      screen.getByRole('dialog', { name: 'Notifications' }).id,
+    );
   });
 
   it('hides the badge at zero and says nothing is waiting', async () => {
@@ -90,6 +95,7 @@ describe('NotificationsMenu', () => {
     const bell = screen.getByRole('button', { name: 'Notifications: nothing waiting' });
     expect(container.querySelector('.MuiBadge-invisible')).not.toBeNull();
     expect(within(bell).queryByText('0')).toBeNull();
+    expect(bell).not.toHaveTextContent(/\d/);
 
     await user.click(bell);
 
@@ -108,6 +114,7 @@ describe('NotificationsMenu', () => {
 
     const bell = screen.getByRole('button', { name: "Notifications (couldn't be loaded)" });
     expect(container.querySelector('.MuiBadge-invisible')).not.toBeNull();
+    expect(bell).not.toHaveTextContent(/\d/);
 
     await user.click(bell);
 

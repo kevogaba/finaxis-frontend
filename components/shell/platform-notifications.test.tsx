@@ -131,9 +131,9 @@ describe('PendingInstitutionsNotifications', () => {
 
     await show();
 
-    expect(
-      screen.getByRole('button', { name: "Notifications (couldn't be loaded)" }),
-    ).toBeInTheDocument();
+    const bell = screen.getByRole('button', { name: "Notifications (couldn't be loaded)" });
+    // Never a number: a failed count is not "0".
+    expect(bell).not.toHaveTextContent(/\d/);
     expect(screen.queryByRole('button', { name: 'Notifications: nothing waiting' })).toBeNull();
   });
 
@@ -149,7 +149,9 @@ describe('PendingInstitutionsNotifications', () => {
     countTenantsInStatus.mockRejectedValue(new BackendApiError(401));
 
     // load() redirects to /login?reason=session_expired (rule 21).
-    await expect(PendingInstitutionsNotifications()).rejects.toThrow('NEXT_REDIRECT');
+    await expect(PendingInstitutionsNotifications()).rejects.toMatchObject({
+      digest: expect.stringContaining(';/login?reason=session_expired;') as unknown,
+    });
   });
 
   it('sends a stale context to context selection instead of reading it as unavailable', async () => {
@@ -158,6 +160,9 @@ describe('PendingInstitutionsNotifications', () => {
       new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
     );
 
-    await expect(PendingInstitutionsNotifications()).rejects.toThrow('NEXT_REDIRECT');
+    // The mocked headers carry no pathname, so contextSelectionRedirectPath gives '/select-context'.
+    await expect(PendingInstitutionsNotifications()).rejects.toMatchObject({
+      digest: expect.stringContaining(';/select-context;') as unknown,
+    });
   });
 });
