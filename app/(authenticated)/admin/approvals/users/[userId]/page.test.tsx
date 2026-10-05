@@ -5,6 +5,7 @@ import { VERIFIED_ON_APPROVAL } from '@/modules/administration/approvals/approva
 import {
   MAKER_NOT_PERMITTED,
   READ_FAILED,
+  ROLES_CAPPED,
   USER_APPROVAL_FORBIDDEN,
 } from '@/modules/administration/approvals/approval-copy';
 import {
@@ -255,6 +256,13 @@ describe('UserApprovalPage: the request', () => {
     }
   });
 
+  it('says so in Requested access when the role list is capped', async () => {
+    setup({ roles: 100, rolesHasNext: true });
+    await show();
+
+    expect(within(card('Requested access')).getByText(ROLES_CAPPED)).toBeInTheDocument();
+  });
+
   it('offers Approve and Reject & revoke while it waits, with every check computed', async () => {
     setup();
     await show();
@@ -271,14 +279,18 @@ describe('UserApprovalPage: the request', () => {
     );
   });
 
-  it('reads nothing past the profile without both codes, and says why', async () => {
-    setup({ permissions: ['user.approve'] });
-    await show();
+  // Each case holds every OTHER code, so a gate that checks only one of the two still fails one.
+  it.each(['user.approve', 'user.view'])(
+    'reads nothing past the profile without %s, and says why',
+    async (missing) => {
+      setup({ permissions: ALL_CODES.filter((code) => code !== missing) });
+      await show();
 
-    expect(screen.getByRole('heading', { level: 1, name: 'User approval' })).toBeInTheDocument();
-    expect(screen.getByText(USER_APPROVAL_FORBIDDEN)).toBeInTheDocument();
-    expect(getUser).not.toHaveBeenCalled();
-  });
+      expect(screen.getByRole('heading', { level: 1, name: 'User approval' })).toBeInTheDocument();
+      expect(screen.getByText(USER_APPROVAL_FORBIDDEN)).toBeInTheDocument();
+      expect(getUser).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ['a 403', new BackendApiError(403, { code: 'forbidden' }), "You don't have permission"],
