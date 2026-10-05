@@ -46,6 +46,7 @@ const { activatePendingBranch } = await import('./branch-activation-actions');
 const ME = 'a1000000-0000-4000-8000-0000000000aa';
 const VICTOR = 'b2000000-0000-4000-8000-0000000000bb';
 const BRANCH = 'e5000000-0000-4000-8000-0000000000ee';
+const WESTLANDS = 'c3000000-0000-4000-8000-0000000000cc';
 const ORGANISATION = 'f6000000-0000-4000-8000-0000000000ff';
 const OTHER_ORGANISATION = '17000000-0000-4000-8000-000000000011';
 const KEY = '0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
@@ -102,7 +103,7 @@ describe('activatePendingBranch', () => {
   });
 
   it('refuses in a branch context before any read (BG-03)', async () => {
-    getCurrentContextProfile.mockResolvedValue(resolved({ id: BRANCH, name: 'Westlands' }));
+    getCurrentContextProfile.mockResolvedValue(resolved({ id: WESTLANDS, name: 'Westlands' }));
     await expect(activatePendingBranch(null, branchForm())).resolves.toMatchObject({
       ok: false,
       code: 'branch_context',
@@ -153,6 +154,7 @@ describe('activatePendingBranch', () => {
     const result = await activatePendingBranch(null, branchForm({ reason: 'x'.repeat(501) }));
     expect(result).toMatchObject({ ok: false, code: 'validation_failed' });
     expect(getBranch).not.toHaveBeenCalled();
+    expect(apiPost).not.toHaveBeenCalled();
   });
 
   // Beyond the plan's rows: the layer's Review Focus 1 and the 4a review's lessons (the guard
@@ -184,9 +186,9 @@ describe('activatePendingBranch', () => {
 
   it('leaves maker-checker to the backend without audit.view (no maker read)', async () => {
     getCurrentContextProfile.mockResolvedValue(resolved(null, ['branch.activate', 'branch.view']));
-    await activatePendingBranch(null, branchForm());
+    await expect(activatePendingBranch(null, branchForm())).resolves.toEqual({ ok: true });
     expect(getMakerEvent).not.toHaveBeenCalled();
-    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(apiPost).toHaveBeenCalledExactlyOnceWith(`/api/v1/branches/${BRANCH}/activate`, {}, KEY);
   });
 
   it('leaves maker-checker to the backend when the audit log records no drafter', async () => {
@@ -302,5 +304,6 @@ describe('activatePendingBranch', () => {
     const result = await activatePendingBranch(null, branchForm({ idempotencyKey: 'not-a-key' }));
     expect(result).toMatchObject({ ok: false, code: 'validation_failed' });
     expect(getBranch).not.toHaveBeenCalled();
+    expect(apiPost).not.toHaveBeenCalled();
   });
 });

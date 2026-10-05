@@ -270,6 +270,7 @@ describe('DecisionBar', () => {
       }),
     );
     expect(await screen.findByRole('alert')).toHaveTextContent(APPROVED_TOAST.provisioning);
+    expectScoped(approveUser.mock.calls[0]?.[1] as FormData, 'membershipId');
 
     // `refresh()` re-renders the page: a decided request has no bar, so the component unmounts.
     rerender(
@@ -282,4 +283,35 @@ describe('DecisionBar', () => {
       expect(screen.getByRole('heading', { name: NAME })).toHaveFocus();
     });
   });
+
+  it.each([
+    ['the first enabled decision left', ['reject'], null, 'Reject & revoke'],
+    ['the record title when nothing is left to act on', [], MEMBERSHIP_UNAVAILABLE, NAME],
+  ] as const)(
+    'moves focus to %s while the bar stays mounted',
+    async (_case, decisions, note, focused) => {
+      const user = userEvent.setup({ delay: null });
+      approveUser.mockResolvedValueOnce({ ok: true, outcome: 'active' });
+      const { rerender } = renderWithProviders(record());
+
+      await user.click(screen.getByRole('button', { name: 'Approve' }));
+      await user.click(
+        within(screen.getByRole('dialog', { name: `Approve ${NAME}?` })).getByRole('button', {
+          name: 'Approve',
+        }),
+      );
+      expect(await screen.findByRole('alert')).toHaveTextContent(APPROVED_TOAST.active);
+      expectScoped(approveUser.mock.calls[0]?.[1] as FormData, 'membershipId');
+
+      // `refresh()` re-renders the page with the decided state: the bar stays mounted with what is
+      // left, so the effect (not the unmount cleanup) returns focus.
+      rerender(record({ decisions, note }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole(decisions.length ? 'button' : 'heading', { name: focused }),
+        ).toHaveFocus();
+      });
+    },
+  );
 });

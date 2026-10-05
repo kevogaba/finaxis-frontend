@@ -35,7 +35,7 @@ interface DecisionBarProps {
   /** Why the bar offers less than the holder's codes suggest (no `membership.view`, …). */
   note: string | null;
   /** I2: the organisation the page rendered for; forwarded to every dialog as a hidden field. */
-  contextOrganisationId?: string;
+  contextOrganisationId: string;
 }
 
 function successToast(decision: ApprovalDecision, outcome: ApprovalOutcome): string {

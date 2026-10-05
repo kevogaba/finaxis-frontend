@@ -35,6 +35,15 @@ describe('MakerValue', () => {
     expect(screen.getByTestId('value').textContent).toBe(text);
   });
 
+  it('says the signed-in user when their own id is the upper-case one', () => {
+    renderWithProviders(
+      <p data-testid="value">
+        <MakerValue maker={event(ME)} name="Ann Admin" me={ME.toUpperCase()} />
+      </p>,
+    );
+    expect(screen.getByTestId('value').textContent).toBe('Ann Admin (you)');
+  });
+
   it('says a failed read failed, with its reference, never as "not recorded"', () => {
     renderWithProviders(
       <p data-testid="value">

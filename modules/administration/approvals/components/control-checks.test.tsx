@@ -33,7 +33,7 @@ describe('ControlChecks', () => {
       const value = screen.getByText(check.label, { selector: 'dt' }).nextElementSibling;
       if (!(value instanceof HTMLElement)) throw new Error(`"${check.label}" has no value cell`);
       expect(within(value).getByText(CHECK_STATES[check.state].label)).toBeInTheDocument();
-      expect(value).toHaveTextContent(check.detail);
+      expect(value.textContent).toBe(`${CHECK_STATES[check.state].label}${check.detail}`);
     }
   });
 });
