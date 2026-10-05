@@ -4,6 +4,7 @@ import { BackendApiError } from '@/auth/backend-api';
 import { VERIFIED_ON_APPROVAL } from '@/modules/administration/approvals/approval-checks';
 import {
   MAKER_NOT_PERMITTED,
+  MAKER_NOT_RECORDED,
   READ_FAILED,
   ROLES_CAPPED,
   USER_APPROVAL_FORBIDDEN,
@@ -351,6 +352,7 @@ describe('UserApprovalPage: maker-checker (Ruling 5)', () => {
       expect(button('Approve')).toBeEnabled();
       expect(fact(card('Request'), 'Invited by')).toHaveTextContent(READ_FAILED);
       expect(fact(card('Request'), 'Invited by')).toHaveTextContent('Reference: req-4');
+      expect(fact(card('Request'), 'Invited (Asia/Kolkata)')).toHaveTextContent(READ_FAILED);
       const check = fact(card('Control checks'), 'Invited by someone else');
       expect(check).toHaveTextContent('Checked on approval');
       expect(check).toHaveTextContent(VERIFIED_ON_APPROVAL);
@@ -365,10 +367,19 @@ describe('UserApprovalPage: maker-checker (Ruling 5)', () => {
     expect(getMakerEvent).not.toHaveBeenCalled();
     expect(button('Approve')).toBeEnabled();
     expect(fact(card('Request'), 'Invited by')).toHaveTextContent(MAKER_NOT_PERMITTED);
+    expect(fact(card('Request'), 'Invited (Asia/Kolkata)')).toHaveTextContent(MAKER_NOT_PERMITTED);
     expect(screen.queryByRole('link', { name: 'Open the audit trail' })).toBeNull();
     expect(fact(card('Control checks'), 'Invited by someone else')).toHaveTextContent(
       VERIFIED_ON_APPROVAL,
     );
+  });
+
+  it('says an audit trail with no invite event has none, rather than showing a dash', async () => {
+    setup({ maker: null });
+    await show();
+
+    expect(fact(card('Request'), 'Invited by')).toHaveTextContent(MAKER_NOT_RECORDED);
+    expect(fact(card('Request'), 'Invited (Asia/Kolkata)')).toHaveTextContent(MAKER_NOT_RECORDED);
   });
 });
 

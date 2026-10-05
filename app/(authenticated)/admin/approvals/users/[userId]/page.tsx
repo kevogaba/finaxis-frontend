@@ -31,6 +31,9 @@ import {
 } from '@/modules/administration/approvals/approval-checks';
 import {
   CHECKS_DESCRIPTION,
+  MAKER_NOT_PERMITTED,
+  MAKER_NOT_RECORDED,
+  READ_FAILED,
   REQUEST_DESCRIPTION,
   USER_APPROVAL_EYEBROW,
   USER_APPROVAL_FORBIDDEN,
@@ -209,7 +212,16 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
               { label: 'Invited by', value: <MakerValue maker={maker} name={makerName} me={me} /> },
               {
                 label: `Invited (${timeZone})`,
-                value: invitedAt ? `${invitedAt.date} · ${invitedAt.time}` : '—',
+                // The maker read's own state, never a dash for a read that failed or wasn't made
+                // (rule 9). The reference stays once, on "Invited by".
+                value:
+                  maker === null
+                    ? MAKER_NOT_PERMITTED
+                    : !maker.ok
+                      ? READ_FAILED
+                      : invitedAt
+                        ? `${invitedAt.date} · ${invitedAt.time}`
+                        : MAKER_NOT_RECORDED,
               },
             ]}
           />
