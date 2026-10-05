@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
 import {
   accountBlockedNote,
@@ -158,6 +159,13 @@ describe('the user decisions', () => {
         accountBlockedNote('SUSPENDED'),
       ],
       [
+        'a locked account',
+        'PENDING_APPROVAL',
+        'LOCKED',
+        'account_blocked',
+        accountBlockedNote('LOCKED'),
+      ],
+      [
         'an approval provisioning',
         'PENDING_APPROVAL',
         'PROVISIONING_IDP',
@@ -182,6 +190,20 @@ describe('the user decisions', () => {
         actorUserId: ME.toUpperCase(),
         occurredAt: '2026-09-24T08:00:00Z',
       });
+      await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
+        ok: false,
+        code: 'maker_checker',
+        formError: USER_MAKER_CHECKER_BLOCKED,
+      });
+      expect(apiPost).not.toHaveBeenCalled();
+    });
+
+    it('refuses the inviter when the signed-in id is the upper-case one, before any write', async () => {
+      getCurrentContextProfile.mockResolvedValue({
+        ...resolved(),
+        profile: { user_id: ME.toUpperCase(), permissions: ALL_CODES },
+      });
+      getMakerEvent.mockResolvedValue({ actorUserId: ME, occurredAt: '2026-09-24T08:00:00Z' });
       await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
         ok: false,
         code: 'maker_checker',
@@ -230,6 +252,22 @@ describe('the user decisions', () => {
       getMakerEvent.mockRejectedValue(error);
       await expect(actions.approveUser(null, membershipForm())).rejects.toThrow(to);
       expect(apiPost).not.toHaveBeenCalled();
+    });
+
+    it('fails the action with a reference, before any write, when the audit page is unreadable', async () => {
+      // Ruling 5's one asymmetry: only a BackendApiError leaves the maker unknown; the action never
+      // guesses past a response it can't read.
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const unreadable = z.object({ items: z.array(z.unknown()) }).safeParse({}).error;
+      getMakerEvent.mockRejectedValue(unreadable);
+      await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
+        ok: false,
+        code: 'contract_mismatch',
+        requestId: expect.any(String),
+      });
+      expect(apiPost).not.toHaveBeenCalled();
+      expect(logged).toHaveBeenCalledTimes(1);
+      logged.mockRestore();
     });
 
     it('fails closed when nobody can say who is deciding (no resolved profile)', async () => {
@@ -298,6 +336,31 @@ describe('the user decisions', () => {
       expect(apiPost).not.toHaveBeenCalled();
     });
 
+    it('refuses a submit after an organisation switch, before any read', async () => {
+      getCurrentContextProfile.mockResolvedValue({
+        ...resolved(),
+        context: { organization: { id: OTHER_ORGANISATION }, branch: null },
+      });
+      await expect(
+        actions.rejectUser(null, membershipForm({ reason: 'Duplicate invitation' })),
+      ).resolves.toMatchObject({ ok: false, code: 'context_changed' });
+      expect(getMembership).not.toHaveBeenCalled();
+      expect(apiPost).not.toHaveBeenCalled();
+    });
+
+    it('refuses a malformed membership id with no read', async () => {
+      const result = await actions.rejectUser(
+        null,
+        membershipForm({
+          membershipId: `${MEMBERSHIP}/../activate`,
+          reason: 'Duplicate invitation',
+        }),
+      );
+      expect(result).toMatchObject({ ok: false, code: 'validation_failed' });
+      expect(getMembership).not.toHaveBeenCalled();
+      expect(apiPost).not.toHaveBeenCalled();
+    });
+
     it.each([
       ['awaiting', 'ACTIVE'],
       ['blocked', 'LOCKED'],
@@ -362,6 +425,25 @@ describe('the user decisions', () => {
       await expect(
         actions.rejectUser(null, membershipForm({ reason: 'Duplicate invitation' })),
       ).resolves.toMatchObject({ ok: false, formError: REJECT_FAILED, requestId: 'req-4' });
+    });
+  });
+
+  describe.each(['approveUser', 'rejectUser'] as const)('%s when a guard read fails', (name) => {
+    const submit = () => actions[name](null, membershipForm({ reason: 'Duplicate invitation' }));
+
+    it.each([
+      ['the membership', getMembership],
+      ['the user', getUser],
+    ])('redirects a lost session reading %s, before any write', async (_read, read) => {
+      read.mockRejectedValue(new BackendApiError(401));
+      await expect(submit()).rejects.toThrow('NEXT_REDIRECT:/login?reason=session_expired');
+      expect(apiPost).not.toHaveBeenCalled();
+    });
+
+    it('fails closed with the reference when the membership read fails', async () => {
+      getMembership.mockRejectedValue(new BackendApiError(503, { requestId: 'req-read' }));
+      await expect(submit()).resolves.toMatchObject({ ok: false, requestId: 'req-read' });
+      expect(apiPost).not.toHaveBeenCalled();
     });
   });
 });

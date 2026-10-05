@@ -22,8 +22,10 @@ export async function decider() {
 }
 
 /** BG-08: the maker, read again here only with `audit.view`. A lost session or a stale context
- * still redirects (rethrown to `runServerAction`); any other failed read leaves the maker unknown,
- * and the backend's maker-checker 403 is then the guard. Never a blanket catch (rule 10). */
+ * still redirects (rethrown to `runServerAction`); any other `BackendApiError` leaves the maker
+ * unknown, and the backend's maker-checker 403 is then the guard. Anything else (an unreadable
+ * audit page, a `ZodError`) rethrows and fails the action with a reference (Ruling 5). Never a
+ * blanket catch (rule 10). */
 export async function knownMaker(
   kind: ApprovalSubjectKind,
   subjectId: string,
