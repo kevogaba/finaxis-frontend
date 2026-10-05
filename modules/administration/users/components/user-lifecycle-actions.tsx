@@ -15,6 +15,7 @@ import {
   revokeMembership,
   suspendMembership,
 } from '../membership-actions';
+import type { UserStatus } from '../user-contract';
 import type { MembershipAction } from '../user-rules';
 
 interface ActionCopy {
@@ -96,6 +97,9 @@ interface UserLifecycleActionsProps {
   blocked: Partial<Record<MembershipAction, string>>;
   /** Why the hero has no actions the holder's codes suggest (Ruling 7). */
   note: string | null;
+  /** The user's account status as the page rendered it. Reject & revoke sends it back so the action
+   * can tell a 202 approval (user now provisioning, membership still pending) from a stale tab. */
+  userStatus?: UserStatus;
   /** I2: the organisation the page rendered for; forwarded to each dialog as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -108,6 +112,7 @@ export function UserLifecycleActions({
   actions,
   blocked,
   note,
+  userStatus,
   contextOrganisationId,
 }: UserLifecycleActionsProps) {
   const notify = useToast();
@@ -263,9 +268,16 @@ export function UserLifecycleActions({
                 <>
                   <input type="hidden" name="membershipId" value={membershipId} />
                   {id === 'reject' && (
-                    // Layer 12, P-3: refused unless still pending, so a stale tab never revokes
-                    // someone another administrator approved meanwhile.
-                    <input type="hidden" name="expectedStatus" value="PENDING_APPROVAL" />
+                    // Layer 12, P-3: refused unless still pending, and unless the user is not
+                    // provisioning now when this page showed one who was not (a 202 approval keeps
+                    // the membership pending), so a stale tab never revokes someone another
+                    // administrator approved meanwhile.
+                    <>
+                      <input type="hidden" name="expectedStatus" value="PENDING_APPROVAL" />
+                      {userStatus && (
+                        <input type="hidden" name="expectedUserStatus" value={userStatus} />
+                      )}
+                    </>
                   )}
                 </>
               )}

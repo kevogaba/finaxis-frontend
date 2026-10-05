@@ -292,6 +292,41 @@ describe('UserRecordLayout: the membership actions', () => {
     expect(hidden('idempotencyKey', dialog)).toMatch(UUID);
   });
 
+  // Layer 12, P-3: a 202 approval keeps the membership pending and moves only the user, so Reject &
+  // revoke carries the account status this layout rendered (including a provisioning record, which
+  // 10 deliberately leaves revocable). A plain Revoke names none.
+  it.each(['DRAFT', 'PROVISIONING_IDP'])(
+    'names the rendered %s user status in Reject & revoke, with the expected membership status',
+    async (userStatus) => {
+      const user = userEvent.setup();
+      setup({ membershipStatus: 'PENDING_APPROVAL', userStatus });
+      await show();
+
+      await user.click(screen.getByRole('button', { name: 'Reject & revoke' }));
+
+      const dialog = await screen.findByRole('alertdialog', {
+        name: 'Reject and revoke Felix Omondi?',
+      });
+      expect(hidden('expectedStatus', dialog)).toBe('PENDING_APPROVAL');
+      expect(hidden('expectedUserStatus', dialog)).toBe(userStatus);
+    },
+  );
+
+  it('names no expected status of any kind in a plain Revoke', async () => {
+    const user = userEvent.setup();
+    setup();
+    await show();
+
+    await user.click(screen.getByRole('button', { name: 'Revoke' }));
+
+    const dialog = await screen.findByRole('alertdialog', {
+      name: "Revoke Felix Omondi's membership?",
+    });
+    expect(hidden('membershipId', dialog)).toBe(MEMBERSHIP);
+    expect(hidden('expectedStatus', dialog)).toBeUndefined();
+    expect(hidden('expectedUserStatus', dialog)).toBeUndefined();
+  });
+
   it('disables Suspend and Revoke on your own record, with the reason', async () => {
     setup({ signedInAs: FELIX });
 

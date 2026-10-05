@@ -30,6 +30,8 @@ const OWN_MEMBERSHIP =
   "You can't suspend or revoke your own membership. Ask another administrator.";
 const USER_MAKER_CHECKER_BLOCKED =
   'You invited this user, so another administrator must approve them.';
+const MEMBERSHIP_CHANGED =
+  'This membership changed since the page loaded. Refresh to see its status.';
 const PARTIAL_SCAN_NOTE =
   "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 branch assignments were checked.";
 const NO_MEMBERSHIP_DETAILS = "You can't view membership details in your current role.";
@@ -439,6 +441,50 @@ test.describe('users: directory and lifecycle', () => {
     // Revoked is terminal: nothing is left to offer, so the title takes focus.
     await expect(hero(page).getByRole('button')).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Daniel Mutua' })).toBeFocused();
+  });
+
+  test('refuses a stale Reject & revoke after another tab approved the user into provisioning (202)', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users');
+    // This tab renders Amina awaiting approval, with Reject & revoke on offer for that state.
+    await enterUser(page, USERS.amina, 'Amina Odhiambo');
+    await expect(hero(page).getByText('Awaiting approval', { exact: true })).toBeVisible();
+
+    // Another tab of the same browser context (same run, same session) approves her. She has no
+    // sign-in identity, so the answer is a 202: the membership stays pending and only she moves on
+    // (contract §E.3, BG-11), which a membership-status check alone cannot see.
+    const other = await context.newPage();
+    await openUser(other, USERS.amina, 'Amina Odhiambo');
+    await expect(await act(other, 'Approve')).toBeHidden({ timeout: 15000 });
+    await expect(hero(other).getByText('Provisioning identity', { exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(
+      hero(other).getByText('Membership pending approval', { exact: true }),
+    ).toBeVisible();
+    await other.close();
+
+    // The first tab never refreshed, so its Reject & revoke is stale: the server refuses it, the
+    // dialog stays open with the reason the administrator typed, and no revoke is sent.
+    const dialog = await act(page, 'Reject & revoke', 'Wrong person');
+    await expect(dialog.getByText(MEMBERSHIP_CHANGED)).toBeVisible({ timeout: 15000 });
+    await expect(dialog.getByRole('textbox', { name: /^Reason/ })).toHaveValue('Wrong person');
+    await expect(toast(page, 'Membership revoked')).toHaveCount(0);
+
+    // A fresh read: she is still provisioning, not revoked, and still revocable by an administrator
+    // who sees that (the page showed her as provisioning, so the guard has nothing to compare).
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: 'Amina Odhiambo' })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(hero(page).getByText('Provisioning identity', { exact: true })).toBeVisible();
+    await expect(
+      hero(page).getByText('Membership pending approval', { exact: true }),
+    ).toBeVisible();
+    await expect(hero(page).getByText('Revoked', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Reject & revoke', exact: true })).toBeVisible();
   });
 
   test('suspends and reactivates a member, and audits both', async ({

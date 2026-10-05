@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
+import type { UserStatus } from '../user-contract';
 import {
   MEMBERSHIP_MISSING,
   MEMBERSHIP_UNAVAILABLE,
@@ -37,10 +38,18 @@ interface Overrides {
   actions: readonly MembershipAction[];
   blocked?: Partial<Record<MembershipAction, string>>;
   note?: string | null;
+  /** The user's account status as the page rendered it; omitted, the prop is not passed at all. */
+  userStatus?: UserStatus;
 }
 
 /** The hero's slot: the record title is the page's `h1`, the focus fallback's target. */
-const record = ({ membershipId = MEMBERSHIP, actions, blocked = {}, note = null }: Overrides) => (
+const record = ({
+  membershipId = MEMBERSHIP,
+  actions,
+  blocked = {},
+  note = null,
+  userStatus,
+}: Overrides) => (
   <main>
     <h1>{NAME}</h1>
     <UserLifecycleActions
@@ -49,6 +58,7 @@ const record = ({ membershipId = MEMBERSHIP, actions, blocked = {}, note = null 
       actions={actions}
       blocked={blocked}
       note={note}
+      userStatus={userStatus}
       contextOrganisationId={ORG}
     />
   </main>
@@ -89,7 +99,7 @@ describe('UserLifecycleActions', () => {
   it('makes Reject & revoke an alertdialog with the permanence warning and a required reason', async () => {
     const user = userEvent.setup();
     revokeMembership.mockResolvedValueOnce({ ok: true });
-    renderActions({ actions: ['approve', 'reject'] });
+    renderActions({ actions: ['approve', 'reject'], userStatus: 'DRAFT' });
 
     await user.click(screen.getByRole('button', { name: 'Reject & revoke' }));
     const dialog = screen.getByRole('alertdialog', { name: `Reject and revoke ${NAME}?` });
@@ -110,7 +120,46 @@ describe('UserLifecycleActions', () => {
     expect(sent.get('reason')).toBe('Not our member');
     // Layer 12, P-3: the action refuses it unless the membership is still pending.
     expect(sent.get('expectedStatus')).toBe('PENDING_APPROVAL');
+    // A 202 approval keeps the membership pending and moves only the user, so the action also needs
+    // the user's status as this page rendered it.
+    expect(sent.get('expectedUserStatus')).toBe('DRAFT');
     expect(await screen.findByRole('alert')).toHaveTextContent('Membership revoked');
+  });
+
+  it('names the rendered user status as it was, including a record shown as provisioning', async () => {
+    const user = userEvent.setup();
+    revokeMembership.mockResolvedValueOnce({ ok: true });
+    renderActions({ actions: ['reject'], userStatus: 'PROVISIONING_IDP' });
+
+    await user.click(screen.getByRole('button', { name: 'Reject & revoke' }));
+    const dialog = screen.getByRole('alertdialog', { name: `Reject and revoke ${NAME}?` });
+    await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), 'Not our member');
+    await user.click(within(dialog).getByRole('button', { name: 'Reject & revoke' }));
+
+    await waitFor(() => {
+      expect(revokeMembership).toHaveBeenCalledTimes(1);
+    });
+    expect((revokeMembership.mock.calls[0]?.[1] as FormData).get('expectedUserStatus')).toBe(
+      'PROVISIONING_IDP',
+    );
+  });
+
+  it('sends no expected user status when the page names none', async () => {
+    const user = userEvent.setup();
+    revokeMembership.mockResolvedValueOnce({ ok: true });
+    renderActions({ actions: ['reject'] });
+
+    await user.click(screen.getByRole('button', { name: 'Reject & revoke' }));
+    const dialog = screen.getByRole('alertdialog', { name: `Reject and revoke ${NAME}?` });
+    await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), 'Not our member');
+    await user.click(within(dialog).getByRole('button', { name: 'Reject & revoke' }));
+
+    await waitFor(() => {
+      expect(revokeMembership).toHaveBeenCalledTimes(1);
+    });
+    const sent = revokeMembership.mock.calls[0]?.[1] as FormData;
+    expect(sent.get('expectedStatus')).toBe('PENDING_APPROVAL');
+    expect(sent.get('expectedUserStatus')).toBeNull();
   });
 
   it('draws the destructive actions in the error colour and the first action as the primary', () => {
@@ -270,7 +319,7 @@ describe('UserLifecycleActions', () => {
   it('falls back to the record title when no action remains', async () => {
     const user = userEvent.setup();
     revokeMembership.mockResolvedValueOnce({ ok: true });
-    const { rerender } = renderActions({ actions: ['suspend', 'revoke'] });
+    const { rerender } = renderActions({ actions: ['suspend', 'revoke'], userStatus: 'ACTIVE' });
 
     await user.click(screen.getByRole('button', { name: 'Revoke' }));
     const dialog = screen.getByRole('alertdialog', { name: `Revoke ${NAME}'s membership?` });
@@ -284,6 +333,7 @@ describe('UserLifecycleActions', () => {
     expectScoped(revokeMembership.mock.calls[0]?.[1] as FormData);
     // A plain Revoke names no expected status: any non-terminal membership may be revoked.
     expect((revokeMembership.mock.calls[0]?.[1] as FormData).get('expectedStatus')).toBeNull();
+    expect((revokeMembership.mock.calls[0]?.[1] as FormData).get('expectedUserStatus')).toBeNull();
 
     // A revoked membership has no action left, so the layout drops the whole component.
     rerender(

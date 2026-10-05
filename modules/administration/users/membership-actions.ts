@@ -6,9 +6,9 @@ import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiPost } from '@/lib/api/tenant-api';
 import { uuidSchema } from '@/lib/api/wire';
-import { MEMBERSHIP_STATUSES } from './user-contract';
+import { MEMBERSHIP_STATUSES, USER_STATUSES } from './user-contract';
 import { MEMBERSHIP_CHANGED, MEMBERSHIP_CHANGED_CODE } from './user-rules';
-import { getMembership } from './user-service';
+import { getMembership, getUser } from './user-service';
 
 const idempotencyKey = z.uuid();
 const membershipInput = z.object({ idempotencyKey, membershipId: uuidSchema });
@@ -74,13 +74,22 @@ export async function reactivateMembership(
 
 const revokeInput = membershipInput.extend({
   reason: requiredReason,
-  // Layer 12, P-3: Reject & revoke names the status it was offered for (PENDING_APPROVAL).
+  // Layer 12, P-3: Reject & revoke names the status it was offered for (PENDING_APPROVAL) ...
   expectedStatus: z.enum(MEMBERSHIP_STATUSES).optional(),
+  // ... and the user's status as the page rendered it: a 202 approval keeps the membership
+  // PENDING_APPROVAL and moves only the user to PROVISIONING_IDP (contract §E.3, BG-11), so the
+  // membership status alone can't tell "approved meanwhile".
+  expectedUserStatus: z.enum(USER_STATUSES).optional(),
 });
 
 /** Revoke and Reject & revoke (D12): terminal; every assignment goes with it (BG-28). With an
- * `expectedStatus`, a membership that moved on since the page loaded (approved in another tab) is
- * refused before the terminal call: a stale Reject never revokes an approved member. */
+ * `expectedStatus`, a membership that moved on since the page loaded (approved with a 200,
+ * suspended) is refused before the terminal call, and so is one that was approved into identity
+ * provisioning (a 202) when the page showed a user who was not provisioning: a stale Reject never
+ * revokes an approved member. A record the page showed as provisioning stays revocable (10 offers
+ * it), and a membership already REVOKED goes through to the backend, which replays this key's
+ * earlier success (anyone else's revoke answers 500: REVOKE_FAILED). Every guard read failure
+ * rejects, so a lost session or a stale context redirects and any other failure fails closed. */
 export async function revokeMembership(
   _previous: ActionResult | null,
   formData: FormData,
@@ -88,7 +97,19 @@ export async function revokeMembership(
   const result = await runServerAction(revokeInput, formData, async (input) => {
     if (input.expectedStatus) {
       const current = await getMembership(input.membershipId);
-      if (current.status !== input.expectedStatus) {
+      // The user is read only when the membership still looks untouched and the page showed a user
+      // who was not provisioning: a page that showed provisioning has nothing to compare against.
+      const approvedMeanwhile =
+        current.status === input.expectedStatus &&
+        input.expectedUserStatus !== undefined &&
+        input.expectedUserStatus !== 'PROVISIONING_IDP' &&
+        (await getUser(current.userId)).userStatus === 'PROVISIONING_IDP';
+      // REVOKED is the revoke's own end state: maybe this key's earlier revoke whose response was
+      // lost, which the backend replays; anyone else's revoke answers 500 (REVOKE_FAILED).
+      if (
+        (current.status !== input.expectedStatus && current.status !== 'REVOKED') ||
+        approvedMeanwhile
+      ) {
         throw new BackendApiError(409, { code: MEMBERSHIP_CHANGED_CODE });
       }
     }
