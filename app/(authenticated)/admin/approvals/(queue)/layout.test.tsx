@@ -77,24 +77,45 @@ describe('ApprovalQueueLayout', () => {
     expect(countBranchActivations).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves a tab’s label without a number when its count fails, never a 0', async () => {
-    getCurrentContextProfile.mockResolvedValue(resolved(BOTH));
-    countUserApprovals.mockRejectedValue(new BackendApiError(503));
-    await show();
+  it.each([
+    ['user', countUserApprovals, ['User onboarding', 'Branch activation (3)']],
+    ['branch', countBranchActivations, ['User onboarding (8)', 'Branch activation']],
+  ])(
+    'leaves the %s tab’s label without a number when its count fails, never a 0',
+    async (_case, count, names) => {
+      getCurrentContextProfile.mockResolvedValue(resolved(BOTH));
+      count.mockRejectedValue(new BackendApiError(503));
+      await show();
 
-    expect(tabNames()).toEqual(['User onboarding', 'Branch activation (3)']);
-  });
+      expect(tabNames()).toEqual(names);
+    },
+  );
 
   it.each([
-    ['a 401', new BackendApiError(401), '/login?reason=session_expired'],
     [
+      'the branch count',
+      'a 401',
+      countBranchActivations,
+      new BackendApiError(401),
+      '/login?reason=session_expired',
+    ],
+    [
+      'the user count',
+      'a 401',
+      countUserApprovals,
+      new BackendApiError(401),
+      '/login?reason=session_expired',
+    ],
+    [
+      'the branch count',
       'a stale context',
+      countBranchActivations,
       new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
       '/select-context',
     ],
-  ])('redirects when a count finds %s', async (_case, error, to) => {
+  ])('redirects when %s finds %s', async (_read, _case, count, error, to) => {
     getCurrentContextProfile.mockResolvedValue(resolved(BOTH));
-    countBranchActivations.mockRejectedValue(error);
+    count.mockRejectedValue(error);
     await expect(show()).rejects.toThrow(`NEXT_REDIRECT:${to}`);
   });
 });

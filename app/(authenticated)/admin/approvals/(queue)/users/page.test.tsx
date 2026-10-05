@@ -32,6 +32,7 @@ const { default: UserOnboardingPage } = await import('./page');
 
 // Distinct first blocks, so a short id names its id; lettered, so upper case differs.
 const ROSE = 'a1000000-0000-4000-8000-0000000000a1';
+const DANIEL = 'a4000000-0000-4000-8000-0000000000a4';
 const USHA = 'a5000000-0000-4000-8000-0000000000a5';
 const CODES = ['user.approve', 'user.view'];
 
@@ -55,6 +56,14 @@ function users(totalItems: number, number = 0) {
               email: 'rose.atieno@greenfield.example',
               displayName: 'Rose Atieno',
               userStatus: 'DRAFT',
+              membershipStatus: 'PENDING_APPROVAL',
+            },
+            {
+              id: DANIEL,
+              username: 'daniel.mutua',
+              email: 'daniel.mutua@greenfield.example',
+              displayName: 'Daniel Mutua',
+              userStatus: 'PROVISIONING_IDP',
               membershipStatus: 'PENDING_APPROVAL',
             },
           ],
@@ -90,7 +99,7 @@ beforeEach(() => {
 describe('UserOnboardingPage', () => {
   it('lists pending memberships, each linking to its approval page, in a named scroll region', async () => {
     setup();
-    listUserApprovals.mockResolvedValue(users(2));
+    listUserApprovals.mockResolvedValue(users(3));
     await show({ page: '0', size: '20' });
 
     expect(listUserApprovals).toHaveBeenCalledExactlyOnceWith({ page: 0, size: 20 });
@@ -102,6 +111,15 @@ describe('UserOnboardingPage', () => {
       `/admin/approvals/users/${ROSE}`,
     );
     expect(within(table).getByText('Account suspended')).toBeInTheDocument();
+    expect(within(card).getByText('1–3 of 3')).toBeInTheDocument();
+    // Ruling 12: a provisioning user's row stays, marked (Onboarding and User status), and opens
+    // its approval page.
+    const daniel = within(table).getByRole('row', { name: /Daniel Mutua/ });
+    expect(within(daniel).getAllByText('Provisioning identity')).toHaveLength(2);
+    expect(within(daniel).getByRole('link', { name: 'Daniel Mutua' })).toHaveAttribute(
+      'href',
+      `/admin/approvals/users/${DANIEL}`,
+    );
   });
 
   it('says nothing is waiting, never an empty table', async () => {
@@ -109,17 +127,21 @@ describe('UserOnboardingPage', () => {
     listUserApprovals.mockResolvedValue(users(0));
     await show();
 
+    expect(listUserApprovals).toHaveBeenCalledExactlyOnceWith({ page: 0, size: 10 });
     expect(screen.getByText(NO_USERS_WAITING)).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Users table' })).toBeNull();
   });
 
-  it('reads nothing without both codes, and says why', async () => {
-    setup(['user.approve']);
-    await show();
+  it.each([[['user.approve']], [['user.view']]])(
+    'reads nothing with only %j, and says why',
+    async (codes) => {
+      setup(codes);
+      await show();
 
-    expect(screen.getByText(USER_APPROVAL_FORBIDDEN)).toBeInTheDocument();
-    expect(listUserApprovals).not.toHaveBeenCalled();
-  });
+      expect(screen.getByText(USER_APPROVAL_FORBIDDEN)).toBeInTheDocument();
+      expect(listUserApprovals).not.toHaveBeenCalled();
+    },
+  );
 
   it('tells a 403 from a failure, keeping the reference (never an empty queue)', async () => {
     setup();
@@ -154,5 +176,6 @@ describe('UserOnboardingPage', () => {
     await expect(show({ page: '4', size: '10' })).rejects.toThrow(
       'NEXT_REDIRECT:/admin/approvals/users?page=1&size=10',
     );
+    expect(listUserApprovals).toHaveBeenCalledExactlyOnceWith({ page: 4, size: 10 });
   });
 });
