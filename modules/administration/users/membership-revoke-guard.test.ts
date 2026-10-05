@@ -149,6 +149,22 @@ describe('revokeMembership with an expected status', () => {
   });
 
   it.each([
+    ['ACTIVE', { ok: false, code: 'membership_changed' }],
+    ['SUSPENDED', { ok: false, code: 'membership_changed' }],
+    ['REVOKED', { ok: true }],
+  ])('never reads the user once the membership is %s', async (status, outcome) => {
+    getMembership.mockResolvedValue({ id: MEMBERSHIP, userId: USER, status });
+    getUser.mockResolvedValue({ id: USER, userStatus: 'PROVISIONING_IDP' });
+    await expect(
+      revokeMembership(
+        null,
+        reject({ expectedStatus: 'PENDING_APPROVAL', expectedUserStatus: 'DRAFT' }),
+      ),
+    ).resolves.toMatchObject(outcome);
+    expect(getUser).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['a lost session', new BackendApiError(401), 'NEXT_REDIRECT:/login?reason=session_expired'],
     [
       'a stale context',

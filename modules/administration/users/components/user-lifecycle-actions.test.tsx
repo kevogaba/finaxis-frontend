@@ -118,7 +118,8 @@ describe('UserLifecycleActions', () => {
     const sent = revokeMembership.mock.calls[0]?.[1] as FormData;
     expectScoped(sent);
     expect(sent.get('reason')).toBe('Not our member');
-    // Layer 12, P-3: the action refuses it unless the membership is still pending.
+    // Layer 12, P-3: the action refuses it once the membership is no longer pending (a revoked one
+    // goes through).
     expect(sent.get('expectedStatus')).toBe('PENDING_APPROVAL');
     // A 202 approval keeps the membership pending and moves only the user, so the action also needs
     // the user's status as this page rendered it.
@@ -139,9 +140,9 @@ describe('UserLifecycleActions', () => {
     await waitFor(() => {
       expect(revokeMembership).toHaveBeenCalledTimes(1);
     });
-    expect((revokeMembership.mock.calls[0]?.[1] as FormData).get('expectedUserStatus')).toBe(
-      'PROVISIONING_IDP',
-    );
+    const sent = revokeMembership.mock.calls[0]?.[1] as FormData;
+    expectScoped(sent);
+    expect(sent.get('expectedUserStatus')).toBe('PROVISIONING_IDP');
   });
 
   it('sends no expected user status when the page names none', async () => {
@@ -158,6 +159,7 @@ describe('UserLifecycleActions', () => {
       expect(revokeMembership).toHaveBeenCalledTimes(1);
     });
     const sent = revokeMembership.mock.calls[0]?.[1] as FormData;
+    expectScoped(sent);
     expect(sent.get('expectedStatus')).toBe('PENDING_APPROVAL');
     expect(sent.get('expectedUserStatus')).toBeNull();
   });

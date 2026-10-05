@@ -268,10 +268,11 @@ export function UserLifecycleActions({
                 <>
                   <input type="hidden" name="membershipId" value={membershipId} />
                   {id === 'reject' && (
-                    // Layer 12, P-3: refused unless still pending, and unless the user is not
-                    // provisioning now when this page showed one who was not (a 202 approval keeps
-                    // the membership pending), so a stale tab never revokes someone another
-                    // administrator approved meanwhile.
+                    // Layer 12, P-3: the action refuses it once the membership moved on (approved
+                    // with a 200, suspended) and, when this page showed a user who was not
+                    // provisioning, once the user is provisioning (a 202 approval keeps the
+                    // membership pending). A membership already revoked goes through, so a
+                    // same-key retry replays.
                     <>
                       <input type="hidden" name="expectedStatus" value="PENDING_APPROVAL" />
                       {userStatus && (
