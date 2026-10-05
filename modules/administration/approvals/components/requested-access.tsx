@@ -21,6 +21,7 @@ import {
   MEMBERSHIP_NOT_FOUND,
   MEMBERSHIP_NOT_PERMITTED,
   NO_ACTIVE_BRANCH,
+  NO_ACTIVE_BRANCH_SEEN,
   NO_ACTIVE_ROLE,
   REQUESTED_ACCESS_DESCRIPTION,
   ROLES_CAPPED,
@@ -162,7 +163,11 @@ export function RequestedAccess({
           )}
           {scan.value.items.length === 0 ? (
             <Typography variant="body2" sx={MUTED_SX}>
-              {NO_ACTIVE_BRANCH}
+              {/* A selected branch narrows the scan and a capped scan hides rows, so "none" would be
+                  a guess under the note saying so (rule 9; 10's branchAssignmentsEmptyState). */}
+              {selectedBranch === null && !scan.value.truncated
+                ? NO_ACTIVE_BRANCH
+                : NO_ACTIVE_BRANCH_SEEN}
             </Typography>
           ) : (
             <UserBranchAssignmentsTable

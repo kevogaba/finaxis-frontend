@@ -8,6 +8,7 @@ import {
   MEMBERSHIP_NOT_FOUND,
   MEMBERSHIP_NOT_PERMITTED,
   NO_ACTIVE_BRANCH,
+  NO_ACTIVE_BRANCH_SEEN,
   NO_ACTIVE_ROLE,
   READ_FAILED,
   ROLES_CAPPED,
@@ -31,6 +32,7 @@ const ROSE = 'b2000000-0000-4000-8000-0000000000bb';
 const WESTLANDS = 'c3000000-0000-4000-8000-0000000000cc';
 const UNKNOWN_BRANCH = 'd4000000-0000-4000-8000-0000000000dd';
 const TELLER = 'e5000000-0000-4000-8000-0000000000ee';
+const UNKNOWN_ROLE = '97000000-0000-4000-8000-0000000000ab';
 const FAILED = {
   title: 'Something went wrong',
   message: 'Try again.',
@@ -193,10 +195,94 @@ describe('RequestedAccess', () => {
     const { unmount } = show({
       membership: { ok: true, value: { ...membership, primaryBranchId: UNKNOWN_BRANCH } },
     });
-    expect(fact('Primary branch')).toHaveTextContent('d4000000');
+    expect(fact('Primary branch').textContent).toBe('d4000000');
     unmount();
 
     show({ membership: { ok: true, value: { ...membership, primaryBranchId: null } } });
     expect(fact('Primary branch')).toHaveTextContent('None');
+  });
+
+  it('says the scan is partial with no branch selected, and still lists what it found', () => {
+    const scan = PROPS.scan?.ok ? PROPS.scan.value : null;
+    if (!scan) throw new Error('the fixture has a scan');
+    show({ scan: { ok: true, value: { ...scan, truncated: true } } });
+
+    expect(screen.getAllByRole('note').map((note) => note.textContent)).toEqual([
+      PARTIAL_SCAN_NOTE,
+    ]);
+    const branches = screen.getByRole('region', { name: 'Branch assignments table' });
+    expect(within(branches).getByText('Westlands Branch')).toBeInTheDocument();
+    expect(screen.queryByText(NO_ACTIVE_BRANCH)).toBeNull();
+  });
+
+  it('says a selected branch narrows the scan, in the copy for who can switch', () => {
+    show({ selectedBranch: { name: 'Westlands Branch' }, canSwitch: true });
+
+    expect(screen.getAllByRole('note').map((note) => note.textContent)).toEqual([
+      branchContextNote('Westlands Branch', true),
+    ]);
+  });
+
+  it('labels an institution-wide role, a role that grants nothing, and ids the indexes lack', () => {
+    const roles = PROPS.roles?.ok ? PROPS.roles.value : null;
+    const scan = PROPS.scan?.ok ? PROPS.scan.value : null;
+    if (!roles || !scan) throw new Error('the fixture has roles and a scan');
+    const [first] = roles.items;
+    const [firstScanned] = scan.items;
+    if (!first || !firstScanned) throw new Error('the fixture has a role and a branch assignment');
+    show({
+      roles: {
+        ok: true,
+        value: {
+          ...roles,
+          items: [
+            { ...first, scopeType: 'TENANT', branchId: null },
+            {
+              ...first,
+              id: 'f6000000-0000-4000-8000-0000000000f3',
+              roleId: UNKNOWN_ROLE,
+              branchId: UNKNOWN_BRANCH,
+            },
+          ],
+        },
+      },
+      roleIndex: new Map([
+        [TELLER, { name: 'Teller', code: 'TELLER', status: 'DISABLED', systemRole: false }],
+      ]),
+      scan: {
+        ok: true,
+        value: { ...scan, items: [{ ...firstScanned, branchId: UNKNOWN_BRANCH }] },
+      },
+    });
+
+    const table = screen.getByRole('region', { name: 'Role assignments' });
+    expect(within(table).getByText('All branches')).toBeInTheDocument();
+    expect(within(table).getByText('TELLER')).toBeInTheDocument();
+    expect(within(table).getByText('Disabled')).toBeInTheDocument();
+    expect(within(table).getByText('97000000')).toBeInTheDocument();
+    expect(within(table).getByText('d4000000')).toBeInTheDocument();
+    const branches = screen.getByRole('region', { name: 'Branch assignments table' });
+    expect(within(branches).getByText('d4000000')).toBeInTheDocument();
+  });
+
+  it('has no Actions column on either table', () => {
+    show();
+
+    expect(screen.queryByRole('columnheader', { name: 'Actions' })).toBeNull();
+  });
+
+  it('never says none when a selected branch or a partial scan hides rows (rule 9)', () => {
+    const { unmount } = show({ scan: { ok: true, value: { items: [], truncated: true } } });
+    expect(screen.queryByText(NO_ACTIVE_BRANCH)).toBeNull();
+    expect(screen.getByText(NO_ACTIVE_BRANCH_SEEN)).toBeInTheDocument();
+    unmount();
+
+    show({
+      scan: { ok: true, value: { items: [], truncated: false } },
+      selectedBranch: { name: 'Westlands Branch' },
+      canSwitch: false,
+    });
+    expect(screen.queryByText(NO_ACTIVE_BRANCH)).toBeNull();
+    expect(screen.getByText(NO_ACTIVE_BRANCH_SEEN)).toBeInTheDocument();
   });
 });

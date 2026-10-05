@@ -140,4 +140,7 @@ export const BRANCHES_NOT_PERMITTED = "Your role can't view branch assignments."
 export const MEMBERSHIP_NOT_PERMITTED = "Your role can't view memberships.";
 export const NO_ACTIVE_ROLE = 'They hold no active role.';
 export const NO_ACTIVE_BRANCH = 'They hold no active branch assignment.';
+// A selected branch narrows the scan and a capped scan hides rows: neither can say "none" (rule 9).
+export const NO_ACTIVE_BRANCH_SEEN =
+  'No active branch assignment was found among those this page could check.';
 export const ROLES_CAPPED = `Only the first ${REQUESTED_ROLES_CEILING} role assignments are shown. Their record lists them all.`;
