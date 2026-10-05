@@ -1,7 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
-import { USER_APPROVAL_FORBIDDEN } from '@/modules/administration/approvals/approval-copy';
+import { VERIFIED_ON_APPROVAL } from '@/modules/administration/approvals/approval-checks';
+import {
+  MAKER_NOT_PERMITTED,
+  READ_FAILED,
+  USER_APPROVAL_FORBIDDEN,
+} from '@/modules/administration/approvals/approval-copy';
+import {
+  accountBlockedNote,
+  MEMBERSHIP_MISSING,
+  MEMBERSHIP_UNAVAILABLE,
+  NO_MEMBERSHIP_VIEW,
+  PROVISIONING_NOTE,
+  USER_MAKER_CHECKER_BLOCKED,
+} from '@/modules/administration/users/user-rules';
 import { renderWithProviders } from '@/test/test-utils';
 
 const {
@@ -284,5 +297,207 @@ describe('UserApprovalPage: the request', () => {
     setup();
     getUser.mockRejectedValue(new BackendApiError(404, { code: 'resource_not_found' }));
     await expect(show()).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+});
+
+const without = (...codes: string[]) => ALL_CODES.filter((code) => !codes.includes(code));
+
+describe('UserApprovalPage: maker-checker (Ruling 5)', () => {
+  it('disables Approve for its inviter, matched case-insensitively, and marks them as you', async () => {
+    setup({ maker: ME.toUpperCase() });
+    await show();
+
+    expect(button('Approve')).toBeDisabled();
+    expect(button('Approve')).toHaveAccessibleDescription(USER_MAKER_CHECKER_BLOCKED);
+    expect(button('Reject & revoke')).toBeEnabled();
+    expect(fact(card('Request'), 'Invited by')).toHaveTextContent('Ann Admin (you)');
+    expect(fact(card('Control checks'), 'Invited by someone else')).toHaveTextContent('Not met');
+  });
+
+  it.each([
+    ['a 401', new BackendApiError(401), '/login?reason=session_expired'],
+    [
+      'a stale context',
+      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
+      '/select-context',
+    ],
+  ])('redirects, rendering nothing, when the maker read finds %s', async (_case, error, to) => {
+    setup({ maker: error });
+    await expect(show()).rejects.toThrow(`NEXT_REDIRECT:${to}`);
+    expect(redirect).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['a 403', new BackendApiError(403, { code: 'forbidden', requestId: 'req-4' })],
+    ['a 5xx', new BackendApiError(500, { requestId: 'req-4' })],
+  ])(
+    'leaves Approve on offer, verified by the platform, when the maker read fails with %s',
+    async (_case, error) => {
+      setup({ maker: error });
+      await show();
+
+      expect(button('Approve')).toBeEnabled();
+      expect(fact(card('Request'), 'Invited by')).toHaveTextContent(READ_FAILED);
+      expect(fact(card('Request'), 'Invited by')).toHaveTextContent('Reference: req-4');
+      const check = fact(card('Control checks'), 'Invited by someone else');
+      expect(check).toHaveTextContent('Checked on approval');
+      expect(check).toHaveTextContent(VERIFIED_ON_APPROVAL);
+      expect(check).toHaveTextContent('Reference: req-4');
+    },
+  );
+
+  it('reads no maker without audit.view, and says the platform verifies it', async () => {
+    setup({ permissions: without('audit.view') });
+    await show();
+
+    expect(getMakerEvent).not.toHaveBeenCalled();
+    expect(button('Approve')).toBeEnabled();
+    expect(fact(card('Request'), 'Invited by')).toHaveTextContent(MAKER_NOT_PERMITTED);
+    expect(screen.queryByRole('link', { name: 'Open the audit trail' })).toBeNull();
+    expect(fact(card('Control checks'), 'Invited by someone else')).toHaveTextContent(
+      VERIFIED_ON_APPROVAL,
+    );
+  });
+});
+
+describe('UserApprovalPage: where the request stands (Rulings 7, 12)', () => {
+  it('offers no decision while their identity is provisioning, and says why', async () => {
+    setup({ userStatus: 'PROVISIONING_IDP' });
+    await show();
+
+    expect(button('Approve')).toBeNull();
+    expect(button('Reject & revoke')).toBeNull();
+    expect(screen.getByRole('note')).toHaveTextContent(PROVISIONING_NOTE);
+    expect(screen.getByRole('link', { name: 'Open their user record' })).toHaveAttribute(
+      'href',
+      `/admin/users/${ROSE}`,
+    );
+    expect(screen.queryByRole('region', { name: 'Control checks' })).toBeNull();
+  });
+
+  it('offers no decision once decided', async () => {
+    setup({ membershipStatus: 'ACTIVE', userStatus: 'ACTIVE' });
+    await show();
+
+    expect(button('Approve')).toBeNull();
+    expect(screen.getByRole('note')).toHaveTextContent('Approved: this membership is active.');
+  });
+
+  it('disables Approve for a blocked account, keeping Reject & revoke', async () => {
+    setup({ userStatus: 'SUSPENDED' });
+    await show();
+
+    expect(button('Approve')).toBeDisabled();
+    expect(button('Approve')).toHaveAccessibleDescription(accountBlockedNote('SUSPENDED'));
+    expect(button('Reject & revoke')).toBeEnabled();
+  });
+
+  it('offers no decision without membership.view, and says so', async () => {
+    setup({ permissions: without('membership.view') });
+    await show();
+
+    expect(findUserMembership).not.toHaveBeenCalled();
+    expect(button('Approve')).toBeNull();
+    expect(screen.getByText(NO_MEMBERSHIP_VIEW)).toBeInTheDocument();
+    expect(fact(card('Control checks'), 'Has an active branch assignment')).toHaveTextContent(
+      'Checked on approval',
+    );
+  });
+});
+
+describe('UserApprovalPage: the control checks read the page’s reads (Ruling 7)', () => {
+  it('fails the role check when they hold none', async () => {
+    setup({ roles: 0 });
+    await show();
+
+    expect(fact(card('Control checks'), 'Has an active role')).toHaveTextContent('Not met');
+  });
+
+  it('leaves the role check to the platform when the read failed, with Approve on offer', async () => {
+    setup({ roles: new BackendApiError(503, { requestId: 'req-5' }) });
+    await show();
+
+    const check = fact(card('Control checks'), 'Has an active role');
+    expect(check).toHaveTextContent('Checked on approval');
+    expect(check).toHaveTextContent('Reference: req-5');
+    expect(button('Approve')).toBeEnabled();
+  });
+
+  it('fails the branch check for a staff member only when a complete scan found none', async () => {
+    setup({ branches: 0 });
+    await show();
+
+    expect(fact(card('Control checks'), 'Has an active branch assignment')).toHaveTextContent(
+      'Not met',
+    );
+  });
+
+  it.each([
+    ['a capped scan', { truncated: true }],
+    ['a selected branch', { selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' } }],
+  ])('never proves "none" from %s (rule 9)', async (_case, overrides) => {
+    setup({ branches: 0, ...overrides });
+    await show();
+
+    expect(fact(card('Control checks'), 'Has an active branch assignment')).toHaveTextContent(
+      'Checked on approval',
+    );
+  });
+
+  it('marks the branch check not required for an auditor', async () => {
+    setup({
+      branches: 0,
+      membership: {
+        id: MEMBERSHIP,
+        userId: ROSE,
+        status: 'PENDING_APPROVAL',
+        type: 'AUDITOR',
+        primaryBranchId: null,
+      },
+    });
+    await show();
+
+    expect(fact(card('Control checks'), 'Has an active branch assignment')).toHaveTextContent(
+      'Not required',
+    );
+  });
+});
+
+// Beyond the plan's Task 7b list: each pins a page-owned wiring that a surviving mutant showed
+// unpinned (a failed scan shown as a pass; a lost session swallowed; a failed lookup shown as a miss).
+describe('UserApprovalPage: a failed read is never a pass, "none" or a miss (rule 9)', () => {
+  it('leaves the branch check to the platform when the scan failed, with Approve on offer', async () => {
+    setup({ branches: new BackendApiError(503, { requestId: 'req-7' }) });
+    await show();
+
+    const check = fact(card('Control checks'), 'Has an active branch assignment');
+    expect(check).toHaveTextContent('Checked on approval');
+    expect(check).toHaveTextContent('Reference: req-7');
+    expect(button('Approve')).toBeEnabled();
+  });
+
+  it.each([
+    ['membership', { membership: new BackendApiError(401) }],
+    ['role', { roles: new BackendApiError(401) }],
+    ['branch scan', { branches: new BackendApiError(401) }],
+  ])(
+    'redirects, rendering nothing, when the %s read finds a lost session',
+    async (_read, overrides) => {
+      setup(overrides);
+      await expect(show()).rejects.toThrow('NEXT_REDIRECT:/login?reason=session_expired');
+      expect(redirect).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    ['missed', null, MEMBERSHIP_MISSING],
+    ['failed', new BackendApiError(503, { requestId: 'req-8' }), MEMBERSHIP_UNAVAILABLE],
+  ])('says the membership lookup %s, and offers no decision', async (_case, membership, note) => {
+    setup({ membership });
+    await show();
+
+    expect(button('Approve')).toBeNull();
+    expect(button('Reject & revoke')).toBeNull();
+    expect(screen.getByText(note)).toBeInTheDocument();
   });
 });
