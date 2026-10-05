@@ -102,6 +102,20 @@ describe('approval service', () => {
     await expect(service.countBranchActivations()).rejects.toBe(error);
   });
 
+  it('rejects every other read with its own error too (layer 14 reuses the lists)', async () => {
+    const error = new BackendApiError(403, { code: 'invalid_active_tenant_context' });
+    listUsers.mockRejectedValueOnce(error).mockResolvedValueOnce(total(1));
+    await expect(service.countUserApprovals()).rejects.toBe(error);
+    listUsers.mockRejectedValueOnce(error);
+    await expect(service.listUserApprovals({ page: 0, size: 10 })).rejects.toBe(error);
+    listBranches.mockRejectedValueOnce(error);
+    await expect(
+      service.listBranchActivations({ sort: { by: 'createdAt', dir: 'DESC' }, page: 0, size: 10 }),
+    ).rejects.toBe(error);
+    listRoleAssignments.mockRejectedValueOnce(error);
+    await expect(service.listRequestedRoles(USER)).rejects.toBe(error);
+  });
+
   it.each([
     ['user', 'USER', 'user.invite'],
     ['branch', 'BRANCH', 'branch.create_draft'],
