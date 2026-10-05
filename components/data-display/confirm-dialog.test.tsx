@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import { UUID_PATTERN } from '@/lib/api/wire';
 import { ConfirmDialog } from './confirm-dialog';
@@ -173,6 +173,40 @@ describe('ConfirmDialog', () => {
       expect(onSuccess).toHaveBeenCalledTimes(1);
     });
     expect(keyOf(action.mock.calls[1]?.[1])).toBe(keyOf(action.mock.calls[0]?.[1]));
+  });
+
+  it('returns focus to the confirm button once a failed submit settles (layer 12, P-1)', async () => {
+    const user = userEvent.setup({ delay: null });
+    let settle: (result: FullResult) => void = () => undefined;
+    const action = vi.fn(
+      (_previous: FullResult | null, _formData: FormData) =>
+        new Promise<FullResult>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    setup(action);
+
+    const confirm = screen.getByRole('button', { name: 'Submit for approval' });
+    await user.click(confirm);
+    await waitFor(() => {
+      expect(confirm).toBeDisabled();
+    });
+    // A browser blurs a button as it goes disabled and MUI's FocusTrap then parks focus on the
+    // dialog's container; jsdom does neither (blur() is a no-op on a disabled button), so the test
+    // moves focus there itself.
+    act(() => {
+      document.querySelector<HTMLElement>('.MuiDialog-container')?.focus();
+    });
+    expect(confirm).not.toHaveFocus();
+
+    await act(async () => {
+      settle(CHANGED);
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('This record changed');
+    await waitFor(() => {
+      expect(confirm).toHaveFocus();
+    });
   });
 
   // Last: its action never settles, so it leaves a permanently pending promise behind — harmless

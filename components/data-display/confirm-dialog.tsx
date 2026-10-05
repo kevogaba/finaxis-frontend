@@ -95,6 +95,7 @@ function ConfirmForm<Result extends ConfirmOutcome>({
   descriptionId: string;
 }) {
   const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const submitRef = useRef<HTMLButtonElement>(null);
   // The last real `Result` the action returned — never a synthesized failure — so a retry after a
   // rejected `action` (a network drop, a timeout, deploy skew) still passes the caller a `Result`,
   // never a bare `ConfirmOutcome` cast back with `as Result` (banned).
@@ -125,6 +126,12 @@ function ConfirmForm<Result extends ConfirmOutcome>({
     onPendingChange(pending);
   }, [pending, onPendingChange]);
   const failure = state && !state.ok ? state : null;
+  // A failed submit strands focus: the confirm button went disabled while pending, which blurs it,
+  // and MUI's FocusTrap parks focus on the dialog itself. Once the request settled, send it back to
+  // the button the person pressed, as ReasonDialog does (layer 12, P-1).
+  useEffect(() => {
+    if (failure && !pending) submitRef.current?.focus();
+  }, [failure, pending]);
 
   return (
     <Box component="form" action={formAction}>
@@ -147,7 +154,7 @@ function ConfirmForm<Result extends ConfirmOutcome>({
         <Button variant="outlined" onClick={onClose} disabled={pending}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" color={tone} loading={pending}>
+        <Button type="submit" variant="contained" color={tone} loading={pending} ref={submitRef}>
           {confirmLabel}
         </Button>
       </DialogActions>
