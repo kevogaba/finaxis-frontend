@@ -1,10 +1,14 @@
 'use server';
 
 import { z } from 'zod';
+import { BackendApiError } from '@/auth/backend-api';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiPost } from '@/lib/api/tenant-api';
 import { uuidSchema } from '@/lib/api/wire';
+import { MEMBERSHIP_STATUSES } from './user-contract';
+import { MEMBERSHIP_CHANGED, MEMBERSHIP_CHANGED_CODE } from './user-rules';
+import { getMembership } from './user-service';
 
 const idempotencyKey = z.uuid();
 const membershipInput = z.object({ idempotencyKey, membershipId: uuidSchema });
@@ -31,7 +35,7 @@ const REVOKE_FAILED =
   "This membership couldn't be revoked. It may already be revoked — refresh and check.";
 
 function transition(
-  path: 'activate' | 'suspend' | 'reactivate' | 'revoke',
+  path: 'activate' | 'suspend' | 'reactivate',
   schema: z.ZodType<{ idempotencyKey: string; membershipId: string; reason?: string }>,
   formData: FormData,
 ): Promise<ActionResult> {
@@ -68,15 +72,35 @@ export async function reactivateMembership(
   return transition('reactivate', membershipInput.extend({ reason: optionalReason }), formData);
 }
 
-/** Revoke and Reject & revoke (D12): terminal; every assignment goes with it (BG-28). 12 reuses it. */
+const revokeInput = membershipInput.extend({
+  reason: requiredReason,
+  // Layer 12, P-3: Reject & revoke names the status it was offered for (PENDING_APPROVAL).
+  expectedStatus: z.enum(MEMBERSHIP_STATUSES).optional(),
+});
+
+/** Revoke and Reject & revoke (D12): terminal; every assignment goes with it (BG-28). With an
+ * `expectedStatus`, a membership that moved on since the page loaded (approved in another tab) is
+ * refused before the terminal call: a stale Reject never revokes an approved member. */
 export async function revokeMembership(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const result = await transition(
-    'revoke',
-    membershipInput.extend({ reason: requiredReason }),
-    formData,
+  const result = await runServerAction(revokeInput, formData, async (input) => {
+    if (input.expectedStatus) {
+      const current = await getMembership(input.membershipId);
+      if (current.status !== input.expectedStatus) {
+        throw new BackendApiError(409, { code: MEMBERSHIP_CHANGED_CODE });
+      }
+    }
+    await apiPost(
+      `/api/v1/tenant/memberships/${input.membershipId}/revoke`,
+      { reason: input.reason },
+      input.idempotencyKey,
+    );
+  });
+  return explain(
+    explain(result, MEMBERSHIP_CHANGED_CODE, MEMBERSHIP_CHANGED),
+    'internal_error',
+    REVOKE_FAILED,
   );
-  return explain(result, 'internal_error', REVOKE_FAILED);
 }

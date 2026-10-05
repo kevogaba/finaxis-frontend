@@ -108,6 +108,8 @@ describe('UserLifecycleActions', () => {
     const sent = revokeMembership.mock.calls[0]?.[1] as FormData;
     expectScoped(sent);
     expect(sent.get('reason')).toBe('Not our member');
+    // Layer 12, P-3: the action refuses it unless the membership is still pending.
+    expect(sent.get('expectedStatus')).toBe('PENDING_APPROVAL');
     expect(await screen.findByRole('alert')).toHaveTextContent('Membership revoked');
   });
 
@@ -280,6 +282,8 @@ describe('UserLifecycleActions', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Revoke' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Membership revoked');
     expectScoped(revokeMembership.mock.calls[0]?.[1] as FormData);
+    // A plain Revoke names no expected status: any non-terminal membership may be revoked.
+    expect((revokeMembership.mock.calls[0]?.[1] as FormData).get('expectedStatus')).toBeNull();
 
     // A revoked membership has no action left, so the layout drops the whole component.
     rerender(

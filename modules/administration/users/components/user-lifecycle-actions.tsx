@@ -259,7 +259,16 @@ export function UserLifecycleActions({
               contextOrganisationId={contextOrganisationId}
               onClose={close}
               onSuccess={succeed}
-              fields={() => <input type="hidden" name="membershipId" value={membershipId} />}
+              fields={() => (
+                <>
+                  <input type="hidden" name="membershipId" value={membershipId} />
+                  {id === 'reject' && (
+                    // Layer 12, P-3: refused unless still pending, so a stale tab never revokes
+                    // someone another administrator approved meanwhile.
+                    <input type="hidden" name="expectedStatus" value="PENDING_APPROVAL" />
+                  )}
+                </>
+              )}
             />
           );
         })}
