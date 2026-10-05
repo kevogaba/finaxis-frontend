@@ -121,6 +121,8 @@ describe('BranchActivationPage', () => {
     );
     // The organisation's zone, not the runner's: 20:00Z is the next day in Kolkata.
     expect(within(table).getByText('11 Sep 2026')).toBeInTheDocument();
+    // The pagination bar, from the backend's page.
+    expect(within(card).getByText('1–1 of 1')).toBeInTheDocument();
   });
 
   it('sorts by the URL’s allowed field, and its header links flip the direction within the tab', async () => {
@@ -135,6 +137,10 @@ describe('BranchActivationPage', () => {
     expect(header).toHaveAttribute(
       'href',
       '/admin/approvals/branches?sortBy=branchName&sortDir=DESC',
+    );
+    expect(screen.getByRole('link', { name: 'Code' })).toHaveAttribute(
+      'href',
+      '/admin/approvals/branches?sortBy=branchCode&sortDir=ASC',
     );
   });
 
@@ -190,19 +196,23 @@ describe('BranchActivationPage', () => {
     expect(screen.queryByRole('region', { name: 'Branches table' })).toBeNull();
   });
 
-  it('reads nothing without both codes, and says why', async () => {
-    setup({ permissions: ['branch.activate'] });
-    await show();
+  it.each([[['branch.activate']], [['branch.view']]])(
+    'reads nothing with only %j, and says why',
+    async (permissions) => {
+      setup({ permissions });
+      await show();
 
-    expect(screen.getByText(BRANCH_ACTIVATION_FORBIDDEN)).toBeInTheDocument();
-    expect(listBranchActivations).not.toHaveBeenCalled();
-  });
+      expect(screen.getByText(BRANCH_ACTIVATION_FORBIDDEN)).toBeInTheDocument();
+      expect(listBranchActivations).not.toHaveBeenCalled();
+    },
+  );
 
   it('tells a 403 from a failure, keeping the reference (never an empty queue)', async () => {
     setup();
     listBranchActivations.mockRejectedValueOnce(new BackendApiError(403, { code: 'forbidden' }));
     const { unmount } = await show();
     expect(screen.getByText("You don't have permission")).toBeInTheDocument();
+    expect(screen.queryByText(BRANCH_ACTIVATION_FORBIDDEN)).toBeNull();
     unmount();
 
     listBranchActivations.mockRejectedValueOnce(new BackendApiError(500, { requestId: 'req-8' }));
