@@ -209,6 +209,79 @@ describe('ConfirmDialog', () => {
     });
   });
 
+  it('leaves focus alone until a submit fails (opening and a success never move it)', async () => {
+    const user = userEvent.setup({ delay: null });
+    let settle: (result: FullResult) => void = () => undefined;
+    const action = vi.fn(
+      (_previous: FullResult | null, _formData: FormData) =>
+        new Promise<FullResult>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const { onSuccess } = setup(action);
+
+    const confirm = screen.getByRole('button', { name: 'Submit for approval' });
+    // Opening: MUI's FocusTrap focuses the dialog itself, never the confirmation.
+    expect(confirm).not.toHaveFocus();
+    await user.click(confirm);
+    await waitFor(() => {
+      expect(confirm).toBeDisabled();
+    });
+    act(() => {
+      document.querySelector<HTMLElement>('.MuiDialog-container')?.focus();
+    });
+
+    await act(async () => {
+      settle({ ok: true });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(confirm).toBeEnabled();
+    });
+    // A success leaves focus to the consumer, which closes the dialog.
+    expect(confirm).not.toHaveFocus();
+  });
+
+  it('returns focus to the confirm button after each failed submit, the same result included', async () => {
+    const user = userEvent.setup({ delay: null });
+    let settle: (result: FullResult) => void = () => undefined;
+    const action = vi.fn(
+      (_previous: FullResult | null, _formData: FormData) =>
+        new Promise<FullResult>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    setup(action);
+    const confirm = screen.getByRole('button', { name: 'Submit for approval' });
+    const parkAndFail = async () => {
+      await waitFor(() => {
+        expect(confirm).toBeDisabled();
+      });
+      act(() => {
+        document.querySelector<HTMLElement>('.MuiDialog-container')?.focus();
+      });
+      expect(confirm).not.toHaveFocus();
+      // The same object both times: only the `pending` dependency re-runs the effect.
+      await act(async () => {
+        settle(CHANGED);
+        await Promise.resolve();
+      });
+      expect(await screen.findByRole('alert')).toHaveTextContent('This record changed');
+      await waitFor(() => {
+        expect(confirm).toHaveFocus();
+      });
+    };
+
+    await user.click(confirm);
+    await parkAndFail();
+    await user.click(confirm);
+    await parkAndFail();
+    expect(action).toHaveBeenCalledTimes(2);
+  });
+
   // Last: its action never settles, so it leaves a permanently pending promise behind — harmless
   // once unmounted, but only once nothing after it in this file still awaits a settled action.
   it('cannot be closed or submitted again while the action is pending', async () => {
