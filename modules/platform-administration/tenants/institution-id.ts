@@ -12,3 +12,9 @@ import { UUID_PATTERN } from '@/lib/api/wire';
 export function isInstitutionId(id: string): boolean {
   return UUID_PATTERN.test(id) && !isPlatformOrganisation(id);
 }
+
+/** A route's institution id, lower-cased (contract §A uuid), or null: the page shows not-found
+ * before any read (rule 7). The new layer-17 routes use it; 16's four routes keep isInstitutionId. */
+export function parseInstitutionId(param: string): string | null {
+  return isInstitutionId(param) ? param.toLowerCase() : null;
+}

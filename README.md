@@ -157,10 +157,14 @@ app/
 │   │                              # Audit tabs)
 │   ├── platform-admin/         # Platform workspace, gated to the platform organisation's context
 │   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
-│   │   └── tenants/             # SACCO institutions: directory (search, status/country/created
-│   │                              # filters, sortable headers), create wizard (new/), the record
-│   │                              # ([tenantId]/(record)/: hero lifecycle; Overview and
-│   │                              # Provisioning tabs), and amend ([tenantId]/amend/)
+│   │   ├── tenants/             # SACCO institutions: directory (search, status/country/created
+│   │   │                          # filters, sortable headers), create wizard (new/), the record
+│   │   │                          # ([tenantId]/(record)/: hero lifecycle; Overview, Provisioning,
+│   │   │                          # Branches and Users tabs), amend ([tenantId]/amend/), and the
+│   │   │                          # branch record, branch draft and user record (branches/
+│   │   │                          # [branchId]/, branches/new/, users/[userId]/ under [tenantId]/)
+│   │   └── users/               # Platform users: the platform organisation's members, and their
+│   │                              # record ([userId]/)
 │   └── profile/                # Account profile: layout.tsx (hero + tabs) and the Overview,
 │                                # Contexts, Roles & permissions, Security and Activity tabs
 ├── api/auth/                 # Better Auth route handlers (`[...all]`, `logout`)
@@ -223,7 +227,9 @@ modules/
 ├── platform-administration/   # Platform module + navigation; tenants/ holds the institution
 │                                # contract, directory query, lifecycle rules, service, Server
 │                                # Actions, and components (modules/platform-administration/tenants/);
-│                                # the root keeps the tenant branch and user reads for layer 17
+│                                # branches/, users/ and overview/ hold an institution's branch and
+│                                # user reads, the global account actions and rules, and the
+│                                # overview's counts (layer 17)
 └── profile/                   # Account profile: profile-rules, the cached profile-service, and
                                  # the tab components (modules/profile/components/)
 components/
@@ -241,13 +247,14 @@ components/
 │                                # CopyIdButton, ForbiddenState/BranchContextState,
 │                                # ConfirmDialog; SectionCard and ReasonDialog (07);
 │                                # AssignmentDrawer (08); focusRecordTitle (09); WizardForm and
-│                                # its Stepper theme (16)
+│                                # its Stepper theme (16); KpiTile (17)
 ├── navigation/                 # next/link client re-export (Next.js 16 RSC boundary workaround)
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle, ToastProvider
 └── shell/                      # AppShell, header, drawer, context switcher dialog, app switcher,
                                  # user menu, workspace navigation, tenant-/platform-notifications
-                                 # (app-bar notification slot stubs, spec §8; both render null until
-                                 # a later PR populates them)
+                                 # (app-bar slots, spec §8: the platform bell counts institutions
+                                 # pending approval; the tenant slot renders null until layer 12)
+                                 # and NotificationsMenu
 theme/
 ├── tokens.ts                   # Raw token values (LIGHT/DARK/BRAND) — the source of truth
 ├── create-finaxis-theme.ts   # Single theme, light/dark colorSchemes, component defaults
@@ -302,9 +309,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   before the authenticated shell renders. The selected backend context token is persisted only in
   an HttpOnly cookie; browser route responses contain status-safe data and never expose the token.
 - A multi-branch member can choose "All branches (institution level)" instead of a single branch;
-  the header, app shell footer, and platform-admin page render `branch?.name ?? 'All branches'` for
-  that nullable-branch context (AGENTS.md), and the profile page renders the same nullable selected
-  branch as "All branches (institution level)".
+  the header and app shell footer render `branch?.name ?? 'All branches'` for that nullable-branch
+  context (AGENTS.md), and the profile page renders the same nullable selected branch as "All
+  branches (institution level)".
 - The app bar's context button (`components/shell/context-switcher-dialog.tsx`) re-runs the same
   organisation/branch selection in a dialog, so a signed-in user can switch organisation or branch,
   or drop to All branches, at any time. A same-organisation branch switch refreshes in place; an
@@ -474,8 +481,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - The reserved platform organisation is hidden from the directory and its record URL shows the
     not-found page (the layout's `notFound()` answers HTTP 200); a filtered count can read one
     high (`docs/backend-gaps.md` BG-29). One check, `isInstitutionId` (a UUID that is not the
-    platform organisation, in any letter case), guards the record, both tabs, amend and every
-    tenant Server Action.
+    platform organisation, in any letter case), guards the record and every route under it (its
+    four tabs, amend, and the branch and user records and the branch draft), and every Server
+    Action that takes an institution id.
   - The create is posted first; a duplicate tenant code is a backend 500 (BG-07), so only after
     that failure one lookup (one page of 100 matches) names the cause. A retry with the same
     idempotency key replays.
@@ -484,13 +492,24 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - Amend re-asks the legal name, registration number and first administrator, which the
     platform never returns (BG-14). There are no Settings or Audit tabs (BG-12, BG-06).
   - The toolbar search commits on Enter or blur, not as you type.
-  - The overview, and the tenant branch and user reads in `platform-administration-service.ts`,
-    are layer 17's.
-- Beyond context discovery/selection, profile retrieval, Platform Administration's institutions, and
-  Administration's Users & access, Branches, Roles & permissions and Settings above, these are not
-  connected yet: the Approval queue (layer 12), the Invite user wizard (layer 11), the
-  Administration overview's operational sections (layer 14), and Platform Administration's
-  overview, tenant branches and users, and platform users (layer 17).
+  - The record's Branches and Users tabs list an institution's branches and users; a branch record
+    is read-only (no address, BG-13), and "Create branch draft" is offered for an active
+    institution with a warning: the platform refuses it unless you are also a member there with a
+    role that allows it (BG-18).
+  - A user's record (an institution's, or a platform user's) suspends, reactivates or deactivates
+    their sign-in account on the whole platform. Deactivate asks for the username typed back and
+    can't be undone; your own account can't be suspended or deactivated (BG-35).
+  - Platform users are the platform organisation's members: there is no cross-institution user
+    directory (BG-10).
+  - The overview counts institutions by lifecycle (leaving out the platform organisation, BG-29)
+    and platform operators, one read each (`size=1`, or the total of a five-row preview, BG-15),
+    and lists up to five institutions pending approval and five drafts. The bell counts
+    institutions pending approval (BG-22).
+- Beyond context discovery/selection, profile retrieval, Platform Administration's institutions,
+  overview, institution branches and users, and platform users, and Administration's Users &
+  access, Branches, Roles & permissions and Settings above, these are not connected yet: the
+  Approval queue (layer 12), the Invite user wizard (layer 11), and the Administration overview's
+  operational sections (layer 14).
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
   `/forgot-password` are placeholders; the first three routes resolve to the app's `not-found`
   page until real content exists.
@@ -503,7 +522,5 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
    treating UI-shown roles as informational only.
 2. Build out the Approval queue and the Invite user wizard (layers 12 and 11) against real data,
    each registering what it needs.
-3. Extend Platform Administration with tenant branches and users, platform users, and the KPI
-   overview (layer 17).
-4. Replace the temporary `FinaxisLogo` mark with the official brand asset.
-5. Expand the theme's component defaults only as real screens demand them.
+3. Replace the temporary `FinaxisLogo` mark with the official brand asset.
+4. Expand the theme's component defaults only as real screens demand them.

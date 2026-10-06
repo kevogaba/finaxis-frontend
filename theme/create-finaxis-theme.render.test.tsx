@@ -5,6 +5,8 @@ import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
+import Table from '@mui/material/Table';
+import TableContainer from '@mui/material/TableContainer';
 import TablePagination from '@mui/material/TablePagination';
 import TextField from '@mui/material/TextField';
 import DialogActions from '@mui/material/DialogActions';
@@ -401,6 +403,32 @@ describe('Typography focus-visible ring (gate finding V7: record-title focus fal
     expect(effectiveDeclaration(css, hash, ':focus-visible', 'outline-offset')).toMatch(
       /^calc\(var\(--_focusVisible-offset/,
     );
+  });
+});
+
+describe('Keyboard-scrollable table region focus ring (gate finding M4)', () => {
+  it('gives a focusable TableContainer the house ring, inset, not the browser default (auto, 1px)', () => {
+    // A horizontally scrolling table container is a `tabIndex={0} role="region"` stop of its own
+    // (layers 07, 10, 17). It is a plain div, not a ButtonBase, so the theme-wide
+    // `.Mui-focusVisible` ring never reaches it: spread `theme.focusVisible` under
+    // `&[tabindex="0"]:focus-visible` from a `styleOverrides.root`, as for Typography above.
+    const { getByRole } = renderWithProviders(
+      <TableContainer tabIndex={0} role="region" aria-label="Users table">
+        <Table aria-label="Users" />
+      </TableContainer>,
+    );
+    const hash = hashClassOf(getByRole('region', { name: 'Users table' }));
+    const css = allEmittedCss();
+    const selector = '\\[tabindex="0"\\]:focus-visible';
+
+    expect(varName(effectiveDeclaration(css, hash, selector, 'outline-color') ?? '')).toBe(
+      varName(theme.vars.palette.focus),
+    );
+    expect(effectiveDeclaration(css, hash, selector, 'outline-style')).toBe('solid');
+    expect(effectiveDeclaration(css, hash, selector, 'outline-width')).toBe('2px');
+    // Inset, like a Tab's: the region sits flush in a card that clips its overflow, so an outset
+    // ring was cut off on the left, right and bottom.
+    expect(effectiveDeclaration(css, hash, selector, 'outline-offset')).toBe('-3px');
   });
 });
 

@@ -57,6 +57,16 @@ describe('UserDirectoryTable', () => {
     expect(screen.getByText('felix.omondi')).toBeInTheDocument();
   });
 
+  it('links into another workspace when asked, keeping its region', () => {
+    renderWithProviders(<UserDirectoryTable users={USERS} basePath="/platform-admin/users" />);
+
+    expect(screen.getByRole('link', { name: 'Felix Omondi' })).toHaveAttribute(
+      'href',
+      `/platform-admin/users/${FELIX}`,
+    );
+    expect(screen.getByRole('region', { name: 'Users table' })).toHaveAttribute('tabindex', '0');
+  });
+
   it('derives the onboarding chip from both statuses', () => {
     renderWithProviders(<UserDirectoryTable users={USERS} />);
 

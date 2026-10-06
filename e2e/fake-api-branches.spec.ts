@@ -109,6 +109,42 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
     expect(sorted.status()).toBe(200);
   });
 
+  test('refuses a malformed parent_branch_id as invalid_json, accepting any case of a real one', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'branches', null);
+    const draft = (code: string, parent: string | null) =>
+      request.post(api('/branches'), {
+        headers,
+        data: {
+          branch_code: code,
+          branch_name: 'Nairobi CBD Branch',
+          branch_type: 'OPERATIONS',
+          parent_branch_id: parent,
+          timezone: 'Africa/Nairobi',
+        },
+      });
+
+    // The decode fails before the field checks, so a short code can't turn it into validation_failed.
+    for (const code of ['NAIROBI_CBD', 'a']) {
+      const malformed = await draft(code, 'not-a-uuid');
+      expect(malformed.status(), code).toBe(400);
+      expect(await malformed.json()).toMatchObject({ code: 'invalid_json' });
+    }
+
+    // The controls: no parent, and a real parent whose id is written in capitals.
+    expect((await draft('NAIROBI_CBD', null)).status()).toBe(201);
+    const parent = await draft('KILIMANI', null);
+    const { branch_id: parentId } = (await parent.json()) as { branch_id: string };
+    const upper = parentId.toUpperCase();
+    expect(upper).not.toBe(parentId);
+    const child = await draft('KILIMANI_ANNEX', upper);
+    expect(child.status()).toBe(201);
+    const { branch_id: childId } = (await child.json()) as { branch_id: string };
+    const read = await request.get(api(`/branches/${childId}`), { headers });
+    expect(await read.json()).toMatchObject({ parent_branch_id: parentId });
+  });
+
   test('rejects unknown properties and searches tenant users', async ({ request }) => {
     const headers = await contextFor(request, 'branches', null);
     const camel = await request.post(api('/branches'), { headers, data: { branchCode: 'X1' } });

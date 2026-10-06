@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import Paper from '@mui/material/Paper';
 import DomainOutlined from '@mui/icons-material/DomainOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { can } from '@/auth/permissions';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { RecordHero } from '@/components/data-display/record-hero';
@@ -15,7 +16,7 @@ import { TenantLifecycleActions } from '@/modules/platform-administration/tenant
 import { isInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
 import {
   availableTenantActions,
-  countryName,
+  countryLabel,
 } from '@/modules/platform-administration/tenants/tenant-rules';
 import { getTenant } from '@/modules/platform-administration/tenants/tenant-service';
 
@@ -56,9 +57,8 @@ export default async function TenantRecordLayout({ children, params }: TenantRec
 
   const record = tenant.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
-  const actions = availableTenantActions(record.status, {
-    permissions: resolved?.profile.permissions ?? [],
-  });
+  const holder = { permissions: resolved?.profile.permissions ?? [] };
+  const actions = availableTenantActions(record.status, holder);
   const base = `/platform-admin/tenants/${tenantId}`;
 
   return (
@@ -68,7 +68,7 @@ export default async function TenantRecordLayout({ children, params }: TenantRec
         avatar={{ kind: 'icon', icon: <DomainOutlined /> }}
         eyebrow={EYEBROW}
         title={record.displayName}
-        subtitle={`${record.tenantCode} · ${countryName(record.countryCode)}`}
+        subtitle={`${record.tenantCode} · ${countryLabel(record.countryCode)}`}
         status={<StatusChip value={record.status} />}
         actions={
           // Undefined, not an empty component: RecordHero renders its actions box whenever the
@@ -89,6 +89,9 @@ export default async function TenantRecordLayout({ children, params }: TenantRec
         tabs={[
           { href: base, label: 'Overview' },
           { href: `${base}/provisioning`, label: 'Provisioning' },
+          // Each tab reads its own list, which needs its view code (contract §E.2).
+          ...(can(holder, 'branch.view') ? [{ href: `${base}/branches`, label: 'Branches' }] : []),
+          ...(can(holder, 'user.view') ? [{ href: `${base}/users`, label: 'Users' }] : []),
         ]}
       />
       {children}
