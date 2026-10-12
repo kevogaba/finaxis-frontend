@@ -51,7 +51,10 @@ export function UserMenu({ user }: UserMenuProps) {
         <Box
           component="span"
           sx={{
-            display: { xs: 'none', lg: 'flex' },
+            // Layer 12, Ruling 1: the name and email give way below `xl`, so the bell, the
+            // business date and the organisation fit between 1200 and 1535 px. The avatar and the
+            // button's accessible name (the user's name) stay at every width.
+            display: { xs: 'none', xl: 'flex' },
             flexDirection: 'column',
             alignItems: 'flex-start',
             minWidth: 0,

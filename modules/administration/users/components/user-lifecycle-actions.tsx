@@ -15,6 +15,7 @@ import {
   revokeMembership,
   suspendMembership,
 } from '../membership-actions';
+import type { UserStatus } from '../user-contract';
 import type { MembershipAction } from '../user-rules';
 
 interface ActionCopy {
@@ -96,6 +97,9 @@ interface UserLifecycleActionsProps {
   blocked: Partial<Record<MembershipAction, string>>;
   /** Why the hero has no actions the holder's codes suggest (Ruling 7). */
   note: string | null;
+  /** The user's account status as the page rendered it. Reject & revoke sends it back so the action
+   * can tell a 202 approval (user now provisioning, membership still pending) from a stale tab. */
+  userStatus?: UserStatus;
   /** I2: the organisation the page rendered for; forwarded to each dialog as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -108,6 +112,7 @@ export function UserLifecycleActions({
   actions,
   blocked,
   note,
+  userStatus,
   contextOrganisationId,
 }: UserLifecycleActionsProps) {
   const notify = useToast();
@@ -259,7 +264,24 @@ export function UserLifecycleActions({
               contextOrganisationId={contextOrganisationId}
               onClose={close}
               onSuccess={succeed}
-              fields={() => <input type="hidden" name="membershipId" value={membershipId} />}
+              fields={() => (
+                <>
+                  <input type="hidden" name="membershipId" value={membershipId} />
+                  {id === 'reject' && (
+                    // Layer 12, P-3: the action refuses it once the membership moved on (approved
+                    // with a 200, suspended) and, when this page showed a user who was not
+                    // provisioning, once the user is provisioning (a 202 approval keeps the
+                    // membership pending). A membership already revoked goes through, so a
+                    // same-key retry replays.
+                    <>
+                      <input type="hidden" name="expectedStatus" value="PENDING_APPROVAL" />
+                      {userStatus && (
+                        <input type="hidden" name="expectedUserStatus" value={userStatus} />
+                      )}
+                    </>
+                  )}
+                </>
+              )}
             />
           );
         })}

@@ -110,6 +110,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   more. The overview's counts come from the reads' `totalItems` (`size=1` or the five-row
   preview's total), with no scan. It is no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-10-03-admin-parity-17-platform-records.md`, Ruling 10).
+  The user approval page's Requested access (`modules/administration/approvals`'s
+  `listRequestedRoles`: one page of 100 ACTIVE role assignments, saying so when there are more,
+  beside 10's bounded branch-assignment scan) is a seventh, named exception: one pending member's
+  access shown before a decision, not a data-listing directory, with their record holding the
+  rest — no licence for an unbounded list (plan
+  `docs/superpowers/plans/2026-10-04-admin-parity-12-approvals.md`, Ruling 8).
 - A context-scoped read goes through `lib/api/tenant-api.ts`'s `apiGet(path, schema)`, where
   `schema` is a snake_case zod schema defined in the domain's own `<domain>-contract.ts` (e.g.
   `modules/administration/audit/audit-contract.ts`) that transforms the wire shape to camelCase.
