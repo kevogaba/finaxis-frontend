@@ -64,9 +64,10 @@ describe('RecordTabs', () => {
     // Regression for the scroll-buttons-arrive-late bug (index item 1, 375px full page load): MUI
     // scrolls the selected tab into view before `scrollButtons="auto"` decides to add its two 40px
     // buttons, which can then push an already-visible tab back out. jsdom has neither
-    // `ResizeObserver` nor `scrollIntoView`, so both are stubbed to observe the wiring. Tabs itself
-    // also observes each tab child with its own ResizeObserver once one exists, so the fake tracks
-    // every instance and picks out ours by what it observes, rather than assuming there's only one.
+    // `ResizeObserver` nor `scrollIntoView`, so both are stubbed to observe the wiring. Tabs observes
+    // each tab child, and since MUI 9.5 also the scroller itself (it re-scrolls the selected tab on
+    // resize), so the fake tracks every instance. Tabs' effects run before this component's, so ours
+    // is the last instance observing the scroller, not the first.
     pathname = '/admin/branches/b1/audit';
     const instances: { callback: () => void; observe: ReturnType<typeof vi.fn> }[] = [];
     vi.stubGlobal(
@@ -88,7 +89,7 @@ describe('RecordTabs', () => {
 
     renderWithProviders(<RecordTabs label="Sections" tabs={TABS} />);
 
-    const ours = instances.find((instance) => {
+    const ours = instances.findLast((instance) => {
       const target = instance.observe.mock.calls[0]?.[0] as HTMLElement | undefined;
       return target?.classList.contains(tabsClasses.scroller) === true;
     });
@@ -144,7 +145,8 @@ describe('RecordTabs', () => {
       vi.useFakeTimers();
 
       const view = renderWithProviders(<RecordTabs label="Sections" tabs={TABS} />);
-      const ours = instances.find((instance) => {
+      // Last, as above: MUI's own scroller observer comes first.
+      const ours = instances.findLast((instance) => {
         const target = instance.observe.mock.calls[0]?.[0] as HTMLElement | undefined;
         return target?.classList.contains(tabsClasses.scroller) === true;
       });
