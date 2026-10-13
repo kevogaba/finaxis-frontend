@@ -136,10 +136,12 @@ app/
 ├── (public)/login/page.tsx  # Split-screen login page (Better Auth Keycloak sign-in)
 ├── (authenticated)/          # Server-guarded routes: layout.tsx validates session + context
 │   ├── layout.tsx             # Authoritative auth guard for /admin, /profile, /platform-admin
-│   ├── admin/                 # Overview, Users & access, Branches, Roles & permissions,
-│   │                            # Settings, Business date, and Audit trail pages; a later layer
-│   │                            # adds the Approval queue as its own nav item (spec §8)
+│   ├── admin/                 # Overview, Approval queue, Users & access, Branches, Roles &
+│   │                            # permissions, Settings, Business date, and Audit trail pages
 │   │   ├── layout.tsx           # Redirects a platform context to /platform-admin
+│   │   ├── approvals/           # Approval queue: User onboarding and Branch activation tabs
+│   │   │                          # ((queue)/), and the user and branch approval pages with the
+│   │   │                          # decision bar (users/[userId]/, branches/[branchId]/)
 │   │   ├── business-date/page.tsx # Current date/status hero, close-of-business actions, history
 │   │   ├── audit/page.tsx       # Audit trail: entity/action/date filters, pagination, an event
 │   │   │                          # detail drawer with before/after JSON
@@ -223,7 +225,10 @@ modules/
 │                                # action rules, service, membership Server Actions, user search
 │                                # for pickers, and components (modules/administration/users/);
 │                                # settings/ holds the settings catalogue's contract, rules,
-│                                # service and Server Actions (modules/administration/settings/)
+│                                # service and Server Actions (modules/administration/settings/);
+│                                # approvals/ holds the approval queue's contract, rules, copy,
+│                                # control checks, bell arithmetic, service, guards, decision
+│                                # actions and components (modules/administration/approvals/)
 ├── platform-administration/   # Platform module + navigation; tenants/ holds the institution
 │                                # contract, directory query, lifecycle rules, service, Server
 │                                # Actions, and components (modules/platform-administration/tenants/);
@@ -252,9 +257,9 @@ components/
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle, ToastProvider
 └── shell/                      # AppShell, header, drawer, context switcher dialog, app switcher,
                                  # user menu, workspace navigation, tenant-/platform-notifications
-                                 # (app-bar slots, spec §8: the platform bell counts institutions
-                                 # pending approval; the tenant slot renders null until layer 12)
-                                 # and NotificationsMenu
+                                 # (app-bar slots, spec §8: the tenant bell counts approvals
+                                 # waiting; the platform bell counts institutions pending
+                                 # approval) and NotificationsMenu
 theme/
 ├── tokens.ts                   # Raw token values (LIGHT/DARK/BRAND) — the source of truth
 ├── create-finaxis-theme.ts   # Single theme, light/dark colorSchemes, component defaults
@@ -344,10 +349,39 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   backend stays the authority. The rail's collapsed/expanded preference persists in a
   `finaxis_nav` cookie read server-side (`app/(authenticated)/layout.tsx`) so first paint already
   renders the right rail width.
-- Administration currently ships the Overview, Users & access, Branches, Roles & permissions,
-  Settings, Business date, and Audit trail pages; the Approval queue is built out (with real
-  data, not placeholders) when its layer lands, registering its own item in
-  `modules/administration/administration-navigation.ts`.
+- Administration ships the Overview, Approval queue, Users & access, Branches, Roles & permissions,
+  Settings, Business date, and Audit trail pages.
+- The Approval queue (`/admin/approvals`, `modules/administration/approvals/`) lists memberships
+  pending approval (User onboarding) and branches pending activation (Branch activation), each
+  tab paged in the URL and counted in its label, and opens a page per request with who asked and
+  when, the requested access (a user's) or the branch, control checks and a decision bar. The app
+  bar's bell counts the same approvals. Known limits:
+  - There is no approval-request model: no return for changes, resubmission, branch rejection or
+    remarks on Approve (`docs/backend-gaps.md` BG-01).
+  - The maker comes from the audit log, so without `audit.view` (or when that read fails) Approve
+    and Activate stay on offer, the check reads "Verified by the platform on approval", and a
+    refusal is explained as permission or maker-checker (BG-08).
+  - Each decision re-reads its subject and refuses before any write when it is no longer waiting
+    (decided, or approved into identity provisioning), except that each lets its own end state
+    through (an active or provisioning membership for Approve, an active branch for Activate, a
+    revoked membership for Reject & revoke): the backend replays a same-key retry whose first
+    response was lost, and refuses anyone else's, which reads as 'changed' for Approve and
+    Activate and as Reject & revoke's own failure ('It may already be revoked') for Reject &
+    revoke. Approve also refuses a
+    blocked account (suspended, locked, deactivating, deactivated or archived) and an invitation you
+    made; Activate also refuses while a branch is selected and a branch you drafted. Reject &
+    revoke has no maker check and doesn't refuse a blocked account, so a blocked account can still
+    be rejected, and so can your own invitation.
+  - An institution with a single administrator can't approve its own invitees or activate the
+    branches it drafted: another administrator must do both (BG-02).
+  - A user whose identity is still provisioning was already approved: the queue marks them and
+    offers no decision (BG-11). Missing prerequisites (a role, a branch) are explained after the
+    platform refuses (BG-07).
+  - Activation needs All branches; with a branch selected the queue says so (BG-03). Permission
+    codes carry no scope, so a holder of `branch.activate` at branch scope only is told to switch
+    to All branches, where they don't hold it (BG-33; contract §E.4).
+  - The requested roles show one page of 100 and say so when there are more; branch assignments
+    come from the bounded scan (BG-09). The bell has no push updates (BG-22).
 - Business date (`/admin/business-date`, `modules/administration/business-date/`) reads
   `GET /tenant/business-date` and `GET /tenant/business-date/history` and renders the current date,
   status, and a paginated history table, plus an app-bar chip (spec §8) linking back to the page.
@@ -506,10 +540,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     and lists up to five institutions pending approval and five drafts. The bell counts
     institutions pending approval (BG-22).
 - Beyond context discovery/selection, profile retrieval, Platform Administration's institutions,
-  overview, institution branches and users, and platform users, and Administration's Users &
-  access, Branches, Roles & permissions and Settings above, these are not connected yet: the
-  Approval queue (layer 12), the Invite user wizard (layer 11), and the Administration overview's
-  operational sections (layer 14).
+  overview, institution branches and users, and platform users, and Administration's Approval
+  queue, Users & access, Branches, Roles & permissions and Settings above, these are not connected
+  yet: the Invite user wizard (layer 11) and the Administration overview's operational sections
+  (layer 14).
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
   `/forgot-password` are placeholders; the first three routes resolve to the app's `not-found`
   page until real content exists.
@@ -520,7 +554,6 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
 
 1. Add Keycloak claim mappers and enforce authorization/permissions server-side, instead of
    treating UI-shown roles as informational only.
-2. Build out the Approval queue and the Invite user wizard (layers 12 and 11) against real data,
-   each registering what it needs.
+2. Build out the Invite user wizard (layer 11) against real data, registering what it needs.
 3. Replace the temporary `FinaxisLogo` mark with the official brand asset.
 4. Expand the theme's component defaults only as real screens demand them.

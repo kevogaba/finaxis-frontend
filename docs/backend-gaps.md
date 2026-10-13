@@ -68,8 +68,10 @@ tackled separately in the platform repository.
   The `require_maker_checker_*` settings are never read. The platform roadmap plans no workflow module
   (`docs/architecture/accounting-foundation.md:653-690`).
 - **Frontend handling:** a typed approval inbox (User onboarding, Branch activation) built from
-  `membership_status=PENDING_APPROVAL` and `status=PENDING_APPROVAL` reads; decisions limited to
-  approve, and reject-and-revoke for users; assignments presented as immediately effective.
+  `membership_status=PENDING_APPROVAL` and `status=PENDING_APPROVAL` reads, with a page per request
+  (a user's requested access or the branch, control checks); decisions limited to approve and
+  reject-and-revoke for users and activate for branches; assignments presented as immediately
+  effective.
 - **Suggested change:** a generic approval request resource (subject, proposed change, maker, status,
   decisions with remarks, history) covering onboarding, assignments, branch creation, and sensitive
   settings, with approve / reject / return-for-changes and resubmission; or, at minimum, reject/withdraw
@@ -172,7 +174,10 @@ tackled separately in the platform repository.
   violations return `403 forbidden`, identical to a missing permission.
 - **Frontend handling:** maker looked up from audit when `audit.view` is held; otherwise the approve
   action stays enabled and a 403 is explained as "permission or maker-checker". The user record
-  disables Approve for the user's inviter (the `user.invite` actor).
+  disables Approve for the user's inviter (the `user.invite` actor). The approval queue's pages
+  disable Approve for the inviter and Activate for the drafter the same way, and their actions
+  refuse before any write; when the maker can't be read, the control check reads "Verified by the
+  platform on approval".
 - **Suggested change:** add `created_by`/`submitted_by` (id + display name) to the DTOs and a distinct
   problem code such as `maker_checker_violation`.
 
@@ -193,7 +198,10 @@ tackled separately in the platform repository.
   role, code, type, and status only). The roles page also departs
   from the prototype in three smaller ways: the Overview's "Active assignments" counts assignments,
   not distinct users; the toolbar search commits on Enter or blur; and backend `validation_failed`
-  violations aren't mapped onto form fields (the forms apply the same rules client-side).
+  violations aren't mapped onto form fields (the forms apply the same rules client-side). The
+  approval queue's User onboarding tab keeps the users endpoint's own order: the contract calls it
+  newest user first (its §E.3 lists no sort parameter), but doesn't say which date that is, and
+  neither user nor membership items carry dates.
 - **Suggested change:** `user_id` filters on memberships and branch assignments; an `ids` filter on
   roles; embed display names
   (user, role, branch) in assignment and membership summaries; add membership fields to user
@@ -319,8 +327,10 @@ readiness endpoint returning named checks and their status.
 ### BG-22 — No notifications · P2
 
 No notification feed. The platform bell counts institutions pending approval with one `size=1` read,
-for holders of `tenant.approve` and `tenant.view` (layer 17); the tenant badge is layer 12's.
-Suggested: a notifications/inbox endpoint.
+for holders of `tenant.approve` and `tenant.view` (layer 17); the administration bell counts
+users waiting for approval (pending less provisioning: two `size=1` reads) and branches waiting
+for activation (one), for holders of the matching codes (layer 12). Suggested: a
+notifications/inbox endpoint.
 
 ### BG-23 — Context discovery inconsistencies · P2
 

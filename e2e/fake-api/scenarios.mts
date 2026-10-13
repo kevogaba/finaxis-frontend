@@ -1412,6 +1412,163 @@ function platformRecordsScenario(): RunState {
   };
 }
 
+/** Layer 12 seed IDs (lane rules §5): users …a*, memberships …b*, branches …c*; role assignments
+ * …d*, branch assignments …e* and audit events …f* are internal. Every tail holds a letter, so an
+ * upper-cased id differs from the seed. */
+export const APPROVAL_SCENARIO_IDS = {
+  rose: '12000000-0000-4000-8000-0000000000a1',
+  samuel: '12000000-0000-4000-8000-0000000000a2',
+  tabitha: '12000000-0000-4000-8000-0000000000a3',
+  zawadi: '12000000-0000-4000-8000-0000000000a4',
+  usha: '12000000-0000-4000-8000-0000000000a5',
+  roseMembership: '12000000-0000-4000-8000-0000000000b1',
+  samuelMembership: '12000000-0000-4000-8000-0000000000b2',
+  tabithaMembership: '12000000-0000-4000-8000-0000000000b3',
+  zawadiMembership: '12000000-0000-4000-8000-0000000000b4',
+  ushaMembership: '12000000-0000-4000-8000-0000000000b5',
+  kericho: '12000000-0000-4000-8000-0000000000c1',
+  naivasha: '12000000-0000-4000-8000-0000000000c2',
+  lamu: '12000000-0000-4000-8000-0000000000c3',
+  voi: '12000000-0000-4000-8000-0000000000c4',
+} as const;
+
+/** The overflow seeds (rule 13): 100 characters each (contract §D maxima), and one email that is a
+ * single unbreakable 79-character token. */
+export const APPROVAL_SCENARIO_TEXT = {
+  longName:
+    'Zawadi Wanjiru Kamau-Achieng Muthoni Njeri Chebet Jepkoech Nyambura Akinyi Atieno Wairimu Mwangi Ayo',
+  longEmail: 'zawadi.wanjiru.kamau.achieng.muthoni.njeri.chebet@greenfieldteachersacc.example',
+  longBranch:
+    'Lamu Old Town Waterfront and Shela Village Customer Service Centres for the Fishers and Allied Staff',
+} as const;
+
+/**
+ * Layer 12: a copy of `users` (Amina's approval is a 202, Brian's a 200, Jane invited Carol, and
+ * Daniel's identity is still provisioning) plus five more pending members, all invited by Victor:
+ * Rose holds no role and Samuel no branch (each approval is a 500, BG-07), Tabitha is an auditor
+ * (branch-exempt, a 200), Zawadi carries the 100-character name and the unbreakable email (a 202),
+ * and Usha's account is suspended. Three branches wait for activation (Victor drafted Kericho and
+ * Lamu, Jane drafted Naivasha) and Voi is still a draft. Jane gains `branch.activate`.
+ */
+function approvalsScenario(): RunState {
+  const state = usersScenario();
+  const ids = APPROVAL_SCENARIO_IDS;
+  const victor = USER_SCENARIO_IDS.victor;
+  const teller = USER_SCENARIO_IDS.teller;
+  const seed = (tail: string) => `12000000-0000-4000-8000-0000000000${tail}`;
+  const person = (
+    id: string,
+    username: string,
+    displayName: string,
+    status: string,
+    overrides: Partial<FakeUser> = {},
+  ): FakeUser => ({
+    id,
+    username,
+    email: `${username}@greenfield.example`,
+    displayName,
+    status,
+    keycloakSubject: `e2e-${username}`,
+    ...overrides,
+  });
+  const pending = (
+    id: string,
+    userId: string,
+    type: string,
+    primaryBranchId: string | null = null,
+  ): FakeMembership => ({
+    ...membership(id, IDS.greenfield, userId),
+    type,
+    status: 'PENDING_APPROVAL',
+    primaryBranchId,
+    invitedBy: victor,
+  });
+  const submitted = (
+    id: string,
+    code: string,
+    name: string,
+    draftedBy: string,
+    createdAt: string,
+    status = 'PENDING_APPROVAL',
+  ): FakeBranch => ({
+    ...branch(id, IDS.greenfield, code, name, 'OPERATIONS'),
+    status,
+    draftedBy,
+    parentBranchId: IDS.headOffice,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  const invite = (tail: string, userId: string, occurredAt: string) =>
+    userAuditEvent(seed(tail), 'USER', userId, 'user.invite', victor, occurredAt);
+  return {
+    ...state,
+    users: [
+      ...state.users,
+      person(ids.rose, 'rose.atieno', 'Rose Atieno', 'DRAFT', { identityLinked: false }),
+      person(ids.samuel, 'samuel.kiptoo', 'Samuel Kiptoo', 'ACTIVE'),
+      person(ids.tabitha, 'tabitha.wekesa', 'Tabitha Wekesa', 'ACTIVE'),
+      person(ids.zawadi, 'zawadi.long', APPROVAL_SCENARIO_TEXT.longName, 'DRAFT', {
+        identityLinked: false,
+        email: APPROVAL_SCENARIO_TEXT.longEmail,
+      }),
+      person(ids.usha, 'usha.patel', 'Usha Patel', 'SUSPENDED'),
+    ],
+    // Newest first is reverse seed order: the queue reads Usha, Zawadi, Tabitha, Samuel, Rose, then
+    // 10's Daniel, Carol, Brian and Amina.
+    memberships: [
+      ...state.memberships,
+      pending(ids.roseMembership, ids.rose, 'STAFF', IDS.westlands),
+      pending(ids.samuelMembership, ids.samuel, 'STAFF'),
+      pending(ids.tabithaMembership, ids.tabitha, 'AUDITOR'),
+      pending(ids.zawadiMembership, ids.zawadi, 'STAFF', IDS.westlands),
+      pending(ids.ushaMembership, ids.usha, 'STAFF', IDS.headOffice),
+    ],
+    branches: [
+      ...state.branches,
+      submitted(ids.kericho, 'KERICHO', 'Kericho Branch', victor, '2026-09-10T08:00:00Z'),
+      submitted(ids.naivasha, 'NAIVASHA', 'Naivasha Branch', IDS.jane, '2026-09-11T08:00:00Z'),
+      submitted(
+        ids.lamu,
+        'LAMU',
+        APPROVAL_SCENARIO_TEXT.longBranch,
+        victor,
+        '2026-09-12T08:00:00Z',
+      ),
+      submitted(ids.voi, 'VOI', 'Voi Branch', victor, '2026-09-13T08:00:00Z', 'DRAFT'),
+    ],
+    branchAssignments: [
+      ...state.branchAssignments,
+      assignment(seed('e1'), IDS.greenfield, ids.rose, IDS.westlands, 'HOME'),
+      assignment(seed('e2'), IDS.greenfield, ids.zawadi, IDS.westlands, 'HOME'),
+      assignment(seed('e3'), IDS.greenfield, ids.usha, IDS.headOffice, 'HOME'),
+    ],
+    roles: state.roles.map((candidate) =>
+      candidate.id === IDS.tenantAdminRole
+        ? { ...candidate, permissions: [...candidate.permissions, 'branch.activate'] }
+        : candidate,
+    ),
+    roleAssignments: [
+      ...state.roleAssignments,
+      tenantRoleAssignment(seed('d1'), IDS.greenfield, ids.samuel, teller),
+      tenantRoleAssignment(seed('d2'), IDS.greenfield, ids.tabitha, teller),
+      tenantRoleAssignment(seed('d3'), IDS.greenfield, ids.zawadi, teller),
+      tenantRoleAssignment(seed('d4'), IDS.greenfield, ids.usha, teller),
+    ],
+    auditEvents: [
+      ...state.auditEvents,
+      invite('f1', ids.rose, '2026-09-24T08:00:00Z'),
+      invite('f2', ids.samuel, '2026-09-25T08:00:00Z'),
+      invite('f3', ids.tabitha, '2026-09-26T08:00:00Z'),
+      invite('f4', ids.zawadi, '2026-09-27T08:00:00Z'),
+      invite('f5', ids.usha, '2026-09-28T08:00:00Z'),
+      branchDraftEvent(seed('f6'), ids.kericho, victor, '2026-09-10T08:00:00Z'),
+      branchDraftEvent(seed('f7'), ids.naivasha, IDS.jane, '2026-09-11T08:00:00Z'),
+      branchDraftEvent(seed('f8'), ids.lamu, victor, '2026-09-12T08:00:00Z'),
+      branchDraftEvent(seed('f9'), ids.voi, victor, '2026-09-13T08:00:00Z'),
+    ],
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -1531,6 +1688,39 @@ const BUILDERS = {
             }
           : candidate,
       ),
+    };
+  },
+  // Layer 12 (approvals). `approvals-limited` has the same data without the audit read, the two
+  // assignment reads and membership.revoke: the maker check is the platform's, requested access
+  // can't be read, and Reject & revoke isn't offered.
+  approvals: approvalsScenario,
+  'approvals-limited': () =>
+    withoutPermission(
+      approvalsScenario(),
+      'audit.view',
+      'role_assignment.view',
+      'branch_assignment.view',
+      'membership.revoke',
+    ),
+  // The layer gate's visual pass: the same data under the long-names scenario's organisation name
+  // (the header at its crowded widths, with the bell), and with nothing pending (both empty tabs).
+  'approvals-long-org': () => {
+    const state = approvalsScenario();
+    return {
+      ...state,
+      organisations: state.organisations.map((candidate) => ({
+        ...candidate,
+        displayName:
+          'Greenfield Teachers and Public Service Employees Savings and Credit Co-operative Society',
+      })),
+    };
+  },
+  'approvals-empty': () => {
+    const state = approvalsScenario();
+    return {
+      ...state,
+      memberships: state.memberships.filter((row) => row.status !== 'PENDING_APPROVAL'),
+      branches: state.branches.filter((row) => row.status !== 'PENDING_APPROVAL'),
     };
   },
 } satisfies Record<string, () => RunState>;

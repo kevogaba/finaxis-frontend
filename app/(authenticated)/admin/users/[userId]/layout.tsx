@@ -114,6 +114,7 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
               actions={actions}
               blocked={blocked}
               note={note}
+              userStatus={record.userStatus}
               contextOrganisationId={resolved?.context.organization.id}
             />
           ) : undefined

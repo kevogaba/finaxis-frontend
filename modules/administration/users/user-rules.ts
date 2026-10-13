@@ -201,6 +201,10 @@ export const OWN_MEMBERSHIP =
   "You can't suspend or revoke your own membership. Ask another administrator.";
 export const USER_MAKER_CHECKER_BLOCKED =
   'You invited this user, so another administrator must approve them.';
+/** Layer 12, P-3: a frontend-only code; `revokeMembership` refuses a stale Reject & revoke. */
+export const MEMBERSHIP_CHANGED_CODE = 'membership_changed';
+export const MEMBERSHIP_CHANGED =
+  'This membership changed since the page loaded. Refresh to see its status.';
 
 export function accountBlockedNote(user: UserStatus): string {
   return `Their account is ${humanizeEnum(user).toLowerCase()} on the platform, so this membership can't be approved.`;
