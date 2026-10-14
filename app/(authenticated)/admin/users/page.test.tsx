@@ -79,7 +79,15 @@ describe('UsersPage: the Invite user entry (Ruling 4)', () => {
       reason: 'invalid-context',
     });
     await render();
+    expect(screen.getByRole('heading', { level: 1, name: 'Users & access' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Invite user' })).toBeNull();
+  });
+
+  it('lets a failed profile read reach the error boundary, never hiding the entry silently', async () => {
+    getCurrentContextProfile.mockRejectedValue(new Error('profile read failed'));
+    await expect(UsersPage({ searchParams: Promise.resolve({}) })).rejects.toThrow(
+      'profile read failed',
+    );
   });
 
   it('stays in the header when the directory read fails', async () => {
