@@ -56,6 +56,9 @@ describe('InviteReview', () => {
 
     const identity = screen.getByRole('region', { name: 'Identity' });
     expect(fact(identity, 'Membership type')).toHaveTextContent('Staff');
+    expect(fact(identity, 'Full name')).toHaveTextContent('Neema Wanjiku');
+    expect(fact(identity, 'Email')).toHaveTextContent('neema.wanjiku@greenfield.example');
+    expect(fact(identity, 'Username')).toHaveTextContent('neema.wanjiku');
     const access = screen.getByRole('region', { name: 'Access' });
     expect(
       within(fact(access, 'Branch assignments') as HTMLElement)
@@ -70,6 +73,14 @@ describe('InviteReview', () => {
       'Teller (TELLER) · Institution (all branches)',
       'Branch supervisor (SUPERVISOR) · Westlands Branch (WESTLANDS)',
     ]);
+    // jsdom gives a `ul` the list role anyway, so pin the attribute itself on both lists.
+    expect(
+      within(fact(access, 'Branch assignments') as HTMLElement).getByRole('list'),
+    ).toHaveAttribute('role', 'list');
+    expect(within(fact(access, 'Roles') as HTMLElement).getByRole('list')).toHaveAttribute(
+      'role',
+      'list',
+    );
     expect(fact(access, 'Primary branch')).toHaveTextContent('Westlands Branch (WESTLANDS)');
     const invitation = screen.getByRole('region', { name: 'Invitation' });
     expect(fact(invitation, 'Identity-provider invitation')).toHaveTextContent('Yes');
@@ -82,6 +93,8 @@ describe('InviteReview', () => {
       <InviteReview
         values={{
           ...VALUES,
+          // Spaces only: the body sends no phone, so it reads Not set.
+          phone: '   ',
           primaryBranchId: '',
           branchAssignments: [],
           membershipType: 'AUDITOR',
@@ -100,6 +113,25 @@ describe('InviteReview', () => {
       expect(ownStyle(element, 'color')).toContain('--finaxis-palette-text-secondary');
       expect(ownStyle(element, 'font-weight')).toBe('400');
     }
+  });
+
+  it('shows a set phone as its value, not muted', () => {
+    renderWithProviders(
+      <InviteReview
+        values={{ ...VALUES, phone: '+254712000140' }}
+        roles={ROLES}
+        branches={BRANCHES}
+        pending={false}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    const identity = screen.getByRole('region', { name: 'Identity' });
+    expect(fact(identity, 'Phone')).toHaveTextContent('+254712000140');
+    // The text's own element: the value's <dd> has no colour rule, so a muted wrapper would hide there.
+    expect(ownStyle(screen.getByText('+254712000140'), 'color')).not.toContain(
+      '--finaxis-palette-text-secondary',
+    );
   });
 
   it('returns to each step from its Edit button, and disables them while sending', async () => {

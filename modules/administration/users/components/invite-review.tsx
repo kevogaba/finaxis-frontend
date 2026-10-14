@@ -8,7 +8,7 @@ import Typography from '@mui/material/Typography';
 import { DescriptionList, type DescriptionItem } from '@/components/data-display/description-list';
 import { SectionCard } from '@/components/data-display/section-card';
 import { humanizeEnum } from '@/components/data-display/status-chip';
-import { REVIEW_NOTE, SCOPE_OPTIONS } from '../invite-rules';
+import { IDENTITY_LABELS, REVIEW_NOTE, SCOPE_OPTIONS } from '../invite-rules';
 import type { InviteValues } from '../invite-schema';
 import type { SelectOption } from '../user-rules';
 
@@ -29,7 +29,8 @@ const NONE = (
 function lines(values: readonly string[]): ReactNode {
   if (values.length === 0) return NONE;
   return (
-    <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none', display: 'grid', gap: 1 }}>
+    // `role="list"` is explicit: `listStyle: 'none'` drops list semantics in WebKit.
+    <Box component="ul" role="list" sx={{ m: 0, p: 0, listStyle: 'none', display: 'grid', gap: 1 }}>
       {values.map((value, index) => (
         // A row can repeat only until Continue refuses it; the index keeps the keys unique.
         <li key={`${String(index)} ${value}`}>{value}</li>
@@ -68,11 +69,11 @@ export function InviteReview({ values, roles, branches, pending, onEdit }: Invit
       title: 'Identity',
       step: 0,
       items: [
-        { label: 'Full name', value: values.displayName },
-        { label: 'Email', value: values.email },
-        { label: 'Username', value: values.username },
-        { label: 'Phone', value: values.phone || NOT_SET },
-        { label: 'Membership type', value: humanizeEnum(values.membershipType) },
+        { label: IDENTITY_LABELS.displayName, value: values.displayName },
+        { label: IDENTITY_LABELS.email, value: values.email },
+        { label: IDENTITY_LABELS.username, value: values.username },
+        { label: IDENTITY_LABELS.phone, value: values.phone.trim() || NOT_SET },
+        { label: IDENTITY_LABELS.membershipType, value: humanizeEnum(values.membershipType) },
       ],
     },
     {
