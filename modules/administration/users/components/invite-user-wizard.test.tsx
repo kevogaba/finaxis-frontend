@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
+import { UUID_PATTERN } from '@/lib/api/wire';
 import {
   EMAIL_CHECK_FAILED,
   EMAIL_CHECK_REFUSED,
@@ -340,5 +341,92 @@ describe('InviteUserWizard: the steps', () => {
     await waitFor(() => {
       expect(screen.queryByText(NEEDS_A_BRANCH)).toBeNull();
     });
+  });
+});
+
+describe('InviteUserWizard: sending', () => {
+  it('sends every answer once, returns to a server field error’s step, and retries with the same key', async () => {
+    const user = userEvent.setup({ delay: null });
+    inviteUser
+      .mockResolvedValueOnce({
+        ok: false,
+        formError: 'Check the highlighted fields and try again.',
+        fieldErrors: { 'roleAssignments.0.scopeType': 'Choose a scope.' },
+        code: 'validation_failed',
+        requestId: null,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        formError: "The platform didn't respond as expected. Try again in a moment.",
+        fieldErrors: {},
+        code: null,
+        requestId: 'req-5',
+      });
+    renderWizard();
+    await fillIdentity(user);
+    await next(user, 'Access');
+    await fillAccess(user);
+    await next(user, 'Invitation');
+    await next(user, 'Review');
+    expect(screen.getByRole('region', { name: 'Access' })).toHaveTextContent(
+      'Westlands Branch (WESTLANDS) · Home',
+    );
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }));
+
+    // The refused row's field, back on its step.
+    expect(await screen.findByRole('heading', { level: 2, name: 'Access' })).toBeInTheDocument();
+    const scope = within(screen.getByRole('group', { name: 'Role 1' })).getByRole('combobox', {
+      name: 'Scope',
+    });
+    await waitFor(() => {
+      expect(scope).toHaveAccessibleDescription('Choose a scope.');
+    });
+    expect(Object.fromEntries(inviteUser.mock.calls[0]?.[1] as FormData)).toEqual({
+      idempotencyKey: expect.stringMatching(UUID_PATTERN) as unknown,
+      contextOrganisationId: ORG,
+      displayName: 'Neema Wanjiku',
+      email: EMAIL,
+      username: 'neema.wanjiku',
+      phone: '',
+      membershipType: 'STAFF',
+      primaryBranchId: '',
+      branchAssignments: JSON.stringify([{ branchId: WESTLANDS, assignmentType: 'HOME' }]),
+      roleAssignments: JSON.stringify([{ roleId: TELLER, scopeType: 'TENANT', branchId: '' }]),
+      sendIdentityInvite: 'true',
+      sendApplicationInvite: 'false',
+    });
+
+    await next(user, 'Invitation');
+    await next(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }));
+
+    // Nothing to return to: the failure's Alert takes focus, with its reference.
+    const failed = (await screen.findByText(/Reference: req-5/)).closest('[role="alert"]');
+    await waitFor(() => {
+      expect(failed).toHaveFocus();
+    });
+    const [first, second] = inviteUser.mock.calls.map((call) => call[1] as FormData);
+    // One key per wizard: the retry replays safely (spec §6.4).
+    expect(second?.get('idempotencyKey')).toBe(first?.get('idempotencyKey'));
+  });
+
+  it('shows a safe message, never the error text, when the action itself rejects', async () => {
+    const user = userEvent.setup({ delay: null });
+    inviteUser.mockRejectedValueOnce(new Error('socket hang up'));
+    renderWizard();
+    await fillIdentity(user);
+    await next(user, 'Access');
+    await fillAccess(user);
+    await next(user, 'Invitation');
+    await next(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }));
+
+    const alert = (await screen.findByText(/We couldn't confirm this change/)).closest(
+      '[role="alert"]',
+    );
+    await waitFor(() => {
+      expect(alert).toHaveFocus();
+    });
+    expect(screen.queryByText(/socket hang up/)).toBeNull();
   });
 });
