@@ -190,7 +190,13 @@ describe('InviteAccessFields', () => {
   it('ties each list refusal to the Add button it names', async () => {
     const user = userEvent.setup({ delay: null });
     renderWithProviders(<Harness />);
-    expect(screen.getByRole('button', { name: 'Add branch' })).not.toHaveAccessibleDescription();
+    // Neither button points at a message while none shows (a dangling IDREF is not a message).
+    expect(screen.getByRole('button', { name: 'Add branch' })).not.toHaveAttribute(
+      'aria-describedby',
+    );
+    expect(screen.getByRole('button', { name: 'Add role' })).not.toHaveAttribute(
+      'aria-describedby',
+    );
 
     await user.click(screen.getByRole('button', { name: 'Remove branch assignment 1' }));
     await user.click(screen.getByRole('button', { name: 'Remove role 1' }));

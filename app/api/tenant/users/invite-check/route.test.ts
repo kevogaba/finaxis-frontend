@@ -46,7 +46,7 @@ describe('GET /api/tenant/users/invite-check', () => {
     ['?email='],
     ['?email=%20%20'],
     [''],
-    [`?email=${'a'.repeat(255)}`],
+    [`?email=${'a'.repeat(243)}%40example.com`], // 255 characters: one over RFC 5321's limit
     // A wildcard: `%` matches every user in the directory's search, so it is not an address.
     ['?email=%25'],
   ])('refuses %s without a read', async (query) => {
