@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { enterAdmin, mainText, statusChip } from './support/admin';
-import { authenticate, expectHydrated } from './support/auth';
+import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
 import { INVITE_SCENARIO_TEXT as TEXT, type ScenarioName } from './fake-api/scenarios.mts';
 
 const ALL_BRANCHES = /All branches \(institution level\)/;
@@ -23,9 +23,10 @@ const USER_MAKER_CHECKER_BLOCKED =
 
 const RECORD = /\/admin\/users\/[0-9a-f-]{36}$/;
 
-/** A route's first hit under a cold `next dev` compile (the "Compiling" indicator) takes tens of
- * seconds: the wizard's page behind the directory's link, and the email check's route on the first
- * Continue. Warm, these waits resolve in well under a second; the bound only matters when they fail. */
+/** A route's first hit compiles under a cold `next dev` (the "Compiling" indicator), which takes
+ * tens of seconds. Used where a first hit can come in any order: the wizard page's first visit in
+ * each test, and the email check's first answer with the Identity step that issues it. Warm, these
+ * waits resolve in well under a second; the bound only matters when they fail. */
 const FIRST_HIT = 45000;
 
 interface Identity {
@@ -40,9 +41,19 @@ const NEEMA: Identity = {
   username: 'neema.wanjiku',
 };
 
-/** The wizard as the first navigation of a test: through context selection. */
+/** The wizard as the first navigation of a test: through context selection. Its waits are
+ * FIRST_HIT, not enterAdmin's 15 s: each test's first visit to the wizard can be the route's first
+ * hit. */
 async function openWizard(page: Page) {
-  await enterAdmin(page, '/admin/users/new', { heading: 'Invite user', branch: ALL_BRANCHES });
+  await page.goto('/admin/users/new');
+  await selectMuiOption(page, 'Organisation', /Greenfield/);
+  await selectMuiOption(page, 'Branch', ALL_BRANCHES);
+  await expect(page).toHaveURL((url) => url.pathname === '/admin/users/new', {
+    timeout: FIRST_HIT,
+  });
+  await expect(page.getByRole('heading', { level: 1, name: 'Invite user' })).toBeVisible({
+    timeout: FIRST_HIT,
+  });
   await expectHydrated(page.getByRole('button', { name: 'Continue' }));
 }
 
@@ -56,12 +67,12 @@ async function choose(page: Page, scope: Page | Locator, label: string, option: 
 
 const group = (page: Page, name: string) => page.getByRole('group', { name, exact: true });
 
-/** Continue, then wait for the next step's heading (the email check is a request away). */
-async function next(page: Page, step: string) {
+/** Continue, then wait for the next step's heading. Identity's Continue is a request (the email
+ * check) and can be its route's first hit, so the caller passes FIRST_HIT there; the other steps
+ * change in the browser and keep the 15 s bound. */
+async function next(page: Page, step: string, timeout = 15000) {
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByRole('heading', { level: 2, name: step })).toBeVisible({
-    timeout: FIRST_HIT,
-  });
+  await expect(page.getByRole('heading', { level: 2, name: step })).toBeVisible({ timeout });
 }
 
 async function fillIdentity(page: Page, identity: Identity = NEEMA) {
@@ -80,6 +91,12 @@ async function fillAccess(page: Page) {
 async function sendInvitation(page: Page) {
   await page.getByRole('button', { name: 'Send invitation' }).click();
 }
+
+/** The shell's bell, once its count streamed in: its name carries the approvals waiting. */
+const bell = (page: Page, count: number) =>
+  page
+    .getByRole('banner')
+    .getByRole('button', { name: `Notifications: ${count} approvals waiting`, exact: true });
 
 // 16's two keyboard helpers (`e2e/platform-tenants.spec.ts`), kept in the spec as 16 keeps them.
 
@@ -171,7 +188,7 @@ test.describe('users invite: entry and identity', () => {
       await expect(page.getByRole('link', { name: 'Invite user' })).toHaveCount(0);
 
       await page.goto('/admin/users/new');
-      await expect(mainText(page, INVITE_FORBIDDEN)).toBeVisible({ timeout: 15000 });
+      await expect(mainText(page, INVITE_FORBIDDEN)).toBeVisible({ timeout: FIRST_HIT });
       await expect(page.getByRole('button', { name: 'Continue' })).toHaveCount(0);
     });
   }
@@ -194,11 +211,11 @@ test.describe('users invite: entry and identity', () => {
     // Hassan's membership was revoked: his email can never come back (BG-28). Letter case aside.
     await email.fill('Hassan.Ali@greenfield.example');
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(email).toHaveAccessibleDescription(REVOKED_EMAIL, { timeout: FIRST_HIT });
+    await expect(email).toHaveAccessibleDescription(REVOKED_EMAIL, { timeout: 15000 });
     await expect(page.getByRole('heading', { level: 2, name: 'Identity' })).toBeVisible();
 
     await email.fill(NEEMA.email);
-    await next(page, 'Access');
+    await next(page, 'Access', FIRST_HIT);
   });
 });
 
@@ -212,7 +229,7 @@ test.describe('users invite: sending', () => {
     await authenticate(context, testInfo, 'users-invite');
     await openWizard(page);
     await fillIdentity(page);
-    await next(page, 'Access');
+    await next(page, 'Access', FIRST_HIT);
 
     // Only ACTIVE roles and branches are offered: no Loans officer (DISABLED), no Kisumu (pending).
     const roleRow = group(page, 'Role 1');
@@ -258,7 +275,7 @@ test.describe('users invite: sending', () => {
     await authenticate(context, testInfo, 'users-invite');
     await openWizard(page);
     await fillIdentity(page);
-    await next(page, 'Access');
+    await next(page, 'Access', FIRST_HIT);
     await fillAccess(page);
     await page.getByRole('button', { name: 'Add role' }).click();
     const second = group(page, 'Role 2');
@@ -278,6 +295,9 @@ test.describe('users invite: sending', () => {
       'Branch supervisor (SUPERVISOR) · Westlands Branch (WESTLANDS)',
     );
     await expect(page.getByRole('note')).toHaveText(REVIEW_NOTE);
+    // Amina, Brian and Carol await approval (Daniel's approval already ran, BG-11); Jane holds
+    // user.approve and user.view but not branch.activate here, so Kisumu doesn't count.
+    await expect(bell(page, 3)).toBeVisible({ timeout: 15000 });
     await sendInvitation(page);
 
     await expect(page).toHaveURL(RECORD, { timeout: 15000 });
@@ -287,6 +307,9 @@ test.describe('users invite: sending', () => {
     const approve = page.getByRole('button', { name: 'Approve', exact: true });
     await expect(approve).toBeDisabled();
     await expect(approve).toHaveAccessibleDescription(USER_MAKER_CHECKER_BLOCKED);
+    // refresh() before the redirect (invite-actions.ts): the shell's bell sits in the layout the
+    // redirect keeps, so it must count the new member without a reload.
+    await expect(bell(page, 4)).toBeVisible({ timeout: 15000 });
   });
 
   test('keeps every answer after a refusal it can’t check, and sends again safely', async ({
@@ -297,7 +320,7 @@ test.describe('users invite: sending', () => {
     await openWizard(page);
     // Otieno's username belongs to an account in another institution (a 500, BG-07).
     await fillIdentity(page, { ...NEEMA, username: TEXT.takenUsername });
-    await next(page, 'Access');
+    await next(page, 'Access', FIRST_HIT);
     await fillAccess(page);
     await next(page, 'Invitation');
     await next(page, 'Review');
@@ -312,7 +335,7 @@ test.describe('users invite: sending', () => {
     await page.getByRole('button', { name: 'Edit identity' }).click();
     await expect(page.getByRole('textbox', { name: 'Email' })).toHaveValue(NEEMA.email);
     await page.getByRole('textbox', { name: 'Username' }).fill(NEEMA.username);
-    await next(page, 'Access');
+    await next(page, 'Access', FIRST_HIT);
     await next(page, 'Invitation');
     await next(page, 'Review');
     await sendInvitation(page);
@@ -327,7 +350,7 @@ test.describe('users invite: sending', () => {
     await authenticate(context, testInfo, 'users-invite');
     await openWizard(page);
     await fillIdentity(page, { name: 'Rehema W.', email: TEXT.rehemaEmail, username: 'rehema.w' });
-    await next(page, 'Access');
+    await next(page, 'Access', FIRST_HIT);
     await fillAccess(page);
     await next(page, 'Invitation');
     await next(page, 'Review');
@@ -352,7 +375,7 @@ test.describe('users invite: sending', () => {
       await authenticate(context, testInfo, 'users-invite');
       await openWizard(page);
       await fillIdentity(page);
-      await next(page, 'Access');
+      await next(page, 'Access', FIRST_HIT);
       for (const add of ['Add branch', 'Add branch', 'Add role', 'Add role']) {
         await page.getByRole('button', { name: add }).click();
       }
