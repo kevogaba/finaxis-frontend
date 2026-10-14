@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
+import PersonAddAltOutlined from '@mui/icons-material/PersonAddAltOutlined';
+import { getCurrentContextProfile } from '@/auth/context-service';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -12,11 +15,13 @@ import {
 import { ListToolbar, type ToolbarField } from '@/components/data-display/list-toolbar';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import { TablePaginationBar } from '@/components/data-display/table-pagination-bar';
+import NextLink from '@/components/navigation/next-link';
 import { PageHeader } from '@/components/shell/page-header';
 import { load } from '@/lib/api/load';
 import { lastPageIfPastEnd } from '@/lib/api/paging';
 import { hrefWith, toSearchParams } from '@/lib/api/query-string';
 import { UserDirectoryTable } from '@/modules/administration/users/components/user-directory-table';
+import { canInviteUsers, INVITE_HREF } from '@/modules/administration/users/invite-rules';
 import { MEMBERSHIP_STATUSES, USER_STATUSES } from '@/modules/administration/users/user-contract';
 import { hasUserFilters, parseUserListQuery } from '@/modules/administration/users/user-query';
 import { userStatusLabel } from '@/modules/administration/users/user-rules';
@@ -51,14 +56,27 @@ interface UsersPageProps {
 export default async function UsersPage({ searchParams }: UsersPageProps) {
   const params = toSearchParams(await searchParams);
   const query = parseUserListQuery(params);
-  const users = await load(listUsers(query));
+  const [users, selected] = await Promise.all([load(listUsers(query)), getCurrentContextProfile()]);
+  const permissions = selected.kind === 'resolved' ? selected.profile.permissions : [];
 
-  // "Invite user" is layer 11's (`/admin/users/new`).
   const header = (
     <PageHeader
       eyebrow="Administration"
       title="Users & access"
       description="Everyone with a membership in this institution: their onboarding, status and access."
+      actions={
+        // Ruling 4: offered only with every code the wizard needs.
+        canInviteUsers({ permissions }) ? (
+          <Button
+            component={NextLink}
+            href={INVITE_HREF}
+            variant="contained"
+            startIcon={<PersonAddAltOutlined />}
+          >
+            Invite user
+          </Button>
+        ) : undefined
+      }
     />
   );
 
