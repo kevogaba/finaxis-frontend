@@ -1,0 +1,265 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { screen, waitFor, within } from '@testing-library/react';
+import { renderWithProviders } from '@/test/test-utils';
+import {
+  EMAIL_CHECK_FAILED,
+  EMAIL_CHECK_REFUSED,
+  memberEmailMessage,
+  NEEDS_A_BRANCH,
+  ROLE_BRANCH_UNASSIGNED,
+  SESSION_EXPIRED,
+} from '../invite-rules';
+import { InviteUserWizard } from './invite-user-wizard';
+
+const { inviteUser } = vi.hoisted(() => ({ inviteUser: vi.fn() }));
+vi.mock('../invite-actions', () => ({
+  inviteUser: (...args: unknown[]) => inviteUser(...args) as unknown,
+}));
+
+type User = ReturnType<typeof userEvent.setup>;
+
+const ORG = '11111111-1111-4111-8111-111111111111';
+const WESTLANDS = 'a4000000-0000-4000-8000-0000000000aa';
+const HEAD_OFFICE = 'b2000000-0000-4000-8000-0000000000bb';
+const TELLER = 'c1000000-0000-4000-8000-0000000000cc';
+const ROLES = [{ id: TELLER, label: 'Teller (TELLER)' }];
+const BRANCHES = [
+  { id: HEAD_OFFICE, label: 'Head Office (HEAD_OFFICE)' },
+  { id: WESTLANDS, label: 'Westlands Branch (WESTLANDS)' },
+];
+const EMAIL = 'neema.wanjiku@greenfield.example';
+
+const fetchMock = vi.fn<(input: string) => Promise<Response>>();
+const answer = (status: number, body: unknown) =>
+  Promise.resolve(new Response(JSON.stringify(body), { status }));
+
+function renderWizard() {
+  renderWithProviders(
+    <InviteUserWizard
+      roles={ROLES}
+      branches={BRANCHES}
+      rolesCapped={false}
+      branchesCapped={false}
+      contextOrganisationId={ORG}
+    />,
+  );
+}
+
+async function choose(user: User, label: string, option: string, scope?: HTMLElement) {
+  await user.click(within(scope ?? document.body).getByRole('combobox', { name: label }));
+  await user.click(await screen.findByRole('option', { name: option }));
+}
+
+async function next(user: User, step: string) {
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  await screen.findByRole('heading', { level: 2, name: step });
+}
+
+async function fillIdentity(user: User) {
+  await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Neema Wanjiku');
+  await user.type(screen.getByRole('textbox', { name: 'Email' }), EMAIL);
+  await user.type(screen.getByRole('textbox', { name: 'Username' }), 'neema.wanjiku');
+  await choose(user, 'Membership type', 'Staff');
+}
+
+async function fillAccess(user: User) {
+  await choose(
+    user,
+    'Branch',
+    'Westlands Branch (WESTLANDS)',
+    screen.getByRole('group', {
+      name: 'Branch assignment 1',
+    }),
+  );
+  await choose(user, 'Role', 'Teller (TELLER)', screen.getByRole('group', { name: 'Role 1' }));
+}
+
+beforeEach(() => {
+  // Reset, not clear: a failed test's unused queued answers must not leak into the next one.
+  vi.resetAllMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  fetchMock.mockImplementation(() => answer(200, { membershipStatus: null }));
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('InviteUserWizard: the steps', () => {
+  it('summarises the identity’s invalid fields and focuses the first, without checking the email', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderWizard();
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(
+      await screen.findByText('Check these fields: Full name, Email, Username, Membership type.'),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveFocus();
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('checks the email on Continue, then moves to Access with its heading focused', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderWizard();
+    await fillIdentity(user);
+
+    await next(user, 'Access');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tenant/users/invite-check?email=${encodeURIComponent(EMAIL)}`,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 2, name: 'Access' })).toHaveFocus();
+    });
+  });
+
+  it('keeps an email already in use on Identity, says why, and clears it once changed', async () => {
+    const user = userEvent.setup({ delay: null });
+    fetchMock.mockImplementationOnce(() => answer(200, { membershipStatus: 'REVOKED' }));
+    renderWizard();
+    await fillIdentity(user);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    const email = screen.getByRole('textbox', { name: 'Email' });
+    await waitFor(() => {
+      expect(email).toHaveAccessibleDescription(memberEmailMessage('REVOKED'));
+    });
+    await waitFor(() => {
+      expect(email).toHaveFocus();
+    });
+    expect(screen.getByText('Check these fields: Email.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+
+    await user.type(email, 'x');
+    await waitFor(() => {
+      expect(email).not.toHaveAccessibleDescription(memberEmailMessage('REVOKED'));
+    });
+  });
+
+  it.each([
+    [502, EMAIL_CHECK_FAILED],
+    [401, SESSION_EXPIRED],
+    [403, EMAIL_CHECK_REFUSED],
+  ])(
+    'says a failed check (%i) failed, never reading it as a free email (L1)',
+    async (status, message) => {
+      const user = userEvent.setup({ delay: null });
+      fetchMock.mockImplementationOnce(() => answer(status, { message: 'upstream detail' }));
+      renderWizard();
+      await fillIdentity(user);
+
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(screen.queryByText('upstream detail')).toBeNull();
+      expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    ['an unreadable answer', () => answer(200, { membershipStatus: 'GONE' })],
+    ['a network failure', () => Promise.reject(new TypeError('Failed to fetch'))],
+  ])(
+    'says the check failed after %s, never reading it as a free email (L1)',
+    async (_case, reply) => {
+      const user = userEvent.setup({ delay: null });
+      fetchMock.mockImplementationOnce(reply);
+      renderWizard();
+      await fillIdentity(user);
+
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+      expect(await screen.findByText(EMAIL_CHECK_FAILED)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+    },
+  );
+
+  it('checks an email edited during its check again, never continuing with it unchecked', async () => {
+    const user = userEvent.setup({ delay: null });
+    let reply: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          reply = resolve;
+        }),
+    );
+    renderWizard();
+    await fillIdentity(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.type(screen.getByRole('textbox', { name: 'Email' }), 'x');
+
+    reply(new Response(JSON.stringify({ membershipStatus: null }), { status: 200 }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    });
+    expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+    await next(user, 'Access');
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/tenant/users/invite-check?email=${encodeURIComponent(`${EMAIL}x`)}`,
+    );
+  });
+
+  it('refuses a branch-scoped role at a branch they aren’t assigned to before Review', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderWizard();
+    await fillIdentity(user);
+    await next(user, 'Access');
+    const branchRow = screen.getByRole('group', { name: 'Branch assignment 1' });
+    await choose(user, 'Branch', 'Westlands Branch (WESTLANDS)', branchRow);
+    const roleRow = screen.getByRole('group', { name: 'Role 1' });
+    await choose(user, 'Role', 'Teller (TELLER)', roleRow);
+    await choose(user, 'Scope', 'One branch', roleRow);
+    await choose(user, 'Branch', 'Westlands Branch (WESTLANDS)', roleRow);
+    // Their only branch changes after the role named it.
+    await choose(user, 'Branch', 'Head Office (HEAD_OFFICE)', branchRow);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText('Check these fields: Roles.')).toBeInTheDocument();
+    expect(within(roleRow).getByRole('combobox', { name: 'Branch' })).toHaveAccessibleDescription(
+      ROLE_BRANCH_UNASSIGNED,
+    );
+    expect(screen.getByRole('heading', { level: 2, name: 'Access' })).toBeInTheDocument();
+  });
+
+  it('returns to a step from the review with its answers kept, and links Cancel to the directory', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderWizard();
+    expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/admin/users');
+    await fillIdentity(user);
+    await next(user, 'Access');
+    await fillAccess(user);
+    await next(user, 'Invitation');
+    await next(user, 'Review');
+
+    await user.click(screen.getByRole('button', { name: 'Edit identity' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Identity' })).toHaveFocus();
+    expect(screen.getByRole('textbox', { name: 'Email' })).toHaveValue(EMAIL);
+    expect(screen.getByRole('combobox', { name: 'Membership type' })).toHaveTextContent('Staff');
+  });
+
+  it('clears a branch refusal that a membership change has made moot, before Access shows it again', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderWizard();
+    await fillIdentity(user);
+    await next(user, 'Access');
+    await user.click(screen.getByRole('button', { name: 'Remove branch assignment 1' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText(NEEDS_A_BRANCH)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await screen.findByRole('heading', { level: 2, name: 'Identity' });
+    await choose(user, 'Membership type', 'Auditor');
+    await next(user, 'Access');
+
+    await waitFor(() => {
+      expect(screen.queryByText(NEEDS_A_BRANCH)).toBeNull();
+    });
+  });
+});
