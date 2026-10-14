@@ -12,8 +12,8 @@ import {
   USERNAME_TAKEN,
 } from './invite-rules';
 
-const { apiPost, findMemberByEmail, findMemberByUsername, redirect, runServerAction } = vi.hoisted(
-  () => ({
+const { apiPost, findMemberByEmail, findMemberByUsername, redirect, refresh, runServerAction } =
+  vi.hoisted(() => ({
     apiPost: vi.fn((_path: string, _body: Record<string, unknown>, _key: string) =>
       Promise.resolve<unknown>({}),
     ),
@@ -22,10 +22,15 @@ const { apiPost, findMemberByEmail, findMemberByUsername, redirect, runServerAct
     redirect: vi.fn((to: string) => {
       throw new Error(`NEXT_REDIRECT:${to}`);
     }),
+    refresh: vi.fn(),
     runServerAction: vi.fn(),
-  }),
-);
+  }));
 vi.mock('next/navigation', () => ({ redirect: (to: string) => redirect(to) as unknown }));
+vi.mock('next/cache', () => ({
+  refresh: () => {
+    refresh();
+  },
+}));
 vi.mock('@/lib/api/tenant-api', () => ({
   apiPost: (path: string, body: Record<string, unknown>, key: string) => apiPost(path, body, key),
 }));
@@ -142,6 +147,12 @@ describe('inviteUser', () => {
     // A success never reads the directory: nothing could stand in a replay's way (Ruling 1).
     expect(findMemberByEmail).not.toHaveBeenCalled();
     expect(findMemberByUsername).not.toHaveBeenCalled();
+    // Refreshed before the redirect, so the shell's bell and the back/forward cache drop the count
+    // from before the invitation.
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh.mock.invocationCallOrder[0]).toBeLessThan(
+      redirect.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it('lands on the directory when the created invitation echoes no readable id', async () => {

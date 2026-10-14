@@ -1,5 +1,6 @@
 'use server';
 
+import { refresh } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
@@ -65,6 +66,10 @@ export async function inviteUser(
       throw error;
     }
     const invitation = invitationResultSchema.safeParse(created);
+    // The shell's bell counts the members awaiting approval, and the layout it sits in is reused by
+    // the router, so refresh before redirecting (as updateRole does). runServerAction's own
+    // refresh() never runs, because redirect() throws first.
+    refresh();
     // Rethrown by runServerAction (unstable_rethrow). The invitation exists either way: an echo
     // without a readable id lands on the directory, where the new member is listed first.
     redirect(invitation.success ? userRecordHref(invitation.data.userId) : USERS_HREF);
