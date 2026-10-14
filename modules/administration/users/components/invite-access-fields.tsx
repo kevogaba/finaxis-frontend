@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useId, useRef } from 'react';
 import {
   useFieldArray,
   useWatch,
@@ -8,6 +8,7 @@ import {
   type FieldError,
   type UseFormTrigger,
 } from 'react-hook-form';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import FormHelperText from '@mui/material/FormHelperText';
@@ -29,8 +30,8 @@ const TENANT_HELP = 'Applies at every branch and at institution level.';
 const TENANT_HELP_NO_BRANCH = `${TENANT_HELP} Add a branch above to scope a role to one branch.`;
 const BRANCH_HELP = 'Applies only while that branch is selected.';
 
-/** An error on a whole list sits at its root: `trigger` puts it on the list, `handleSubmit` on
- * `root` (RHF's field-array rule), and a server field error on the list again. */
+/** `trigger` and `handleSubmit` put a list's error on `root` (RHF 7.90's field-array rule); a server
+ * field error (`setError`) puts it on the list itself. */
 type ListError = Partial<FieldError> & { root?: FieldError };
 const listMessage = (error: ListError | undefined) => error?.message ?? error?.root?.message;
 
@@ -84,6 +85,9 @@ export function InviteAccessFields({
   const roleChoices = toChoices(roles);
   const branchMessage = listMessage(branchListError);
   const roleMessage = listMessage(roleListError);
+  // Each list refusal is described by the Add button that fixes it, so a screen reader hears it there.
+  const branchErrorId = useId();
+  const roleErrorId = useId();
 
   return (
     <>
@@ -131,19 +135,26 @@ export function InviteAccessFields({
             </Button>
           </Box>
         ))}
-        {branchMessage && <FormHelperText error>{branchMessage}</FormHelperText>}
+        {branchMessage && (
+          <FormHelperText id={branchErrorId} error>
+            {branchMessage}
+          </FormHelperText>
+        )}
         {branchesCapped && (
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+          <Alert severity="info" role="note">
             {BRANCHES_CAPPED}
-          </Typography>
+          </Alert>
         )}
         <Box>
           <Button
             ref={addBranch}
             variant="outlined"
             startIcon={<AddOutlined />}
+            aria-describedby={branchMessage ? branchErrorId : undefined}
             onClick={() => {
               branchRows.append({ ...EMPTY_BRANCH_ROW }, { shouldFocus: true });
+              // A list refused for having no row: the new row's own refusal replaces it (rule 8).
+              if (branchMessage) void trigger('branchAssignments');
             }}
           >
             Add branch
@@ -223,19 +234,26 @@ export function InviteAccessFields({
             </Box>
           );
         })}
-        {roleMessage && <FormHelperText error>{roleMessage}</FormHelperText>}
+        {roleMessage && (
+          <FormHelperText id={roleErrorId} error>
+            {roleMessage}
+          </FormHelperText>
+        )}
         {rolesCapped && (
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+          <Alert severity="info" role="note">
             {ROLES_CAPPED}
-          </Typography>
+          </Alert>
         )}
         <Box>
           <Button
             ref={addRole}
             variant="outlined"
             startIcon={<AddOutlined />}
+            aria-describedby={roleMessage ? roleErrorId : undefined}
             onClick={() => {
               roleRows.append({ ...EMPTY_ROLE_ROW }, { shouldFocus: true });
+              // A list refused for having no row: the new row's own refusal replaces it (rule 8).
+              if (roleMessage) void trigger('roleAssignments');
             }}
           >
             Add role
