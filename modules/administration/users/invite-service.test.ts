@@ -75,6 +75,9 @@ describe('findMemberByEmail', () => {
       id: ANN,
       membershipStatus: 'REVOKED',
     });
+    // The typed letters' case is folded too, not only the stored address's.
+    apiGet.mockImplementationOnce(page([userWire(ANN, 'ann.mwangi@greenfield.example')], false));
+    expect(await findMemberByEmail('Ann.Mwangi@Greenfield.EXAMPLE')).toMatchObject({ id: ANN });
   });
 
   it('pages on while there are more matches, and stops at the first exact one', async () => {
@@ -125,6 +128,11 @@ describe('findMemberByUsername (Ruling 15)', () => {
       '/api/v1/tenant/users?q=esther&page=0&size=100',
       userPageSchema,
     );
+    // A typed username's capitals are folded too, not only the stored one's.
+    apiGet.mockImplementationOnce(
+      page([userWire(ANN, 'e.wanjiru@greenfield.example', 'ACTIVE', 'esther')], false),
+    );
+    expect(await findMemberByUsername('Esther')).toMatchObject({ id: ANN });
   });
 
   it('answers null without an exact match, and reads nothing for a blank username', async () => {
