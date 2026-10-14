@@ -1,5 +1,13 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { enterAdmin, mainText, statusChip } from './support/admin';
+import {
+  A11Y_CASES,
+  applyA11yCase,
+  enterAdmin,
+  expectA11yCaseApplied,
+  expectNoSeriousOrCriticalViolations,
+  mainText,
+  statusChip,
+} from './support/admin';
 import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
 import { INVITE_SCENARIO_TEXT as TEXT, type ScenarioName } from './fake-api/scenarios.mts';
 
@@ -398,5 +406,132 @@ test.describe('users invite: sending', () => {
       // The three Edit buttons.
       await expectFocusStopsClearTheBars(page, 'Review', 3);
     });
+  }
+});
+
+interface Surface {
+  label: string;
+  scenario: ScenarioName;
+  path: string;
+  heading: string;
+  /** Brings the page to the state the scan covers. */
+  open?: (page: Page) => Promise<void>;
+}
+
+const SURFACES: readonly Surface[] = [
+  {
+    label: 'the directory',
+    scenario: 'users-invite',
+    path: '/admin/users',
+    heading: 'Users & access',
+  },
+  {
+    label: 'identity with errors',
+    scenario: 'users-invite',
+    path: '/admin/users/new',
+    heading: 'Invite user',
+    open: async (page) => {
+      await expectHydrated(page.getByRole('button', { name: 'Continue' }));
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await expect(mainText(page, /^Check these fields/)).toBeVisible();
+    },
+  },
+  {
+    label: 'access with errors',
+    scenario: 'users-invite',
+    path: '/admin/users/new',
+    heading: 'Invite user',
+    open: async (page) => {
+      await fillIdentity(page);
+      await next(page, 'Access');
+      await choose(
+        page,
+        group(page, 'Branch assignment 1'),
+        'Branch',
+        'Westlands Branch (WESTLANDS)',
+      );
+      await choose(page, group(page, 'Role 1'), 'Scope', 'One branch');
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await expect(mainText(page, 'Check these fields: Roles.')).toBeVisible();
+    },
+  },
+  {
+    label: 'invitation',
+    scenario: 'users-invite',
+    path: '/admin/users/new',
+    heading: 'Invite user',
+    open: async (page) => {
+      await fillIdentity(page);
+      await next(page, 'Access');
+      await fillAccess(page);
+      await next(page, 'Invitation');
+    },
+  },
+  {
+    label: 'review',
+    scenario: 'users-invite',
+    path: '/admin/users/new',
+    heading: 'Invite user',
+    open: async (page) => {
+      await fillIdentity(page);
+      await next(page, 'Access');
+      await fillAccess(page);
+      await next(page, 'Invitation');
+      await next(page, 'Review');
+    },
+  },
+  {
+    label: 'identity with an email in use',
+    scenario: 'users-invite',
+    path: '/admin/users/new',
+    heading: 'Invite user',
+    open: async (page) => {
+      await fillIdentity(page, { ...NEEMA, email: 'esther.njoki@greenfield.example' });
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await expect(mainText(page, ACTIVE_EMAIL)).toBeVisible({ timeout: 15000 });
+    },
+  },
+  {
+    label: 'review after a refused send',
+    scenario: 'users-invite',
+    path: '/admin/users/new',
+    heading: 'Invite user',
+    open: async (page) => {
+      await fillIdentity(page, { ...NEEMA, username: TEXT.takenUsername });
+      await next(page, 'Access');
+      await fillAccess(page);
+      await next(page, 'Invitation');
+      await next(page, 'Review');
+      await sendInvitation(page);
+      await expect(mainText(page, INVITE_FAILED)).toBeVisible({ timeout: 15000 });
+    },
+  },
+  {
+    label: 'the forbidden page',
+    scenario: 'users-invite-limited',
+    path: '/admin/users/new',
+    heading: 'Invite user',
+  },
+];
+
+// The describe's title is what the two --grep chunks select on ("users invite: accessibility .*\(light"
+// and "…\(dark"): the grep text is the project, file, describe and test titles joined by spaces.
+test.describe('users invite: accessibility', () => {
+  test.describe.configure({ timeout: 60000 });
+
+  for (const surface of SURFACES) {
+    for (const a11yCase of A11Y_CASES) {
+      test(`has no serious or critical violations: ${surface.label} (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
+        context,
+        page,
+      }, testInfo) => {
+        await applyA11yCase(page, a11yCase);
+        await authenticate(context, testInfo, surface.scenario);
+        await enterAdmin(page, surface.path, { heading: surface.heading, branch: ALL_BRANCHES });
+        if (surface.open) await surface.open(page);
+        await expectA11yCaseApplied(page, a11yCase);
+        await expectNoSeriousOrCriticalViolations(page);
+      });
+    }
   }
 });
