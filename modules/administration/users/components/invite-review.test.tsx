@@ -58,7 +58,7 @@ describe('InviteReview', () => {
     expect(fact(identity, 'Membership type')).toHaveTextContent('Staff');
     expect(fact(identity, 'Full name')).toHaveTextContent('Neema Wanjiku');
     expect(fact(identity, 'Email')).toHaveTextContent('neema.wanjiku@greenfield.example');
-    expect(fact(identity, 'Username')).toHaveTextContent('neema.wanjiku');
+    expect(fact(identity, 'Username')).toHaveTextContent(/^neema\.wanjiku$/);
     const access = screen.getByRole('region', { name: 'Access' });
     expect(
       within(fact(access, 'Branch assignments') as HTMLElement)
