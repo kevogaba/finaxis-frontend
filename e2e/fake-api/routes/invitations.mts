@@ -30,6 +30,9 @@ const E164 = /^\+[1-9]\d{1,14}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const invalidJson = () => problem(400, 'invalid_json', 'Malformed request body.');
+// BG-07: every invite rule failure falls through to the generic handler as a 500.
+const internalError = () => problem(500, 'internal_error', 'An unexpected error occurred.');
+const NEED_A_BRANCH = ['STAFF', 'ADMIN'];
 
 interface BranchAssignmentInput {
   branchId: string;
@@ -140,6 +143,58 @@ function requireAssignAt(access: AccessContext, branchIds: readonly string[]): v
 const sameText = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /**
+ * Mirrors UserProvisioningService's invite rules (BG-07: each is a 500; contract §D, §E.3, §F):
+ * STAFF and ADMIN need a branch; at least one role; every role ACTIVE; every branch (assigned and
+ * primary) ACTIVE; TENANT scope without a branch, BRANCH scope with one of the assigned branches; no
+ * membership of the email in this organisation, in any status (BG-28); a username taken by another
+ * email. Runs inside `produce`, so a refusal stores nothing.
+ */
+function checkInviteRules(
+  state: RunState,
+  organisationId: string,
+  input: Invitation,
+  existing: FakeUser | undefined,
+): void {
+  const activeBranch = (id: string) =>
+    state.branches.some(
+      (branch) =>
+        branch.id === id && branch.organisationId === organisationId && branch.status === 'ACTIVE',
+    );
+  const activeRole = (id: string) =>
+    state.roles.some(
+      (role) =>
+        role.id === id && role.organisationId === organisationId && role.status === 'ACTIVE',
+    );
+  const assigned = new Set(input.branches.map((row) => row.branchId));
+  if (input.roles.length === 0) throw internalError();
+  if (NEED_A_BRANCH.includes(input.membershipType) && input.branches.length === 0) {
+    throw internalError();
+  }
+  if (input.branches.some((row) => !activeBranch(row.branchId))) throw internalError();
+  if (input.primaryBranchId !== null && !activeBranch(input.primaryBranchId)) throw internalError();
+  for (const row of input.roles) {
+    if (!activeRole(row.roleId)) throw internalError();
+    const scopeMatches =
+      row.scopeType === 'TENANT'
+        ? row.branchId === null
+        : row.branchId !== null && assigned.has(row.branchId);
+    if (!scopeMatches) throw internalError();
+  }
+  if (
+    existing &&
+    state.memberships.some(
+      (membership) =>
+        membership.userId === existing.id && membership.organisationId === organisationId,
+    )
+  ) {
+    throw internalError();
+  }
+  if (!existing && state.users.some((user) => sameText(user.username, input.username))) {
+    throw internalError();
+  }
+}
+
+/**
  * The invitation (contract §E.3): an email that already has an account anywhere reuses it (case
  * aside), and the entered name, username and phone are then ignored; otherwise a DRAFT user with no
  * identity link. The membership waits for approval, the assignments are ACTIVE, and `user.invite`
@@ -148,6 +203,7 @@ const sameText = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 function invite(state: RunState, access: AccessContext, input: Invitation) {
   const organisationId = access.organisation.id;
   const existing = state.users.find((user) => sameText(user.email, input.email));
+  checkInviteRules(state, organisationId, input, existing);
 
   const now = new Date().toISOString();
   let user: FakeUser;

@@ -106,7 +106,9 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
     const roles = await read<Paged<{ role_id: string; scope_type: string }>>(
       await get(`/tenant/role-assignments?user_id=${invitation.user_id}`),
     );
-    expect(roles.items).toMatchObject([{ role_id: USERS.teller, scope_type: 'TENANT' }]);
+    expect(roles.items).toMatchObject([
+      { role_id: USERS.teller, scope_type: 'TENANT', branch_id: null, status: 'ACTIVE' },
+    ]);
     const branches = await read<Paged<{ user_id: string; assignment_type: string }>>(
       await get(`/tenant/branch-assignments?branch_id=${IDS.westlands}&status=ACTIVE&size=100`),
     );
@@ -125,7 +127,7 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
   test('replays a success for the same key and refuses the key with another body', async ({
     request,
   }) => {
-    const { invite } = await signIn(request);
+    const { get, invite } = await signIn(request);
     const key = randomUUID();
     const first = await read<Invitation>(await invite(BODY, key));
 
@@ -138,6 +140,9 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
       409,
       'IDEMPOTENCY_KEY_REUSED',
     );
+    // Neither the replay nor the refused reuse wrote anything: one membership, one row.
+    const rows = await read<Paged<UserRow>>(await get('/tenant/users?q=neema.wanjiku'));
+    expect(rows.page.total_items).toBe(1);
   });
 
   test('reuses an account another institution has, ignoring the entered identity', async ({
@@ -274,5 +279,56 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
     expect(codes('users-invite-limited')).toContain('user.invite');
     expect(codes('users-invite-limited')).not.toContain('user.assign_branch');
     expect(codes('users')).not.toContain('user.invite');
+  });
+});
+
+test.describe("fake API invitations: the backend's rules (BG-07)", () => {
+  test('answers each invite rule failure with a 500, storing nothing (BG-07)', async ({
+    request,
+  }) => {
+    const { get, invite } = await signIn(request);
+    const branchRole = (branchId: string | null) => ({
+      ...BODY,
+      role_assignments: [{ role_id: USERS.supervisor, scope_type: 'BRANCH', branch_id: branchId }],
+    });
+    const failures: Record<string, unknown>[] = [
+      { ...BODY, role_assignments: [] },
+      { ...BODY, branch_assignments: [], primary_branch_id: null },
+      { ...BODY, membership_type: 'ADMIN', branch_assignments: [], primary_branch_id: null },
+      { ...BODY, role_assignments: [{ role_id: USERS.loansOfficer, scope_type: 'TENANT' }] },
+      { ...BODY, branch_assignments: [{ branch_id: INVITE.kisumu, assignment_type: 'HOME' }] },
+      { ...BODY, primary_branch_id: INVITE.kisumu },
+      {
+        ...BODY,
+        role_assignments: [
+          { role_id: USERS.teller, scope_type: 'TENANT', branch_id: IDS.westlands },
+        ],
+      },
+      branchRole(null),
+      branchRole(IDS.headOffice),
+      // Existing memberships here, in any status (BG-28): Esther is ACTIVE, Hassan REVOKED.
+      { ...BODY, email: 'esther.njoki@greenfield.example' },
+      { ...BODY, email: 'Hassan.Ali@greenfield.example' },
+      // A username another account holds, with a new email.
+      { ...BODY, username: TEXT.takenUsername },
+    ];
+    for (const body of failures) {
+      await expectProblem(await invite(body), 500, 'internal_error');
+    }
+    // Control: the same body succeeds once the rule holds, and the failures stored nothing.
+    expect((await invite(branchRole(IDS.westlands))).status()).toBe(201);
+    const users = await read<Paged<UserRow>>(await get('/tenant/users?q=neema'));
+    expect(users.page.total_items).toBe(1);
+  });
+
+  test('lets an auditor in with no branch', async ({ request }) => {
+    const { invite } = await signIn(request);
+    const created = await invite({
+      ...BODY,
+      membership_type: 'AUDITOR',
+      branch_assignments: [],
+      primary_branch_id: null,
+    });
+    expect(created.status()).toBe(201);
   });
 });
