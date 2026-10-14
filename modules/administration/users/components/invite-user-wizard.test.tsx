@@ -7,6 +7,7 @@ import {
   EMAIL_CHECK_REFUSED,
   memberEmailMessage,
   NEEDS_A_BRANCH,
+  NEEDS_A_ROLE,
   ROLE_BRANCH_UNASSIGNED,
   SESSION_EXPIRED,
 } from '../invite-rules';
@@ -155,6 +156,9 @@ describe('InviteUserWizard: the steps', () => {
       await user.click(screen.getByRole('button', { name: 'Continue' }));
 
       expect(await screen.findByText(message)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText(message).closest('[role="alert"]')).toHaveFocus();
+      });
       expect(screen.queryByText('upstream detail')).toBeNull();
       expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
     },
@@ -174,9 +178,27 @@ describe('InviteUserWizard: the steps', () => {
       await user.click(screen.getByRole('button', { name: 'Continue' }));
 
       expect(await screen.findByText(EMAIL_CHECK_FAILED)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText(EMAIL_CHECK_FAILED).closest('[role="alert"]')).toHaveFocus();
+      });
       expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
     },
   );
+
+  it('drops a failed check’s message once Continue refuses an emptied email', async () => {
+    const user = userEvent.setup({ delay: null });
+    fetchMock.mockImplementationOnce(() => answer(502, {}));
+    renderWizard();
+    await fillIdentity(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText(EMAIL_CHECK_FAILED)).toBeInTheDocument();
+
+    await user.clear(screen.getByRole('textbox', { name: 'Email' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText('Check these fields: Email.')).toBeInTheDocument();
+    expect(screen.queryByText(EMAIL_CHECK_FAILED)).toBeNull();
+  });
 
   it('checks an email edited during its check again, never continuing with it unchecked', async () => {
     const user = userEvent.setup({ delay: null });
@@ -191,6 +213,7 @@ describe('InviteUserWizard: the steps', () => {
     await fillIdentity(user);
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     await user.type(screen.getByRole('textbox', { name: 'Email' }), 'x');
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
 
     reply(new Response(JSON.stringify({ membershipStatus: null }), { status: 200 }));
 
@@ -202,6 +225,32 @@ describe('InviteUserWizard: the steps', () => {
     expect(fetchMock).toHaveBeenLastCalledWith(
       `/api/tenant/users/invite-check?email=${encodeURIComponent(`${EMAIL}x`)}`,
     );
+  });
+
+  it('stays on Identity when another of its answers changes during the check', async () => {
+    const user = userEvent.setup({ delay: null });
+    let reply: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          reply = resolve;
+        }),
+    );
+    renderWizard();
+    await fillIdentity(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    const username = screen.getByRole('textbox', { name: 'Username' });
+    await user.clear(username);
+    await user.type(username, 'ne');
+
+    reply(new Response(JSON.stringify({ membershipStatus: null }), { status: 200 }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    });
+    expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('Check these fields: Username.')).toBeInTheDocument();
   });
 
   it('refuses a branch-scoped role at a branch they aren’t assigned to before Review', async () => {
@@ -227,6 +276,33 @@ describe('InviteUserWizard: the steps', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Access' })).toBeInTheDocument();
   });
 
+  it('focuses the failure Alert when the server refuses a whole list, which has no field to focus', async () => {
+    const user = userEvent.setup({ delay: null });
+    inviteUser.mockResolvedValueOnce({
+      ok: false,
+      formError: 'Check the highlighted fields and try again.',
+      fieldErrors: { roleAssignments: NEEDS_A_ROLE },
+      code: 'validation_failed',
+      requestId: null,
+    });
+    renderWizard();
+    await fillIdentity(user);
+    await next(user, 'Access');
+    await fillAccess(user);
+    await next(user, 'Invitation');
+    await next(user, 'Review');
+
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }));
+
+    await screen.findByRole('heading', { level: 2, name: 'Access' });
+    expect(screen.getByText(NEEDS_A_ROLE)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText('Check the highlighted fields and try again.').closest('[role="alert"]'),
+      ).toHaveFocus();
+    });
+  });
+
   it('returns to a step from the review with its answers kept, and links Cancel to the directory', async () => {
     const user = userEvent.setup({ delay: null });
     renderWizard();
@@ -239,7 +315,10 @@ describe('InviteUserWizard: the steps', () => {
 
     await user.click(screen.getByRole('button', { name: 'Edit identity' }));
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Identity' })).toHaveFocus();
+    await screen.findByRole('heading', { level: 2, name: 'Identity' });
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toHaveFocus();
+    });
     expect(screen.getByRole('textbox', { name: 'Email' })).toHaveValue(EMAIL);
     expect(screen.getByRole('combobox', { name: 'Membership type' })).toHaveTextContent('Staff');
   });

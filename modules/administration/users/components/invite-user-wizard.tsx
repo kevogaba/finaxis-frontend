@@ -66,6 +66,9 @@ function accessFields(values: InviteValues): FieldName[] {
   ];
 }
 
+/** A list has no field to focus: its error is set last, and the failure Alert takes focus. */
+const LIST_ROOTS: readonly FieldName[] = ['branchAssignments', 'roleAssignments'];
+
 /** The step that renders a field: a server field error returns there. */
 function stepOf(name: string): number {
   if ((IDENTITY_FIELDS as readonly string[]).includes(name)) return IDENTITY;
@@ -168,6 +171,7 @@ export function InviteUserWizard({
   const [checking, setChecking] = useState(false);
   const [checkFailure, setCheckFailure] = useState<string | null>(null);
   const failureRef = useRef<HTMLDivElement>(null);
+  const checkRef = useRef<HTMLDivElement>(null);
   const {
     control,
     register,
@@ -218,16 +222,25 @@ export function InviteUserWizard({
   // With no field to take focus, the Alert does, so the failure isn't lost.
   useEffect(() => {
     if (!failure) return;
-    const fields: FieldName[] = [
+    const focusable: FieldName[] = [
       ...IDENTITY_FIELDS,
-      ...accessFields(getValues()),
-      ...INVITATION_FIELDS,
+      ...accessFields(getValues()).filter((name) => !LIST_ROOTS.includes(name)),
     ];
-    applyFieldErrors(setError, failure.fieldErrors, fields);
-    if (!fields.some((name) => failure.fieldErrors[name] !== undefined)) {
+    applyFieldErrors(setError, failure.fieldErrors, [
+      ...focusable,
+      ...LIST_ROOTS,
+      ...INVITATION_FIELDS,
+    ]);
+    if (!focusable.some((name) => failure.fieldErrors[name] !== undefined)) {
       failureRef.current?.focus();
     }
   }, [failure, setError, getValues]);
+
+  // A failed check's Alert takes focus, as a submit failure's does: Continue, the focused control,
+  // is disabled while the check runs, so focus would otherwise fall to the page (L4).
+  useEffect(() => {
+    if (checkFailure) checkRef.current?.focus();
+  }, [checkFailure]);
 
   const goTo = (step: number) => {
     setActive(step);
@@ -257,18 +270,19 @@ export function InviteUserWizard({
   };
 
   const continueFromIdentity = async () => {
+    setCheckFailure(null);
     if (!(await trigger([...IDENTITY_FIELDS], { shouldFocus: true }))) {
       setAttempted(true);
       return;
     }
     setChecking(true);
-    setCheckFailure(null);
     const email = getValues('email');
+    // Every Identity answer as Continue validated it: an answer about values edited meanwhile moves
+    // nothing, and the next Continue validates and checks them again (Ruling 1, rule 8).
+    const validated = JSON.stringify(getValues([...IDENTITY_FIELDS]));
     const outcome = await checkEmail(email);
     setChecking(false);
-    // The answer is about the email that was sent: one edited meanwhile waits for its own Continue,
-    // never continuing unchecked.
-    if (getValues('email') !== email) return;
+    if (JSON.stringify(getValues([...IDENTITY_FIELDS])) !== validated) return;
     if (outcome.kind === 'failed') {
       setCheckFailure(outcome.message);
       return;
@@ -326,7 +340,11 @@ export function InviteUserWizard({
                 {visibleFailure.requestId && ` Reference: ${visibleFailure.requestId}`}
               </Alert>
             )}
-            {checkFailure && <Alert severity="error">{checkFailure}</Alert>}
+            {checkFailure && (
+              <Alert ref={checkRef} tabIndex={-1} severity="error">
+                {checkFailure}
+              </Alert>
+            )}
             {stepErrors.length > 0 && (
               <Alert severity="error">{`Check these fields: ${stepErrors.join(', ')}.`}</Alert>
             )}
