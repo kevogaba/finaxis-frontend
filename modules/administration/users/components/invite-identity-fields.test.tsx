@@ -41,14 +41,22 @@ describe('InviteIdentityFields', () => {
     renderWithProviders(<Harness />);
 
     expect(screen.getByRole('textbox', { name: 'Full name' })).toBeRequired();
-    expect(screen.getByRole('textbox', { name: 'Email' })).toHaveAccessibleDescription(
+    const email = screen.getByRole('textbox', { name: 'Email' });
+    // The no-trim ruling relies on this: an email input strips its surrounding spaces.
+    expect(email).toHaveAttribute('type', 'email');
+    expect(email).toBeRequired();
+    expect(email).toHaveAccessibleDescription(
       "We check it isn't already in use in this institution.",
     );
+    expect(screen.getByRole('textbox', { name: 'Username' })).toBeRequired();
     expect(screen.getByRole('textbox', { name: 'Username' })).toHaveAccessibleDescription(
       'Letters, digits, dots, underscores or hyphens, 3–50 characters.',
     );
     // BG-17: the phone is stored but never readable afterwards.
-    expect(screen.getByRole('textbox', { name: 'Phone' })).toHaveAccessibleDescription(
+    const phone = screen.getByRole('textbox', { name: 'Phone' });
+    expect(phone).toHaveAttribute('type', 'tel');
+    expect(phone).not.toBeRequired(); // Q14: optional
+    expect(phone).toHaveAccessibleDescription(
       "Optional. International format, e.g. +254712000140. It can't be viewed after the invitation is sent.",
     );
     expect(screen.getByRole('combobox', { name: 'Membership type' })).toHaveAccessibleDescription(
@@ -73,7 +81,9 @@ describe('InviteIdentityFields', () => {
     const user = userEvent.setup({ delay: null });
     renderWithProviders(<Harness />);
 
-    await user.click(screen.getByRole('textbox', { name: 'Full name' }));
+    // Typing validates nothing either: a field re-checks only once it already shows an error.
+    const fullName = screen.getByRole('textbox', { name: 'Full name' });
+    await user.type(fullName, 'N');
     await user.tab();
 
     expect(screen.queryByText('Enter a name of at least 2 characters.')).toBeNull();
@@ -89,6 +99,7 @@ describe('InviteIdentityFields', () => {
       expect(username).toHaveAccessibleDescription(
         'Use 3–50 letters, digits, dots, underscores or hyphens.',
       );
+      expect(username).toHaveAttribute('aria-invalid', 'true');
     });
 
     await user.type(username, 'neema.wanjiku');
@@ -96,6 +107,7 @@ describe('InviteIdentityFields', () => {
       expect(username).toHaveAccessibleDescription(
         'Letters, digits, dots, underscores or hyphens, 3–50 characters.',
       );
+      expect(username).toHaveAttribute('aria-invalid', 'false');
     });
   });
 });
