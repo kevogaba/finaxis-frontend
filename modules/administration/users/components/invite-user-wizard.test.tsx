@@ -201,6 +201,28 @@ describe('InviteUserWizard: the steps', () => {
     expect(screen.queryByText(EMAIL_CHECK_FAILED)).toBeNull();
   });
 
+  it('focuses the check’s Alert again when a retried check fails too', async () => {
+    const user = userEvent.setup({ delay: null });
+    fetchMock
+      .mockImplementationOnce(() => answer(502, {}))
+      .mockImplementationOnce(() => answer(502, {}));
+    renderWizard();
+    await fillIdentity(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => {
+      expect(screen.getByText(EMAIL_CHECK_FAILED).closest('[role="alert"]')).toHaveFocus();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.getByText(EMAIL_CHECK_FAILED).closest('[role="alert"]')).toHaveFocus();
+    });
+  });
+
   it('checks an email edited during its check again, never continuing with it unchecked', async () => {
     const user = userEvent.setup({ delay: null });
     let reply: (response: Response) => void = () => undefined;
@@ -252,6 +274,30 @@ describe('InviteUserWizard: the steps', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByText('Check these fields: Username.')).toBeInTheDocument();
+  });
+
+  it('drops an in-use answer about an email edited during its check', async () => {
+    const user = userEvent.setup({ delay: null });
+    let reply: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          reply = resolve;
+        }),
+    );
+    renderWizard();
+    await fillIdentity(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    const email = screen.getByRole('textbox', { name: 'Email' });
+    await user.type(email, 'x');
+
+    reply(new Response(JSON.stringify({ membershipStatus: 'ACTIVE' }), { status: 200 }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    });
+    expect(email).not.toHaveAccessibleDescription(memberEmailMessage('ACTIVE'));
+    expect(screen.queryByText('Check these fields: Email.')).toBeNull();
   });
 
   it('refuses a branch-scoped role at a branch they aren’t assigned to before Review', async () => {
@@ -381,6 +427,9 @@ describe('InviteUserWizard: sending', () => {
     await waitFor(() => {
       expect(scope).toHaveAccessibleDescription('Choose a scope.');
     });
+    await waitFor(() => {
+      expect(scope).toHaveFocus();
+    });
     expect(Object.fromEntries(inviteUser.mock.calls[0]?.[1] as FormData)).toEqual({
       idempotencyKey: expect.stringMatching(UUID_PATTERN) as unknown,
       contextOrganisationId: ORG,
@@ -396,6 +445,11 @@ describe('InviteUserWizard: sending', () => {
       sendApplicationInvite: 'false',
     });
 
+    // The refused row, corrected: the retry sends it under the same key.
+    const role = screen.getByRole('group', { name: 'Role 1' });
+    await choose(user, 'Scope', 'One branch', role);
+    await choose(user, 'Branch', 'Westlands Branch (WESTLANDS)', role);
+
     await next(user, 'Invitation');
     await next(user, 'Review');
     await user.click(screen.getByRole('button', { name: 'Send invitation' }));
@@ -407,12 +461,22 @@ describe('InviteUserWizard: sending', () => {
     });
     const [first, second] = inviteUser.mock.calls.map((call) => call[1] as FormData);
     // One key per wizard: the retry replays safely (spec §6.4).
-    expect(second?.get('idempotencyKey')).toBe(first?.get('idempotencyKey'));
+    expect(second?.getAll('idempotencyKey')).toEqual([first?.get('idempotencyKey')]);
+    expect(second?.get('roleAssignments')).toBe(
+      JSON.stringify([{ roleId: TELLER, scopeType: 'BRANCH', branchId: WESTLANDS }]),
+    );
   });
 
   it('shows a safe message, never the error text, when the action itself rejects', async () => {
     const user = userEvent.setup({ delay: null });
     inviteUser.mockRejectedValueOnce(new Error('socket hang up'));
+    let fail: (error: Error) => void = () => undefined;
+    inviteUser.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
     renderWizard();
     await fillIdentity(user);
     await next(user, 'Access');
@@ -426,6 +490,25 @@ describe('InviteUserWizard: sending', () => {
     );
     await waitFor(() => {
       expect(alert).toHaveFocus();
+    });
+    expect(screen.queryByText(/socket hang up/)).toBeNull();
+
+    // A resend in flight: no second send, the stale Alert hidden, nothing moves the wizard under it.
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Send invitation' })).toBeDisabled();
+    });
+    for (const edit of screen.getAllByRole('button', { name: /^Edit / })) {
+      expect(edit).toBeDisabled();
+    }
+    expect(screen.queryByText(/We couldn't confirm this change/)).toBeNull();
+    fail(new Error('socket hang up'));
+
+    const resent = (await screen.findByText(/We couldn't confirm this change/)).closest(
+      '[role="alert"]',
+    );
+    await waitFor(() => {
+      expect(resent).toHaveFocus();
     });
     expect(screen.queryByText(/socket hang up/)).toBeNull();
   });
