@@ -120,12 +120,18 @@ describe('InviteUserPage', () => {
     ]);
   });
 
-  it('tells the wizard when either list stops at 100', async () => {
-    listRoles.mockResolvedValue(page([ROLE], true));
-    listBranches.mockResolvedValue(page([BRANCH], true));
-    renderWithProviders(await InviteUserPage());
-    expect(wizards[0]).toMatchObject({ rolesCapped: true, branchesCapped: true });
-  });
+  it.each([
+    [true, false],
+    [false, true],
+  ])(
+    'tells the wizard when either list stops at 100 (roles %s, branches %s)',
+    async (rolesCapped, branchesCapped) => {
+      listRoles.mockResolvedValue(page([ROLE], rolesCapped));
+      listBranches.mockResolvedValue(page([BRANCH], branchesCapped));
+      renderWithProviders(await InviteUserPage());
+      expect(wizards[0]).toMatchObject({ rolesCapped, branchesCapped });
+    },
+  );
 
   it.each(INVITE_CODES)('says why, and reads nothing, without %s (Ruling 4)', async (missing) => {
     getCurrentContextProfile.mockResolvedValue(
@@ -162,12 +168,25 @@ describe('InviteUserPage', () => {
   });
 
   it.each([
-    [new BackendApiError(401), '/login?reason=session_expired'],
-    [new BackendApiError(403, { code: 'invalid_active_tenant_context' }), '/select-context'],
-  ])('redirects a lost session or a stale context (%s)', async (error, to) => {
-    listBranches.mockRejectedValueOnce(error);
-    await expect(InviteUserPage()).rejects.toThrow(`NEXT_REDIRECT:${to}`);
-  });
+    ['roles', new BackendApiError(401), '/login?reason=session_expired'],
+    [
+      'roles',
+      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
+      '/select-context',
+    ],
+    ['branches', new BackendApiError(401), '/login?reason=session_expired'],
+    [
+      'branches',
+      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
+      '/select-context',
+    ],
+  ] as const)(
+    'redirects a lost session or a stale context from the %s read (%s)',
+    async (read, error, to) => {
+      (read === 'roles' ? listRoles : listBranches).mockRejectedValueOnce(error);
+      await expect(InviteUserPage()).rejects.toThrow(`NEXT_REDIRECT:${to}`);
+    },
+  );
 
   it('points to Roles when no role is active, instead of a wizard that cannot finish', async () => {
     listRoles.mockResolvedValue(page([]));
