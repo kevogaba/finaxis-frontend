@@ -152,7 +152,7 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
     const created = await invite({
       ...BODY,
       email: TEXT.rehemaEmail.toUpperCase(),
-      username: 'someone.else',
+      username: TEXT.takenUsername,
       display_name: 'Someone Else',
     });
     expect(created.status()).toBe(201);
@@ -293,7 +293,8 @@ test.describe("fake API invitations: the backend's rules (BG-07)", () => {
     });
     const failures: Record<string, unknown>[] = [
       { ...BODY, role_assignments: [] },
-      { ...BODY, branch_assignments: [], primary_branch_id: null },
+      // Westlands stays the primary branch, so only the need-a-branch rule fails (BG-07).
+      { ...BODY, branch_assignments: [] },
       { ...BODY, membership_type: 'ADMIN', branch_assignments: [], primary_branch_id: null },
       { ...BODY, role_assignments: [{ role_id: USERS.loansOfficer, scope_type: 'TENANT' }] },
       { ...BODY, branch_assignments: [{ branch_id: INVITE.kisumu, assignment_type: 'HOME' }] },
@@ -306,8 +307,11 @@ test.describe("fake API invitations: the backend's rules (BG-07)", () => {
       },
       branchRole(null),
       branchRole(IDS.headOffice),
-      // Existing memberships here, in any status (BG-28): Esther is ACTIVE, Hassan REVOKED.
+      // Existing memberships here, in any status (BG-28): Esther is ACTIVE, Amina pending,
+      // Gladys SUSPENDED, Hassan REVOKED.
       { ...BODY, email: 'esther.njoki@greenfield.example' },
+      { ...BODY, email: 'amina.odhiambo@greenfield.example' },
+      { ...BODY, email: 'gladys.chebet@greenfield.example' },
       { ...BODY, email: 'Hassan.Ali@greenfield.example' },
       // A username another account holds, with a new email.
       { ...BODY, username: TEXT.takenUsername },
@@ -321,7 +325,7 @@ test.describe("fake API invitations: the backend's rules (BG-07)", () => {
     expect(users.page.total_items).toBe(1);
   });
 
-  test('lets an auditor in with no branch', async ({ request }) => {
+  test('lets an auditor or a system member in with no branch', async ({ request }) => {
     const { invite } = await signIn(request);
     const created = await invite({
       ...BODY,
@@ -330,5 +334,15 @@ test.describe("fake API invitations: the backend's rules (BG-07)", () => {
       primary_branch_id: null,
     });
     expect(created.status()).toBe(201);
+    // A fresh identity: the auditor's email is now a member here (BG-28).
+    const system = await invite({
+      ...BODY,
+      email: 'neema.system@greenfield.example',
+      username: 'neema.system',
+      membership_type: 'SYSTEM',
+      branch_assignments: [],
+      primary_branch_id: null,
+    });
+    expect(system.status()).toBe(201);
   });
 });
