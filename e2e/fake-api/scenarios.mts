@@ -1639,6 +1639,162 @@ function usersInviteScenario(): RunState {
   };
 }
 
+/** Layer 14 seed IDs (lane rules §5): users …a*, memberships …b*, branches …c*, the audit event
+ * …f1. Every tail holds a letter, so an upper-cased id differs from the seed. */
+export const OVERVIEW_SCENARIO_IDS = {
+  halima: '14000000-0000-4000-8000-0000000000a1',
+  nyokabi: '14000000-0000-4000-8000-0000000000a2',
+  baraka: '14000000-0000-4000-8000-0000000000a3',
+  wanjiku: '14000000-0000-4000-8000-0000000000a4',
+  peter: '14000000-0000-4000-8000-0000000000a5',
+  halimaMembership: '14000000-0000-4000-8000-0000000000b1',
+  nyokabiMembership: '14000000-0000-4000-8000-0000000000b2',
+  barakaMembership: '14000000-0000-4000-8000-0000000000b3',
+  wanjikuMembership: '14000000-0000-4000-8000-0000000000b4',
+  peterMembership: '14000000-0000-4000-8000-0000000000b5',
+  kakamega: '14000000-0000-4000-8000-0000000000c1',
+  nyeri: '14000000-0000-4000-8000-0000000000c2',
+  malindi: '14000000-0000-4000-8000-0000000000c3',
+  welcomeEvent: '14000000-0000-4000-8000-0000000000f1',
+} as const;
+
+/** The overflow seeds: a 100-character name (contract §D maximum), an unbreakable 78-character
+ * email, and a 100-character branch name. */
+export const OVERVIEW_SCENARIO_TEXT = {
+  longName:
+    'Nyokabi Wairimu Kamau-Achieng Muthoni Njeri Cheru Jepkoech Nyambura Akinyi Atieno Wanjiru Mwangi Ayo',
+  longEmail: 'nyokabi.wairimu.kamau.achieng.muthoni.njeri.chebet@greenfieldsaccotell.example',
+  longBranch:
+    'Malindi, Watamu and Kilifi Creek Coastal Customer Service Centres for the Fishers and Allied Workers',
+} as const;
+
+/** `default` with both decision codes on Jane's role, and a system event newer than every seed, so
+ * the activity card's first row reads "System". */
+function overviewBase(): RunState {
+  const state = greenfieldTenant();
+  return {
+    ...state,
+    roles: state.roles.map((candidate) =>
+      candidate.id === IDS.tenantAdminRole
+        ? {
+            ...candidate,
+            permissions: [...candidate.permissions, 'user.approve', 'branch.activate'],
+          }
+        : candidate,
+    ),
+    auditEvents: [
+      ...state.auditEvents,
+      {
+        id: OVERVIEW_SCENARIO_IDS.welcomeEvent,
+        organisationId: IDS.greenfield,
+        occurredAt: '2026-09-08T06:00:00Z',
+        actorUserId: null,
+        actorType: 'SYSTEM',
+        branchId: null,
+        entityType: 'USER',
+        entityId: IDS.jane,
+        action: 'user.welcome_email',
+        outcome: 'SUCCESS',
+        severity: 'INFO',
+        reason: null,
+        beforeJson: null,
+        afterJson: null,
+        metadataJson: '{}',
+      },
+    ],
+  };
+}
+
+/** Layer 14, `overview-ready`: Peter is the second active member, so every readiness item is met
+ * (settings set, two active branches and none pending, the date open) and nothing waits. */
+function overviewReadyScenario(): RunState {
+  const state = overviewBase();
+  const ids = OVERVIEW_SCENARIO_IDS;
+  return {
+    ...state,
+    users: [
+      ...state.users,
+      {
+        id: ids.peter,
+        username: 'peter.mwangi',
+        email: 'peter.mwangi@greenfield.example',
+        displayName: 'Peter Mwangi',
+        status: 'ACTIVE',
+        keycloakSubject: 'e2e-peter.mwangi',
+      },
+    ],
+    memberships: [
+      ...state.memberships,
+      { ...membership(ids.peterMembership, IDS.greenfield, ids.peter), type: 'STAFF' },
+    ],
+  };
+}
+
+/**
+ * Layer 14, `overview-attention`: every readiness item needs attention. Four memberships wait
+ * (newest first: Wanjiku, Baraka, whose identity is provisioning, Nyokabi, with the long name and
+ * email, then Halima), three branches wait for activation (newest first: Malindi, with the long
+ * name, Nyeri, then Kakamega past the five-row preview), Jane is the only active member, neither
+ * catalogue key is set, and the business date is closed.
+ */
+function overviewAttentionScenario(): RunState {
+  const state = overviewBase();
+  const ids = OVERVIEW_SCENARIO_IDS;
+  const person = (
+    id: string,
+    username: string,
+    displayName: string,
+    status: string,
+    email = `${username}@greenfield.example`,
+  ): FakeUser => ({ id, username, email, displayName, status, keycloakSubject: `e2e-${username}` });
+  const pending = (id: string, userId: string): FakeMembership => ({
+    ...membership(id, IDS.greenfield, userId),
+    type: 'STAFF',
+    status: 'PENDING_APPROVAL',
+  });
+  const submitted = (id: string, code: string, name: string, createdAt: string): FakeBranch => ({
+    ...branch(id, IDS.greenfield, code, name, 'OPERATIONS'),
+    status: 'PENDING_APPROVAL',
+    parentBranchId: IDS.headOffice,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  return {
+    ...state,
+    // The fake lists users newest first as reverse seed order.
+    users: [
+      ...state.users,
+      person(ids.halima, 'halima.odhiambo', 'Halima Odhiambo', 'DRAFT'),
+      person(
+        ids.nyokabi,
+        'nyokabi.long',
+        OVERVIEW_SCENARIO_TEXT.longName,
+        'DRAFT',
+        OVERVIEW_SCENARIO_TEXT.longEmail,
+      ),
+      person(ids.baraka, 'baraka.otieno', 'Baraka Otieno', 'PROVISIONING_IDP'),
+      person(ids.wanjiku, 'wanjiku.kariuki', 'Wanjiku Kariuki', 'DRAFT'),
+    ],
+    memberships: [
+      ...state.memberships,
+      pending(ids.halimaMembership, ids.halima),
+      pending(ids.nyokabiMembership, ids.nyokabi),
+      pending(ids.barakaMembership, ids.baraka),
+      pending(ids.wanjikuMembership, ids.wanjiku),
+    ],
+    branches: [
+      ...state.branches,
+      submitted(ids.kakamega, 'KAKAMEGA', 'Kakamega Branch', '2026-09-14T08:00:00Z'),
+      submitted(ids.nyeri, 'NYERI', 'Nyeri Branch', '2026-09-15T08:00:00Z'),
+      submitted(ids.malindi, 'MALINDI', OVERVIEW_SCENARIO_TEXT.longBranch, '2026-09-16T08:00:00Z'),
+    ],
+    tenantSettings: state.tenantSettings.filter(
+      (row) => row.key !== 'default_timezone' && row.key !== 'base_currency',
+    ),
+    businessDates: state.businessDates.map((row) => ({ ...row, status: 'CLOSED' as const })),
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -1798,6 +1954,20 @@ const BUILDERS = {
   // with a branch is refused, and the wizard isn't offered). `users` itself has no user.invite.
   'users-invite': usersInviteScenario,
   'users-invite-limited': () => withoutPermission(usersInviteScenario(), 'user.assign_branch'),
+  // Layer 14 (overview). `overview-limited` is the attention data without the business date, audit,
+  // membership and settings reads and without user.approve: two cards are omitted, the approvals card
+  // lists branches only, and three readiness items can't be checked.
+  'overview-ready': overviewReadyScenario,
+  'overview-attention': overviewAttentionScenario,
+  'overview-limited': () =>
+    withoutPermission(
+      overviewAttentionScenario(),
+      'business_date.view',
+      'audit.view',
+      'membership.view',
+      'settings.view',
+      'user.approve',
+    ),
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */
