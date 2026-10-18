@@ -403,10 +403,12 @@ test.describe('users invite: sending', () => {
 
   // WCAG 2.4.11: the wizard's sticky action bar (and the shell's app bar, going backwards) must not
   // cover the control that has keyboard focus. axe can't see this; the Access step is the longest
-  // form here, so it is walked with three rows of each.
+  // form here, so it is walked with three rows of each. At 360 px the Review bar's buttons wrap to two
+  // rows in every browser (the bar is 114 px tall), the layout CI saw at 375 px on the headless shell.
   for (const viewport of [
     { label: 'desktop', width: 1440, height: 900 },
     { label: '375px', width: 375, height: 812 },
+    { label: '360px', width: 360, height: 740 },
   ]) {
     test(`keeps keyboard focus clear of the sticky bars on Access and Review (${viewport.label})`, async ({
       context,
