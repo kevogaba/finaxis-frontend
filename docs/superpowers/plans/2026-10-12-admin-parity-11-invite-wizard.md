@@ -7234,6 +7234,16 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 
 **Gate:** the hook's `pnpm check`.
 
+**Erratum (f3c4082, `fix(wizard): keep the action bar's scroll clearance above its wrapped height`;
+ba3cbe7, `test(users): pin the invite wizard's focus clearance at 360 px`):** the plan's 96 px of page
+scroll padding (the Global Constraints' `WizardForm` line and step 3's keyboard walk below) held only
+while the action bar stayed on one row. CI's `chrome-headless-shell` wraps the Review bar at 375 px
+(114 px tall, not 70) and a focused "Edit invitation" sat 15.7 px under it; below about 370 px the
+bar wraps in every browser. `ACTION_BAR_CLEARANCE` in `components/data-display/wizard-form.tsx` is
+now 140 px (the wrapped bar plus the same 26 px gap), with a unit test: an exception to "no change to
+`WizardForm`" (ruling 18), and the keyboard test also walks 360 px. A local e2e run needs the
+browser CI uses (the headless shell) to see the 375 px case.
+
 ## Layer gate (the controller's; not a task)
 
 1. **Static and unit:** `pnpm check` (format, lint, `tsc`, the full Vitest run) and `pnpm build` on
