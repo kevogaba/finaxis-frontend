@@ -130,4 +130,22 @@ test.describe('fake API: the overview scenarios (layer 14)', () => {
     expect((await get('/tenant/business-date')).status()).toBe(403);
     expect((await get('/tenant/memberships?membership_status=ACTIVE&size=1')).status()).toBe(403);
   });
+
+  test('overview-branch-scoped: branch codes held at Head Office only, so the branch reads are refused', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'overview-branch-scoped', IDS.headOffice);
+    const get = (path: string) => request.get(api(path), { headers });
+    const me = await read<{ permissions: string[] }>(await get('/auth/me'));
+    expect(me.permissions).toEqual(expect.arrayContaining(['branch.view', 'branch.activate']));
+    expect((await get('/branches?status=ACTIVE&size=1')).status()).toBe(403);
+    expect(
+      (
+        await get('/branches?status=PENDING_APPROVAL&sort_by=createdAt&sort_dir=DESC&page=0&size=5')
+      ).status(),
+    ).toBe(403);
+    expect(
+      (await get('/tenant/users?membership_status=PENDING_APPROVAL&page=0&size=5')).status(),
+    ).toBe(200);
+  });
 });

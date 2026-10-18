@@ -1639,8 +1639,9 @@ function usersInviteScenario(): RunState {
   };
 }
 
-/** Layer 14 seed IDs (lane rules §5): users …a*, memberships …b*, branches …c*, the audit event
- * …f1. Every tail holds a letter, so an upper-cased id differs from the seed. */
+/** Layer 14 seed IDs (lane rules §5): users …a*, memberships …b*, branches …c*, the branch
+ * reviewer role …d1 and its grant …e1, the audit event …f1. Every tail holds a letter, so an
+ * upper-cased id differs from the seed. */
 export const OVERVIEW_SCENARIO_IDS = {
   halima: '14000000-0000-4000-8000-0000000000a1',
   nyokabi: '14000000-0000-4000-8000-0000000000a2',
@@ -1655,6 +1656,8 @@ export const OVERVIEW_SCENARIO_IDS = {
   kakamega: '14000000-0000-4000-8000-0000000000c1',
   nyeri: '14000000-0000-4000-8000-0000000000c2',
   malindi: '14000000-0000-4000-8000-0000000000c3',
+  branchReviewerRole: '14000000-0000-4000-8000-0000000000d1',
+  branchReviewerGrant: '14000000-0000-4000-8000-0000000000e1',
   welcomeEvent: '14000000-0000-4000-8000-0000000000f1',
 } as const;
 
@@ -1792,6 +1795,43 @@ function overviewAttentionScenario(): RunState {
       (row) => row.key !== 'default_timezone' && row.key !== 'base_currency',
     ),
     businessDates: state.businessDates.map((row) => ({ ...row, status: 'CLOSED' as const })),
+  };
+}
+
+/**
+ * Layer 14, `overview-branch-scoped` (BG-33): the attention data, with Jane's branch codes on a
+ * BRANCH grant at Head Office instead of her tenant role. With Head Office selected, `/auth/me`
+ * lists `branch.view` and `branch.activate`, but the branch reads need them at tenant scope, so
+ * each answers 403: the Branches item and the approvals card's branch read fail on their own.
+ */
+function overviewBranchScopedScenario(): RunState {
+  const state = withoutPermission(overviewAttentionScenario(), 'branch.view', 'branch.activate');
+  const ids = OVERVIEW_SCENARIO_IDS;
+  return {
+    ...state,
+    roles: [
+      ...state.roles,
+      {
+        ...role(ids.branchReviewerRole, IDS.greenfield, 'BRANCH_REVIEWER', 'Branch reviewer', [
+          'branch.view',
+          'branch.activate',
+        ]),
+        systemRole: false,
+      },
+    ],
+    roleAssignments: [
+      ...state.roleAssignments,
+      {
+        ...tenantRoleAssignment(
+          ids.branchReviewerGrant,
+          IDS.greenfield,
+          IDS.jane,
+          ids.branchReviewerRole,
+        ),
+        scopeType: 'BRANCH',
+        branchId: IDS.headOffice,
+      },
+    ],
   };
 }
 
@@ -1968,6 +2008,7 @@ const BUILDERS = {
       'settings.view',
       'user.approve',
     ),
+  'overview-branch-scoped': overviewBranchScopedScenario,
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */
