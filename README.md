@@ -88,12 +88,12 @@ honours a dotted `color`.
   have running first — otherwise the suite runs against whatever is already there. Tests that need
   a signed-in session call `authenticate(context, testInfo, scenario)` from
   `e2e/support/auth.ts`, which gives each test its own scenario-seeded fake backend; unauthenticated and fake-API smoke specs don't.
-  The e2e helper `clickMuiOption` (same file) waits for a MUI menu's open animation to finish
-  before it clicks an option; other specs' raw option clicks are still to be moved to it.
   The fake mirrors the real API's wire behaviour (snake_case, problem+json, context tokens, permissions — see
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`). Run it alone with
   `pnpm fake-api`. Chromium is the required project; install it once with
   `pnpm exec playwright install chromium`. This suite never talks to a real Keycloak or backend.
+  The e2e helper `clickMuiOption` (same file) clicks an option in a single-choice MUI menu once the
+  menu has finished growing in, then waits for it to close.
 - **Real-Keycloak smoke test**: `pnpm test:e2e:keycloak` (`e2e/keycloak-smoke.spec.ts`,
   `playwright.keycloak.config.ts`). A separate, manually invoked test that requires a live local
   Keycloak + Postgres (e.g. `docker compose up -d postgres keycloak` in the platform repo) and
@@ -480,9 +480,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   The Audit tab offers up to four views: User record, Account, Membership (once the membership
   is found) and Performed by. "Invite user" (`/admin/users/new`) is a four-step wizard
   (Identity, Access, Invitation, Review), open to a holder of `user.invite`, `user.assign_branch`,
-  `user.view`, `role.view` and `branch.view`; it posts one invitation and opens the new user's
-  record (the directory when the reply has no readable id), which waits for a different
-  administrator's approval. Known limits:
+  `user.view`, `role.view` and `branch.view`; it posts one invitation, which a different
+  administrator must approve, and opens the new user's record (or the directory when the reply has
+  no readable id). Known limits:
   - The directory shows only what user summaries carry, and the onboarding state is derived
     from the membership and user statuses (`docs/backend-gaps.md` BG-09, BG-11).
   - A user's membership is found by searching memberships for their email (at most 5 pages of
@@ -526,8 +526,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     idempotency key replays (BG-07). An account in another institution can't be seen: its email is
     reused with its own name, username and phone, which the Review step says, and a username it
     holds fails as a 500 named by its likely causes.
-  - The invitation flags keep the contract's defaults; whether the emails go out depends on the
-    platform (BG-25). The phone can't be viewed afterwards (BG-17). Nothing is kept across a
+  - The Invitation step starts from the contract's flag defaults (identity-provider invitation on,
+    application invitation off), and either can be changed; whether the emails go out depends on
+    the platform (BG-25). The phone can't be viewed afterwards (BG-17). Nothing is kept across a
     reload.
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) manages SACCO institutions through

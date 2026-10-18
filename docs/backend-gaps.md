@@ -356,10 +356,11 @@ bootstrap admin's job.
 
 Keycloak admin provisioning and outbound email are disabled by default; with email off, invite and
 welcome emails fail permanently (audited, no state change). The Keycloak execute-actions email sends
-`VERIFY_EMAIL` only — no `UPDATE_PASSWORD`, lifespan, or redirect. The invite wizard keeps the
-contract's defaults (identity-provider invitation on, application invitation off) and says that
-delivery depends on the platform and a failed delivery isn't shown. Suggested: include
-`UPDATE_PASSWORD` and a redirect to the app, and surface delivery failures (see BG-11).
+`VERIFY_EMAIL` only — no `UPDATE_PASSWORD`, lifespan, or redirect. The invite wizard offers both
+flags, starting from the contract's defaults (identity-provider invitation on, application
+invitation off), and says that delivery depends on the platform and a failed delivery isn't shown.
+Suggested: include `UPDATE_PASSWORD` and a redirect to the app, and surface delivery failures
+(see BG-11).
 
 ### BG-26 — Sort parameters · P2
 

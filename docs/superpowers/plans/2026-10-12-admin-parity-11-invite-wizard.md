@@ -3100,6 +3100,12 @@ describe('InviteInvitationFields', () => {
 });
 ```
 
+**Erratum (7aa5a38, `test(users): pin the Identity step's input types and its re-check rule`):** the
+Email input is `type="email"` and required, Phone is `type="tel"` and optional, and Username is
+required; Username's `aria-invalid` follows its error (true on the refusal, false after the fix).
+The re-check test types into Full name instead of clicking it, since a keystroke into a field with
+no error validates nothing.
+
 - [ ] **Step 2: Run** — form U on both test files: FAIL (the two components don't resolve).
 
 - [ ] **Step 3: Implement** — `invite-identity-fields.tsx`:
@@ -3888,6 +3894,16 @@ describe('InviteUserWizard: the steps', () => {
 });
 ```
 
+**Erratum (6096b73, `fix(users): keep the Identity step whole while its email is checked`), tests:**
+the "returns to a step from the review with its answers kept" test waits for the Identity heading's
+focus in its own `waitFor`, and three tests join "the steps": a stale check failure clears once Continue refuses an
+emptied email; an answer changed during the check keeps the wizard on Identity; and a whole-list
+refusal focuses the failure Alert.
+
+**Erratum (d6f3594, `test(users): close the wizard's remaining test gaps`), tests:** two more of
+"the steps": a retried email check that fails again focuses its Alert again, and an in-use answer
+about an email edited during its check is dropped (no "Check these fields: Email.").
+
 - [ ] **Step 2: Run** — form U on the test file: FAIL (`./invite-user-wizard` doesn't resolve).
 
 - [ ] **Step 3: Implement** — `invite-user-wizard.tsx`:
@@ -4261,6 +4277,13 @@ export function InviteUserWizard({
 }
 ```
 
+**Erratum (6096b73, `fix(users): keep the Identity step whole while its email is checked`):** the
+Identity step is snapshotted around the check. `continueFromIdentity` clears `checkFailure` first
+and returns when any Identity answer changed (`JSON.stringify(getValues([...IDENTITY_FIELDS]))`),
+so the `getValues('email') !== email` guard that the mutation proof below names is now that
+comparison. A failed check's Alert takes focus (`checkRef`), and the failure effect sets the list
+roots last (`LIST_ROOTS`).
+
 - [ ] **Step 4: Run** — form U: PASS. Mutation proofs (each must fail the named test; revert after
       each): replace the email check in `continueFromIdentity` with `goTo(ACCESS)` straight after
       the `trigger` ("keeps an email already in use on Identity, says why, and clears it once
@@ -4402,6 +4425,12 @@ describe('InviteUserWizard: sending', () => {
   });
 });
 ```
+
+**Erratum (d6f3594, `test(users): close the wizard's remaining test gaps`):** the first test waits
+for the refused row's Scope to take focus, then corrects that row (One branch, Westlands) before the
+retry; its key pin is `getAll('idempotencyKey')` equal to the first key, plus the corrected
+`roleAssignments`. The rejection test first holds a resend in flight: Send and the Edit buttons are
+disabled, the stale Alert is hidden, and the second rejection focuses a new Alert.
 
 - [ ] **Step 2: Run** — form U: PASS (Task 4d's code already sends; these tests pin it). Mutation
       proofs (each must fail the named test; revert after each): mint the key per submit
@@ -4646,6 +4675,11 @@ describe('InviteUserPage', () => {
   });
 });
 ```
+
+**Erratum (fb6d2fa, `test(users): pin each option list's cap and each read's redirect on the invite
+page`):** the cap test caps one list at a time (`it.each` over roles and branches, asserting the
+wizard gets exactly that flag), and the redirect cases run against the roles read as well as the
+branches read.
 
 - [ ] **Step 2: Run** — form U on the test file: FAIL (`./page` doesn't resolve).
 
@@ -4904,6 +4938,11 @@ describe('UsersPage: the Invite user entry (Ruling 4)', () => {
   });
 });
 ```
+
+**Erratum (ef6ecd3, `test(users): pin the directory page's profile read and its heading`):** the
+unresolved-context test also asserts the page's h1 (`Users & access`), and a new test rejects
+`UsersPage` when `getCurrentContextProfile` rejects, so the error boundary sees it. The page is
+unchanged.
 
 - [ ] **Step 2: Run** — form U on the test file: FAIL (the two cases that expect a link named
       "Invite user"; the cases without it pass already).
@@ -5570,6 +5609,19 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
 });
 ```
 
+**Erratum (c038090, `test(fake-api): accept invitations as the backend binds and checks them`):**
+the seed test also asserts that Kisumu belongs to Greenfield and is `PENDING_APPROVAL`, and that
+neither outside account has a membership in Greenfield. The route is the plan's.
+
+**Erratum (aff15ae, `test(fake-api): refuse invitations the backend answers with a 500`):**
+the roles assertion also pins `branch_id: null` and `status: 'ACTIVE'`, and the replay test reads
+`neema.wanjiku` back through `GET /tenant/users` and expects one row, so a replay and a refused key
+reuse write nothing.
+
+**Erratum (a35c09a, `test(fake-api): pin the invite rules the review found unpinned`), reused
+account:** the test enters `TEXT.takenUsername` as the username, not `'someone.else'`, so a reused
+account is refused when its username is taken.
+
 - [ ] **Step 2: Run** — form E on the spec: FAIL (every route test: `POST /api/v1/tenant/users` is a
       404 `resource_not_found`); the two seed tests pass.
 
@@ -5921,6 +5973,12 @@ test.describe("fake API invitations: the backend's rules (BG-07)", () => {
   });
 });
 ```
+
+**Erratum (a35c09a, `test(fake-api): pin the invite rules the review found unpinned`):** the
+need-a-branch case keeps Westlands as the primary branch (`{ ...BODY, branch_assignments: [] }`), so
+only that rule fails; the BG-28 cases add a pending member (Amina) and a suspended one (Gladys); and
+the auditor test becomes "lets an auditor or a system member in with no branch", which also invites
+a SYSTEM member with no branch.
 
 - [ ] **Step 2: Run** — form E on the spec: FAIL ("answers each invite rule failure with a 500,
       storing nothing (BG-07)": the first body is accepted with a 201); "lets an auditor in with no
@@ -6648,6 +6706,26 @@ test.describe('users invite: sending', () => {
 });
 ```
 
+**Erratum (30c2c91, `test(e2e): cover the invite wizard end to end`; 58fa995, `test(e2e): prove the
+bell refresh and bound only the first hits on the invite wizard`):** the waits for a route's first
+hit are `FIRST_HIT` (45 s), not the plan's 15 s, and 58fa995 narrowed them to the first hits: the
+directory's link to the wizard, the forbidden gate's first load, the Identity-to-Access steps (their
+`next(page, step, timeout)` takes FIRST_HIT from the caller) and the first email description. The
+shell's bell is asserted at 3 approvals before a send and at 4 once the new member's record opens
+(`bell(page, count)`), which proves the `refresh()` before the redirect in a browser.
+
+**Erratum (d865a0c, `test(e2e): bound every first hit of the invite wizard's matrix and record
+visits`):** each test's first visit to the wizard opens through `enterFirstHit`, which runs
+`enterAdmin`'s steps with FIRST_HIT bounds, and the three waits for the record a send opens
+(`toHaveURL(RECORD)`) take FIRST_HIT.
+
+**Erratum (280f4b4, `test(e2e): click MUI options only after their menu stops growing in`; 1745353,
+`test(e2e): bound clickMuiOption's waits and correct its notes`):** `choose()` clicks through
+`clickMuiOption` and asserts the combobox shows the choice. `clickMuiOption` is new in
+`e2e/support/auth.ts` (`selectMuiOption` uses it too), an exception to "Files 11 never touches"
+(line 225), which names `e2e/support/*`. It waits at most 5 s for the running animations, and a
+failure names the menu and the option.
+
 - [ ] **Step 2: Run** — form E with `--grep "users invite: (entry|sending)"`: PASS (ten tests; the
       code under test is Tasks 1–6). Mutation proof: in `invite-user-wizard.tsx` replace the email
       check in `continueFromIdentity` with `goTo(ACCESS)`; the test "keeps an email already in use
@@ -6832,6 +6910,11 @@ test.describe('users invite: accessibility', () => {
   }
 });
 ```
+
+**Erratum (d865a0c, `test(e2e): bound every first hit of the invite wizard's matrix and record
+visits`):** each surface's first visit opens through `enterFirstHit` (FIRST_HIT bounds) instead of
+`enterAdmin`, and the matrix's Identity-to-Access steps and its email-in-use wait take FIRST_HIT
+(the first hits, see Task 7a).
 
 - [ ] **Step 2: Run** — form E, the two accessibility chunks: PASS (sixteen each); then the
       behaviour chunk again: PASS.
