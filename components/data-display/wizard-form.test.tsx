@@ -113,4 +113,14 @@ describe('WizardForm', () => {
     expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
     expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute('aria-disabled', 'true');
   });
+
+  it('keeps the page scroll padding at the action bar wrapped height while mounted, then releases it', () => {
+    const { unmount } = renderWithProviders(wizard(0));
+
+    // 140 px: the bar's two-row height on a narrow viewport (114 px) plus a 26 px gap.
+    expect(getComputedStyle(document.documentElement).scrollPaddingBottom).toBe('140px');
+    unmount();
+    // Released: the CSS initial value again.
+    expect(getComputedStyle(document.documentElement).scrollPaddingBottom).toBe('auto');
+  });
 });
