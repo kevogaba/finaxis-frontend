@@ -105,6 +105,23 @@ async function sendInvitation(page: Page) {
   await page.getByRole('button', { name: 'Send invitation' }).click();
 }
 
+/** Whether the page is wider than its viewport, i.e. scrolls sideways. */
+const scrollsSideways = (page: Page) =>
+  page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+
+/** An element's box, in CSS pixels, for the gaps between controls. */
+async function boxOf(locator: Locator) {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('The element is not rendered, so it has no box.');
+  return box;
+}
+
+/** A select's label box: MUI names the select by its label's id, the first id in `aria-labelledby`. */
+async function labelBox(page: Page, select: Locator) {
+  const [labelId] = ((await select.getAttribute('aria-labelledby')) ?? '').split(' ');
+  return boxOf(page.locator(`[id="${labelId}"]`));
+}
+
 /** The shell's bell, once its count streamed in: its name carries the approvals waiting. */
 const bell = (page: Page, count: number) =>
   page
@@ -412,6 +429,67 @@ test.describe('users invite: sending', () => {
       await expectFocusStopsClearTheBars(page, 'Review', 3);
     });
   }
+
+  // The Access rows at two widths. At 1280 px each role's Scope value shows whole beside its Role;
+  // at 375 px each row's Remove sits further from the next row's first label than two fields of one
+  // row sit apart, so the rows read as rows (both sections use the same layout).
+  test('keeps the Access rows readable (1280 px, 375 px)', async ({ context, page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await authenticate(context, testInfo, 'users-invite');
+    await openWizard(page);
+    await fillIdentity(page);
+    await next(page, 'Access', FIRST_HIT);
+    for (const add of ['Add branch', 'Add branch', 'Add role', 'Add role']) {
+      await page.getByRole('button', { name: add }).click();
+    }
+    await expect(group(page, 'Branch assignment 3')).toBeVisible();
+    await expect(group(page, 'Role 3')).toBeVisible();
+
+    for (let index = 1; index <= 3; index++) {
+      const scope = group(page, `Role ${index}`).getByRole('combobox', {
+        name: 'Scope',
+        exact: true,
+      });
+      await expect(scope).toHaveText('Institution (all branches)');
+      expect(
+        await scope.evaluate((element) => element.scrollWidth <= element.clientWidth),
+        `Role ${index}'s Scope value is cut`,
+      ).toBe(true);
+    }
+    expect(await scrollsSideways(page)).toBe(false);
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    expect(await scrollsSideways(page)).toBe(false);
+    for (const section of [
+      {
+        row: 'Branch assignment',
+        first: 'Branch',
+        second: 'Assignment type',
+        remove: 'Remove branch assignment',
+      },
+      { row: 'Role', first: 'Role', second: 'Scope', remove: 'Remove role' },
+    ]) {
+      const row1 = group(page, `${section.row} 1`);
+      const row2 = group(page, `${section.row} 2`);
+      // Two fields of row 1: its first field's box to the second field's label.
+      const firstField = await boxOf(
+        row1.getByRole('combobox', { name: section.first, exact: true }),
+      );
+      const secondLabel = await labelBox(
+        page,
+        row1.getByRole('combobox', { name: section.second, exact: true }),
+      );
+      const fieldGap = secondLabel.y - (firstField.y + firstField.height);
+      // Row 1's Remove: its box to row 2's first label.
+      const remove = await boxOf(page.getByRole('button', { name: `${section.remove} 1` }));
+      const nextLabel = await labelBox(
+        page,
+        row2.getByRole('combobox', { name: section.first, exact: true }),
+      );
+      const rowGap = nextLabel.y - (remove.y + remove.height);
+      expect(rowGap, `${section.row} 1's Remove sits too close to row 2`).toBeGreaterThan(fieldGap);
+    }
+  });
 });
 
 interface Surface {

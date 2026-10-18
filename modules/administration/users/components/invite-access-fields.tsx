@@ -35,13 +35,18 @@ const BRANCH_HELP = 'Applies only while that branch is selected.';
 type ListError = Partial<FieldError> & { root?: FieldError };
 const listMessage = (error: ListError | undefined) => error?.message ?? error?.root?.message;
 
-/** A row's fields side by side from `sm`, stacked below it; Remove stays last. */
-const row = (columns: string) =>
+/** A row's fields side by side from `sm`, stacked below it; Remove stays last. Below `sm` a row that
+ * has another row under it is ruled off and given room, so its Remove reads as its own row's and not
+ * the next row's (the fields and the rows would otherwise share one gap). */
+const row = (columns: string, separated: boolean) =>
   ({
     display: 'grid',
     gridTemplateColumns: { xs: '1fr', sm: `${columns} auto` },
     gap: 3,
     alignItems: 'start',
+    ...(separated
+      ? { pb: { xs: 3, sm: 0 }, borderBottom: { xs: 1, sm: 0 }, borderColor: 'divider' }
+      : {}),
   }) as const;
 /** Remove lines up with the fields, under their labels. */
 const REMOVE = { justifySelf: 'start', mt: { sm: 5.5 } } as const;
@@ -105,7 +110,7 @@ export function InviteAccessFields({
             key={field.id}
             role="group"
             aria-label={`Branch assignment ${index + 1}`}
-            sx={row('minmax(0, 2fr) minmax(0, 1fr)')}
+            sx={row('minmax(0, 2fr) minmax(0, 1fr)', index < branchRows.fields.length - 1)}
           >
             <InviteChoiceField
               control={control}
@@ -182,7 +187,10 @@ export function InviteAccessFields({
               key={field.id}
               role="group"
               aria-label={`Role ${index + 1}`}
-              sx={row('minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr)')}
+              sx={row(
+                'minmax(0, 2fr) minmax(12.5rem, 1fr) minmax(0, 2fr)',
+                index < roleRows.fields.length - 1,
+              )}
             >
               <InviteChoiceField
                 control={control}
