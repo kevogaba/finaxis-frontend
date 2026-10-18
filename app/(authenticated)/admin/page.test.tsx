@@ -1,10 +1,16 @@
-import { isValidElement, Suspense, type ReactNode } from 'react';
+import { type ComponentProps, isValidElement, Suspense, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import type { SelectedContextProfile } from '@/auth/context-service';
 import type { BackendProfile } from '@/auth/context.types';
 import type { ApplicationContext } from '@/config/application-context';
 import { OverviewCardSkeleton } from '@/modules/administration/overview/components/overview-card-skeleton';
+import {
+  ACTIVITY_DESCRIPTION,
+  APPROVALS_DESCRIPTION,
+  BUSINESS_DATE_DESCRIPTION,
+} from '@/modules/administration/overview/overview-rules';
+import { READINESS_DESCRIPTION } from '@/modules/administration/overview/readiness-rules';
 import { renderWithProviders } from '@/test/test-utils';
 
 const { getCurrentContextProfile } = vi.hoisted(() => ({
@@ -87,19 +93,21 @@ async function show() {
   return renderWithProviders(<>{await AdminOverviewPage()}</>);
 }
 
-/** Each Suspense boundary's fallback title, in order, walking the element tree the page returns. */
-function fallbackTitles(node: ReactNode): string[] {
-  if (Array.isArray(node)) return node.flatMap((child: ReactNode) => fallbackTitles(child));
+type SkeletonProps = ComponentProps<typeof OverviewCardSkeleton>;
+
+/** Each Suspense boundary's fallback props, in order, walking the element tree the page returns. */
+function fallbacks(node: ReactNode): (SkeletonProps | 'not a card skeleton')[] {
+  if (Array.isArray(node)) return node.flatMap((child: ReactNode) => fallbacks(child));
   if (!isValidElement<{ children?: ReactNode; fallback?: ReactNode }>(node)) return [];
   if (node.type === Suspense) {
     const fallback = node.props.fallback;
     return [
-      isValidElement<{ title: string }>(fallback) && fallback.type === OverviewCardSkeleton
-        ? fallback.props.title
+      isValidElement<SkeletonProps>(fallback) && fallback.type === OverviewCardSkeleton
+        ? fallback.props
         : 'not a card skeleton',
     ];
   }
-  return fallbackTitles(node.props.children);
+  return fallbacks(node.props.children);
 }
 
 const cards = () =>
@@ -142,11 +150,11 @@ describe('AdminOverviewPage', () => {
 
   it('puts each card behind its own Suspense boundary and skeleton (spec §6.3)', async () => {
     resolved(EVERY_CODE);
-    expect(fallbackTitles(await AdminOverviewPage())).toEqual([
-      'Business date',
-      'Pending approvals',
-      'Operational readiness',
-      'Recent activity',
+    expect(fallbacks(await AdminOverviewPage())).toEqual([
+      { title: 'Business date', description: BUSINESS_DATE_DESCRIPTION, rows: 1 },
+      { title: 'Pending approvals', description: APPROVALS_DESCRIPTION, rows: 5 },
+      { title: 'Operational readiness', description: READINESS_DESCRIPTION, rows: 5, bar: true },
+      { title: 'Recent activity', description: ACTIVITY_DESCRIPTION, rows: 5 },
     ]);
   });
 

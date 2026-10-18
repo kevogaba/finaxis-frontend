@@ -221,8 +221,11 @@ export const ACTIVITY_LINK = 'View all activity';
 export const ACTIVITY_LABEL = 'Latest events';
 export const NO_ACTIVITY = 'Nothing has been recorded yet.';
 
+/** The activity card's description before its zone is known (its skeleton, while the events load). */
+export const ACTIVITY_DESCRIPTION = 'The latest events.';
+
 export function activityDescription(timeZone: string): string {
-  return `The latest events. Times in ${timeZone}.`;
+  return `${ACTIVITY_DESCRIPTION} Times in ${timeZone}.`;
 }
 
 export interface ActivityRow {

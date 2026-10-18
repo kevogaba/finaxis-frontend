@@ -53,14 +53,13 @@ export function ReadinessCard({ view }: { view: ReadinessView }) {
               py: 2.5,
               borderTop: 1,
               borderColor: 'divider',
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto',
+              alignItems: 'start',
               gap: 2,
             }}
           >
-            <Box sx={{ minWidth: 0, flex: '1 1 12rem' }}>
+            <Box sx={{ minWidth: 0 }}>
               <Typography component="h3" variant="body1" sx={{ fontWeight: 700 }}>
                 {entry.label}
               </Typography>

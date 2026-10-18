@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Suspense, type ReactNode } from 'react';
+import { type ComponentProps, Suspense, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import { getCurrentContextProfile } from '@/auth/context-service';
@@ -11,6 +11,9 @@ import { PendingApprovalsSection } from '@/modules/administration/overview/compo
 import { ReadinessSection } from '@/modules/administration/overview/components/readiness-card';
 import { RecentActivitySection } from '@/modules/administration/overview/components/recent-activity-card';
 import {
+  ACTIVITY_DESCRIPTION,
+  APPROVALS_DESCRIPTION,
+  BUSINESS_DATE_DESCRIPTION,
   CARD_TITLES,
   NO_OVERVIEW_CARDS,
   noOverviewCards,
@@ -18,13 +21,18 @@ import {
   OVERVIEW_TITLE,
   overviewCards,
 } from '@/modules/administration/overview/overview-rules';
+import { READINESS_DESCRIPTION } from '@/modules/administration/overview/readiness-rules';
 
 export const metadata: Metadata = { title: 'Overview' };
 
+/** A card's skeleton: its title and description, and as many rows as the card shows (see the
+ * skeleton), so the page doesn't jump as each card fills. */
+type SkeletonProps = ComponentProps<typeof OverviewCardSkeleton>;
+
 /** A card behind its own Suspense boundary and skeleton (spec §6.3): a slow or failed read never
  * holds up the heading or another card. */
-function card(title: string, content: ReactNode) {
-  return <Suspense fallback={<OverviewCardSkeleton title={title} />}>{content}</Suspense>;
+function card(skeleton: SkeletonProps, content: ReactNode) {
+  return <Suspense fallback={<OverviewCardSkeleton {...skeleton} />}>{content}</Suspense>;
 }
 
 /**
@@ -75,10 +83,14 @@ export default async function AdminOverviewPage() {
           gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) minmax(0, 2fr)' },
         }}
       >
-        {cards.businessDate && card(CARD_TITLES.businessDate, <BusinessDateSection />)}
+        {cards.businessDate &&
+          card(
+            { title: CARD_TITLES.businessDate, description: BUSINESS_DATE_DESCRIPTION, rows: 1 },
+            <BusinessDateSection />,
+          )}
         {cards.approvals &&
           card(
-            CARD_TITLES.approvals,
+            { title: CARD_TITLES.approvals, description: APPROVALS_DESCRIPTION, rows: 5 },
             <PendingApprovalsSection
               users={cards.approvals.users}
               branches={cards.approvals.branches}
@@ -87,12 +99,17 @@ export default async function AdminOverviewPage() {
           )}
         {cards.readiness &&
           card(
-            CARD_TITLES.readiness,
+            {
+              title: CARD_TITLES.readiness,
+              description: READINESS_DESCRIPTION,
+              rows: 5,
+              bar: true,
+            },
             <ReadinessSection permissions={permissions} organisationStatus={organisation.status} />,
           )}
         {cards.activity &&
           card(
-            CARD_TITLES.activity,
+            { title: CARD_TITLES.activity, description: ACTIVITY_DESCRIPTION, rows: 5 },
             <RecentActivitySection
               names={cards.activity.names}
               timeZone={cards.activity.timeZone}

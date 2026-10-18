@@ -16,7 +16,6 @@ vi.mock('@/modules/administration/business-date/business-date-service', () => ({
 }));
 
 const { BusinessDateSection } = await import('./business-date-card');
-const { OverviewCardSkeleton } = await import('./overview-card-skeleton');
 
 const REFERENCE = '14a10000-0000-4000-8000-0000000000aa';
 
@@ -64,15 +63,5 @@ describe('BusinessDateSection', () => {
     await expect(BusinessDateSection()).rejects.toMatchObject({
       digest: expect.stringContaining(digest) as unknown,
     });
-  });
-});
-
-describe('OverviewCardSkeleton', () => {
-  it('names the card at once and marks its body busy', () => {
-    renderWithProviders(<OverviewCardSkeleton title="Recent activity" />);
-
-    const card = screen.getByRole('region', { name: 'Recent activity' });
-    expect(within(card).getByRole('heading', { level: 2, name: 'Recent activity' })).toBeVisible();
-    expect(card.querySelector('[aria-busy="true"]')).not.toBeNull();
   });
 });

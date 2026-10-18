@@ -326,6 +326,62 @@ test.describe('overview: the cards', () => {
       timeout: FIRST_HIT,
     });
   });
+
+  test('keeps each readiness chip beside its heading at 1280 and 375 px', async ({
+    context,
+    page,
+  }, testInfo) => {
+    // Each item's chip, by its exact words, sits beside the item's h3 (its top within 8 px) at both
+    // widths: a chip that drops under the item's text reads as part of the next item.
+    const scenes = [
+      {
+        scenario: 'overview-attention',
+        states: [
+          ['Institution profile', 'Needs attention'],
+          ['Branches', 'Needs attention'],
+          ['People', 'Needs attention'],
+          ['Onboarding', 'Needs attention'],
+          ['Business date', 'Needs attention'],
+        ],
+      },
+      {
+        scenario: 'overview-limited',
+        states: [
+          ['Institution profile', "Can't be checked"],
+          ['Branches', 'Needs attention'],
+          ['People', "Can't be checked"],
+          ['Onboarding', 'Needs attention'],
+          ['Business date', "Can't be checked"],
+        ],
+      },
+    ] as const;
+    /** The top edge of a visible element, from its box. */
+    const topOf = async (locator: Locator) => {
+      await expect(locator).toBeVisible();
+      const box = await locator.boundingBox();
+      if (!box) throw new Error('a visible element has no box');
+      return box.y;
+    };
+    for (const { scenario, states } of scenes) {
+      // A context selected for the first scenario would skip the picker for the next: start clean.
+      await context.clearCookies();
+      await authenticate(context, testInfo, scenario);
+      await enterOverview(page);
+      for (const width of [1280, 375]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const [label, state] of states) {
+          const headingTop = await topOf(
+            item(page, label).getByRole('heading', { level: 3, name: label, exact: true }),
+          );
+          const chipTop = await topOf(item(page, label).getByText(state, { exact: true }));
+          expect(
+            Math.abs(chipTop - headingTop),
+            `${scenario} at ${width} px: ${label} chip ${chipTop}, heading ${headingTop}`,
+          ).toBeLessThanOrEqual(8);
+        }
+      }
+    }
+  });
 });
 
 const SURFACES = [
