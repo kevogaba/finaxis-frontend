@@ -1466,8 +1466,8 @@ this way (the pre-flight probe).
   `findMemberByUsername(username)` (server-only, the same bounded scan, rejecting on any read
   failure; Task 3 reads the username after a failed post, Ruling 15);
   `GET /api/tenant/users/invite-check?email=` →
-  `{ membershipStatus: MembershipStatus | null }` (400 for no email or one over 254 characters,
-  401, 403, 502 with local words only).
+  `{ membershipStatus: MembershipStatus | null }` (400 for an email the Identity step's rule
+  refuses, 401, 403, 502 with local words only).
 
 - [ ] **Step 1: Write the failing tests** — `invite-contract.test.ts`:
 
@@ -1725,6 +1725,11 @@ describe('GET /api/tenant/users/invite-check', () => {
 });
 ```
 
+**Erratum (2c18194, `test(users): close the review's remaining test gaps`):** the over-long 400 row
+is `?email=${'a'.repeat(243)}%40example.com` (255 characters with an `@`), so it fails on the 254
+cap rather than on the format; and the Access step's "ties each list refusal" test pins that
+neither Add button has `aria-describedby` while no list message shows.
+
 - [ ] **Step 2: Run** — form U on the three test files: FAIL (`./invite-contract`,
       `./invite-service` and `./route` don't resolve).
 
@@ -1882,6 +1887,13 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 **Gate:** the hook's `pnpm check`. **Review note:** the route is a read, so a Route Handler, not a
 Server Action (Next's guidance; UserPicker's `/api/tenant/users` is the precedent); it validates the
 email before the session check, which costs nothing and reads nothing.
+
+**Erratum (fix commit `fix(users): harden the invite email check`):** the route answers every
+response through `reply()` with `Cache-Control: private, no-store`; the 502 branch logs through
+`describeProblem(error)`; the email is validated with `INVITE_FORM_SHAPE.email` (400 "Enter a valid
+email address."), replacing `MAX_EMAIL`. Tests add the header, the log spy, a stale-context 403, an
+exactly-254-character 200, a `%25` 400, and mixed-case input for `findMemberByEmail` and
+`findMemberByUsername`.
 
 ### Task 3: The invite action
 
@@ -2309,6 +2321,11 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 **Gate:** the hook's `pnpm check`. **Review note:** the two `.catch(() => null)` only disambiguate
 a failure that already happened (rule 10); `runServerAction` owns the session check and the
 cross-tab guard, and has its own tests.
+
+**Erratum (fix commit `fix(users): refresh before redirecting to the invited member`):** `inviteUser`
+calls `refresh()` (`next/cache`) right before `redirect(...)`, as `updateRole` does, so the shell's
+bell and the back/forward cache drop the pre-invitation state; the success test asserts one call
+before the redirect.
 
 ### Task 4: The wizard
 
@@ -2857,6 +2874,13 @@ export function InviteAccessFields({
   );
 }
 ```
+
+**Erratum (fix commit `fix(users): clear a stale list error and mark the capped lists as notes`):**
+on Add, a list refusal that is showing re-validates its list (`if (branchMessage) void
+trigger('branchAssignments')`, and the same for roles), so the new row's own refusal replaces it
+(rule 8). The two capped lists are `<Alert severity="info" role="note">` (rule 13). Each list
+refusal has a `useId` id and describes its Add button while it shows. RHF 7.90's `trigger` also puts
+a list's error on `root`, so the pre-flight note above describes 7.89.
 
 - [ ] **Step 4: Run** — form U: PASS. Mutation proofs (each must fail the named test; revert after
       each): delete `addBranch.current?.focus();` ("adds a row with its first field focused, and
@@ -3566,6 +3590,13 @@ export function InviteReview({ values, roles, branches, pending, onEdit }: Invit
   );
 }
 ```
+
+**Erratum (9ffbaf8, `fix(users): show a blank phone as not set and share the Review labels`):** the
+Review step takes its five Identity labels from `IDENTITY_LABELS`, shows a phone of spaces as Not
+set (`values.phone.trim() || NOT_SET`, matching the body's trimmed phone), and gives both lists an
+explicit `role="list"` (`listStyle: 'none'` drops list semantics in WebKit). Its tests also pin Full
+name, Email and Username, a set phone (not muted) and the list role; the "unset" test's phone is
+`'   '`.
 
 - [ ] **Step 4: Run** — form U: PASS. Mutation proofs (each must fail the named test; revert after
       each): show `values.phone` instead of `values.phone || NOT_SET` ("shows an unset answer muted
