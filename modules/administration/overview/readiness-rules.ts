@@ -1,5 +1,17 @@
+import { canAll, type PermissionHolder } from '@/auth/permissions';
 import { humanizeEnum, type StatusTone } from '@/components/data-display/status-chip';
+import { formatBusinessDate } from '@/lib/format';
+import {
+  approvalNotifications,
+  type UserApprovalCounts,
+} from '@/modules/administration/approvals/approval-notifications';
+import {
+  USER_APPROVAL_CODES,
+  USER_QUEUE_HREF,
+} from '@/modules/administration/approvals/approval-rules';
+import type { BusinessDateStatus } from '@/modules/administration/business-date/business-date-contract';
 import { SETTINGS_EDIT_ENABLED } from '@/modules/administration/settings/settings-flags';
+import { USERS_HREF } from '@/modules/administration/users/invite-rules';
 
 /**
  * Spec §10.8's Operational readiness (D11): five items, each computed from live reads by an
@@ -139,4 +151,118 @@ export function peopleItem(active: Settled<number>): ReadinessCheck {
     );
   }
   return item('people', 'ready', `${counted(active.value, 'member is', 'members are')} active.`);
+}
+
+/** Approval already ran for these (BG-11): they wait for the identity provider, not for anyone
+ * here. The Onboarding item and the Pending approvals card both note them, apart from the count. */
+export function provisioningNote(count: number): string {
+  return `${counted(count, 'identity is', 'identities are')} still being provisioned: approval already ran.`;
+}
+
+/** No user approval awaiting a decision; identities still provisioning are noted apart (spec
+ * §10.8). User onboarding only: branches waiting for activation are the Branches item's. The count
+ * and its words are the bell's (`approvalNotifications`), never a second copy. */
+export function onboardingItem(counts: Settled<UserApprovalCounts>): ReadinessCheck {
+  if (counts === null) return item('onboarding', 'unknown', NOT_PERMITTED);
+  if (!counts.ok) return item('onboarding', 'failed', readFailed(counts.problem));
+  const waiting = approvalNotifications({ users: counts, branches: null, branchSelected: false })
+    .entries[0];
+  const note =
+    counts.value.provisioning > 0 ? ` ${provisioningNote(counts.value.provisioning)}` : '';
+  if (waiting) return item('onboarding', 'attention', `${waiting.text}${note}`);
+  return item('onboarding', 'ready', `No one is waiting for approval.${note}`);
+}
+
+/** Status OPEN (spec §10.8). The date renders from its `dd-MM-yyyy` value, with no zone shift. */
+export function businessDateItem(
+  current: Settled<{ date: string; status: BusinessDateStatus }>,
+): ReadinessCheck {
+  if (current === null) return item('businessDate', 'unknown', NOT_PERMITTED);
+  if (!current.ok) return item('businessDate', 'failed', readFailed(current.problem));
+  const day = formatBusinessDate(current.value.date, 'short');
+  switch (current.value.status) {
+    case 'OPEN':
+      return item('businessDate', 'ready', `Open for ${day}.`);
+    case 'CLOSING':
+      return item('businessDate', 'attention', `Close of business is in progress for ${day}.`);
+    case 'CLOSED':
+      return item('businessDate', 'attention', `Closed for ${day}.`);
+  }
+}
+
+export interface ReadinessLink {
+  href: string;
+  label: string;
+}
+
+/** Where each item is dealt with (Ruling 12), and the codes that page needs: the navigation item's
+ * code for Settings, Branches, Users & access and Business date, both of 12's user-onboarding
+ * codes for that tab. A link the holder couldn't open is never offered. No name holds "audit
+ * trail" (rule 9). */
+export const READINESS_LINKS: Record<
+  ReadinessItemId,
+  ReadinessLink & { codes: readonly string[] }
+> = {
+  institution: { href: '/admin/settings', label: 'Open settings', codes: ['settings.view'] },
+  branches: { href: '/admin/branches', label: 'Open branches', codes: ['branch.view'] },
+  people: { href: USERS_HREF, label: 'Open users & access', codes: ['user.view'] },
+  onboarding: { href: USER_QUEUE_HREF, label: 'Open user onboarding', codes: USER_APPROVAL_CODES },
+  businessDate: {
+    href: '/admin/business-date',
+    label: 'Open business date',
+    codes: ['business_date.view'],
+  },
+};
+
+/** An item with its link: shown in every state while the holder can open the page. */
+export interface ReadinessItem extends ReadinessCheck {
+  link: ReadinessLink | null;
+}
+
+/** What the section read: each `null` when the holder lacks that item's code (`READINESS_CODES`). */
+export interface ReadinessReads {
+  organisationStatus: string;
+  settings: Settled<{ items: readonly SettingFact[] }>;
+  activeBranches: Settled<number>;
+  pendingBranches: Settled<number>;
+  activeMembers: Settled<number>;
+  userApprovals: Settled<UserApprovalCounts>;
+  businessDate: Settled<{ date: string; status: BusinessDateStatus }>;
+}
+
+export interface ReadinessView {
+  items: readonly ReadinessItem[];
+  ready: number;
+  /** 0–100: the share of all five items that are ready. An item that can't be checked never
+   * counts, so the bar never claims more than the reads proved (Ruling 4). */
+  progress: number;
+  /** "3 of 5 ready", and how many weren't checked: the bar's value text and its visible label. */
+  summary: string;
+}
+
+export function operationalReadiness(
+  reads: ReadinessReads,
+  holder: PermissionHolder,
+): ReadinessView {
+  const checks = [
+    institutionItem(reads.organisationStatus, reads.settings),
+    branchesItem(reads.activeBranches, reads.pendingBranches),
+    peopleItem(reads.activeMembers),
+    onboardingItem(reads.userApprovals),
+    businessDateItem(reads.businessDate),
+  ];
+  const items = checks.map((check): ReadinessItem => {
+    const { href, label, codes } = READINESS_LINKS[check.id];
+    return { ...check, link: canAll(holder, codes) ? { href, label } : null };
+  });
+  const ready = items.filter((entry) => entry.state === 'ready').length;
+  const unchecked = items.filter(
+    (entry) => entry.state === 'unknown' || entry.state === 'failed',
+  ).length;
+  return {
+    items,
+    ready,
+    progress: Math.round((ready / items.length) * 100),
+    summary: `${ready} of ${items.length} ready${unchecked > 0 ? ` · ${unchecked} not checked` : ''}`,
+  };
 }
