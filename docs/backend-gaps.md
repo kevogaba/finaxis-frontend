@@ -86,7 +86,7 @@ tackled separately in the platform repository.
   requires tenant membership (`lifecycle/application/BranchProvisioningService.kt:38-42`). No setting
   disables the rule; the local seed works only because migration V4 seeds a second actor.
 - **Frontend handling:** approve controls are disabled for the maker with an explanation; the overview
-  readiness item "People" flags tenants with fewer than two active members.
+  readiness item "People" flags tenants with fewer than two active members (layer 14).
 - **Suggested change:** let the bootstrap flow create a second approver, allow a platform-context
   checker for a tenant's first approvals, or exempt the bootstrap admin's first invite under an
   audited policy.
@@ -118,7 +118,10 @@ tackled separately in the platform repository.
   confirmed live. `DELETE` (204, no body) is unaffected.
 - **Frontend handling:** editing ships disabled behind `SETTINGS_EDIT_ENABLED`
   (`modules/administration/settings/settings-flags.ts`), with the reason shown on the Locale &
-  currency card. Reset to default (`DELETE`, 204) works. Flip the flag when this closes.
+  currency card. Reset to default (`DELETE`, 204) works. Flip the flag when this closes. The
+  overview's Institution profile item reads the stored keys, so a tenant created without them (layer
+  16's wizard sends them only when entered) shows Needs attention, saying settings can't be saved
+  yet, until then (layer 14).
 - **Suggested change:** exempt the settings response (or the specific `key` property) from the
   replay-safety filter, and cover the endpoint with an integration test including the aspect.
 
@@ -228,7 +231,9 @@ tackled separately in the platform repository.
   approval leaves users in `PROVISIONING_IDP` and memberships `PENDING_APPROVAL` forever; approving
   again returns 500.
 - **Frontend handling:** an onboarding state derived from membership + user status; "Provisioning
-  identity" shown as a distinct state with guidance; no resend or expiry.
+  identity" shown as a distinct state with guidance; no resend or expiry. The overview notes
+  identities still provisioning apart from the approvals waiting, and its users preview reads past
+  them (five plus their count, at most 100), so it still lists the requests waiting (layer 14).
 - **Suggested change:** expose invitation/dispatch status, add resend and retry endpoints, and make
   re-approval idempotent.
 
@@ -272,7 +277,8 @@ tackled separately in the platform repository.
   Deriving them costs one `size=1` call per count per row against a 600 reads/min budget.
 - **Frontend handling:** counts only on record pages (one call each); lists don't show them. The
   platform overview reads five counts the same way (`size=1`, or the total of a five-row preview)
-  (layer 17).
+  (layer 17). The administration overview counts active branches and active memberships the same
+  way, and takes the approvals waiting from the bell's reads and its previews' totals (layer 14).
 - **Suggested change:** include counts on summary DTOs or add a counts endpoint.
 
 ### BG-16 — Audit search and recording · P1
@@ -325,16 +331,18 @@ export endpoints with the same filters as the searches.
 ### BG-21 — No close-of-business readiness · P2
 
 The prototype's COB readiness checks (unbalanced tellers, pending closures, audit stream, exports,
-jobs, posting window) have no API; close-of-business is optional and unchecked. Suggested: a
-readiness endpoint returning named checks and their status.
+jobs, posting window) have no API; close-of-business is optional and unchecked. The administration
+overview's Operational readiness is not one: five fixed rules over live reads (spec §10.8, layer
+14). Suggested: a readiness endpoint returning named checks and their status.
 
 ### BG-22 — No notifications · P2
 
 No notification feed. The platform bell counts institutions pending approval with one `size=1` read,
 for holders of `tenant.approve` and `tenant.view` (layer 17); the administration bell counts
 users waiting for approval (pending less provisioning: two `size=1` reads) and branches waiting
-for activation (one), for holders of the matching codes (layer 12). Suggested: a
-notifications/inbox endpoint.
+for activation (one), for holders of the matching codes (layer 12). The administration overview's
+Pending approvals card shows the same counts: the users' from the bell's reads, shared per request,
+the branches' from its preview's total (layer 14). Suggested: a notifications/inbox endpoint.
 
 ### BG-23 — Context discovery inconsistencies · P2
 
@@ -435,6 +443,9 @@ directory shows its access-denied state (spec §6.6), and the assign drawer repo
 The invite wizard does the same: a 403 from its email check (a stale context, or `user.view` held only
 at branch scope) asks for a reload (`EMAIL_CHECK_REFUSED`), and a 403 from the invitation itself, such
 as a branch-scoped `user.assign_branch` that doesn't cover an invited branch, is named `INVITE_REFUSED`.
+The administration overview marks such a refused read on its own: the Branches readiness item shows
+Couldn't be checked and the Pending approvals card says the branches couldn't be loaded, each with
+its reference, while the other cards stay (layer 14).
 Suggested: return each permission with its scope (tenant or the branch ids) on `/auth/me`.
 
 ### BG-34 — Role update accepts a blank name; an empty description clears it · P2
