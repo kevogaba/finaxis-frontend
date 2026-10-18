@@ -1,4 +1,10 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import {
+  A11Y_CASES,
+  applyA11yCase,
+  expectA11yCaseApplied,
+  expectNoSeriousOrCriticalViolations,
+} from './support/admin';
 import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
 import {
   OVERVIEW_SCENARIO_IDS as OVERVIEW,
@@ -320,4 +326,57 @@ test.describe('overview: the cards', () => {
       timeout: FIRST_HIT,
     });
   });
+});
+
+const SURFACES = [
+  {
+    label: 'every card ready',
+    scenario: 'overview-ready',
+    branch: ALL_BRANCHES,
+    bell: 'Notifications: nothing waiting',
+    regions: 4,
+  },
+  {
+    label: 'needs attention',
+    scenario: 'overview-attention',
+    branch: ALL_BRANCHES,
+    bell: 'Notifications: 6 approvals waiting',
+    regions: 4,
+  },
+  {
+    label: 'limited permissions',
+    scenario: 'overview-limited',
+    branch: ALL_BRANCHES,
+    bell: 'Notifications: 3 approvals waiting',
+    regions: 2,
+  },
+  {
+    label: 'a refused branch read',
+    scenario: 'overview-branch-scoped',
+    branch: HEAD_OFFICE,
+    bell: "Notifications (couldn't be loaded)",
+    regions: 4,
+  },
+] as const;
+
+test.describe('overview: accessibility', () => {
+  test.describe.configure({ timeout: 60000 });
+
+  for (const surface of SURFACES) {
+    for (const a11yCase of A11Y_CASES) {
+      test(`has no serious or critical violations: ${surface.label} (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
+        context,
+        page,
+      }, testInfo) => {
+        await applyA11yCase(page, a11yCase);
+        await authenticate(context, testInfo, surface.scenario);
+        await enterOverview(page, surface.branch);
+        // The header streams too: every scan and the 375 px page-width check include the bell.
+        await bell(page, surface.bell);
+        await expectA11yCaseApplied(page, a11yCase);
+        await expect(page.getByRole('main').getByRole('region')).toHaveCount(surface.regions);
+        await expectNoSeriousOrCriticalViolations(page);
+      });
+    }
+  }
 });
