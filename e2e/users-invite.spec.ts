@@ -8,7 +8,7 @@ import {
   mainText,
   statusChip,
 } from './support/admin';
-import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
+import { authenticate, clickMuiOption, expectHydrated, selectMuiOption } from './support/auth';
 import { INVITE_SCENARIO_TEXT as TEXT, type ScenarioName } from './fake-api/scenarios.mts';
 
 const ALL_BRANCHES = /All branches \(institution level\)/;
@@ -65,12 +65,14 @@ async function openWizard(page: Page) {
   await expectHydrated(page.getByRole('button', { name: 'Continue' }));
 }
 
-/** A select inside `scope` (a row's group, or the page), once React owns it. */
+/** A select inside `scope` (a row's group, or the page), once React owns it. The choice must take,
+ * so a lost click fails at the select that lost it, not at the next control its open menu hides. */
 async function choose(page: Page, scope: Page | Locator, label: string, option: string) {
   const combobox = scope.getByRole('combobox', { name: label, exact: true });
   await expectHydrated(combobox);
   await combobox.click();
-  await page.getByRole('option', { name: option, exact: true }).click();
+  await clickMuiOption(page.getByRole('option', { name: option, exact: true }));
+  await expect(combobox).toHaveText(option);
 }
 
 const group = (page: Page, name: string) => page.getByRole('group', { name, exact: true });

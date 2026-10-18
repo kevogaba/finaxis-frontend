@@ -74,9 +74,32 @@ export async function expectHydrated(locator: Locator): Promise<void> {
     .toBe(true);
 }
 
+/**
+ * Clicks `option` in an open MUI menu once the menu has stopped moving, then waits for it to close.
+ * The menu grows in (MUI's Grow, about a quarter of a second), and on a busy CPU Chromium can tell
+ * Playwright an item is stable while it still moves: the press lands on one item, the release on
+ * its neighbour, the browser sends the click to the list, and the choice is lost with the menu left
+ * open. So the readiness signal is the menu's own animations finishing (an endless one, such as a
+ * ripple's pulse, is not waited on), and a lost click fails here rather than at the next control.
+ */
+export async function clickMuiOption(option: Locator): Promise<void> {
+  await option.evaluate(async (item) => {
+    const moving: Animation[] = [];
+    for (let node: Element | null = item; node; node = node.parentElement) {
+      for (const animation of node.getAnimations()) {
+        const end = animation.effect?.getComputedTiming().endTime;
+        if (typeof end === 'number' && Number.isFinite(end)) moving.push(animation);
+      }
+    }
+    await Promise.allSettled(moving.map((animation) => animation.finished));
+  });
+  await option.click();
+  await expect(option.page().getByRole('listbox')).toHaveCount(0);
+}
+
 export async function selectMuiOption(page: Page, label: string, option: RegExp): Promise<void> {
   const combobox = page.getByRole('combobox', { name: label });
   await expectHydrated(combobox);
   await combobox.click();
-  await page.getByRole('option', { name: option }).click();
+  await clickMuiOption(page.getByRole('option', { name: option }));
 }
