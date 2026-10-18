@@ -32,9 +32,10 @@ const USER_MAKER_CHECKER_BLOCKED =
 const RECORD = /\/admin\/users\/[0-9a-f-]{36}$/;
 
 /** A route's first hit compiles under a cold `next dev` (the "Compiling" indicator), which takes
- * tens of seconds. Used where a first hit can come in any order: each test's first page visit, the
- * email check's first answer with the Identity step that issues it, and the record a send opens.
- * Warm, these waits resolve in well under a second; the bound only matters when they fail. */
+ * tens of seconds. Used where a first hit can come in any order: each wizard visit and each
+ * matrix surface's first visit, the email check's first answer with the Identity step that issues
+ * it, and the record a send opens. Warm, these waits resolve in well under a second; the bound only
+ * matters when they fail. */
 const FIRST_HIT = 45000;
 
 interface Identity {

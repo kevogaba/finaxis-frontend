@@ -74,27 +74,55 @@ export async function expectHydrated(locator: Locator): Promise<void> {
     .toBe(true);
 }
 
+/** How long an open menu may keep animating before a click on one of its options is refused. */
+const MENU_SETTLE_LIMIT_MS = 5000;
+
 /**
  * Clicks `option` in an open MUI menu once the menu has stopped moving, then waits for it to close.
  * The menu grows in (MUI's Grow, about a quarter of a second), and on a busy CPU Chromium can tell
  * Playwright an item is stable while it still moves: the press lands on one item, the release on
  * its neighbour, the browser sends the click to the list, and the choice is lost with the menu left
- * open. So the readiness signal is the menu's own animations finishing (an endless one, such as a
- * ripple's pulse, is not waited on), and a lost click fails here rather than at the next control.
+ * open. So the readiness signal is the running animations on the option and its ancestors finishing
+ * (an endless animation on the menu or an ancestor is not waited on). The wait is bounded, and a
+ * lost click fails here, naming the menu and the option, rather than at the next control. For
+ * single-choice menus only: a `multiple` Select stays open after a click (none exists in the app).
  */
 export async function clickMuiOption(option: Locator): Promise<void> {
-  await option.evaluate(async (item) => {
+  const { menu, name } = await option.evaluate(async (item, limitMs) => {
+    const labelId = item.closest('[role="listbox"]')?.getAttribute('aria-labelledby') ?? '';
+    const menu = document.getElementById(labelId)?.textContent.trim() ?? 'menu';
+    const name = item.textContent.trim();
     const moving: Animation[] = [];
     for (let node: Element | null = item; node; node = node.parentElement) {
       for (const animation of node.getAnimations()) {
         const end = animation.effect?.getComputedTiming().endTime;
-        if (typeof end === 'number' && Number.isFinite(end)) moving.push(animation);
+        if (animation.playState === 'running' && typeof end === 'number' && Number.isFinite(end)) {
+          moving.push(animation);
+        }
       }
     }
-    await Promise.allSettled(moving.map((animation) => animation.finished));
-  });
+    let timer: number | undefined;
+    const stuck = new Promise<never>((_, reject) => {
+      timer = window.setTimeout(() => {
+        reject(
+          new Error(
+            `The "${menu}" menu was still animating ${limitMs / 1000} s after it opened, so the click on "${name}" was not sent.`,
+          ),
+        );
+      }, limitMs);
+    });
+    try {
+      await Promise.race([Promise.allSettled(moving.map((a) => a.finished)), stuck]);
+    } finally {
+      window.clearTimeout(timer);
+    }
+    return { menu, name };
+  }, MENU_SETTLE_LIMIT_MS);
   await option.click();
-  await expect(option.page().getByRole('listbox')).toHaveCount(0);
+  await expect(
+    option.page().getByRole('listbox'),
+    `The "${menu}" menu stayed open after the click on "${name}", so nothing was chosen.`,
+  ).toHaveCount(0);
 }
 
 export async function selectMuiOption(page: Page, label: string, option: RegExp): Promise<void> {
