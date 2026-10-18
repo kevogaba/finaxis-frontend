@@ -256,6 +256,13 @@ describe('ConfirmDialog', () => {
     );
     setup(action);
     const confirm = screen.getByRole('button', { name: 'Submit for approval' });
+    // Each submit runs in an awaited act(). After the first action, useActionState's state is that
+    // action (a thenable) and every render reads it with use(); inside the un-awaited act() that
+    // user-event wraps a click in, React then stops flushing and drops the rest of that act's
+    // queue, so the transition carrying the new result (and `pending: false`) is never scheduled
+    // and the second round hangs, unless an unrelated timer (the dialog's Fade-in) fires
+    // afterwards to reschedule it. Test-only: a browser has no act() queue to drop.
+    const submit = () => act(() => user.click(confirm));
     const parkAndFail = async () => {
       await waitFor(() => {
         expect(confirm).toBeDisabled();
@@ -275,9 +282,9 @@ describe('ConfirmDialog', () => {
       });
     };
 
-    await user.click(confirm);
+    await submit();
     await parkAndFail();
-    await user.click(confirm);
+    await submit();
     await parkAndFail();
     expect(action).toHaveBeenCalledTimes(2);
   });

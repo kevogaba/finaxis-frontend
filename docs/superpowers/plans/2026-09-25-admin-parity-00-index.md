@@ -96,7 +96,7 @@ far: 00–06, 07b, 07, 15.
 | 08  | `admin-parity/08-branches`         | just-in-time from spec §10.3                                      | JIT    |
 | 09  | `admin-parity/09-roles`            | just-in-time from spec §10.4                                      | JIT    |
 | 10  | `admin-parity/10-users-record`     | just-in-time from spec §10.5                                      | JIT    |
-| 11  | `admin-parity/11-users-invite`     | just-in-time from spec §10.5                                      | JIT    |
+| 11  | `admin-parity/11-invite-wizard`    | just-in-time from spec §10.5                                      | JIT    |
 | 12  | `admin-parity/12-approvals`        | just-in-time from spec §10.6, §8 (notifications)                  | JIT    |
 | 13  | `admin-parity/13-settings`         | just-in-time from spec §10.7                                      | JIT    |
 | 14  | `admin-parity/14-overview`         | just-in-time from spec §10.8                                      | JIT    |

@@ -1569,6 +1569,76 @@ function approvalsScenario(): RunState {
   };
 }
 
+/** Layer 11 seed IDs (lane rules §5): users …a*, branches …b*, organisations …c*, memberships …d*. */
+export const INVITE_SCENARIO_IDS = {
+  rehema: '11000000-0000-4000-8000-0000000000a1',
+  otieno: '11000000-0000-4000-8000-0000000000a2',
+  kisumu: '11000000-0000-4000-8000-0000000000b1',
+  pwaniTraders: '11000000-0000-4000-8000-0000000000c1',
+  rehemaMembership: '11000000-0000-4000-8000-0000000000d1',
+  otienoMembership: '11000000-0000-4000-8000-0000000000d2',
+} as const;
+
+/** The seeds' words the invite e2e types and asserts. */
+export const INVITE_SCENARIO_TEXT = {
+  rehemaEmail: 'rehema.mwangi@pwani-traders.example',
+  rehemaName: 'Rehema Mwangi',
+  takenUsername: 'otieno.k',
+} as const;
+
+/**
+ * Layer 11: a copy of `users` (a member in every onboarding state; ACTIVE roles and the DISABLED
+ * Loans officer) plus `user.invite` on Jane's role, a PENDING_APPROVAL branch the wizard must not
+ * offer, and two accounts in another institution: Rehema, whose email an invite reuses (her own
+ * name stays), and Otieno, whose username is taken for any other email (a 500 the wizard can't
+ * check, BG-07).
+ */
+function usersInviteScenario(): RunState {
+  const state = usersScenario();
+  const ids = INVITE_SCENARIO_IDS;
+  const outsider = (id: string, username: string, displayName: string): FakeUser => ({
+    id,
+    username,
+    email: `${username}@pwani-traders.example`,
+    displayName,
+    status: 'ACTIVE',
+    keycloakSubject: `e2e-${username}`,
+  });
+  const staffAt = (id: string, userId: string): FakeMembership => ({
+    ...membership(id, ids.pwaniTraders, userId),
+    type: 'STAFF',
+  });
+  return {
+    ...state,
+    organisations: [
+      ...state.organisations,
+      organisation(ids.pwaniTraders, 'pwani-traders', 'Pwani Traders SACCO'),
+    ],
+    users: [
+      ...state.users,
+      outsider(ids.rehema, 'rehema.mwangi', INVITE_SCENARIO_TEXT.rehemaName),
+      outsider(ids.otieno, INVITE_SCENARIO_TEXT.takenUsername, 'Otieno Kamau'),
+    ],
+    memberships: [
+      ...state.memberships,
+      staffAt(ids.rehemaMembership, ids.rehema),
+      staffAt(ids.otienoMembership, ids.otieno),
+    ],
+    branches: [
+      ...state.branches,
+      {
+        ...branch(ids.kisumu, IDS.greenfield, 'KISUMU', 'Kisumu Branch', 'OPERATIONS'),
+        status: 'PENDING_APPROVAL',
+      },
+    ],
+    roles: state.roles.map((candidate) =>
+      candidate.id === IDS.tenantAdminRole
+        ? { ...candidate, permissions: [...candidate.permissions, 'user.invite'] }
+        : candidate,
+    ),
+  };
+}
+
 // `satisfies` (not a `: Record<...>` annotation) keeps the literal key set so `ScenarioName` below
 // is the real union, not `string` — the annotation would still check each builder the same way.
 const BUILDERS = {
@@ -1723,6 +1793,11 @@ const BUILDERS = {
       branches: state.branches.filter((row) => row.status !== 'PENDING_APPROVAL'),
     };
   },
+  // Layer 11 (invite wizard). `users` plus user.invite, a pending branch and two accounts in
+  // another institution; `users-invite-limited` is the same without user.assign_branch (an invite
+  // with a branch is refused, and the wizard isn't offered). `users` itself has no user.invite.
+  'users-invite': usersInviteScenario,
+  'users-invite-limited': () => withoutPermission(usersInviteScenario(), 'user.assign_branch'),
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */

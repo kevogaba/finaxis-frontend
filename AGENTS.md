@@ -1,6 +1,6 @@
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 
@@ -67,9 +67,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   a server field error returns to its step (see
   `modules/platform-administration/tenants/components/tenant-draft-wizard.tsx`). The form
   validates on Continue, never on blur (a blur-added error line would move Continue under the
-  pointer); a choice validates its own field. While mounted, `WizardForm` keeps 96 px of page
-  scroll padding below, and `app/globals.css` keeps 80 px above for the sticky app bar, so a
-  sticky bar never covers a control the keyboard reaches (WCAG 2.4.11).
+  pointer); a choice validates its own field. While mounted, `WizardForm` keeps 140 px of page
+  scroll padding below (its action bar wraps to two rows, 114 px, on a narrow viewport), and
+  `app/globals.css` keeps 80 px above for the sticky app bar, so a sticky bar never covers a
+  control the keyboard reaches (WCAG 2.4.11).
 - Every data-listing UI (both workspaces; new lists especially) is server-paginated with state in
   the URL: page sizes come from `lib/api/paging.ts`'s `PAGE_SIZES`, and lists render
   `TablePaginationBar` (`components/data-display/table-pagination-bar.tsx`) plus, where the list
@@ -116,6 +117,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   access shown before a decision, not a data-listing directory, with their record holding the
   rest — no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-10-04-admin-parity-12-approvals.md`, Ruling 8).
+  The Invite user wizard's pickers (`app/(authenticated)/admin/users/new/page.tsx`: one page of 100
+  ACTIVE roles and one of 100 ACTIVE branches, by name, each saying so when there are more) are an
+  eighth, named exception: a picker's option set, not a data-listing directory — no licence for an
+  unbounded list (plan `docs/superpowers/plans/2026-10-12-admin-parity-11-invite-wizard.md`,
+  Ruling 10).
 - A context-scoped read goes through `lib/api/tenant-api.ts`'s `apiGet(path, schema)`, where
   `schema` is a snake_case zod schema defined in the domain's own `<domain>-contract.ts` (e.g.
   `modules/administration/audit/audit-contract.ts`) that transforms the wire shape to camelCase.

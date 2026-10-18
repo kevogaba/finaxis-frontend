@@ -159,11 +159,14 @@ tackled separately in the platform repository.
   branches; duplicate tenant codes; any invalid `sort_by`/`sort_dir`; a BRANCH-scoped role
   assignment with no `branch_id` (`RoleAssignmentController`'s `requireNotNull`, source f74e44b;
   the contract's 409 is from 7a7f4c3).
-- **Frontend handling:** pre-validation of every known trigger (e.g. membership lookup by email before
-  inviting, sort allow-lists), a tenant-code lookup after a failed create to name a duplicate (the
-  create goes first, so a replayed create is never turned away), and a generic error showing
-  `request_id`. The user record withholds Approve once approval ran and names the likely causes of
-  the other approval 500s.
+- **Frontend handling:** pre-validation of every known trigger (e.g. the invite wizard checks the
+  email against the institution's users on its Identity step and every rule it can see on its Access
+  step; sort allow-lists), a tenant-code lookup after a failed create to name a duplicate (the
+  create goes first, so a replayed create is never turned away; the invitation likewise names a
+  taken email, or a username a member here holds, only after a failed post), and a generic error
+  showing `request_id`. A username taken by an account in another institution can't be checked from
+  the tenant context, so the invitation's 500 names it among the likely causes. The user record
+  withholds Approve once approval ran and names the likely causes of the other approval 500s.
 - **Suggested change:** map domain precondition failures to 404/409/422 with specific codes.
 
 ### BG-08 — Maker not exposed; ambiguous 403 · P1
@@ -294,7 +297,8 @@ tackled separately in the platform repository.
   context-bearing request but never exposed; MFA/security state lives only in Keycloak; no profile or
   display-name edit; no change of membership type or primary branch.
 - **Frontend handling:** columns and tabs omitted; Security links to the Keycloak account console for
-  the signed-in user.
+  the signed-in user. The invite wizard collects an optional phone and says it can't be viewed after
+  the invitation is sent.
 - **Suggested change:** expose phone, member number, and last activity; add user and membership update
   endpoints; optionally surface Keycloak credential/MFA status.
 
@@ -352,8 +356,11 @@ bootstrap admin's job.
 
 Keycloak admin provisioning and outbound email are disabled by default; with email off, invite and
 welcome emails fail permanently (audited, no state change). The Keycloak execute-actions email sends
-`VERIFY_EMAIL` only — no `UPDATE_PASSWORD`, lifespan, or redirect. Suggested: include `UPDATE_PASSWORD`
-and a redirect to the app, and surface delivery failures (see BG-11).
+`VERIFY_EMAIL` only — no `UPDATE_PASSWORD`, lifespan, or redirect. The invite wizard offers both
+flags, starting from the contract's defaults (identity-provider invitation on, application
+invitation off), and says that delivery depends on the platform and a failed delivery isn't shown.
+Suggested: include `UPDATE_PASSWORD` and a redirect to the app, and surface delivery failures
+(see BG-11).
 
 ### BG-26 — Sort parameters · P2
 
@@ -373,8 +380,9 @@ close it: the backend must check.
 
 A rejected tenant is terminal and its `tenant_code` stays taken, so resubmission needs a new code. A
 revoked membership can never be re-invited (unique per organisation + user; invite rejects any existing
-membership). The UI warns before both. Suggested: allow re-invitation of revoked members and
-reuse/release of rejected codes.
+membership). The UI warns before both, and the invite wizard refuses a revoked member's email on its
+Identity step, saying it can't be invited again. Suggested: allow re-invitation of revoked members
+and reuse/release of rejected codes.
 
 ### BG-29 — PLATFORM organisation in tenant search · P2
 
@@ -424,6 +432,9 @@ told apart from branch-scoped ones. Some routes check their permission at tenant
 (`user.view`, `user.assign_branch`). A role granting those codes only at branch scope passes the
 UI's gate and then gets a 403. Frontend handling: the backend stays the authority. The Branches
 directory shows its access-denied state (spec §6.6), and the assign drawer reports the 403 inline.
+The invite wizard does the same: a 403 from its email check (a stale context, or `user.view` held only
+at branch scope) asks for a reload (`EMAIL_CHECK_REFUSED`), and a 403 from the invitation itself, such
+as a branch-scoped `user.assign_branch` that doesn't cover an invited branch, is named `INVITE_REFUSED`.
 Suggested: return each permission with its scope (tenant or the branch ids) on `/auth/me`.
 
 ### BG-34 — Role update accepts a blank name; an empty description clears it · P2
