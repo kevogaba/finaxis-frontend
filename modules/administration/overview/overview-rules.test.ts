@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Page } from '@/lib/api/wire';
+import type { AuditEvent } from '@/modules/administration/audit/audit-contract';
 import type { BranchSummary } from '@/modules/administration/branches/branch-contract';
 import type { UserSummary } from '@/modules/administration/users/user-contract';
 import {
+  activityDescription,
+  activityRows,
   APPROVAL_PREVIEW_SIZE,
   noOverviewCards,
   overviewCards,
@@ -295,5 +298,48 @@ describe('the Pending approvals preview (Ruling 5)', () => {
     [400, 100],
   ])('with %i provisioning, reads a page of %i (at most 100)', (provisioning, size) => {
     expect(userPreviewSize(provisioning)).toBe(size);
+  });
+});
+
+describe('the Recent activity rows', () => {
+  const event = (tail: string, action: string, actorUserId: string | null): AuditEvent => ({
+    id: `14f00000-0000-4000-8000-0000000000${tail}`,
+    occurredAt: '2026-09-08T06:00:00Z',
+    actorType: actorUserId ? 'USER' : 'SYSTEM',
+    actorUserId,
+    branchId: null,
+    action,
+    entityType: 'USER',
+    entityId: null,
+    outcome: 'SUCCESS',
+    severity: 'INFO',
+    reason: null,
+  });
+  const JANE = '14d00000-0000-4000-8000-0000000000aa';
+  const UNKNOWN = '14d00000-0000-4000-8000-0000000000bb';
+
+  it('names the action and the actor, in the organisation timezone, linking to the event', () => {
+    const rows = activityRows(
+      [
+        event('a1', 'user.welcome_email', null),
+        event('a2', 'user.invite', JANE),
+        event('a3', 'branch.create_draft', UNKNOWN),
+      ],
+      new Map([[JANE, 'Backend Jane Manager']]),
+      'Africa/Nairobi',
+    );
+    expect(rows[0]).toEqual({
+      id: '14f00000-0000-4000-8000-0000000000a1',
+      action: 'Sent welcome email',
+      actor: 'System',
+      when: '08 Sep 2026 · 09:00',
+      href: '/admin/audit?event=14f00000-0000-4000-8000-0000000000a1',
+      linkLabel: 'View event: Sent welcome email, 08 Sep 2026 09:00',
+    });
+    expect(rows.map((row) => row.actor)).toEqual(['System', 'Backend Jane Manager', '14d00000']);
+  });
+
+  it('says which timezone the times are in', () => {
+    expect(activityDescription('UTC')).toBe('The latest events. Times in UTC.');
   });
 });

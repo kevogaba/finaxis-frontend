@@ -1,5 +1,6 @@
 import { can, canAll, canAny, type PermissionHolder } from '@/auth/permissions';
 import type { NotificationEntry } from '@/components/shell/notifications-menu';
+import { formatInstant, shortId } from '@/lib/format';
 import type { Page } from '@/lib/api/wire';
 import {
   approvalNotifications,
@@ -13,6 +14,9 @@ import {
   USER_QUEUE_LABEL,
   userApprovalHref,
 } from '@/modules/administration/approvals/approval-rules';
+import type { AuditEvent } from '@/modules/administration/audit/audit-contract';
+import { auditTrailHref } from '@/modules/administration/audit/audit-rows';
+import { actionLabel } from '@/modules/administration/audit/audit-vocabulary';
 import type { BranchSummary } from '@/modules/administration/branches/branch-contract';
 import { branchTypeLabel } from '@/modules/administration/branches/branch-rules';
 import type { UserSummary } from '@/modules/administration/users/user-contract';
@@ -205,4 +209,51 @@ export function pendingApprovalsView(reads: PendingApprovalsReads): PendingAppro
     provisioning,
     empty: failures.length === 0 && summary.length === 0 && rows.length === 0,
   };
+}
+
+// ── Recent activity ──────────────────────────────────────────────────────────────────────────────
+
+/** The five latest audit events (spec §10.8); the endpoint lists newest first. */
+export const ACTIVITY_SIZE = 5;
+export const ACTIVITY_HREF = auditTrailHref({});
+/** Never "audit trail": that name belongs to the navigation item (e2e/audit.spec.ts finds it). */
+export const ACTIVITY_LINK = 'View all activity';
+export const ACTIVITY_LABEL = 'Latest events';
+export const NO_ACTIVITY = 'Nothing has been recorded yet.';
+
+export function activityDescription(timeZone: string): string {
+  return `The latest events. Times in ${timeZone}.`;
+}
+
+export interface ActivityRow {
+  id: string;
+  action: string;
+  actor: string;
+  /** `07 Sep 2026 · 10:59`, in the organisation's timezone. */
+  when: string;
+  /** The audit trail with this event's drawer open. */
+  href: string;
+  linkLabel: string;
+}
+
+/** Actors by resolved name, else a short id; a system event reads "System" (as the audit trail). */
+export function activityRows(
+  events: readonly AuditEvent[],
+  names: ReadonlyMap<string, string>,
+  timeZone: string,
+): ActivityRow[] {
+  return events.map((event) => {
+    const at = formatInstant(event.occurredAt, timeZone);
+    const action = actionLabel(event.action);
+    return {
+      id: event.id,
+      action,
+      actor: event.actorUserId
+        ? (names.get(event.actorUserId) ?? shortId(event.actorUserId))
+        : 'System',
+      when: `${at.date} · ${at.time}`,
+      href: auditTrailHref({ event: event.id }),
+      linkLabel: `View event: ${action}, ${at.date} ${at.time}`,
+    };
+  });
 }
