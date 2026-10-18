@@ -122,6 +122,17 @@ async function labelBox(page: Page, select: Locator) {
   return boxOf(page.locator(`[id="${labelId}"]`));
 }
 
+/** A row's bottom rule: its border's width, its colour, and the row's own text colour beside it. */
+const ruleOf = (row: Locator) =>
+  row.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      width: style.borderBottomWidth,
+      borderColor: style.borderBottomColor,
+      color: style.color,
+    };
+  });
+
 /** The shell's bell, once its count streamed in: its name carries the approvals waiting. */
 const bell = (page: Page, count: number) =>
   page
@@ -430,9 +441,10 @@ test.describe('users invite: sending', () => {
     });
   }
 
-  // The Access rows at two widths. At 1280 px each role's Scope value shows whole beside its Role;
-  // at 375 px each row's Remove sits further from the next row's first label than two fields of one
-  // row sit apart, so the rows read as rows (both sections use the same layout).
+  // The Access rows at two widths. At 1280 px each role's Scope value shows whole beside its Role, and
+  // a row has no rule; at 375 px each row's Remove sits about twice as far from the next row's first
+  // label as two fields of one row sit apart, and the rule between the rows is not in the row's text
+  // colour (both sections use the same layout).
   test('keeps the Access rows readable (1280 px, 375 px)', async ({ context, page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await authenticate(context, testInfo, 'users-invite');
@@ -457,6 +469,10 @@ test.describe('users invite: sending', () => {
       ).toBe(true);
     }
     expect(await scrollsSideways(page)).toBe(false);
+    // From sm a row has no rule: its bottom border is 0 wide.
+    for (const row of ['Branch assignment 1', 'Role 1']) {
+      expect((await ruleOf(group(page, row))).width, `${row} has a rule at 1280 px`).toBe('0px');
+    }
 
     await page.setViewportSize({ width: 375, height: 812 });
     expect(await scrollsSideways(page)).toBe(false);
@@ -471,6 +487,13 @@ test.describe('users invite: sending', () => {
     ]) {
       const row1 = group(page, `${section.row} 1`);
       const row2 = group(page, `${section.row} 2`);
+      // Row 1 is ruled off at 375 px, in a colour other than the row's text colour: a shorthand
+      // border resets the colour to currentColor, which is how the rule once came out in the text.
+      const rule = await ruleOf(row1);
+      expect(rule.width, `${section.row} 1 has no rule at 375 px`).toBe('1px');
+      expect(rule.borderColor, `${section.row} 1's rule is drawn in the text colour`).not.toBe(
+        rule.color,
+      );
       // Two fields of row 1: its first field's box to the second field's label.
       const firstField = await boxOf(
         row1.getByRole('combobox', { name: section.first, exact: true }),
@@ -487,7 +510,10 @@ test.describe('users invite: sending', () => {
         row2.getByRole('combobox', { name: section.first, exact: true }),
       );
       const rowGap = nextLabel.y - (remove.y + remove.height);
-      expect(rowGap, `${section.row} 1's Remove sits too close to row 2`).toBeGreaterThan(fieldGap);
+      // The row's padding, the rule and the gap below it: a row's own gap, a rule and as much again.
+      expect(rowGap, `${section.row} 1's Remove sits too close to row 2`).toBeGreaterThanOrEqual(
+        2 * fieldGap,
+      );
     }
   });
 });

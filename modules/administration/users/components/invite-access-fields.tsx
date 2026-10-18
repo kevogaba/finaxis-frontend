@@ -45,7 +45,9 @@ const row = (columns: string, separated: boolean) =>
     gap: 3,
     alignItems: 'start',
     ...(separated
-      ? { pb: { xs: 3, sm: 0 }, borderBottom: { xs: 1, sm: 0 }, borderColor: 'divider' }
+      ? // The colour sits in the xs rule: a base `borderColor` comes before the media query's
+        // `border-bottom` shorthand, which resets it to currentColor.
+        { pb: { xs: 3, sm: 0 }, borderBottom: { xs: 1, sm: 0 }, borderColor: { xs: 'divider' } }
       : {}),
   }) as const;
 /** Remove lines up with the fields, under their labels. */
