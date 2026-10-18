@@ -92,8 +92,8 @@ honours a dotted `color`.
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`). Run it alone with
   `pnpm fake-api`. Chromium is the required project; install it once with
   `pnpm exec playwright install chromium`. This suite never talks to a real Keycloak or backend.
-  The e2e helper `clickMuiOption` (same file) clicks an option in a single-choice MUI menu once the
-  menu has finished growing in, then waits for it to close.
+  The e2e helper `clickMuiOption` (`e2e/support/auth.ts`) clicks an option in a single-choice MUI
+  menu once the menu has finished growing in, then waits for it to close.
 - **Real-Keycloak smoke test**: `pnpm test:e2e:keycloak` (`e2e/keycloak-smoke.spec.ts`,
   `playwright.keycloak.config.ts`). A separate, manually invoked test that requires a live local
   Keycloak + Postgres (e.g. `docker compose up -d postgres keycloak` in the platform repo) and

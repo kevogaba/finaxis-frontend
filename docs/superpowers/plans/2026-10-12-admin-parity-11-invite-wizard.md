@@ -2882,6 +2882,15 @@ trigger('branchAssignments')`, and the same for roles), so the new row's own ref
 refusal has a `useId` id and describes its Add button while it shows. RHF 7.90's `trigger` also puts
 a list's error on `root`, so the pre-flight note above describes 7.89.
 
+**Erratum (133d1b6, `fix(users): keep the Access rows readable at narrow widths`):** the role row's
+Scope column has a floor, `row('minmax(0, 2fr) minmax(12.5rem, 1fr) minmax(0, 2fr)', …)`, so
+"Institution (all branches)" shows whole from 600 to 1440 px, and Role and Branch names can ellipsize
+from 600 to 1024 px. Below `sm`, `row(columns, separated)` rules off a row that has another row under
+it (a 1 px `divider` rule, 12 px below it, on every row but a section's last): each Remove sits 25 px
+from the next row's first label, against 12 px between two fields of one row, and the last row's Remove
+stays 12 px above "Add branch" or "Add role". The e2e test "keeps the Access rows readable (1280 px,
+375 px)" pins both.
+
 - [ ] **Step 4: Run** — form U: PASS. Mutation proofs (each must fail the named test; revert after
       each): delete `addBranch.current?.focus();` ("adds a row with its first field focused, and
       returns focus to Add after a remove"); pass `disabledValue={undefined}` to the Scope field
@@ -3604,6 +3613,10 @@ explicit `role="list"` (`listStyle: 'none'` drops list semantics in WebKit). Its
 name, Email and Username, a set phone (not muted) and the list role; the "unset" test's phone is
 `'   '`.
 
+**Erratum (737e1a5, `test(users): match the Review's Username exactly`):** the Review test's Username
+assertion is exact (`/^neema\.wanjiku$/`), not a substring match, so an email shown under Username
+fails it.
+
 - [ ] **Step 4: Run** — form U: PASS. Mutation proofs (each must fail the named test; revert after
       each): show `values.phone` instead of `values.phone || NOT_SET` ("shows an unset answer muted
       and in regular weight, apart from real values"); drop `disabled={pending}` ("returns to each
@@ -4283,6 +4296,15 @@ and returns when any Identity answer changed (`JSON.stringify(getValues([...IDEN
 so the `getValues('email') !== email` guard that the mutation proof below names is now that
 comparison. A failed check's Alert takes focus (`checkRef`), and the failure effect sets the list
 roots last (`LIST_ROOTS`).
+
+**Erratum (1cd62b7, `feat(users): add the Invite user wizard`, the planned 4d commit as made):** the
+wizard differs from the block above in two places. `useForm` also destructures `getFieldState`, and
+`continueFromIdentity` calls `if (getFieldState('branchAssignments').error) void trigger('branchAssignments');`
+before `goTo(ACCESS)`, so a membership type change that has made a branch refusal moot clears it before
+Access shows it again (rule 8). The test file imports `NEEDS_A_BRANCH` and adds one test, "clears a
+branch refusal that a membership change has made moot, before Access shows it again": Access's branch
+row is removed and Continue refuses it; Back, a change of membership type to Auditor, and Continue shows
+Access with no refusal. The rest of both files matches the blocks above.
 
 - [ ] **Step 4: Run** — form U: PASS. Mutation proofs (each must fail the named test; revert after
       each): replace the email check in `continueFromIdentity` with `goTo(ACCESS)` straight after
@@ -5620,7 +5642,8 @@ reuse write nothing.
 
 **Erratum (a35c09a, `test(fake-api): pin the invite rules the review found unpinned`), reused
 account:** the test enters `TEXT.takenUsername` as the username, not `'someone.else'`, so a reused
-account is refused when its username is taken.
+account is accepted even when the entered username is taken: the username is checked only for a
+new account.
 
 - [ ] **Step 2: Run** — form E on the spec: FAIL (every route test: `POST /api/v1/tenant/users` is a
       404 `resource_not_found`); the two seed tests pass.
@@ -6709,15 +6732,17 @@ test.describe('users invite: sending', () => {
 **Erratum (30c2c91, `test(e2e): cover the invite wizard end to end`; 58fa995, `test(e2e): prove the
 bell refresh and bound only the first hits on the invite wizard`):** the waits for a route's first
 hit are `FIRST_HIT` (45 s), not the plan's 15 s, and 58fa995 narrowed them to the first hits: the
-directory's link to the wizard, the forbidden gate's first load, the Identity-to-Access steps (their
-`next(page, step, timeout)` takes FIRST_HIT from the caller) and the first email description. The
+directory's link to the wizard, each test's first visit to the wizard (`openWizard`, inline in 58fa995),
+the forbidden gate's first load, the Identity-to-Access steps (their `next(page, step, timeout)` takes
+FIRST_HIT from the caller) and the first email description. The
 shell's bell is asserted at 3 approvals before a send and at 4 once the new member's record opens
 (`bell(page, count)`), which proves the `refresh()` before the redirect in a browser.
 
 **Erratum (d865a0c, `test(e2e): bound every first hit of the invite wizard's matrix and record
-visits`):** each test's first visit to the wizard opens through `enterFirstHit`, which runs
-`enterAdmin`'s steps with FIRST_HIT bounds, and the three waits for the record a send opens
-(`toHaveURL(RECORD)`) take FIRST_HIT.
+visits`):** d865a0c renamed the bound 58fa995 gave the wizard's first visit into `enterFirstHit` (any
+path and heading; `openWizard` now calls it) and generalised it to the matrix's surfaces, whose first
+visits had enterAdmin's 15 s waits. It did not add the first-visit bound itself. The three waits for
+the record a send opens (`toHaveURL(RECORD)`) take FIRST_HIT.
 
 **Erratum (280f4b4, `test(e2e): click MUI options only after their menu stops growing in`; 1745353,
 `test(e2e): bound clickMuiOption's waits and correct its notes`):** `choose()` clicks through
@@ -6725,6 +6750,12 @@ visits`):** each test's first visit to the wizard opens through `enterFirstHit`,
 `e2e/support/auth.ts` (`selectMuiOption` uses it too), an exception to "Files 11 never touches"
 (line 225), which names `e2e/support/*`. It waits at most 5 s for the running animations, and a
 failure names the menu and the option.
+
+**Erratum (ae1aac8, `test(confirm-dialog): drive each failed submit inside an awaited act()`; 5f8f1cb,
+`chore(deps): upgrade the minor and patch dependencies`):** two kit test files change outside "Files 11
+never touches" (line 225), which names every kit file: `components/data-display/confirm-dialog.test.tsx`
+(an awaited `act()` in one test, no behaviour change) and `components/data-display/record-tabs.test.tsx`
+(the dependency upgrade's MUI 9.5 scroller observer, in the test's ResizeObserver fake).
 
 - [ ] **Step 2: Run** — form E with `--grep "users invite: (entry|sending)"`: PASS (ten tests; the
       code under test is Tasks 1–6). Mutation proof: in `invite-user-wizard.tsx` replace the email

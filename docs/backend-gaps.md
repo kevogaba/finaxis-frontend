@@ -432,6 +432,9 @@ told apart from branch-scoped ones. Some routes check their permission at tenant
 (`user.view`, `user.assign_branch`). A role granting those codes only at branch scope passes the
 UI's gate and then gets a 403. Frontend handling: the backend stays the authority. The Branches
 directory shows its access-denied state (spec §6.6), and the assign drawer reports the 403 inline.
+The invite wizard does the same: a 403 from its email check (a stale context, or `user.view` held only
+at branch scope) asks for a reload (`EMAIL_CHECK_REFUSED`), and a 403 from the invitation itself, such
+as a branch-scoped `user.assign_branch` that doesn't cover an invited branch, is named `INVITE_REFUSED`.
 Suggested: return each permission with its scope (tenant or the branch ids) on `/auth/me`.
 
 ### BG-34 — Role update accepts a blank name; an empty description clears it · P2
