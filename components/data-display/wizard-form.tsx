@@ -34,8 +34,9 @@ interface WizardFormProps {
   children: ReactNode;
 }
 
-/** The sticky action bar is 70 px tall; the rest is a gap. */
-const ACTION_BAR_CLEARANCE = 96;
+/** The sticky action bar is 70 px tall in one row, and 114 px when its buttons wrap to two rows on a
+ * narrow viewport (at 360 px "Send invitation" drops below Cancel and Back). 114 px plus a 26 px gap. */
+const ACTION_BAR_CLEARANCE = 140;
 
 /**
  * A multi-step form (spec §9): the themed Stepper, the current step in a surface, and a sticky
@@ -75,8 +76,9 @@ export function WizardForm({
       onSubmit={onSubmit}
       sx={{ display: 'grid', gap: 4.5 }}
     >
-      {/* The sticky action bar (70 px) must not cover a control the keyboard reaches: the page keeps
-          96 px of scroll padding below while a wizard is mounted (WCAG 2.4.11). */}
+      {/* The sticky action bar (70 px, or 114 px when its buttons wrap) must not cover a control the
+          keyboard reaches: the page keeps 140 px of scroll padding below while a wizard is mounted
+          (WCAG 2.4.11). */}
       <GlobalStyles styles={{ html: { scrollPaddingBottom: ACTION_BAR_CLEARANCE } }} />
       <Stepper activeStep={active}>
         {steps.map((step, index) => (
