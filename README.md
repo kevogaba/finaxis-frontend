@@ -92,6 +92,8 @@ honours a dotted `color`.
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`). Run it alone with
   `pnpm fake-api`. Chromium is the required project; install it once with
   `pnpm exec playwright install chromium`. This suite never talks to a real Keycloak or backend.
+  The e2e helper `clickMuiOption` (`e2e/support/auth.ts`) clicks an option in a single-choice MUI
+  menu once the menu has finished growing in, then waits for it to close.
 - **Real-Keycloak smoke test**: `pnpm test:e2e:keycloak` (`e2e/keycloak-smoke.spec.ts`,
   `playwright.keycloak.config.ts`). A separate, manually invoked test that requires a live local
   Keycloak + Postgres (e.g. `docker compose up -d postgres keycloak` in the platform repo) and
@@ -154,9 +156,9 @@ app/
 │   │   │                          # Audit tabs; edit/)
 │   │   ├── settings/page.tsx    # Settings catalogue: read-only controls, reset to default
 │   │   └── users/               # Users & access: directory (search, user and membership status
-│   │                              # filters), and the record ([userId]/: hero membership
-│   │                              # lifecycle; Overview, Roles & access, Branch assignments and
-│   │                              # Audit tabs)
+│   │                              # filters), the Invite user wizard (new/), and the record
+│   │                              # ([userId]/: hero membership lifecycle; Overview, Roles &
+│   │                              # access, Branch assignments and Audit tabs)
 │   ├── platform-admin/         # Platform workspace, gated to the platform organisation's context
 │   │   ├── layout.tsx           # Redirects tenant contexts away; requires platform-admin module
 │   │   ├── tenants/             # SACCO institutions: directory (search, status/country/created
@@ -171,7 +173,8 @@ app/
 │                                # Contexts, Roles & permissions, Security and Activity tabs
 ├── api/auth/                 # Better Auth route handlers (`[...all]`, `logout`)
 ├── api/context/               # Same-origin context discovery/selection routes
-├── api/tenant/users/          # Same-origin user search for UserPicker (first page only)
+├── api/tenant/users/          # Same-origin user search for UserPicker (first page only), and the
+│                                # Invite user wizard's email check (invite-check/)
 ├── globals.css               # CSS layers, Tailwind import, MUI/Tailwind bridge, restrained defaults
 ├── layout.tsx                 # Root layout: fonts, AppRouterCacheProvider, AppProviders
 ├── loading.tsx / not-found.tsx
@@ -223,7 +226,9 @@ modules/
 │                                # components (modules/administration/roles/); users/ holds the
 │                                # users and membership contract, directory query, onboarding and
 │                                # action rules, service, membership Server Actions, user search
-│                                # for pickers, and components (modules/administration/users/);
+│                                # for pickers, the Invite user wizard's rules, schema, email
+│                                # check and Server Action, and components
+│                                # (modules/administration/users/);
 │                                # settings/ holds the settings catalogue's contract, rules,
 │                                # service and Server Actions (modules/administration/settings/);
 │                                # approvals/ holds the approval queue's contract, rules, copy,
@@ -473,7 +478,11 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   no sort) and opens a record with the membership lifecycle (approve, reject and revoke,
   suspend, reactivate, revoke) and Overview, Roles & access, Branch assignments and Audit tabs.
   The Audit tab offers up to four views: User record, Account, Membership (once the membership
-  is found) and Performed by. Known limits:
+  is found) and Performed by. "Invite user" (`/admin/users/new`) is a four-step wizard
+  (Identity, Access, Invitation, Review), open to a holder of `user.invite`, `user.assign_branch`,
+  `user.view`, `role.view` and `branch.view`; it posts one invitation, which a different
+  administrator must approve, and opens the new user's record (or the directory when the reply has
+  no readable id). Known limits:
   - The directory shows only what user summaries carry, and the onboarding state is derived
     from the membership and user statuses (`docs/backend-gaps.md` BG-09, BG-11).
   - A user's membership is found by searching memberships for their email (at most 5 pages of
@@ -507,6 +516,20 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - No phone, member number, last activity, MFA or profile edit (BG-17).
   - The toolbar search commits on Enter or blur, and backend `validation_failed` violations
     aren't mapped onto form fields (BG-09).
+  - The invite wizard offers the first 100 active roles and the first 100 active branches by
+    name, and says so when there are more. Its Identity step checks the email against this
+    institution's users (at most 500 search matches are read; any membership, a revoked one
+    included: such an email can never be invited again, BG-28; past the ceiling the platform's
+    own refusal is the backstop); a 403 from that check asks for a reload (a stale context, or a
+    branch-scoped `user.view`, BG-33). The invitation itself is posted first, and a taken email,
+    or a username a member here holds, is named only after that fails, so a retry with the same
+    idempotency key replays (BG-07). An account in another institution can't be seen: its email is
+    reused with its own name, username and phone, which the Review step says, and a username it
+    holds fails as a 500 named by its likely causes.
+  - The Invitation step starts from the contract's flag defaults (identity-provider invitation on,
+    application invitation off), and either can be changed; whether the emails go out depends on
+    the platform (BG-25). The phone can't be viewed afterwards (BG-17). Nothing is kept across a
+    reload.
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) manages SACCO institutions through
   `modules/platform-administration/tenants/`: the directory, the create-draft wizard, amend, the
@@ -541,9 +564,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     institutions pending approval (BG-22).
 - Beyond context discovery/selection, profile retrieval, Platform Administration's institutions,
   overview, institution branches and users, and platform users, and Administration's Approval
-  queue, Users & access, Branches, Roles & permissions and Settings above, these are not connected
-  yet: the Invite user wizard (layer 11) and the Administration overview's operational sections
-  (layer 14).
+  queue, Users & access (with the Invite user wizard), Branches, Roles & permissions and Settings
+  above, the Administration overview's operational sections (layer 14) are not connected yet.
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
   `/forgot-password` are placeholders; the first three routes resolve to the app's `not-found`
   page until real content exists.
@@ -554,6 +576,5 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
 
 1. Add Keycloak claim mappers and enforce authorization/permissions server-side, instead of
    treating UI-shown roles as informational only.
-2. Build out the Invite user wizard (layer 11) against real data, registering what it needs.
-3. Replace the temporary `FinaxisLogo` mark with the official brand asset.
-4. Expand the theme's component defaults only as real screens demand them.
+2. Replace the temporary `FinaxisLogo` mark with the official brand asset.
+3. Expand the theme's component defaults only as real screens demand them.

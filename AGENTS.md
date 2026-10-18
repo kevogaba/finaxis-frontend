@@ -117,6 +117,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   access shown before a decision, not a data-listing directory, with their record holding the
   rest — no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-10-04-admin-parity-12-approvals.md`, Ruling 8).
+  The Invite user wizard's pickers (`app/(authenticated)/admin/users/new/page.tsx`: one page of 100
+  ACTIVE roles and one of 100 ACTIVE branches, by name, each saying so when there are more) are an
+  eighth, named exception: a picker's option set, not a data-listing directory — no licence for an
+  unbounded list (plan `docs/superpowers/plans/2026-10-12-admin-parity-11-invite-wizard.md`,
+  Ruling 10).
 - A context-scoped read goes through `lib/api/tenant-api.ts`'s `apiGet(path, schema)`, where
   `schema` is a snake_case zod schema defined in the domain's own `<domain>-contract.ts` (e.g.
   `modules/administration/audit/audit-contract.ts`) that transforms the wire shape to camelCase.
