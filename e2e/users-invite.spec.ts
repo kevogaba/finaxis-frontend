@@ -32,9 +32,9 @@ const USER_MAKER_CHECKER_BLOCKED =
 const RECORD = /\/admin\/users\/[0-9a-f-]{36}$/;
 
 /** A route's first hit compiles under a cold `next dev` (the "Compiling" indicator), which takes
- * tens of seconds. Used where a first hit can come in any order: the wizard page's first visit in
- * each test, and the email check's first answer with the Identity step that issues it. Warm, these
- * waits resolve in well under a second; the bound only matters when they fail. */
+ * tens of seconds. Used where a first hit can come in any order: each test's first page visit, the
+ * email check's first answer with the Identity step that issues it, and the record a send opens.
+ * Warm, these waits resolve in well under a second; the bound only matters when they fail. */
 const FIRST_HIT = 45000;
 
 interface Identity {
@@ -49,19 +49,21 @@ const NEEMA: Identity = {
   username: 'neema.wanjiku',
 };
 
-/** The wizard as the first navigation of a test: through context selection. Its waits are
- * FIRST_HIT, not enterAdmin's 15 s: each test's first visit to the wizard can be the route's first
- * hit. */
-async function openWizard(page: Page) {
-  await page.goto('/admin/users/new');
+/** enterAdmin's steps with FIRST_HIT bounds: a test's first visit to a page can be its
+ * route's first hit under a cold `next dev`. */
+async function enterFirstHit(page: Page, path: string, heading: string) {
+  await page.goto(path);
   await selectMuiOption(page, 'Organisation', /Greenfield/);
   await selectMuiOption(page, 'Branch', ALL_BRANCHES);
-  await expect(page).toHaveURL((url) => url.pathname === '/admin/users/new', {
+  await expect(page).toHaveURL((url) => url.pathname === path, { timeout: FIRST_HIT });
+  await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible({
     timeout: FIRST_HIT,
   });
-  await expect(page.getByRole('heading', { level: 1, name: 'Invite user' })).toBeVisible({
-    timeout: FIRST_HIT,
-  });
+}
+
+/** The wizard as the first navigation of a test, once React owns its Continue. */
+async function openWizard(page: Page) {
+  await enterFirstHit(page, '/admin/users/new', 'Invite user');
   await expectHydrated(page.getByRole('button', { name: 'Continue' }));
 }
 
@@ -310,7 +312,7 @@ test.describe('users invite: sending', () => {
     await expect(bell(page, 3)).toBeVisible({ timeout: 15000 });
     await sendInvitation(page);
 
-    await expect(page).toHaveURL(RECORD, { timeout: 15000 });
+    await expect(page).toHaveURL(RECORD, { timeout: FIRST_HIT });
     await expect(page.getByRole('heading', { level: 1, name: NEEMA.name })).toBeVisible();
     await expect(statusChip(page, 'Awaiting approval')).toBeVisible();
     // Jane invited her, so the platform would refuse Jane's approval (BG-02, BG-08).
@@ -349,7 +351,7 @@ test.describe('users invite: sending', () => {
     await next(page, 'Invitation');
     await next(page, 'Review');
     await sendInvitation(page);
-    await expect(page).toHaveURL(RECORD, { timeout: 15000 });
+    await expect(page).toHaveURL(RECORD, { timeout: FIRST_HIT });
     await expect(page.getByRole('heading', { level: 1, name: NEEMA.name })).toBeVisible();
   });
 
@@ -366,7 +368,7 @@ test.describe('users invite: sending', () => {
     await next(page, 'Review');
     await sendInvitation(page);
 
-    await expect(page).toHaveURL(RECORD, { timeout: 15000 });
+    await expect(page).toHaveURL(RECORD, { timeout: FIRST_HIT });
     await expect(page.getByRole('heading', { level: 1, name: TEXT.rehemaName })).toBeVisible();
   });
 
@@ -445,7 +447,7 @@ const SURFACES: readonly Surface[] = [
     heading: 'Invite user',
     open: async (page) => {
       await fillIdentity(page);
-      await next(page, 'Access');
+      await next(page, 'Access', FIRST_HIT);
       await choose(
         page,
         group(page, 'Branch assignment 1'),
@@ -464,7 +466,7 @@ const SURFACES: readonly Surface[] = [
     heading: 'Invite user',
     open: async (page) => {
       await fillIdentity(page);
-      await next(page, 'Access');
+      await next(page, 'Access', FIRST_HIT);
       await fillAccess(page);
       await next(page, 'Invitation');
     },
@@ -476,7 +478,7 @@ const SURFACES: readonly Surface[] = [
     heading: 'Invite user',
     open: async (page) => {
       await fillIdentity(page);
-      await next(page, 'Access');
+      await next(page, 'Access', FIRST_HIT);
       await fillAccess(page);
       await next(page, 'Invitation');
       await next(page, 'Review');
@@ -490,7 +492,7 @@ const SURFACES: readonly Surface[] = [
     open: async (page) => {
       await fillIdentity(page, { ...NEEMA, email: 'esther.njoki@greenfield.example' });
       await page.getByRole('button', { name: 'Continue' }).click();
-      await expect(mainText(page, ACTIVE_EMAIL)).toBeVisible({ timeout: 15000 });
+      await expect(mainText(page, ACTIVE_EMAIL)).toBeVisible({ timeout: FIRST_HIT });
     },
   },
   {
@@ -500,7 +502,7 @@ const SURFACES: readonly Surface[] = [
     heading: 'Invite user',
     open: async (page) => {
       await fillIdentity(page, { ...NEEMA, username: TEXT.takenUsername });
-      await next(page, 'Access');
+      await next(page, 'Access', FIRST_HIT);
       await fillAccess(page);
       await next(page, 'Invitation');
       await next(page, 'Review');
@@ -529,7 +531,7 @@ test.describe('users invite: accessibility', () => {
       }, testInfo) => {
         await applyA11yCase(page, a11yCase);
         await authenticate(context, testInfo, surface.scenario);
-        await enterAdmin(page, surface.path, { heading: surface.heading, branch: ALL_BRANCHES });
+        await enterFirstHit(page, surface.path, surface.heading);
         if (surface.open) await surface.open(page);
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);
