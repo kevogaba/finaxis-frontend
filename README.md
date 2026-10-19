@@ -141,6 +141,8 @@ app/
 │   ├── admin/                 # Overview, Approval queue, Users & access, Branches, Roles &
 │   │                            # permissions, Settings, Business date, and Audit trail pages
 │   │   ├── layout.tsx           # Redirects a platform context to /platform-admin
+│   │   ├── page.tsx             # Overview: business date, pending approvals, operational readiness
+│   │   │                          # and recent activity, each card in its own Suspense boundary
 │   │   ├── approvals/           # Approval queue: User onboarding and Branch activation tabs
 │   │   │                          # ((queue)/), and the user and branch approval pages with the
 │   │   │                          # decision bar (users/[userId]/, branches/[branchId]/)
@@ -233,7 +235,9 @@ modules/
 │                                # service and Server Actions (modules/administration/settings/);
 │                                # approvals/ holds the approval queue's contract, rules, copy,
 │                                # control checks, bell arithmetic, service, guards, decision
-│                                # actions and components (modules/administration/approvals/)
+│                                # actions and components (modules/administration/approvals/);
+│                                # overview/ holds the overview's readiness rules, card rules, reads
+│                                # and cards (modules/administration/overview/)
 ├── platform-administration/   # Platform module + navigation; tenants/ holds the institution
 │                                # contract, directory query, lifecycle rules, service, Server
 │                                # Actions, and components (modules/platform-administration/tenants/);
@@ -356,6 +360,23 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   renders the right rail width.
 - Administration ships the Overview, Approval queue, Users & access, Branches, Roles & permissions,
   Settings, Business date, and Audit trail pages.
+- The Overview (`/admin`, `modules/administration/overview/`) shows four cards, each reading on its
+  own behind its own Suspense boundary and each only to a holder who can read or decide it:
+  Business date (the date and its status), Pending approvals (the bell's counts with a link to each
+  tab, then up to five requests, users before branches, each newest first with Review), Operational
+  readiness (five items, each Ready, Needs attention, Can't be checked or Couldn't be checked, each
+  linking to the page where it is dealt with when the holder can open that page, under one teal
+  bar for the share ready) and Recent activity (the latest audit events, up to five, each opening
+  in the audit trail). A failed read shows in its own card, with its reference; when no card
+  applies, one note under the heading says so. Known limits:
+  - Readiness is five fixed rules over live reads (spec §10.8), not a close-of-business check
+    (`docs/backend-gaps.md` BG-21); its counts are `size=1` reads (BG-15).
+  - Institution profile reads the stored `default_timezone` and `base_currency` settings: a tenant
+    created without them shows Needs attention and says settings can't be saved yet (BG-04).
+  - People needs two active members, so someone other than the requester can approve (BG-02).
+  - Identities still provisioning are noted apart and never listed as waiting (BG-11): the users
+    preview reads past them (one read of at most 100), so it lists up to five requests waiting for
+    a decision, and the queue holds the rest.
 - The Approval queue (`/admin/approvals`, `modules/administration/approvals/`) lists memberships
   pending approval (User onboarding) and branches pending activation (Branch activation), each
   tab paged in the URL and counted in its label, and opens a page per request with who asked and
@@ -562,10 +583,6 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     and platform operators, one read each (`size=1`, or the total of a five-row preview, BG-15),
     and lists up to five institutions pending approval and five drafts. The bell counts
     institutions pending approval (BG-22).
-- Beyond context discovery/selection, profile retrieval, Platform Administration's institutions,
-  overview, institution branches and users, and platform users, and Administration's Approval
-  queue, Users & access (with the Invite user wizard), Branches, Roles & permissions and Settings
-  above, the Administration overview's operational sections (layer 14) are not connected yet.
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
   `/forgot-password` are placeholders; the first three routes resolve to the app's `not-found`
   page until real content exists.
