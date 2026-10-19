@@ -25,6 +25,11 @@ export function UserMenu({ user }: UserMenuProps) {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const menuId = useId();
   const open = Boolean(anchorEl);
+  // WCAG 2.5.3: the accessible name contains the visible text, in order. The avatar shows the
+  // initials unless there is a picture, and the name and email show from `xl` up.
+  const label = [!user.image && initialsOf(user.name), user.name, user.email]
+    .filter(Boolean)
+    .join(' ');
 
   const handleOpen = (event: MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -37,7 +42,7 @@ export function UserMenu({ user }: UserMenuProps) {
   return (
     <>
       <Button
-        aria-label={user.name}
+        aria-label={label}
         aria-controls={open ? menuId : undefined}
         aria-haspopup="true"
         aria-expanded={open ? 'true' : undefined}
@@ -47,7 +52,7 @@ export function UserMenu({ user }: UserMenuProps) {
       >
         <Avatar src={user.image} sx={{ width: 38, height: 38, fontSize: '0.8125rem' }}>
           {!user.image && initialsOf(user.name)}
-        </Avatar>
+        </Avatar>{' '}
         <Box
           component="span"
           sx={{
@@ -68,7 +73,7 @@ export function UserMenu({ user }: UserMenuProps) {
             sx={{ fontWeight: 700, maxWidth: 180 }}
           >
             {user.name}
-          </Typography>
+          </Typography>{' '}
           <Typography
             component="span"
             variant="caption"

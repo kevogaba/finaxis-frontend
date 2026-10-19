@@ -62,6 +62,8 @@ export function GlobalHeader({
           onClick={onOpenContextSwitcher}
           aria-haspopup="dialog"
           color="inherit"
+          // Its name contains the visible words, in order (WCAG 2.5.3); the two names are separate
+          // spans, so the space between them is a text node, or the visible text reads as one word.
           aria-label={`Switch organisation or branch. Current: ${organization.name}, ${branch?.name ?? 'All branches'}`}
           sx={{ minWidth: 0, height: 46, gap: 2.5, px: 2, color: 'text.primary' }}
         >
@@ -84,7 +86,7 @@ export function GlobalHeader({
               sx={{ fontWeight: 700, maxWidth: '100%' }}
             >
               {organization.name}
-            </Typography>
+            </Typography>{' '}
             <Typography
               component="span"
               variant="caption"

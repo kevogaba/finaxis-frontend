@@ -55,7 +55,21 @@ describe('GlobalHeader', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Umoja Teachers SACCO')).toBeInTheDocument();
     expect(screen.getByText('Westlands Branch')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Jane Muthoni' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'JM Jane Muthoni jane.muthoni@finaxis.test' }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the organisation and the branch apart in the context button, as its name says them', () => {
+    renderHeader();
+
+    // axe's label-in-name rule (WCAG 2.5.3) reads the two names as one word when no space separates
+    // their spans, and then finds neither in the button's name.
+    const button = screen.getByRole('button', { name: /switch organisation or branch/i });
+    expect(button.textContent).toBe('Umoja Teachers SACCO Westlands Branch');
+    expect(button).toHaveAccessibleName(
+      'Switch organisation or branch. Current: Umoja Teachers SACCO, Westlands Branch',
+    );
   });
 
   it('opens the context switcher', async () => {

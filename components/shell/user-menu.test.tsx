@@ -45,6 +45,24 @@ describe('UserMenu', () => {
     expect(screen.getByText('JM')).toBeInTheDocument();
   });
 
+  it('names its button by what it shows, in order (WCAG 2.5.3): the initials, the name, the email', () => {
+    renderWithProviders(<UserMenu user={USER} />);
+
+    const trigger = screen.getByRole('button', {
+      name: 'JM Jane Muthoni jane.muthoni@finaxis.test',
+    });
+    // The words are separate text nodes, so a rule that reads the visible text sees three words, not one.
+    expect(trigger.textContent).toBe('JM Jane Muthoni jane.muthoni@finaxis.test');
+  });
+
+  it('leaves the initials out of the name when a picture shows instead', () => {
+    renderWithProviders(<UserMenu user={{ ...USER, image: 'https://example.test/jane.png' }} />);
+
+    expect(
+      screen.getByRole('button', { name: 'Jane Muthoni jane.muthoni@finaxis.test' }),
+    ).toBeInTheDocument();
+  });
+
   it('disables the log-out action after the first click to prevent duplicate submissions', async () => {
     const user = userEvent.setup();
     renderWithProviders(<UserMenu user={USER} />);
