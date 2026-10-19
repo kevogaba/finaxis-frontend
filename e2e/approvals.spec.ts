@@ -327,9 +327,7 @@ test.describe('approvals: the notifications bell', () => {
       const organisation = banner.getByText('Greenfield SACCO', { exact: true });
       await expect(organisation).toBeVisible();
       await expect(status).toBeVisible();
-      await expect(
-        banner.getByRole('button', { name: 'Backend Jane Manager', exact: true }),
-      ).toBeVisible();
+      await expect(banner.getByRole('button', { name: /^BM Backend Jane Manager / })).toBeVisible();
 
       const [chipBox, statusBox, bellBox] = await Promise.all([
         chip.boundingBox(),
