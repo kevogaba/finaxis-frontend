@@ -122,6 +122,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   eighth, named exception: a picker's option set, not a data-listing directory — no licence for an
   unbounded list (plan `docs/superpowers/plans/2026-10-12-admin-parity-11-invite-wizard.md`,
   Ruling 10).
+  The administration overview's Pending approvals and Recent activity cards
+  (`modules/administration/overview`: at most five requests, users then branches, beside the
+  bell's counts, from one bounded users read of at most 100 that reads past identities still
+  provisioning (BG-11) and one five-row branch read; and the five latest audit events; each card
+  links to its paginated list, and the counts come from `totalItems`, with no scan) are a ninth,
+  named exception: bounded previews, not data-listing directories — no licence for an unbounded
+  list (plan `docs/superpowers/plans/2026-10-18-admin-parity-14-overview.md`, Ruling 10).
 - A context-scoped read goes through `lib/api/tenant-api.ts`'s `apiGet(path, schema)`, where
   `schema` is a snake_case zod schema defined in the domain's own `<domain>-contract.ts` (e.g.
   `modules/administration/audit/audit-contract.ts`) that transforms the wire shape to camelCase.
