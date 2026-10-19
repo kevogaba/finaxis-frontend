@@ -7,8 +7,11 @@ import type { ApplicationContext } from '@/config/application-context';
 import { OverviewCardSkeleton } from '@/modules/administration/overview/components/overview-card-skeleton';
 import {
   ACTIVITY_DESCRIPTION,
+  ACTIVITY_LINK,
   APPROVALS_DESCRIPTION,
+  APPROVALS_LINK,
   BUSINESS_DATE_DESCRIPTION,
+  BUSINESS_DATE_LINK,
 } from '@/modules/administration/overview/overview-rules';
 import { READINESS_DESCRIPTION } from '@/modules/administration/overview/readiness-rules';
 import { renderWithProviders } from '@/test/test-utils';
@@ -151,10 +154,30 @@ describe('AdminOverviewPage', () => {
   it('puts each card behind its own Suspense boundary and skeleton (spec §6.3)', async () => {
     resolved(EVERY_CODE);
     expect(fallbacks(await AdminOverviewPage())).toEqual([
-      { title: 'Business date', description: BUSINESS_DATE_DESCRIPTION, rows: 1 },
-      { title: 'Pending approvals', description: APPROVALS_DESCRIPTION, rows: 5 },
-      { title: 'Operational readiness', description: READINESS_DESCRIPTION, rows: 5, bar: true },
-      { title: 'Recent activity', description: ACTIVITY_DESCRIPTION, rows: 5 },
+      {
+        title: 'Business date',
+        description: BUSINESS_DATE_DESCRIPTION,
+        action: BUSINESS_DATE_LINK,
+        shape: 'date',
+      },
+      {
+        title: 'Pending approvals',
+        description: APPROVALS_DESCRIPTION,
+        action: APPROVALS_LINK,
+        rows: 5,
+      },
+      {
+        title: 'Operational readiness',
+        description: READINESS_DESCRIPTION,
+        shape: 'readiness',
+        rows: 5,
+      },
+      {
+        title: 'Recent activity',
+        description: ACTIVITY_DESCRIPTION,
+        action: ACTIVITY_LINK,
+        rows: 5,
+      },
     ]);
   });
 

@@ -43,6 +43,9 @@ export const CARD_TITLES = {
   activity: 'Recent activity',
 } as const;
 
+/** What a card's skeleton says to a screen reader while its reads are still in flight. */
+export const CARD_LOADING = 'Loading…';
+
 export interface OverviewCards {
   businessDate: boolean;
   /** The kinds of request the holder can decide; `null`: neither, so the card is omitted. */

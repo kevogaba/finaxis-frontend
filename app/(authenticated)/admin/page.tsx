@@ -12,8 +12,11 @@ import { ReadinessSection } from '@/modules/administration/overview/components/r
 import { RecentActivitySection } from '@/modules/administration/overview/components/recent-activity-card';
 import {
   ACTIVITY_DESCRIPTION,
+  ACTIVITY_LINK,
   APPROVALS_DESCRIPTION,
+  APPROVALS_LINK,
   BUSINESS_DATE_DESCRIPTION,
+  BUSINESS_DATE_LINK,
   CARD_TITLES,
   NO_OVERVIEW_CARDS,
   noOverviewCards,
@@ -25,8 +28,8 @@ import { READINESS_DESCRIPTION } from '@/modules/administration/overview/readine
 
 export const metadata: Metadata = { title: 'Overview' };
 
-/** A card's skeleton: its title and description, and as many rows as the card shows (see the
- * skeleton), so the page doesn't jump as each card fills. */
+/** A card's skeleton: its title, description, header link and body shape, as the card shows them
+ * (see the skeleton), so the page jumps less as each card fills. */
 type SkeletonProps = ComponentProps<typeof OverviewCardSkeleton>;
 
 /** A card behind its own Suspense boundary and skeleton (spec §6.3): a slow or failed read never
@@ -85,12 +88,22 @@ export default async function AdminOverviewPage() {
       >
         {cards.businessDate &&
           card(
-            { title: CARD_TITLES.businessDate, description: BUSINESS_DATE_DESCRIPTION, rows: 1 },
+            {
+              title: CARD_TITLES.businessDate,
+              description: BUSINESS_DATE_DESCRIPTION,
+              action: BUSINESS_DATE_LINK,
+              shape: 'date',
+            },
             <BusinessDateSection />,
           )}
         {cards.approvals &&
           card(
-            { title: CARD_TITLES.approvals, description: APPROVALS_DESCRIPTION, rows: 5 },
+            {
+              title: CARD_TITLES.approvals,
+              description: APPROVALS_DESCRIPTION,
+              action: APPROVALS_LINK,
+              rows: 5,
+            },
             <PendingApprovalsSection
               users={cards.approvals.users}
               branches={cards.approvals.branches}
@@ -102,14 +115,19 @@ export default async function AdminOverviewPage() {
             {
               title: CARD_TITLES.readiness,
               description: READINESS_DESCRIPTION,
+              shape: 'readiness',
               rows: 5,
-              bar: true,
             },
             <ReadinessSection permissions={permissions} organisationStatus={organisation.status} />,
           )}
         {cards.activity &&
           card(
-            { title: CARD_TITLES.activity, description: ACTIVITY_DESCRIPTION, rows: 5 },
+            {
+              title: CARD_TITLES.activity,
+              description: ACTIVITY_DESCRIPTION,
+              action: ACTIVITY_LINK,
+              rows: 5,
+            },
             <RecentActivitySection
               names={cards.activity.names}
               timeZone={cards.activity.timeZone}

@@ -61,6 +61,38 @@ const item = (page: Page, label: string) =>
     .getByRole('listitem')
     .filter({ has: page.getByRole('heading', { level: 3, name: label, exact: true }) });
 
+/** The top edge of a visible element, from its box. */
+async function topOf(locator: Locator) {
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('a visible element has no box');
+  return box.y;
+}
+
+/** The readiness chips to pin, per scenario: each item's state, by its exact chip words. */
+const CHIP_SCENES = [
+  {
+    scenario: 'overview-attention',
+    states: [
+      ['Institution profile', 'Needs attention'],
+      ['Branches', 'Needs attention'],
+      ['People', 'Needs attention'],
+      ['Onboarding', 'Needs attention'],
+      ['Business date', 'Needs attention'],
+    ],
+  },
+  {
+    scenario: 'overview-limited',
+    states: [
+      ['Institution profile', "Can't be checked"],
+      ['Branches', 'Needs attention'],
+      ['People', "Can't be checked"],
+      ['Onboarding', 'Needs attention'],
+      ['Business date', "Can't be checked"],
+    ],
+  },
+] as const;
+
 /** The bell streams in the header behind its own boundary: wait for it before a scan. */
 async function bell(page: Page, label: string) {
   await expect(
@@ -327,44 +359,14 @@ test.describe('overview: the cards', () => {
     });
   });
 
-  test('keeps each readiness chip beside its heading at 1280 and 375 px', async ({
-    context,
-    page,
-  }, testInfo) => {
+  // One test per scenario, each signing in to its own fake-API run (rule 13).
+  for (const { scenario, states } of CHIP_SCENES) {
     // Each item's chip, by its exact words, sits beside the item's h3 (its top within 8 px) at both
     // widths: a chip that drops under the item's text reads as part of the next item.
-    const scenes = [
-      {
-        scenario: 'overview-attention',
-        states: [
-          ['Institution profile', 'Needs attention'],
-          ['Branches', 'Needs attention'],
-          ['People', 'Needs attention'],
-          ['Onboarding', 'Needs attention'],
-          ['Business date', 'Needs attention'],
-        ],
-      },
-      {
-        scenario: 'overview-limited',
-        states: [
-          ['Institution profile', "Can't be checked"],
-          ['Branches', 'Needs attention'],
-          ['People', "Can't be checked"],
-          ['Onboarding', 'Needs attention'],
-          ['Business date', "Can't be checked"],
-        ],
-      },
-    ] as const;
-    /** The top edge of a visible element, from its box. */
-    const topOf = async (locator: Locator) => {
-      await expect(locator).toBeVisible();
-      const box = await locator.boundingBox();
-      if (!box) throw new Error('a visible element has no box');
-      return box.y;
-    };
-    for (const { scenario, states } of scenes) {
-      // A context selected for the first scenario would skip the picker for the next: start clean.
-      await context.clearCookies();
+    test(`keeps each readiness chip beside its heading at 1280 and 375 px: ${scenario}`, async ({
+      context,
+      page,
+    }, testInfo) => {
       await authenticate(context, testInfo, scenario);
       await enterOverview(page);
       for (const width of [1280, 375]) {
@@ -380,8 +382,8 @@ test.describe('overview: the cards', () => {
           ).toBeLessThanOrEqual(8);
         }
       }
-    }
-  });
+    });
+  }
 });
 
 const SURFACES = [
