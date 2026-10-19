@@ -2528,6 +2528,10 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 
 **Gate:** the hook's `pnpm check`.
 
+**Erratum (ed2081e, `fix(overview): keep readiness chips beside their items and size the loading cards`; 9614d80, `fix(overview): size each loading card like its card and split the chip pin`):** the gate's visual pass found every skeleton 145 px whatever the card (page CLS 0.10 at 1440 px and 0.14 at 375 px with staggered reads) and a loading card silent to a screen reader. `OverviewCardSkeleton` is therefore `OverviewCardSkeleton({ title, description, action?, shape = 'rows', rows = 0 })`: the card's static description, a placeholder the size of its header link's words (a hidden `Skeleton`, never a link), then the card's body shape (`date`: one h4 line; `readiness`: the bar block with the theme's 8 px bar, then five items of three lines; `rows`: list rows with the card's divider rules), and a visually hidden `CARD_LOADING` ('Loading…', exported by `overview-rules.ts`) just before the busy box, because inside `aria-busy` a screen reader may hold it back. `overview-rules.ts` also exports `ACTIVITY_DESCRIPTION` ('The latest events.', the description before the zone is known; `activityDescription` composes it, with its output unchanged). The old `OverviewCardSkeleton` describe moved from `business-date-card.test.tsx` to `overview-card-skeleton.test.tsx`, which counts rows by the busy box's children and pins the bar block's place first and the span's place.
+
+The heights approximate the cards': Business date matches at 1440 px, Readiness is 543 px against 581 to 744, and Pending approvals' five rows are a guess (the empty card is 121 or 151 px, a full one 548 or 765 px). Page CLS with the staggered `stag-` copy of the fake API (two loads each; not repeatable to the digit): `overview-attention` 0.0255 at 1440 px and 0.0204 and 0.0225 at 375 px; `overview-ready` 0.0471 and 0.0705 at 1440 px, and 0.0204 and **0.1055** at 375 px, where the empty approvals card fills under its 395 px skeleton and Readiness moves up 244 px. That one is not below 0.1 and was left as measured. Recent activity's skeleton is 365 px against the real 395 at 375 px; its cause was not investigated.
+
 ### Task 5: The Operational readiness card
 
 **Files:**
@@ -2935,6 +2939,8 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 ```
 
 **Gate:** the hook's `pnpm check`.
+
+**Erratum (ed2081e, `fix(overview): keep readiness chips beside their items and size the loading cards`; 9614d80, `fix(overview): size each loading card like its card and split the chip pin`):** each readiness item is a two-column grid (`display: 'grid'`, `gridTemplateColumns: 'minmax(0, 1fr) auto'`, `alignItems: 'start'`, `gap: 2`; the text box keeps `minWidth: 0`) instead of the wrapping flex row, so its state chip stays beside its heading. The flex row dropped the chip under the text at 1200 to 1280 px (all five items in `overview-attention`) and, for the Can't and Couldn't be checked chips, at 375 px in `overview-limited`, so the chips sat in two places in one list. Pinned by two e2e tests, one per scenario, which find each chip by its exact words and assert its top within 8 px of its h3's top at 1280 and 375 px; with the old row they fail at 87 px (`overview-attention`, 1280) and 48.4 px (`overview-limited`, 375).
 
 ### Task 6: The Pending approvals card
 
@@ -4077,6 +4083,10 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 
 **Gate:** the hook's `pnpm check`, and form E on the five specs above.
 
+**Erratum (ee4910a, `feat(overview): show the four cards, each behind its own Suspense boundary`):** the m5 mutation proof ('never show the note') names `if (cards === null)`, but the page's guard is `if (noOverviewCards(cards))`; making that guard never true fails the named test.
+
+**Erratum (ed2081e, 9614d80):** the four Suspense fallbacks take their card's skeleton props through `card(skeleton, content)` instead of its title alone: the card's static description (`BUSINESS_DATE_DESCRIPTION`, `APPROVALS_DESCRIPTION`, `READINESS_DESCRIPTION`, `ACTIVITY_DESCRIPTION`), its header link's words (`BUSINESS_DATE_LINK`, `APPROVALS_LINK`, `ACTIVITY_LINK`; Readiness has none), a `shape` and a row count. `page.test.tsx` checks each fallback's full props.
+
 ### Task 9: The fake API's overview scenarios
 
 Two sub-tasks: **9a** (the three scenarios the cards and the matrix read) and **9b** (the
@@ -4499,6 +4509,8 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 ```
 
 **Gate:** the hook's `pnpm check` and form E on the fake spec.
+
+**Erratum (77ed202, `test(fake-api): seed the overview scenarios`):** the expected RED output of Step 2 is not what the fifth test shows: it fails inside its `codes()` helper (the scenario is unknown), before reaching the assertion the step names. The test is genuine; it passes once the scenarios exist.
 
 #### Task 9b: A branch read refused (BG-33)
 
@@ -5062,6 +5074,10 @@ Claude-Session: https://claude.ai/code/session_01A64qenN9PHda6gtMwEETdc
 ```
 
 **Gate:** the hook's `pnpm check` and form E on the behaviour chunk.
+
+**Erratum (53b5046, `test(e2e): cover the administration overview end to end`):** the brief's first mutation proof names `.filter((user) => user.userStatus !== 'ACTIVE')`, which is not in the code: `pendingApprovalsView` drops identities still provisioning with `.filter((user) => user.userStatus !== 'PROVISIONING_IDP')`, and removing that filter fails the named test.
+
+**Erratum (ed2081e, 9614d80):** the gate's visual pass added a pin for the readiness chips (see Task 5's erratum): one generated test per scenario in this chunk, titled `keeps each readiness chip beside its heading at 1280 and 375 px: <scenario>`, so `--grep "overview: the cards"` runs 8 tests, not 6.
 
 #### Task 10b: The accessibility matrix
 
