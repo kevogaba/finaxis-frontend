@@ -67,8 +67,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   a server field error returns to its step (see
   `modules/platform-administration/tenants/components/tenant-draft-wizard.tsx`). The form
   validates on Continue, never on blur (a blur-added error line would move Continue under the
-  pointer); a choice validates its own field. While mounted, `WizardForm` keeps 140 px of page
-  scroll padding below (its action bar wraps to two rows, 114 px, on a narrow viewport), and
+  pointer); a choice validates its own field. While mounted, `WizardForm` keeps at least 140 px
+  of page scroll padding below (its action bar wraps to two rows, 114 px, on a narrow viewport),
+  and the bar's measured height plus 26 px when that is more (larger text, zoom), and
   `app/globals.css` keeps 80 px above for the sticky app bar, so a sticky bar never covers a
   control the keyboard reaches (WCAG 2.4.11).
 - Every data-listing UI (both workspaces; new lists especially) is server-paginated with state in
@@ -144,7 +145,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - E2E tests run against the standalone fake API in `e2e/fake-api/` — never add backend fixtures to
   app code. Fake-API files run under plain `node`: relative `.mts` imports, `import type` for types,
   erasable TypeScript only (no enums, namespaces, parameter properties). Add only endpoints a layer
-  uses, mirroring the contract document exactly (including backend quirks).
+  uses, mirroring the contract document exactly (including backend quirks). The one spec without
+  the app or the fake API is `e2e/click-helpers.spec.ts`: it checks the e2e click helpers on a
+  static page (`page.setContent`), and helper self-tests like it belong there, not in app specs.
 - The backend's wire format is snake_case and differs from the published OpenAPI casing; never
   generate a client from the OpenAPI as-is. Follow
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`.

@@ -7,7 +7,13 @@ import {
   expectA11yCaseApplied,
   expectNoSeriousOrCriticalViolations,
 } from './support/admin';
-import { addCookie, authenticate, CONTEXT_COOKIE_NAME, selectMuiOption } from './support/auth';
+import {
+  addCookie,
+  authenticate,
+  clickMuiOption,
+  CONTEXT_COOKIE_NAME,
+  selectMuiOption,
+} from './support/auth';
 
 const main = (page: Page) => page.getByRole('main');
 const tab = (page: Page, name: string) =>
@@ -86,9 +92,9 @@ test.describe('profile', () => {
       timeout: 20000,
     });
     await dialog.getByRole('combobox', { name: 'Organisation' }).click();
-    await page.getByRole('option', { name: /Greenfield/ }).click();
+    await clickMuiOption(page.getByRole('option', { name: /Greenfield/ }));
     await dialog.getByRole('combobox', { name: 'Branch' }).click();
-    await page.getByRole('option', { name: /Westlands/ }).click();
+    await clickMuiOption(page.getByRole('option', { name: /Westlands/ }));
 
     await expect(
       page.getByRole('alert').filter({ hasText: /Switched to Greenfield SACCO/ }),

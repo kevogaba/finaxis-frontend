@@ -1,7 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { IDS } from './fake-api/scenarios.mts';
 import { expectNoSeriousOrCriticalViolations } from './support/admin';
-import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
+import {
+  authenticate,
+  clickInMuiPopover,
+  clickMuiOption,
+  expectHydrated,
+  selectMuiOption,
+} from './support/auth';
 
 const ACME_TENANT_ID = '99999999-9999-4999-8999-999999999999';
 
@@ -78,9 +84,9 @@ test.describe('working context', () => {
       timeout: 20000,
     });
     await dialog.getByRole('combobox', { name: 'Organisation' }).click();
-    await page.getByRole('option', { name: /Greenfield/ }).click();
+    await clickMuiOption(page.getByRole('option', { name: /Greenfield/ }));
     await dialog.getByRole('combobox', { name: 'Branch' }).click();
-    await page.getByRole('option', { name: /Westlands/ }).click();
+    await clickMuiOption(page.getByRole('option', { name: /Westlands/ }));
 
     // Assert the toast before the banner: the Snackbar auto-hides after 5s, while the banner
     // waits on router.refresh() and a cold compile of the (already-visited) /admin route.
@@ -126,10 +132,10 @@ test.describe('working context', () => {
       timeout: 20000,
     });
     await dialog.getByRole('combobox', { name: 'Organisation' }).click();
-    await page.getByRole('option', { name: /Greenfield/ }).click();
+    await clickMuiOption(page.getByRole('option', { name: /Greenfield/ }));
     await dialog.getByRole('combobox', { name: 'Branch' }).click();
     await expect(page.getByRole('option', { name: /Westlands/ })).toBeVisible();
-    await page.getByRole('option', { name: /Westlands/ }).click();
+    await clickMuiOption(page.getByRole('option', { name: /Westlands/ }));
 
     await expect(
       page.getByRole('alert').filter({ hasText: /^Switched to Greenfield SACCO$/ }),
@@ -149,7 +155,7 @@ test.describe('working context', () => {
     });
 
     await page.getByRole('button', { name: 'Switch application', exact: true }).click();
-    await page.getByRole('button', { name: /Platform administration/ }).click();
+    await clickInMuiPopover(page.getByRole('button', { name: /Platform administration/ }));
 
     // The platform operator has a single branch, so switching auto-pins it — toast before the
     // banner/URL, per the same auto-hiding-Snackbar-vs-refresh ordering as above. Anchored so a

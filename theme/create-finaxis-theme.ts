@@ -633,8 +633,18 @@ export function createFinaxisTheme() {
           bar: { borderRadius: 999 },
         },
       },
+      // A failure Alert takes focus when nothing else names the problem (the invite and tenant
+      // wizards' failure and check alerts, the context selection's errors: `tabIndex={-1}`). It
+      // isn't a ButtonBase either, so it showed the browser's 1px `auto` outline: spread the same
+      // resolved ring as Typography above.
       MuiAlert: {
-        styleOverrides: { root: { borderRadius: 8, alignItems: 'flex-start' } },
+        styleOverrides: {
+          root: ({ theme }) => ({
+            borderRadius: 8,
+            alignItems: 'flex-start',
+            '&:focus-visible': theme.focusVisible === false ? undefined : theme.focusVisible,
+          }),
+        },
       },
       MuiLink: {
         defaultProps: { underline: 'hover' },

@@ -85,7 +85,16 @@ describe('WorkspaceDrawer', () => {
     const mobileOverviewLink = overviewLinks[1];
     if (!mobileOverviewLink) throw new Error('mobile drawer link missing');
 
-    fireEvent.click(mobileOverviewLink);
+    // jsdom can't navigate: cancel the link's default action after React's handlers have run.
+    const keepPage = (event: Event) => {
+      event.preventDefault();
+    };
+    document.addEventListener('click', keepPage);
+    try {
+      fireEvent.click(mobileOverviewLink);
+    } finally {
+      document.removeEventListener('click', keepPage);
+    }
 
     expect(props.onMobileClose).toHaveBeenCalledTimes(1);
   });

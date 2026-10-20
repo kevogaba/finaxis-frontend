@@ -3,8 +3,8 @@
 import {
   startTransition,
   useActionState,
-  useEffect,
   useId,
+  useLayoutEffect,
   useState,
   type ReactNode,
   type SyntheticEvent,
@@ -119,9 +119,11 @@ function AssignmentForm({
     null,
   );
   // Reported from an effect, like ReasonDialog/ConfirmDialog: a parent setState inside the action
-  // would be held back with the transition until the action settles. Each mount reports `false`,
-  // so a reopened drawer can always be closed again.
-  useEffect(() => {
+  // would be held back with the transition until the action settles. A layout effect, so the
+  // drawer's Escape and backdrop guard changes in the same commit as `pending`, at the start of a
+  // submit and at its end (ConfirmDialog says why). Each mount reports `false`, so a reopened
+  // drawer can always be closed again.
+  useLayoutEffect(() => {
     onPendingChange(pending);
   }, [pending, onPendingChange]);
   const failure = state && !state.ok ? state : null;

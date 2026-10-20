@@ -287,6 +287,8 @@ describe('InviteAccessFields', () => {
     const user = userEvent.setup({ delay: null });
     renderWithProviders(<Harness />);
 
+    // Unset, it says so, as the Review step's "Not set" does, rather than reading blank.
+    expect(screen.getByRole('combobox', { name: 'Primary branch' })).toHaveTextContent(/^None$/);
     await user.click(screen.getByRole('combobox', { name: 'Primary branch' }));
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
       'None',

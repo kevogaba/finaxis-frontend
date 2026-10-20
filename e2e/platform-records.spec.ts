@@ -11,7 +11,7 @@ import {
   rowsOf,
   statusChip,
 } from './support/admin';
-import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
+import { authenticate, clickInMuiPopover, expectHydrated, selectMuiOption } from './support/auth';
 import { IDS, RECORD_SCENARIO_IDS as R, TENANT_SCENARIO_IDS as T } from './fake-api/scenarios.mts';
 
 const ACME = `/platform-admin/tenants/${IDS.acme}`;
@@ -605,7 +605,7 @@ test.describe('platform records: platform users, overview and notifications', ()
 
     const dialog = page.getByRole('dialog', { name: 'Notifications' });
     await expect(dialog).toContainText('2 institutions are waiting for approval.');
-    await dialog.getByRole('link', { name: 'Review pending institutions' }).click();
+    await clickInMuiPopover(dialog.getByRole('link', { name: 'Review pending institutions' }));
 
     // The link closes the dialog (asserted first: an open modal hides the page's h1 from the
     // accessibility tree, so the heading below would otherwise fail for the wrong reason).

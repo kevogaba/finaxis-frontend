@@ -11,7 +11,7 @@ import {
   rowsOf,
   type A11yCase,
 } from './support/admin';
-import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
+import { authenticate, clickMuiOption, expectHydrated, selectMuiOption } from './support/auth';
 import { IDS, USER_SCENARIO_IDS as USERS } from './fake-api/scenarios.mts';
 
 const ALL_BRANCHES = /All branches \(institution level\)/;
@@ -624,13 +624,13 @@ test.describe('users: access and audit', () => {
     // The ACTIVE roles only: Tenant admin, Teller and Branch supervisor, never Loans officer.
     await expect(page.getByRole('option')).toHaveCount(3);
     await expect(page.getByRole('option', { name: /Loans officer/ })).toHaveCount(0);
-    await page.getByRole('option', { name: 'Branch supervisor (SUPERVISOR)' }).click();
+    await clickMuiOption(page.getByRole('option', { name: 'Branch supervisor (SUPERVISOR)' }));
     await selectMuiOption(page, 'Scope', /^One branch$/);
     // Felix holds Westlands only, so it is the one branch on offer.
     await page.getByRole('combobox', { name: 'Branch' }).click();
     await expect(page.getByRole('option')).toHaveCount(1);
     await expect(page.getByRole('option')).toHaveText('Westlands Branch (WESTLANDS)');
-    await page.getByRole('option', { name: 'Westlands Branch (WESTLANDS)' }).click();
+    await clickMuiOption(page.getByRole('option', { name: 'Westlands Branch (WESTLANDS)' }));
     await drawer.getByRole('button', { name: 'Assign role' }).click();
     await expect(drawer).toBeHidden({ timeout: 15000 });
     await expect(toast(page, 'Role assigned')).toBeVisible();

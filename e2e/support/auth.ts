@@ -74,8 +74,47 @@ export async function expectHydrated(locator: Locator): Promise<void> {
     .toBe(true);
 }
 
-/** How long an open menu may keep animating before a click on one of its options is refused. */
+/** How long an open menu or popover may keep animating before a click inside it is refused. */
 const MENU_SETTLE_LIMIT_MS = 5000;
+
+/**
+ * In the page, before a click inside an open MUI menu or popover: waits until the running
+ * animations on `item` and its ancestors finish (an endless animation on the popup or an ancestor,
+ * such as a spinner's, is not waited on), at most `limitMs`. Returns the popup's name (a listbox's
+ * label, or a popover dialog's title) and the item's text, for messages. Passed to `evaluate`, so
+ * it uses nothing from this module.
+ */
+async function settleInPage(item: Element, { limitMs, kind }: { limitMs: number; kind: string }) {
+  const popup = item.closest('[role="listbox"], [role="dialog"]');
+  const labelId = popup?.getAttribute('aria-labelledby') ?? '';
+  const menu = document.getElementById(labelId)?.textContent.trim() ?? kind;
+  const name = item.textContent.trim();
+  const moving: Animation[] = [];
+  for (let node: Element | null = item; node; node = node.parentElement) {
+    for (const animation of node.getAnimations()) {
+      const end = animation.effect?.getComputedTiming().endTime;
+      if (animation.playState === 'running' && typeof end === 'number' && Number.isFinite(end)) {
+        moving.push(animation);
+      }
+    }
+  }
+  let timer: number | undefined;
+  const stuck = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(() => {
+      reject(
+        new Error(
+          `The "${menu}" ${kind} was still animating ${limitMs / 1000} s after it opened, so the click on "${name}" was not sent.`,
+        ),
+      );
+    }, limitMs);
+  });
+  try {
+    await Promise.race([Promise.allSettled(moving.map((a) => a.finished)), stuck]);
+  } finally {
+    window.clearTimeout(timer);
+  }
+  return { menu, name };
+}
 
 /**
  * Clicks `option` in an open MUI menu once the menu has stopped moving, then waits for it to close.
@@ -88,41 +127,26 @@ const MENU_SETTLE_LIMIT_MS = 5000;
  * single-choice menus only: a `multiple` Select stays open after a click (none exists in the app).
  */
 export async function clickMuiOption(option: Locator): Promise<void> {
-  const { menu, name } = await option.evaluate(async (item, limitMs) => {
-    const labelId = item.closest('[role="listbox"]')?.getAttribute('aria-labelledby') ?? '';
-    const menu = document.getElementById(labelId)?.textContent.trim() ?? 'menu';
-    const name = item.textContent.trim();
-    const moving: Animation[] = [];
-    for (let node: Element | null = item; node; node = node.parentElement) {
-      for (const animation of node.getAnimations()) {
-        const end = animation.effect?.getComputedTiming().endTime;
-        if (animation.playState === 'running' && typeof end === 'number' && Number.isFinite(end)) {
-          moving.push(animation);
-        }
-      }
-    }
-    let timer: number | undefined;
-    const stuck = new Promise<never>((_, reject) => {
-      timer = window.setTimeout(() => {
-        reject(
-          new Error(
-            `The "${menu}" menu was still animating ${limitMs / 1000} s after it opened, so the click on "${name}" was not sent.`,
-          ),
-        );
-      }, limitMs);
-    });
-    try {
-      await Promise.race([Promise.allSettled(moving.map((a) => a.finished)), stuck]);
-    } finally {
-      window.clearTimeout(timer);
-    }
-    return { menu, name };
-  }, MENU_SETTLE_LIMIT_MS);
+  const { menu, name } = await option.evaluate(settleInPage, {
+    limitMs: MENU_SETTLE_LIMIT_MS,
+    kind: 'menu',
+  });
   await option.click();
   await expect(
     option.page().getByRole('listbox'),
     `The "${menu}" menu stayed open after the click on "${name}", so nothing was chosen.`,
   ).toHaveCount(0);
+}
+
+/**
+ * Clicks `target` inside an open MUI popover (the bell's Notifications, the app switcher) once the
+ * popover has stopped growing in. A Popover grows in as a Select's menu does, so a click on a
+ * moving link or button can be lost the same way (see clickMuiOption). The caller asserts what the
+ * click does: a popover isn't a listbox, so there is no choice to check here.
+ */
+export async function clickInMuiPopover(target: Locator): Promise<void> {
+  await target.evaluate(settleInPage, { limitMs: MENU_SETTLE_LIMIT_MS, kind: 'popover' });
+  await target.click();
 }
 
 export async function selectMuiOption(page: Page, label: string, option: RegExp): Promise<void> {

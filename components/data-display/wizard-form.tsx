@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode, type SyntheticEvent } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import GlobalStyles from '@mui/material/GlobalStyles';
@@ -35,8 +35,11 @@ interface WizardFormProps {
 }
 
 /** The sticky action bar is 70 px tall in one row, and 114 px when its buttons wrap to two rows on a
- * narrow viewport (at 360 px "Send invitation" drops below Cancel and Back). 114 px plus a 26 px gap. */
+ * narrow viewport (at 360 px "Send invitation" drops below Cancel and Back). 114 px plus a 26 px gap
+ * is the least the page keeps; a taller bar (larger text, zoom, a longer label) gets its own height
+ * plus the gap, measured. */
 const ACTION_BAR_CLEARANCE = 140;
+const ACTION_BAR_GAP = 26;
 
 /**
  * A multi-step form (spec §9): the themed Stepper, the current step in a surface, and a sticky
@@ -56,6 +59,24 @@ export function WizardForm({
 }: WizardFormProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const shownStep = useRef(active);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [barHeight, setBarHeight] = useState(0);
+
+  // The bar's height decides the scroll clearance below: measured, so a bar that grows past its
+  // two-row 114 px still never covers the control the keyboard reaches (WCAG 2.4.11).
+  useEffect(() => {
+    const bar = barRef.current;
+    // jsdom (unit tests) has no ResizeObserver; every real browser does, and the 140 px floor holds.
+    if (!bar || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      setBarHeight(bar.getBoundingClientRect().height);
+    });
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+  const clearance = Math.max(ACTION_BAR_CLEARANCE, Math.ceil(barHeight) + ACTION_BAR_GAP);
 
   // A step change starts keyboard and screen-reader users at the new step's top; the first render
   // leaves focus where the page put it.
@@ -77,9 +98,9 @@ export function WizardForm({
       sx={{ display: 'grid', gap: 4.5 }}
     >
       {/* The sticky action bar (70 px, or 114 px when its buttons wrap) must not cover a control the
-          keyboard reaches: the page keeps 140 px of scroll padding below while a wizard is mounted
-          (WCAG 2.4.11). */}
-      <GlobalStyles styles={{ html: { scrollPaddingBottom: ACTION_BAR_CLEARANCE } }} />
+          keyboard reaches: the page keeps at least 140 px of scroll padding below while a wizard is
+          mounted, and the bar's measured height plus 26 px when that is more (WCAG 2.4.11). */}
+      <GlobalStyles styles={{ html: { scrollPaddingBottom: clearance } }} />
       <Stepper activeStep={active}>
         {steps.map((step, index) => (
           <Step key={step.label} aria-current={index === active ? 'step' : undefined}>
@@ -117,6 +138,7 @@ export function WizardForm({
         {alerts && <Box sx={{ px: 6, pt: 4.5, display: 'grid', gap: 3 }}>{alerts}</Box>}
         <Box sx={{ p: 6, display: 'grid', gap: 4.5 }}>{children}</Box>
         <Box
+          ref={barRef}
           sx={{
             position: 'sticky',
             bottom: 0,

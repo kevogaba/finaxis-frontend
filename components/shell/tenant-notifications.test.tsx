@@ -53,13 +53,27 @@ const MODULES = {
   tenant: { id: 'administration', name: 'Administration' },
 } as const satisfies Record<string, ApplicationContext['module']>;
 
+const ACTIVE_BRANCH = { code: 'WESTLANDS', name: 'Westlands Branch', status: 'ACTIVE' };
+
 function resolved(
   permissions: string[],
-  options: { module?: ApplicationContext['module']; branch?: ApplicationContext['branch'] } = {},
+  options: {
+    module?: ApplicationContext['module'];
+    branch?: ApplicationContext['branch'];
+    /** The account's ACTIVE branches in /auth/me. */
+    activeBranches?: number;
+  } = {},
 ) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { ...PROFILE, permissions },
+    profile: {
+      ...PROFILE,
+      permissions,
+      branches: Array.from({ length: options.activeBranches ?? 2 }, (_entry, index) => ({
+        ...ACTIVE_BRANCH,
+        id: `5b000000-0000-4000-8000-00000000000${String(index)}`,
+      })),
+    },
     context: {
       module: options.module ?? MODULES.tenant,
       organization: { id: ORGANISATION, name: 'Greenfield Teachers SACCO' },
@@ -124,6 +138,23 @@ describe('PendingApprovalNotifications', () => {
       '1 branch is waiting for activation. Switch to All branches to activate them.',
     );
     expect(countUserApprovals).not.toHaveBeenCalled();
+  });
+
+  it('tells an account that works at one branch who activates, never to switch', async () => {
+    const user = userEvent.setup({ delay: null });
+    resolved(['branch.activate', 'branch.view'], {
+      branch: { id: WESTLANDS, name: 'Westlands Branch' },
+      activeBranches: 1,
+    });
+    countBranchActivations.mockResolvedValue(1);
+    await show();
+
+    await user.click(screen.getByRole('button', { name: 'Notifications: 1 approval waiting' }));
+    const dialog = screen.getByRole('dialog', { name: 'Notifications' });
+    expect(dialog).toHaveTextContent(
+      '1 branch is waiting for activation. Ask an administrator who works at institution level to activate them.',
+    );
+    expect(dialog).not.toHaveTextContent('Switch to All branches');
   });
 
   it('says nothing is waiting when nothing is', async () => {

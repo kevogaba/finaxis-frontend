@@ -27,6 +27,13 @@ export const APPROVALS_UNAVAILABLE = "Pending approvals couldn't be loaded. Refr
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
+/** With a branch selected, activation needs All branches (BG-03), which an account that works at a
+ * single branch can't select (the queue's own note says the same, `branchQueueContextNote`). */
+const branchContextHint = (canSwitch: boolean) =>
+  canSwitch
+    ? ' Switch to All branches to activate them.'
+    : ' Ask an administrator who works at institution level to activate them.';
+
 /** The tenant bell (spec §8, BG-22). Any permitted read that failed makes the whole count unknown:
  * a part that failed must never read as none (Ruling 9). */
 export function approvalNotifications(input: {
@@ -34,6 +41,9 @@ export function approvalNotifications(input: {
   branches: CountRead<number>;
   /** A branch is selected: pending branches can be listed but only activated at All branches. */
   branchSelected: boolean;
+  /** The account can select All branches (more than one ACTIVE branch); one that works at a single
+   * branch is told who can activate instead. Omitted: it can. */
+  canSwitch?: boolean;
 }): NotificationsMenuProps {
   const common = { emptyText: NOTHING_WAITING, unavailableText: APPROVALS_UNAVAILABLE };
   if (input.users?.ok === false || input.branches?.ok === false) {
@@ -54,7 +64,7 @@ export function approvalNotifications(input: {
     entries.push({
       id: 'branch-activation',
       text: `${branches} ${plural(branches, 'branch is', 'branches are')} waiting for activation.${
-        input.branchSelected ? ' Switch to All branches to activate them.' : ''
+        input.branchSelected ? branchContextHint(input.canSwitch ?? true) : ''
       }`,
       href: BRANCH_QUEUE_HREF,
       linkLabel: 'Review branch activation',

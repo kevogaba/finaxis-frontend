@@ -10,7 +10,7 @@ vi.mock('@/modules/administration/branches/branch-actions', () => ({
   revokeBranchAssignment: vi.fn(),
 }));
 
-// vitest.config.ts resets no mocks, so each case must start with a clean call count.
+// vitest.config.mts resets no mocks, so each case must start with a clean call count.
 beforeEach(() => {
   assignBranchUser.mockReset();
 });

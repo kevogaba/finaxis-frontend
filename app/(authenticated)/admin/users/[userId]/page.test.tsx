@@ -32,8 +32,8 @@ vi.mock('@/auth/context-service', () => ({
   getCurrentContextProfile: () => getCurrentContextProfile() as unknown,
 }));
 vi.mock('@/lib/api/lookups', () => ({
-  // Not the zone vitest.config.ts pins for the runner (Africa/Nairobi), and with no daylight saving,
-  // so only the organisation's own zone can produce the times asserted below.
+  // Not the zone vitest.config.mts pins for the runner (Africa/Nairobi), and with no daylight
+  // saving, so only the organisation's own zone can produce the times asserted below.
   getOrganisationTimeZone: () => Promise.resolve('Asia/Kolkata'),
   getBranchIndex: () => getBranchIndex() as unknown,
 }));

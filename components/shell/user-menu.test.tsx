@@ -66,11 +66,20 @@ describe('UserMenu', () => {
   it('disables the log-out action after the first click to prevent duplicate submissions', async () => {
     const user = userEvent.setup();
     renderWithProviders(<UserMenu user={USER} />);
+    // jsdom can't submit a form to another page: cancel the native submission after React's
+    // handler has run, as a browser would leave this page.
+    const keepPage = (event: Event) => {
+      event.preventDefault();
+    };
+    document.addEventListener('submit', keepPage);
+    try {
+      await user.click(screen.getByRole('button', { name: /jane muthoni/i }));
+      const logOutButton = screen.getByRole('button', { name: /log out/i });
+      await user.click(logOutButton);
 
-    await user.click(screen.getByRole('button', { name: /jane muthoni/i }));
-    const logOutButton = screen.getByRole('button', { name: /log out/i });
-    await user.click(logOutButton);
-
-    expect(logOutButton).toBeDisabled();
+      expect(logOutButton).toBeDisabled();
+    } finally {
+      document.removeEventListener('submit', keepPage);
+    }
   });
 });

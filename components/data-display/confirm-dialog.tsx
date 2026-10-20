@@ -1,6 +1,14 @@
 'use client';
 
-import { useActionState, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import {
+  useActionState,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { unstable_rethrow } from 'next/navigation';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -120,9 +128,12 @@ function ConfirmForm<Result extends ConfirmOutcome>({
     null,
   );
   // Reported from an effect: a parent setState inside the action would be held back with the
-  // transition until the action settles. Each mount reports `false`, so a reopened dialog can
-  // always be closed again.
-  useEffect(() => {
+  // transition until the action settles. A layout effect, so the parent's Escape and backdrop guard
+  // changes in the same commit as `pending`: a passive effect left it one render behind at both
+  // ends, so an Escape as a submit started could close the dialog mid-request, and one as the
+  // failure appeared was dropped (the likely cause of the settings e2e flake on layer 12's tree).
+  // Each mount reports `false`, so a reopened dialog can always be closed again.
+  useLayoutEffect(() => {
     onPendingChange(pending);
   }, [pending, onPendingChange]);
   const failure = state && !state.ok ? state : null;

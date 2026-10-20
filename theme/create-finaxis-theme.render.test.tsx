@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import Alert from '@mui/material/Alert';
 import Autocomplete from '@mui/material/Autocomplete';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
@@ -403,6 +404,30 @@ describe('Typography focus-visible ring (gate finding V7: record-title focus fal
     expect(effectiveDeclaration(css, hash, ':focus-visible', 'outline-offset')).toMatch(
       /^calc\(var\(--_focusVisible-offset/,
     );
+  });
+});
+
+describe('Alert focus-visible ring (layer 11 gate observation 5: focused failure alerts)', () => {
+  it('gives a programmatically focused alert the house ring, not the browser default', () => {
+    // The wizards focus their failure Alert (`tabIndex={-1}`) when no field names the problem; an
+    // Alert isn't a ButtonBase, so it needs the shared ring spread under `&:focus-visible`, as
+    // Typography does above.
+    const { getByRole } = renderWithProviders(
+      <Alert severity="error" tabIndex={-1}>
+        The invitation wasn&apos;t sent.
+      </Alert>,
+    );
+    const hash = hashClassOf(getByRole('alert'));
+    const css = allEmittedCss();
+
+    expect(varName(effectiveDeclaration(css, hash, ':focus-visible', 'outline-color') ?? '')).toBe(
+      varName(theme.vars.palette.focus),
+    );
+    expect(effectiveDeclaration(css, hash, ':focus-visible', 'outline-offset')).toMatch(
+      /^calc\(var\(--_focusVisible-offset/,
+    );
+    // The theme's own shape stays.
+    expect(effectiveDeclaration(css, hash, '', 'border-radius')).toBe('8px');
   });
 });
 
