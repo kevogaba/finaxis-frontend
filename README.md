@@ -90,8 +90,9 @@ honours a dotted `color`.
   have running first — otherwise the suite runs against whatever is already there. Tests that need
   a signed-in session call `authenticate(context, testInfo, scenario)` from
   `e2e/support/auth.ts`, which gives each test its own scenario-seeded fake backend; unauthenticated and fake-API smoke specs don't.
-  `e2e/click-helpers.spec.ts` alone needs neither the app nor the fake API: it checks the click
-  helpers on a static page (`page.setContent`).
+  `e2e/click-helpers.spec.ts` uses neither the app nor the fake API (it checks the click helpers
+  on a static page, `page.setContent`), but Playwright still starts both servers for it, so an
+  app start-up failure blocks it too.
   The fake mirrors the real API's wire behaviour (snake_case, problem+json, context tokens, permissions — see
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`). Run it alone with
   `pnpm fake-api`. Chromium is the required project; install it once with

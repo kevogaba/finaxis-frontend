@@ -59,7 +59,7 @@ function waiting() {
 
 async function show(users = true, branches = true, branchSelected = false) {
   return renderWithProviders(
-    <>{await PendingApprovalsSection({ users, branches, branchSelected })}</>,
+    <>{await PendingApprovalsSection({ users, branches, branchSelected, canSwitch: true })}</>,
   );
 }
 
@@ -219,7 +219,12 @@ describe('PendingApprovalsSection', () => {
     waiting();
     reads.countUserApprovals.mockRejectedValue(error);
     await expect(
-      PendingApprovalsSection({ users: true, branches: true, branchSelected: false }),
+      PendingApprovalsSection({
+        users: true,
+        branches: true,
+        branchSelected: false,
+        canSwitch: true,
+      }),
     ).rejects.toMatchObject({ digest: expect.stringContaining(digest) as unknown });
   });
 });

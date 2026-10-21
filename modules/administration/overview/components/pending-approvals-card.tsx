@@ -49,7 +49,9 @@ export function PendingApprovalsCard({ view }: { view: PendingApprovalsView }) {
             <Box
               component="li"
               key={entry.id}
-              sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 2, rowGap: 0.5, py: 0.5 }}
+              // 8 px between entries against 2 px between a wrapped entry's own lines, so each
+              // sentence stays with its link (layer 14's gate, observation 4).
+              sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 2, rowGap: 0.5, py: 1 }}
             >
               <Typography component="span" variant="body2">
                 {entry.text}
@@ -142,10 +144,12 @@ export async function PendingApprovalsSection({
   users,
   branches,
   branchSelected,
+  canSwitch,
 }: {
   users: boolean;
   branches: boolean;
   branchSelected: boolean;
+  canSwitch: boolean;
 }) {
   const [userReads, branchPage] = await Promise.all([
     users ? readUserPreview() : null,
@@ -166,6 +170,7 @@ export async function PendingApprovalsSection({
         userCounts: userReads?.counts ?? null,
         branches: branchPage,
         branchSelected,
+        canSwitch,
       })}
     />
   );

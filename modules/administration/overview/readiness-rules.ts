@@ -56,7 +56,7 @@ export const READINESS_STATES: Record<ReadinessState, { label: string; tone: Sta
 };
 
 export const READINESS_DESCRIPTION =
-  "Each item is computed from live data. One your role can't read says so.";
+  "Each item is computed from live data. An item your role can't read says so.";
 export const NOT_PERMITTED = "Can't be checked with your permissions.";
 
 /** One item's verdict, from its reads alone. */
@@ -165,8 +165,13 @@ export function provisioningNote(count: number): string {
 export function onboardingItem(counts: Settled<UserApprovalCounts>): ReadinessCheck {
   if (counts === null) return item('onboarding', 'unknown', NOT_PERMITTED);
   if (!counts.ok) return item('onboarding', 'failed', readFailed(counts.problem));
-  const waiting = approvalNotifications({ users: counts, branches: null, branchSelected: false })
-    .entries[0];
+  const waiting = approvalNotifications({
+    users: counts,
+    branches: null,
+    // Users only: the branch flags word a branch entry, which this item never has.
+    branchSelected: false,
+    canSwitch: true,
+  }).entries[0];
   const note =
     counts.value.provisioning > 0 ? ` ${provisioningNote(counts.value.provisioning)}` : '';
   if (waiting) return item('onboarding', 'attention', `${waiting.text}${note}`);

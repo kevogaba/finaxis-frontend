@@ -23,6 +23,7 @@ describe('the bell (Ruling 9)', () => {
         users: { ok: true, value: { pending: 9, provisioning: 1 } },
         branches: { ok: true, value: 3 },
         branchSelected: false,
+        canSwitch: true,
       }),
     ).toEqual({
       label: 'Notifications: 11 approvals waiting',
@@ -51,6 +52,7 @@ describe('the bell (Ruling 9)', () => {
       users: { ok: true, value: { pending: 1, provisioning: 0 } },
       branches: null,
       branchSelected: false,
+      canSwitch: true,
     });
     expect(users.label).toBe('Notifications: 1 approval waiting');
     expect(users.entries.map((entry) => entry.text)).toEqual(['1 user is waiting for approval.']);
@@ -58,6 +60,7 @@ describe('the bell (Ruling 9)', () => {
       users: null,
       branches: { ok: true, value: 1 },
       branchSelected: false,
+      canSwitch: true,
     });
     expect(branches.entries.map((entry) => entry.text)).toEqual([
       '1 branch is waiting for activation.',
@@ -94,6 +97,7 @@ describe('the bell (Ruling 9)', () => {
         users: { ok: true, value: { pending: 1, provisioning: 1 } },
         branches: { ok: true, value: 0 },
         branchSelected: false,
+        canSwitch: true,
       }),
     ).toMatchObject({ label: 'Notifications: nothing waiting', total: 0, entries: [] });
   });
@@ -106,7 +110,9 @@ describe('the bell (Ruling 9)', () => {
       { ok: false } as const,
     ],
   ])('never reads as none when %s failed: the whole count is unknown', (_part, users, branches) => {
-    expect(approvalNotifications({ users, branches, branchSelected: false })).toMatchObject({
+    expect(
+      approvalNotifications({ users, branches, branchSelected: false, canSwitch: true }),
+    ).toMatchObject({
       label: "Notifications (couldn't be loaded)",
       total: null,
       entries: [],
