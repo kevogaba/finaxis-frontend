@@ -68,8 +68,8 @@ const PAGE = {
   hasPrevious: false,
 };
 
-// vitest.config.ts pins TZ to Africa/Nairobi, matching the org zone used below, so the browser-zone
-// helper text stays hidden unless a test passes a *different* `timeZone`.
+// vitest.config.mts pins TZ to Africa/Nairobi, matching the org zone used below, so the
+// browser-zone helper text stays hidden unless a test passes a *different* `timeZone`.
 const NAIROBI = 'Africa/Nairobi';
 
 describe('ListToolbar', () => {
@@ -195,7 +195,7 @@ describe('ListToolbar', () => {
     fireEvent.change(field, { target: { value: '2026-09-01T10:00' } });
     fireEvent.blur(field);
 
-    // Pinned to Africa/Nairobi (vitest.config.ts): 10:00 local (+03:00) is 07:00 UTC. A literal
+    // Pinned to Africa/Nairobi (vitest.config.mts): 10:00 local (+03:00) is 07:00 UTC. A literal
     // (not a computed `new Date(...).toISOString()`) so removing that TZ pin turns this red on a
     // UTC CI runner instead of silently passing.
     const iso = '2026-09-01T07:00:00.000Z';

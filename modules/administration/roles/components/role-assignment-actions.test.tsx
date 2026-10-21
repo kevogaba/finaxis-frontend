@@ -14,7 +14,7 @@ vi.mock('../role-actions', () => ({
   revokeRoleAssignment: (...args: unknown[]) => revokeRoleAssignment(...args) as unknown,
 }));
 
-// vitest.config.ts resets no mocks, so each case must start with a clean call count.
+// vitest.config.mts resets no mocks, so each case must start with a clean call count.
 beforeEach(() => {
   revokeRoleAssignment.mockReset();
 });

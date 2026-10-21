@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import TextField from '@mui/material/TextField';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { clickOutsideAct, pressEscapeWhen } from '@/test/press-escape-when';
 import { renderWithProviders } from '@/test/test-utils';
 import { UUID_PATTERN } from '@/lib/api/wire';
 import type { ActionResult } from '@/lib/api/action-result';
@@ -188,6 +189,65 @@ describe('AssignmentDrawer', () => {
       expect(action).toHaveBeenCalledTimes(1);
     });
     expect(action.mock.calls[0]?.[1]?.get('contextOrganisationId')).toBe('org-1');
+  });
+
+  it('closes on Escape as soon as a failed submit shows its alert', async () => {
+    const user = userEvent.setup({ delay: null });
+    let settle: (result: ActionResult) => void = () => undefined;
+    const action = vi.fn(
+      (_previous: ActionResult | null, _formData: FormData) =>
+        new Promise<ActionResult>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const { props } = setup(action);
+    await user.click(screen.getByRole('button', { name: 'Assign user' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    });
+
+    // The guard that ignores Escape while pending must already know the submit settled when the
+    // failure first shows.
+    const escape = pressEscapeWhen(() => document.querySelector('[role="alert"]'));
+    try {
+      settle(INVALID);
+      await waitFor(() => {
+        expect(escape.pressed()).toBe(true);
+      });
+    } finally {
+      escape.dispose();
+    }
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores Escape from the moment a submit starts', async () => {
+    let settle: (result: ActionResult) => void = () => undefined;
+    const action = vi.fn(
+      (_previous: ActionResult | null, _formData: FormData) =>
+        new Promise<ActionResult>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const { props } = setup(action);
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+
+    // The guard must hold from the render that starts the submit: an Escape then would close the
+    // drawer mid-request and drop its idempotency key.
+    const escape = pressEscapeWhen(() => (cancel.hasAttribute('disabled') ? cancel : null));
+    try {
+      clickOutsideAct(screen.getByRole('button', { name: 'Assign user' }));
+      await waitFor(() => {
+        expect(escape.pressed()).toBe(true);
+      });
+    } finally {
+      escape.dispose();
+    }
+    expect(props.onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () => {
+      settle(INVALID);
+      await Promise.resolve();
+    });
   });
 
   // Last: its action never settles, so it leaves a permanently pending promise behind — harmless

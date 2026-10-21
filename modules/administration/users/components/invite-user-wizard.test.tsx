@@ -300,6 +300,32 @@ describe('InviteUserWizard: the steps', () => {
     expect(screen.queryByText('Check these fields: Email.')).toBeNull();
   });
 
+  it('drops a failed answer about an email edited during its check', async () => {
+    const user = userEvent.setup({ delay: null });
+    let reply: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          reply = resolve;
+        }),
+    );
+    renderWizard();
+    await fillIdentity(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.type(screen.getByRole('textbox', { name: 'Email' }), 'x');
+
+    reply(new Response(JSON.stringify({}), { status: 502 }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    });
+    // The check failed for an email no longer in the field: nothing about it is said, and the next
+    // Continue checks the edited one.
+    expect(screen.queryByText(EMAIL_CHECK_FAILED)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+  });
+
   it('refuses a branch-scoped role at a branch they aren’t assigned to before Review', async () => {
     const user = userEvent.setup({ delay: null });
     renderWizard();

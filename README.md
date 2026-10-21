@@ -62,10 +62,12 @@ Open [http://localhost:3000](http://localhost:3000) — the root route redirects
 [Husky](https://typicode.github.io/husky/) + [lint-staged](https://github.com/lint-staged/lint-staged)
 run automatically (installed via `pnpm install`'s `prepare` script — no manual setup needed):
 
-- **pre-commit**: lints and formats staged files only (`eslint --fix --max-warnings=0` +
-  `prettier --write`).
-- **pre-push**: `pnpm typecheck && pnpm test:run` — a fast correctness gate before code leaves
-  your machine. `pnpm test:e2e` and the build are intentionally left to CI since they're slower.
+- **pre-commit**: lints and formats the staged files (`eslint --fix --max-warnings=0` +
+  `prettier --write`; JSON, Markdown and CSS get Prettier only), then runs `pnpm check` (format,
+  lint, typecheck and the unit tests) on the whole tree.
+- **pre-push**: `pnpm typecheck && pnpm verify`: `pnpm check`, the unit tests with coverage and
+  the production build, which needs the environment `config/env.server.ts` validates.
+  `pnpm test:e2e` is left to CI since it's slower.
 
 ESLint layers `typescript-eslint`'s `strictTypeChecked` + `stylisticTypeChecked` presets and
 `eslint-plugin-jsx-a11y`'s `strict` rules on top of `eslint-config-next` — all official preset
@@ -88,12 +90,15 @@ honours a dotted `color`.
   have running first — otherwise the suite runs against whatever is already there. Tests that need
   a signed-in session call `authenticate(context, testInfo, scenario)` from
   `e2e/support/auth.ts`, which gives each test its own scenario-seeded fake backend; unauthenticated and fake-API smoke specs don't.
+  `e2e/click-helpers.spec.ts` alone needs neither the app nor the fake API: it checks the click
+  helpers on a static page (`page.setContent`).
   The fake mirrors the real API's wire behaviour (snake_case, problem+json, context tokens, permissions — see
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`). Run it alone with
   `pnpm fake-api`. Chromium is the required project; install it once with
   `pnpm exec playwright install chromium`. This suite never talks to a real Keycloak or backend.
   The e2e helper `clickMuiOption` (`e2e/support/auth.ts`) clicks an option in a single-choice MUI
-  menu once the menu has finished growing in, then waits for it to close.
+  menu once the menu has finished growing in, then waits for it to close; `clickInMuiPopover`
+  clicks inside a MUI popover (the bell, the app switcher) once it has finished growing in.
 - **Real-Keycloak smoke test**: `pnpm test:e2e:keycloak` (`e2e/keycloak-smoke.spec.ts`,
   `playwright.keycloak.config.ts`). A separate, manually invoked test that requires a live local
   Keycloak + Postgres (e.g. `docker compose up -d postgres keycloak` in the platform repo) and
@@ -102,6 +107,16 @@ honours a dotted `color`.
   Keycloak's logout confirmation page, and a truly cleared session — and skips (rather than
   fails) with an actionable message if Keycloak isn't reachable on `:8080`. See
   `docs/authentication/security.md` for what running it for real uncovered.
+- **Running the end-to-end suite as CI does**: CI installs the Chromium build `@playwright/test`
+  pins (`pnpm exec playwright install --with-deps chromium`) and runs it headless, which is
+  Playwright's `chromium-headless-shell`, with `CI=true` (two retries, servers never reused).
+  Another Chromium (an older installed build, or a full Chrome through `channel` or
+  `executablePath`) lays out buttons and text a few pixels differently, so a layout-sensitive test
+  can pass there and fail on CI. To see what CI sees, install the pinned build and run
+  `CI=true pnpm test:e2e <spec> --retries=0` with ports 3100 and 3199 free. `next dev` refuses to
+  start while another dev server of the same checkout runs, and names its PID: stop that process
+  (stopping `pnpm` alone can leave its `next-server` child running). A `.next/dev/lock` left by a
+  server that has exited is ignored on Linux and macOS.
 
 ## Theme architecture
 
@@ -384,6 +399,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   bar's bell counts the same approvals. Known limits:
   - There is no approval-request model: no return for changes, resubmission, branch rejection or
     remarks on Approve (`docs/backend-gaps.md` BG-01).
+  - User onboarding's "Newest first" is the users endpoint's own order, by when each account was
+    created (BG-09): an invitation that reused an existing account sorts by that account's age.
   - The maker comes from the audit log, so without `audit.view` (or when that read fails) Approve
     and Activate stay on offer, the check reads "Verified by the platform on approval", and a
     refusal is explained as permission or maker-checker (BG-08).

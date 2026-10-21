@@ -64,7 +64,7 @@ describe('ContinueWithKeycloakButton', () => {
         }),
     );
     // MUI's disabled Button styling sets `pointer-events: none`, which is
-    // real, meaningful CSS in this jsdom run (vitest.config.ts has
+    // real, meaningful CSS in this jsdom run (vitest.config.mts has
     // `css: true`). userEvent's default pointer-events guard would refuse to
     // dispatch the second click, but the intent of this test is to confirm
     // that a click reaching the handler while a redirect is already in

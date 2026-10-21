@@ -28,6 +28,10 @@ const REVIEW_NOTE =
   'Sending creates the invitation now. A different administrator must approve it before they can use this institution. If this email already has a Finaxis account, that account is reused: its name, username and phone stay as they are.';
 const USER_MAKER_CHECKER_BLOCKED =
   'You invited this user, so another administrator must approve them.';
+const CHOOSE_ROW_BRANCH = 'Choose a branch, or remove this row.';
+const USERNAME_TAKEN =
+  "This username can't be used: it already belongs to someone in this institution.";
+const USERNAME_IN_USE = 'This username belongs to someone in this institution.';
 
 const RECORD = /\/admin\/users\/[0-9a-f-]{36}$/;
 
@@ -323,11 +327,27 @@ test.describe('users invite: sending', () => {
     await choose(page, second, 'Role', 'Branch supervisor (SUPERVISOR)');
     await choose(page, second, 'Scope', 'One branch');
     await choose(page, second, 'Branch', 'Westlands Branch (WESTLANDS)');
+    // Unset, the optional primary branch says so (the Review says "Not set"), never blank.
+    await expect(page.getByRole('combobox', { name: 'Primary branch', exact: true })).toHaveText(
+      'None',
+    );
     await choose(page, page, 'Primary branch', 'Westlands Branch (WESTLANDS)');
     await next(page, 'Invitation');
     await expect(
       page.getByRole('checkbox', { name: 'Send the identity-provider invitation' }),
     ).toBeChecked();
+    // Each flag's description starts under its label's words, not under the checkbox.
+    for (const name of [
+      'Send the identity-provider invitation',
+      'Send the application invitation',
+    ]) {
+      const flag = page.getByRole('checkbox', { name });
+      const description = page.locator(
+        `[id="${(await flag.getAttribute('aria-describedby')) ?? ''}"]`,
+      );
+      const label = await boxOf(page.getByText(name, { exact: true }));
+      expect(Math.abs((await boxOf(description)).x - label.x), name).toBeLessThanOrEqual(1);
+    }
     await next(page, 'Review');
 
     const access = page.getByRole('region', { name: 'Access', exact: true });
@@ -384,6 +404,58 @@ test.describe('users invite: sending', () => {
     await expect(page.getByRole('heading', { level: 1, name: NEEMA.name })).toBeVisible();
   });
 
+  test('returns to Identity when a member here already holds the username', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users-invite');
+    await openWizard(page);
+    // Esther, a member here, holds esther.njoki: the platform answers a new email with her
+    // username with a 500 (BG-07), and the action then finds her and names the username.
+    await fillIdentity(page, { ...NEEMA, username: 'esther.njoki' });
+    await next(page, 'Access', FIRST_HIT);
+    await fillAccess(page);
+    await next(page, 'Invitation');
+    await next(page, 'Review');
+    await sendInvitation(page);
+
+    await expect(page.getByRole('heading', { level: 2, name: 'Identity' })).toBeVisible({
+      timeout: 15000,
+    });
+    const username = page.getByRole('textbox', { name: 'Username' });
+    await expect(username).toHaveAccessibleDescription(USERNAME_IN_USE);
+    await expect(username).toBeFocused();
+    await expect(mainText(page, USERNAME_TAKEN)).toBeVisible();
+    await expect(mainText(page, /Reference: [0-9a-f-]{36}/)).toBeVisible();
+    // Every other answer is kept for the retry.
+    await expect(page.getByRole('textbox', { name: 'Email' })).toHaveValue(NEEMA.email);
+  });
+
+  test('refuses an auditor’s untouched branch row at its field, never as a missing branch', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users-invite');
+    await openWizard(page);
+    await page.getByRole('textbox', { name: 'Full name' }).fill(NEEMA.name);
+    await page.getByRole('textbox', { name: 'Email' }).fill(NEEMA.email);
+    await page.getByRole('textbox', { name: 'Username' }).fill(NEEMA.username);
+    await choose(page, page, 'Membership type', 'Auditor');
+    await next(page, 'Access', FIRST_HIT);
+    await choose(page, group(page, 'Role 1'), 'Role', 'Teller (TELLER)');
+
+    // Branches are optional for an auditor, but the row the step starts with is unfinished.
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(
+      group(page, 'Branch assignment 1').getByRole('combobox', { name: 'Branch', exact: true }),
+    ).toHaveAccessibleDescription(CHOOSE_ROW_BRANCH);
+    await expect(mainText(page, NEEDS_A_BRANCH)).toHaveCount(0);
+
+    // Removing the row is the other way out: an auditor needs no branch.
+    await page.getByRole('button', { name: 'Remove branch assignment 1' }).click();
+    await next(page, 'Invitation');
+  });
+
   test('reuses an account another institution has, keeping its own name', async ({
     context,
     page,
@@ -405,10 +477,13 @@ test.describe('users invite: sending', () => {
   // cover the control that has keyboard focus. axe can't see this; the Access step is the longest
   // form here, so it is walked with three rows of each. At 360 px the Review bar's buttons wrap to two
   // rows in every browser (the bar is 114 px tall), the layout CI saw at 375 px on the headless shell.
+  // With text at 200% (WCAG 1.4.4) the bar's two rows grow taller (149 px), past the 140 px floor: the
+  // page's clearance follows the bar's measured height.
   for (const viewport of [
-    { label: 'desktop', width: 1440, height: 900 },
-    { label: '375px', width: 375, height: 812 },
-    { label: '360px', width: 360, height: 740 },
+    { label: 'desktop', width: 1440, height: 900, text: null },
+    { label: '375px', width: 375, height: 812, text: null },
+    { label: '360px', width: 360, height: 740, text: null },
+    { label: '375px, text at 200%', width: 375, height: 812, text: '200%' },
   ]) {
     test(`keeps keyboard focus clear of the sticky bars on Access and Review (${viewport.label})`, async ({
       context,
@@ -417,10 +492,26 @@ test.describe('users invite: sending', () => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await authenticate(context, testInfo, 'users-invite');
       await openWizard(page);
+      if (viewport.text) {
+        // A browser's larger text setting: the theme's type scale is in rem, so the root size
+        // scales every label and button.
+        await page.addStyleTag({ content: `html { font-size: ${viewport.text}; }` });
+      }
       await fillIdentity(page);
       await next(page, 'Access', FIRST_HIT);
       for (const add of ['Add branch', 'Add branch', 'Add role', 'Add role']) {
         await page.getByRole('button', { name: add }).click();
+      }
+      if (viewport.text) {
+        // The mechanism, not only its effect (the walk alone fails by a fraction of a pixel without
+        // it): the bar wraps past its two rows, and the page's clearance follows its height.
+        const bar = await boxOf(page.getByRole('button', { name: 'Continue' }).locator('..'));
+        const padding = () =>
+          page.evaluate(() =>
+            parseFloat(getComputedStyle(document.documentElement).scrollPaddingBottom),
+          );
+        await expect.poll(padding).toBeGreaterThan(140);
+        expect(await padding()).toBeGreaterThanOrEqual(bar.height + 26);
       }
 
       // Three rows of each: their fields, their Remove buttons and the two Add buttons.

@@ -20,7 +20,7 @@ vi.mock('../role-actions', () => ({
   removePermission: (...args: unknown[]) => removePermission(...args) as unknown,
 }));
 
-// vitest.config.ts resets no mocks, so without this the retry test would count the first test's
+// vitest.config.mts resets no mocks, so without this the retry test would count the first test's
 // call, and a `Once` value left unconsumed by one test would leak into the next.
 beforeEach(() => {
   grantPermissions.mockReset();

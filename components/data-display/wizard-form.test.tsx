@@ -1,7 +1,7 @@
 import type { ComponentProps, SyntheticEvent } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import { WizardForm, type WizardStep } from './wizard-form';
 
@@ -122,5 +122,55 @@ describe('WizardForm', () => {
     unmount();
     // Released: the CSS initial value again.
     expect(getComputedStyle(document.documentElement).scrollPaddingBottom).toBe('auto');
+  });
+
+  it('grows the scroll padding with a bar taller than its two rows, never below 140 px', () => {
+    // jsdom has no ResizeObserver: a fake keeps each instance, so the test can report the bar's
+    // size as a browser would. Only this component observes anything here.
+    const instances: { callback: () => void; target: Element | null }[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        callback: () => void;
+        target: Element | null = null;
+        constructor(callback: () => void) {
+          this.callback = callback;
+          instances.push(this);
+        }
+        observe(target: Element) {
+          this.target = target;
+        }
+        disconnect() {
+          this.target = null;
+        }
+      },
+    );
+    try {
+      renderWithProviders(wizard(0));
+      const continueButton = screen.getByRole('button', { name: 'Continue' });
+      const observer = instances.find((instance) => instance.target?.contains(continueButton));
+      if (!observer?.target) throw new Error('the action bar is not observed');
+      const bar = observer.target;
+      const resize = (height: number) => {
+        vi.spyOn(bar, 'getBoundingClientRect').mockReturnValue({ height } as DOMRect);
+        act(() => {
+          observer.callback();
+        });
+      };
+      const padding = () => getComputedStyle(document.documentElement).scrollPaddingBottom;
+
+      // One row (70 px) or two (114 px): the 140 px floor.
+      resize(70);
+      expect(padding()).toBe('140px');
+      resize(114);
+      expect(padding()).toBe('140px');
+      // Larger text makes the bar's two rows taller: its height plus the 26 px gap.
+      resize(158.4);
+      expect(padding()).toBe('185px');
+      resize(70);
+      expect(padding()).toBe('140px');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

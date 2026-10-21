@@ -62,6 +62,9 @@ export function InviteChoiceField({
           inputRef={field.ref}
           error={Boolean(fieldState.error)}
           helperText={fieldState.error?.message ?? hint}
+          // An optional choice left empty shows its empty option's words ("None"), not a blank
+          // field; the theme always shrinks the label above, so the two never overlap.
+          slotProps={{ select: { displayEmpty: noneLabel !== undefined } }}
           sx={sx}
         >
           {noneLabel !== undefined && <MenuItem value="">{noneLabel}</MenuItem>}

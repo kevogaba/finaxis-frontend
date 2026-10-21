@@ -5,6 +5,7 @@ import {
   useActionState,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -125,7 +126,9 @@ function ReasonForm({
     },
     null,
   );
-  useEffect(() => {
+  // A layout effect, so the parent's Escape and backdrop guard changes in the same commit as
+  // `pending`, at the start of a submit and at its end (ConfirmDialog says why).
+  useLayoutEffect(() => {
     onPendingChange(pending);
   }, [pending, onPendingChange]);
   const failure = state && !state.ok ? state : null;

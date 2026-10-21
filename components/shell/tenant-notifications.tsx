@@ -38,6 +38,9 @@ export async function PendingApprovalNotifications() {
         users: userCounts,
         branches: branchCount,
         branchSelected: selected.context.branch !== null,
+        // PF1: /auth/me branches[] can include SUSPENDED ones; All branches needs two ACTIVE.
+        canSwitch:
+          selected.profile.branches.filter((entry) => entry.status === 'ACTIVE').length > 1,
       })}
     />
   );

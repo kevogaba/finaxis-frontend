@@ -9,7 +9,7 @@ import {
   notFoundHeading,
   rowsOf,
 } from './support/admin';
-import { authenticate, expectHydrated } from './support/auth';
+import { authenticate, clickInMuiPopover, expectHydrated } from './support/auth';
 import {
   APPROVAL_SCENARIO_IDS as APPROVALS,
   APPROVAL_SCENARIO_TEXT as TEXT,
@@ -279,14 +279,15 @@ test.describe('approvals: the notifications bell', () => {
     await expect(dialog).toContainText('8 users are waiting for approval.');
     await expect(dialog).toContainText('3 branches are waiting for activation.');
     await expect(dialog).not.toContainText('Switch to All branches');
-    await dialog.getByRole('link', { name: 'Review branch activation' }).click();
+    await clickInMuiPopover(dialog.getByRole('link', { name: 'Review branch activation' }));
     await expect(page).toHaveURL(/\/admin\/approvals\/branches$/, { timeout: 15000 });
 
     await press(await bell(page, 'Notifications: 11 approvals waiting'));
-    await page
-      .getByRole('dialog', { name: 'Notifications' })
-      .getByRole('link', { name: 'Review user onboarding' })
-      .click();
+    await clickInMuiPopover(
+      page
+        .getByRole('dialog', { name: 'Notifications' })
+        .getByRole('link', { name: 'Review user onboarding' }),
+    );
     await expect(page).toHaveURL(/\/admin\/approvals\/users$/, { timeout: 15000 });
   });
 

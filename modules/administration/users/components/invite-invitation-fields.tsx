@@ -7,11 +7,17 @@ import Box from '@mui/material/Box';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormHelperText from '@mui/material/FormHelperText';
+import type { Theme } from '@mui/material/styles';
 import { INVITATION_NOTE } from '../invite-rules';
 import type { InviteValues } from '../invite-schema';
 
 /** Field groups stay a readable width on a wide screen, as 16's wizard does. */
 const FIELD_GROUP = { maxWidth: 640, display: 'grid', gap: 4.5 } as const;
+
+/** Where a flag's label text starts, so its description starts there too: MUI's medium checkbox is
+ * its 24 px icon (scaled with the theme's type by `pxToRem`) in 9 px of padding on each side,
+ * pulled 11 px left by FormControlLabel. */
+const LABEL_INDENT = (theme: Theme) => `calc(${theme.typography.pxToRem(24)} + 7px)`;
 
 interface FlagProps {
   control: Control<InviteValues>;
@@ -42,7 +48,7 @@ function Flag({ control, name, label, description }: FlagProps) {
               />
             }
           />
-          <FormHelperText id={descriptionId} sx={{ mt: 0 }}>
+          <FormHelperText id={descriptionId} sx={{ mt: 0, ml: LABEL_INDENT }}>
             {description}
           </FormHelperText>
         </Box>

@@ -69,9 +69,22 @@ describe('the bell (Ruling 9)', () => {
       users: null,
       branches: { ok: true, value: 2 },
       branchSelected: true,
+      canSwitch: true,
     });
     expect(props.entries[0]?.text).toBe(
       '2 branches are waiting for activation. Switch to All branches to activate them.',
+    );
+  });
+
+  it('tells an account that works at one branch who activates, never to switch', () => {
+    const props = approvalNotifications({
+      users: null,
+      branches: { ok: true, value: 2 },
+      branchSelected: true,
+      canSwitch: false,
+    });
+    expect(props.entries[0]?.text).toBe(
+      '2 branches are waiting for activation. Ask an administrator who works at institution level to activate them.',
     );
   });
 
