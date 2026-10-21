@@ -489,21 +489,16 @@ export function createFinaxisTheme() {
         defaultProps: { connector: null },
         styleOverrides: {
           root: ({ theme }) => ({
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            display: 'flex',
+            flexWrap: 'wrap',
             alignItems: 'stretch',
             // The 1px gaps over the divider-coloured root draw every cell border, for any number
-            // of steps.
+            // of steps: each cell grows to fill its row, so no row ends in a bare gap.
             gap: '1px',
             overflow: 'hidden',
             border: `1px solid ${theme.vars.palette.divider}`,
             borderRadius: 6,
             backgroundColor: theme.vars.palette.divider,
-            [theme.breakpoints.up('md')]: {
-              gridTemplateColumns: 'none',
-              gridAutoFlow: 'column',
-              gridAutoColumns: 'minmax(0, 1fr)',
-            },
           }),
         },
       },
@@ -515,11 +510,13 @@ export function createFinaxisTheme() {
             display: 'flex',
             alignItems: 'center',
             backgroundColor: theme.vars.palette.background.paper,
-            // Below md, an odd last step spans the two-column grid's last row.
-            '&:nth-of-type(odd):last-of-type': { gridColumn: '1 / -1' },
-            [theme.breakpoints.up('md')]: {
-              '&:nth-of-type(odd):last-of-type': { gridColumn: 'auto' },
-            },
+            // A cell is at least 8.5rem wide (the widest label, its icon and padding fit at any
+            // text size, WCAG 1.4.4) and grows to fill its row. Below md no more than two share a
+            // row; from md the cells line up while they fit, and wrap two by two when the text
+            // is too large for four.
+            minWidth: 0,
+            flex: '1 1 max(8.5rem, calc(50% - 0.5px))',
+            [theme.breakpoints.up('md')]: { flex: '1 1 8.5rem' },
           }),
         },
         variants: [

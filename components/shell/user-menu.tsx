@@ -50,7 +50,9 @@ export function UserMenu({ user }: UserMenuProps) {
         color="inherit"
         sx={{ gap: 2.5, px: 1, height: 46, minWidth: 0 }}
       >
-        <Avatar src={user.image} sx={{ width: 38, height: 38, fontSize: '0.8125rem' }}>
+        {/* A fixed 38 px circle, so its initials are fixed too: at 200% text two letters in rem
+            outgrow it and are clipped (WCAG 1.4.4). The button's name carries the full name. */}
+        <Avatar src={user.image} sx={{ width: 38, height: 38, fontSize: 13 }}>
           {!user.image && initialsOf(user.name)}
         </Avatar>{' '}
         <Box

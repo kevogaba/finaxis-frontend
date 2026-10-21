@@ -50,8 +50,10 @@ describe('WizardForm', () => {
     renderWithProviders(wizard(1));
 
     const list = screen.getByRole('list');
-    // The theme's cell grid (jsdom resolves emotion's base rules; the md row is a media query).
-    expect(getComputedStyle(list).display).toBe('grid');
+    // The theme's wrapping row of cells (jsdom resolves emotion's base rules; how many cells share
+    // a row depends on layout, which e2e/text-resize.spec.ts measures).
+    expect(getComputedStyle(list).display).toBe('flex');
+    expect(getComputedStyle(list).flexWrap).toBe('wrap');
     const items = within(list).getAllByRole('listitem');
     expect(items[1]).toHaveAttribute('aria-current', 'step');
     expect(items[0]).toHaveTextContent('Institution (completed)');
