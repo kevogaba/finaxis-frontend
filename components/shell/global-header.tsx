@@ -41,7 +41,20 @@ export function GlobalHeader({
 
   return (
     <AppBar position="sticky">
-      <Toolbar disableGutters sx={{ minHeight: 68, height: 68, gap: 3, px: { xs: 2.5, md: 4.5 } }}>
+      <Toolbar
+        disableGutters
+        sx={{
+          minHeight: 68,
+          height: 68,
+          gap: 3,
+          px: { xs: 2.5, md: 4.5 },
+          // The header's controls are fixed-size (42 px buttons), so their icons are too: an icon
+          // sized in rem outgrows its button and crowds the next one at 200% text (WCAG 1.4.4).
+          // These are MUI's medium (24 px) and small (20 px) icons at the theme's 13/14 type scale.
+          '& .MuiSvgIcon-fontSizeMedium': { fontSize: '22.3px' },
+          '& .MuiSvgIcon-fontSizeSmall': { fontSize: '18.6px' },
+        }}
+      >
         <IconButton
           aria-label="Open navigation"
           onClick={onOpenNavigation}
