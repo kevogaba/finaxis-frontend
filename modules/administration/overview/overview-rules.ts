@@ -138,6 +138,8 @@ export interface PendingApprovalsReads {
   /** The first page of branches pending activation, newest first; its total is the count. */
   branches: Settled<Page<BranchSummary>>;
   branchSelected: boolean;
+  /** The account can select All branches (more than one ACTIVE branch), as the bell is told. */
+  canSwitch: boolean;
 }
 
 const reference = (requestId: string | null) => (requestId ? ` Reference: ${requestId}` : '');
@@ -200,6 +202,7 @@ export function pendingApprovalsView(reads: PendingApprovalsReads): PendingAppro
                 ? { ok: true, value: reads.branches.value.page.totalItems }
                 : { ok: false },
           branchSelected: reads.branchSelected,
+          canSwitch: reads.canSwitch,
         }).entries;
   const provisioning =
     reads.userCounts?.ok && reads.userCounts.value.provisioning > 0

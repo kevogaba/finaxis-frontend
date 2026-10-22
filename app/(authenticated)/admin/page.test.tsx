@@ -137,7 +137,7 @@ describe('AdminOverviewPage', () => {
     ]);
     expect(
       screen.getByText(
-        'Pending approvals card {"users":true,"branches":true,"branchSelected":false}',
+        'Pending approvals card {"users":true,"branches":true,"branchSelected":false,"canSwitch":false}',
       ),
     ).toBeInTheDocument();
     expect(
@@ -188,7 +188,7 @@ describe('AdminOverviewPage', () => {
     expect(cards()).toEqual(['Pending approvals card', 'Readiness card']);
     expect(
       screen.getByText(
-        'Pending approvals card {"users":false,"branches":true,"branchSelected":false}',
+        'Pending approvals card {"users":false,"branches":true,"branchSelected":false,"canSwitch":false}',
       ),
     ).toBeInTheDocument();
   });
@@ -215,7 +215,50 @@ describe('AdminOverviewPage', () => {
 
     expect(
       screen.getByText(
-        'Pending approvals card {"users":true,"branches":true,"branchSelected":true}',
+        'Pending approvals card {"users":true,"branches":true,"branchSelected":true,"canSwitch":false}',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('tells the approvals card the account can switch with two active branches', async () => {
+    // A SUSPENDED branch doesn't count (PF1): two ACTIVE ones make All branches selectable.
+    getCurrentContextProfile.mockResolvedValue({
+      kind: 'resolved',
+      profile: {
+        ...PROFILE,
+        permissions: EVERY_CODE,
+        branches: [
+          {
+            id: '14e10000-0000-4000-8000-0000000000dd',
+            code: 'HQ',
+            name: 'Head Office',
+            status: 'ACTIVE',
+          },
+          {
+            id: '14e10000-0000-4000-8000-0000000000ee',
+            code: 'WL',
+            name: 'Westlands',
+            status: 'ACTIVE',
+          },
+          {
+            id: '14e10000-0000-4000-8000-0000000000ff',
+            code: 'KS',
+            name: 'Kisumu',
+            status: 'SUSPENDED',
+          },
+        ],
+      },
+      context: {
+        module: { id: 'administration', name: 'Administration' },
+        organization: { id: '14e10000-0000-4000-8000-0000000000bb', name: 'Greenfield SACCO' },
+        branch: { id: '14e10000-0000-4000-8000-0000000000dd', name: 'Head Office' },
+      },
+    });
+    await show();
+
+    expect(
+      screen.getByText(
+        'Pending approvals card {"users":true,"branches":true,"branchSelected":true,"canSwitch":true}',
       ),
     ).toBeInTheDocument();
   });

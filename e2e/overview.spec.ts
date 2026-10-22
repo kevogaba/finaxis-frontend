@@ -27,6 +27,8 @@ const PROVISIONING = '1 identity is still being provisioned: approval already ra
 const ONE_MEMBER =
   'Only 1 member is active. Approvals need at least two, so someone other than the requester can decide (maker-checker).';
 const NOT_SET = "Not set: default timezone and base currency. Settings can't be saved yet.";
+const READINESS_NOTE =
+  "Each item is computed from live data. An item your role can't read says so.";
 
 /** The overview through context selection (All branches unless told), once every card has
  * streamed in. `/admin` and `/select-context` are first hits: the picker waits for them. */
@@ -67,6 +69,14 @@ async function topOf(locator: Locator) {
   const box = await locator.boundingBox();
   if (!box) throw new Error('a visible element has no box');
   return box.y;
+}
+
+/** A visible element's box. */
+async function boxOf(locator: Locator) {
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('a visible element has no box');
+  return box;
 }
 
 /** The readiness chips to pin, per scenario: each item's state, by its exact chip words. */
@@ -260,6 +270,7 @@ test.describe('overview: the cards', () => {
     await expectRequests(approvals, [TEXT.longBranch, 'Nyeri Branch', 'Kakamega Branch']);
     await expect(approvals.getByRole('note')).toHaveCount(0);
 
+    await expect(card(page, 'Operational readiness')).toContainText(READINESS_NOTE);
     await expect(
       card(page, 'Operational readiness').getByRole('progressbar', {
         name: 'Operational readiness',
@@ -357,6 +368,35 @@ test.describe('overview: the cards', () => {
     await expect(page.getByRole('dialog', { name: 'Sent welcome email' })).toBeVisible({
       timeout: FIRST_HIT,
     });
+  });
+
+  // At 375 px each summary entry wraps its link under its sentence: the next entry must sit at least
+  // three times as far away as those two lines (8 px against 2), or "Review user onboarding" reads
+  // as part of the branches' sentence (layer 14's gate, observation 4: 4 px against 2).
+  test('keeps the approvals summary entries apart when they wrap (375 px)', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 375, height: 900 });
+    await authenticate(context, testInfo, 'overview-attention');
+    await enterOverview(page);
+    const approvals = card(page, 'Pending approvals');
+    const users = await boxOf(
+      approvals.getByText('3 users are waiting for approval.', { exact: true }),
+    );
+    const usersLink = await boxOf(
+      approvals.getByRole('link', { name: 'Review user onboarding', exact: true }),
+    );
+    const branches = await boxOf(
+      approvals.getByText('3 branches are waiting for activation.', { exact: true }),
+    );
+    const inside = usersLink.y - (users.y + users.height);
+    const between = branches.y - (usersLink.y + usersLink.height);
+    expect(inside, 'the users entry wraps its link under its sentence').toBeGreaterThanOrEqual(0);
+    expect(
+      between,
+      `between entries ${between} px, inside one ${inside} px`,
+    ).toBeGreaterThanOrEqual(3 * inside);
   });
 
   // One test per scenario, each signing in to its own fake-API run (rule 13).

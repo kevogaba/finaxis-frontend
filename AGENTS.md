@@ -145,9 +145,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - E2E tests run against the standalone fake API in `e2e/fake-api/` — never add backend fixtures to
   app code. Fake-API files run under plain `node`: relative `.mts` imports, `import type` for types,
   erasable TypeScript only (no enums, namespaces, parameter properties). Add only endpoints a layer
-  uses, mirroring the contract document exactly (including backend quirks). The one spec without
-  the app or the fake API is `e2e/click-helpers.spec.ts`: it checks the e2e click helpers on a
-  static page (`page.setContent`), and helper self-tests like it belong there, not in app specs.
+  uses, mirroring the contract document exactly (including backend quirks). The one spec that uses
+  neither the app nor the fake API is `e2e/click-helpers.spec.ts` (Playwright still starts both
+  servers for it): it checks the e2e click helpers on a static page (`page.setContent`), and
+  helper self-tests like it belong there, not in app specs.
 - The backend's wire format is snake_case and differs from the published OpenAPI casing; never
   generate a client from the OpenAPI as-is. Follow
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`.

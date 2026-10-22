@@ -61,6 +61,7 @@ const READS: PendingApprovalsReads = {
   userCounts: ok({ pending: 3, provisioning: 1 }),
   branches: ok(page([MALINDI, NYERI, KAKAMEGA])),
   branchSelected: false,
+  canSwitch: true,
 };
 
 describe('which cards a holder sees (Ruling 2)', () => {
@@ -194,6 +195,13 @@ describe('the Pending approvals preview (Ruling 5)', () => {
     );
   });
 
+  it('tells an account that works at one branch who activates, as the bell does', () => {
+    const view = pendingApprovalsView({ ...READS, branchSelected: true, canSwitch: false });
+    expect(view.summary[1]?.text).toBe(
+      '3 branches are waiting for activation. Ask an administrator who works at institution level to activate them.',
+    );
+  });
+
   it('reads only the kinds the holder can decide', () => {
     const view = pendingApprovalsView({ ...READS, users: null, userCounts: null });
     expect(view.rows.map((row) => row.kind)).toEqual(['branch', 'branch', 'branch']);
@@ -207,6 +215,7 @@ describe('the Pending approvals preview (Ruling 5)', () => {
       userCounts: ok({ pending: 0, provisioning: 0 }),
       branches: ok(page([])),
       branchSelected: false,
+      canSwitch: true,
     });
     expect(none).toEqual({
       summary: [],
@@ -255,6 +264,7 @@ describe('the Pending approvals preview (Ruling 5)', () => {
         userCounts: null,
         branches: failed(null),
         branchSelected: false,
+        canSwitch: true,
       }),
     ).toEqual({
       summary: [],

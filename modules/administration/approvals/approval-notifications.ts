@@ -42,8 +42,9 @@ export function approvalNotifications(input: {
   /** A branch is selected: pending branches can be listed but only activated at All branches. */
   branchSelected: boolean;
   /** The account can select All branches (more than one ACTIVE branch); one that works at a single
-   * branch is told who can activate instead. Omitted: it can. */
-  canSwitch?: boolean;
+   * branch is told who can activate instead. Required, so no caller gets the switch advice by
+   * omission; read only with `branchSelected`. */
+  canSwitch: boolean;
 }): NotificationsMenuProps {
   const common = { emptyText: NOTHING_WAITING, unavailableText: APPROVALS_UNAVAILABLE };
   if (input.users?.ok === false || input.branches?.ok === false) {
@@ -64,7 +65,7 @@ export function approvalNotifications(input: {
     entries.push({
       id: 'branch-activation',
       text: `${branches} ${plural(branches, 'branch is', 'branches are')} waiting for activation.${
-        input.branchSelected ? branchContextHint(input.canSwitch ?? true) : ''
+        input.branchSelected ? branchContextHint(input.canSwitch) : ''
       }`,
       href: BRANCH_QUEUE_HREF,
       linkLabel: 'Review branch activation',
