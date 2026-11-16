@@ -95,7 +95,8 @@ honours a dotted `color`.
   `pnpm test:e2e` rebuilds; `pnpm exec playwright test` alone runs against the existing
   `.next-e2e/` (and says to run `pnpm build:e2e` when there is none). To write a spec against
   `next dev` without rebuilding after each edit, run `E2E_DEV_SERVER=1 pnpm exec playwright test`
-  with the spec's path; CI never does. Never set `FINAXIS_E2E_BUILD` in a `.env*` file: every
+  with the spec's path; CI never does. That mode runs one worker with longer waits
+  (120 s per test, 45 s per assertion), as `next dev` compiles each route on its first visit. Never set `FINAXIS_E2E_BUILD` in a `.env*` file: every
   `pnpm build` would become an e2e build. The session bypass the specs sign in through, and the guard that keeps
   it out of every normal build (`pnpm test:e2e:guard`), are described in
   `docs/authentication/security.md`. Tests that need

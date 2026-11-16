@@ -58,9 +58,9 @@ export function sameOriginRequest(testInfo: TestInfo, pathname: string, method: 
 /**
  * Waits until React has claimed `locator`'s node before a test acts on it. A client handler (MUI's
  * Select opening, a button, a field's key handler) is attached only once React hydrates; a click
- * that lands on the pre-hydration SSR markup just focuses the element and never reaches it. React tags
- * hydrated DOM nodes with an internal `__reactProps$*` key, so the poll waits for that key instead
- * of clicking blind and hoping hydration already happened.
+ * that lands on the pre-hydration SSR markup just focuses the element and never reaches it. React
+ * tags hydrated DOM nodes with an internal `__reactProps$*` key, so the poll waits for that key
+ * instead of clicking blind and hoping hydration already happened.
  */
 export async function expectHydrated(locator: Locator): Promise<void> {
   await expect

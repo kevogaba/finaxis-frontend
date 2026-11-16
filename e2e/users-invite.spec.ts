@@ -48,7 +48,7 @@ const NEEMA: Identity = {
   username: 'neema.wanjiku',
 };
 
-/** An invite page at institution level (All branches), entered through context selection. */
+/** A users page at institution level (All branches), entered through context selection. */
 async function enterAtInstitution(page: Page, path: string, heading: string) {
   await page.goto(path);
   await selectMuiOption(page, 'Organisation', /Greenfield/);

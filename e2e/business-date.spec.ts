@@ -282,7 +282,7 @@ test.describe('business date', () => {
   });
 
   // Layer a11y gate: light and dark, both at desktop and 375px, like audit.spec's own matrix
-  // (e2e/audit.spec.ts:329-387). Each case scans the page, opens the dialog, and scans again.
+  // ('audit accessibility'). Each case scans the page, opens the dialog, and scans again.
   test.describe('business date accessibility', () => {
     const AXE_VIEWPORTS = [
       { label: 'desktop', width: 1280, height: 800, scenario: 'default' as const },

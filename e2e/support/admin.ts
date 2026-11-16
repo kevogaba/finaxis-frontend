@@ -12,8 +12,8 @@ interface EnterAdminOptions {
 
 /**
  * Opens a tenant admin page through context selection. The URL updates before the RSC payload (and
- * its h1) renders, so the heading is awaited after the URL. `/select-context` drops a deep link's query string, so `pathname` has none —
- * navigate to a query afterwards.
+ * its h1) renders, so the heading is awaited after the URL. `/select-context` drops a deep link's
+ * query string, so `pathname` has none — navigate to a query afterwards.
  */
 export async function enterAdmin(
   page: Page,

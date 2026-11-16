@@ -168,7 +168,7 @@ test.describe('settings', () => {
         await expect(dialog).toBeVisible();
         // MUI's Fade sets `opacity` directly on the dialog's transition container; axe blends
         // ancestor opacity into color-contrast, so scanning mid-fade can intermittently report a
-        // false contrast violation (business-date.spec.ts:314, context.spec.ts:255).
+        // false contrast violation (the same Fade wait in business-date.spec and context.spec).
         await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1');
         await expectNoSeriousOrCriticalViolations(page);
       });
