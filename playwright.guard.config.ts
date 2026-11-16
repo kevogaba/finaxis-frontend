@@ -39,8 +39,14 @@ export default defineConfig({
       PORT: String(PORT),
       HOSTNAME: '127.0.0.1',
       FINAXIS_E2E_TEST_MODE: '1',
+      // The build-time key too: a normal build must ignore it at runtime, where it is only an
+      // environment variable.
+      FINAXIS_E2E_BUILD: '1',
       FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS: '1',
       PLATFORM_ORGANISATION_ID: '00000000-0000-0000-0000-000000000000',
+      // A closed loopback port, never a real backend: with the bypass live, context selection's
+      // first backend call answering 401 would also end on /login and hide it.
+      FINAXIS_API_URL: 'http://127.0.0.1:9',
     },
     url: baseURL,
     reuseExistingServer: false,

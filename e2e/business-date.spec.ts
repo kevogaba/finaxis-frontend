@@ -225,14 +225,19 @@ test.describe('business date', () => {
     await authenticate(context, testInfo);
     await enter(page);
 
+    // These listeners catch a mismatch on `next dev` (E2E_DEV_SERVER=1), which words it
+    // ("Hydration failed…"). A production build reports nothing at all: React recovers silently by
+    // client-rendering the mismatched subtree, so the content check after the reload is what
+    // catches it there.
+    const hydrationError = /hydrat|Minified React error #(418|419|422|423|425)\b/i;
     const hydrationErrors: string[] = [];
     page.on('console', (message) => {
-      if (message.type() === 'error' && /hydrat/i.test(message.text())) {
+      if (message.type() === 'error' && hydrationError.test(message.text())) {
         hydrationErrors.push(message.text());
       }
     });
     page.on('pageerror', (error) => {
-      if (/hydrat/i.test(error.message)) hydrationErrors.push(error.message);
+      if (hydrationError.test(error.message)) hydrationErrors.push(error.message);
     });
 
     // A full document load, unlike the client navigation enter() ends on, is what hydrates
@@ -258,11 +263,14 @@ test.describe('business date', () => {
     );
     expect(chipHtml).toMatch(/<svg [^>]*class="[^"]*\bMuiChip-icon\b/);
 
-    await expect(
-      page
-        .getByRole('banner')
-        .getByRole('link', { name: 'Mon, 7 Sep 2026 · Business date · Open' }),
-    ).toBeVisible();
+    const chip = page
+      .getByRole('banner')
+      .getByRole('link', { name: 'Mon, 7 Sep 2026 · Business date · Open' });
+    await expect(chip).toBeVisible();
+    // The production signal of a mismatch: the hydrated chip no longer says what the server sent,
+    // because React replaced the server's markup with its own client render.
+    const serverText = chipHtml.replace(/<[^>]*>/g, '');
+    expect(await chip.textContent()).toBe(serverText);
 
     // Prove hydration actually ran (not just that the server HTML rendered).
     await hero(page).getByRole('button', { name: 'Start close of business', exact: true }).click();
