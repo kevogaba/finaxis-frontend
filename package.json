@@ -6,6 +6,7 @@
     "dev": "next dev -p ${PORT:-3100}",
     "build": "next build",
     "postbuild": "if [ -d public ]; then cp -r public .next/standalone/; fi && cp -r .next/static .next/standalone/.next/",
+    "build:e2e": "FINAXIS_E2E_BUILD=1 next build && if [ -d public ]; then cp -r public .next-e2e/standalone/; fi && cp -r .next-e2e/static .next-e2e/standalone/.next-e2e/",
     "start": "node --env-file=.env.local .next/standalone/server.js",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",

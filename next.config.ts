@@ -77,25 +77,44 @@ export function createSecurityHeaders(env: CspEnv = process.env): SecurityHeader
   ];
 }
 
-const nextConfig: NextConfig = {
-  output: 'standalone',
-  headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: createSecurityHeaders(),
-      },
-    ];
-  },
-  redirects() {
-    return [
-      {
-        source: '/',
-        destination: '/login',
-        permanent: false,
-      },
-    ];
-  },
-};
+interface NextConfigEnv extends CspEnv {
+  FINAXIS_E2E_BUILD?: string;
+}
 
-export default nextConfig;
+// `FINAXIS_E2E_BUILD=1` at build time (`pnpm build:e2e`) makes the e2e flavour of the production
+// build, the only build in which auth/e2e-test-mode.ts's session bypass can turn on: the switch is
+// inlined into server code here, so a normal build carries an empty string literal that no runtime
+// environment can change. `defineServer`, not `define`: the switch never reaches client bundles,
+// and Next serialises the raw value itself. The e2e build also gets its own directory, so it can
+// never overwrite or stand in for `.next`, the only directory `pnpm start`, the Dockerfile and the
+// Release workflow read.
+export function createNextConfig(env: NextConfigEnv): NextConfig {
+  const isE2eBuild = env.FINAXIS_E2E_BUILD === '1';
+
+  return {
+    output: 'standalone',
+    distDir: isE2eBuild ? '.next-e2e' : '.next',
+    compiler: {
+      defineServer: { 'process.env.FINAXIS_E2E_BUILD': isE2eBuild ? '1' : '' },
+    },
+    headers() {
+      return [
+        {
+          source: '/:path*',
+          headers: createSecurityHeaders(env),
+        },
+      ];
+    },
+    redirects() {
+      return [
+        {
+          source: '/',
+          destination: '/login',
+          permanent: false,
+        },
+      ];
+    },
+  };
+}
+
+export default createNextConfig(process.env);
