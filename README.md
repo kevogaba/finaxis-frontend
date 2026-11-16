@@ -101,6 +101,8 @@ honours a dotted `color`.
   `docs/authentication/security.md`. Tests that need
   a signed-in session call `authenticate(context, testInfo, scenario)` from
   `e2e/support/auth.ts`, which gives each test its own scenario-seeded fake backend; unauthenticated and fake-API smoke specs don't.
+  Waits use Playwright's defaults (5 s per assertion, 30 s per test); the few longer ones (three
+  accessibility matrices that scan many pages) state their measured reason beside them.
   `e2e/click-helpers.spec.ts` uses neither the app nor the fake API (it checks the click helpers
   on a static page, `page.setContent`), but Playwright still starts both servers for it, so an
   app start-up failure blocks it too.
