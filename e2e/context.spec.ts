@@ -11,21 +11,15 @@ import {
 
 const ACME_TENANT_ID = '99999999-9999-4999-8999-999999999999';
 
-/** Reaches /select-context (bounded: first hit of the /admin route tree) and picks Greenfield. */
+/** Reaches /select-context from /admin and picks Greenfield. */
 async function goToAdminAsGreenfield(page: Page): Promise<void> {
   await page.goto('/admin');
-  await expect(page).toHaveURL(/\/select-context\?next=%2Fadmin$/, { timeout: 20000 });
-  await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible({
-    timeout: 15000,
-  });
+  await expect(page).toHaveURL(/\/select-context\?next=%2Fadmin$/);
+  await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
   await selectMuiOption(page, 'Organisation', /Greenfield/);
 }
 
 test.describe('working context', () => {
-  // /admin and /platform-admin/tenants/[tenantId] can be the first hit of their route tree under a
-  // cold `next dev` compile.
-  test.describe.configure({ timeout: 60000 });
-
   test('offers All branches to multi-branch users and shows it in the shell', async ({
     context,
     page,
@@ -34,10 +28,8 @@ test.describe('working context', () => {
     await goToAdminAsGreenfield(page);
     await selectMuiOption(page, 'Branch', /All branches \(institution level\)/);
 
-    await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
-    await expect(page.getByRole('banner').getByText('All branches')).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('banner').getByText('All branches')).toBeVisible();
   });
 
   test('pins a single distinct branch even when the backend lists it twice', async ({
@@ -49,10 +41,8 @@ test.describe('working context', () => {
 
     // The backend lists Head Office twice (HOME + OPERATE); the client de-dupes to the one
     // distinct branch and auto-pins it — no branch combobox is ever shown for this user.
-    await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
-    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible();
   });
 
   test('uses institution level for members without branches', async ({
@@ -62,40 +52,31 @@ test.describe('working context', () => {
     await authenticate(context, testInfo, 'no-branches');
     await goToAdminAsGreenfield(page);
 
-    await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
-    await expect(page.getByRole('banner').getByText('All branches')).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('banner').getByText('All branches')).toBeVisible();
   });
 
   test('switches branch from the app bar dialog', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo);
     await goToAdminAsGreenfield(page);
     await selectMuiOption(page, 'Branch', /Head Office/);
-    await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
-    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible();
 
     await page.getByRole('button', { name: /switch organisation or branch/i }).click();
     const dialog = page.getByRole('dialog', { name: /switch working context/i });
-    // First hit of the run's /api/context/organisations route handler (a cold `next dev` compile).
-    await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible({
-      timeout: 20000,
-    });
+    await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible();
     await dialog.getByRole('combobox', { name: 'Organisation' }).click();
     await clickMuiOption(page.getByRole('option', { name: /Greenfield/ }));
     await dialog.getByRole('combobox', { name: 'Branch' }).click();
     await clickMuiOption(page.getByRole('option', { name: /Westlands/ }));
 
     // Assert the toast before the banner: the Snackbar auto-hides after 5s, while the banner
-    // waits on router.refresh() and a cold compile of the (already-visited) /admin route.
+    // waits on router.refresh().
     await expect(
       page.getByRole('alert').filter({ hasText: /Switched to Greenfield SACCO/ }),
     ).toBeVisible();
-    await expect(page.getByRole('banner').getByText('Westlands Branch')).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('banner').getByText('Westlands Branch')).toBeVisible();
   });
 
   test('re-selects the current organisation after another tab moved the shared context', async ({
@@ -104,18 +85,15 @@ test.describe('working context', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'multi-org');
     // `context.request` shares this browser context's cookie jar, so it stands in for another tab
-    // (and skips the /select-context UI the sibling tests already cover, keeping this within the
-    // 60s budget). Bounded: possibly the run's first hit of these route handlers.
+    // (and skips the /select-context UI the sibling tests already cover).
     const select = async (path: string, data: Record<string, string>) => {
-      const response = await context.request.post(path, { data, timeout: 20000 });
+      const response = await context.request.post(path, { data });
       expect(response.ok()).toBe(true);
     };
     await select('/api/context/organisation', { organisation_id: IDS.greenfield });
     await select('/api/context/branch', { branch_id: IDS.headOffice });
     await page.goto('/admin');
-    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible({
-      timeout: 20000,
-    });
+    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible();
 
     // Another tab moves the shared context cookie to Platform.
     await select('/api/context/organisation', { organisation_id: IDS.platformOrganisation });
@@ -127,10 +105,7 @@ test.describe('working context', () => {
     await expectHydrated(contextButton);
     await contextButton.click();
     const dialog = page.getByRole('dialog', { name: /switch working context/i });
-    // First hit of the run's /api/context/organisations route handler (a cold `next dev` compile).
-    await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible({
-      timeout: 20000,
-    });
+    await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible();
     await dialog.getByRole('combobox', { name: 'Organisation' }).click();
     await clickMuiOption(page.getByRole('option', { name: /Greenfield/ }));
     await dialog.getByRole('combobox', { name: 'Branch' }).click();
@@ -140,19 +115,15 @@ test.describe('working context', () => {
     await expect(
       page.getByRole('alert').filter({ hasText: /^Switched to Greenfield SACCO$/ }),
     ).toBeVisible();
-    await expect(page.getByRole('banner').getByText('Westlands Branch')).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('banner').getByText('Westlands Branch')).toBeVisible();
   });
 
   test('moves between workspaces with the app switcher', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'multi-org');
     await goToAdminAsGreenfield(page);
     await selectMuiOption(page, 'Branch', /Head Office/);
-    await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
-    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible();
 
     await page.getByRole('button', { name: 'Switch application', exact: true }).click();
     await clickInMuiPopover(page.getByRole('button', { name: /Platform administration/ }));
@@ -163,31 +134,21 @@ test.describe('working context', () => {
     await expect(
       page.getByRole('alert').filter({ hasText: /^Switched to Platform$/ }),
     ).toBeVisible();
-    await expect(page).toHaveURL(/\/platform-admin$/, { timeout: 15000 });
-    await expect(page.getByRole('banner').getByText('Platform', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(/\/platform-admin$/);
+    await expect(page.getByRole('banner').getByText('Platform', { exact: true })).toBeVisible();
     await expect(page.getByRole('banner').getByText('Platform Operations')).toBeVisible();
   });
 
   test('keeps a deep link through context selection', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'platform-operator');
 
-    // First hit of the dynamic tenant-detail route tree — can be slower than the default
-    // assertion timeout under cold `next dev` worker contention (see platform-administration.spec).
     await page.goto(`/platform-admin/tenants/${ACME_TENANT_ID}`);
-    await expect(page).toHaveURL(/\/select-context\?next=/, { timeout: 20000 });
-    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(/\/select-context\?next=/);
+    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
     await selectMuiOption(page, 'Organisation', /Platform/);
 
-    await expect(page).toHaveURL(new RegExp(`/platform-admin/tenants/${ACME_TENANT_ID}$`), {
-      timeout: 15000,
-    });
-    await expect(page.getByRole('heading', { name: 'Acme SACCO' }).first()).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(new RegExp(`/platform-admin/tenants/${ACME_TENANT_ID}$`));
+    await expect(page.getByRole('heading', { name: 'Acme SACCO' }).first()).toBeVisible();
   });
 
   const AXE_VIEWPORTS = [
@@ -196,12 +157,6 @@ test.describe('working context', () => {
   ] as const;
 
   test.describe('context overlays accessibility', () => {
-    // Each case authenticates, selects a branch, then opens and axe-scans both the dialog and the
-    // popover — more sequential work than the file's other tests. Under full-suite worker
-    // contention this can exceed the outer describe's 60s budget (siblings measured 43.5-48.3s;
-    // the (light, 1280x800) case timed out at 60s twice while passing in 7.1s run alone).
-    test.describe.configure({ timeout: 90000 });
-
     for (const colorScheme of ['light', 'dark'] as const) {
       for (const viewport of AXE_VIEWPORTS) {
         test(`context overlays have no serious or critical accessibility violations (${colorScheme}, ${viewport.width}x${viewport.height})`, async ({
@@ -215,17 +170,16 @@ test.describe('working context', () => {
           await authenticate(context, testInfo);
           await goToAdminAsGreenfield(page);
           await selectMuiOption(page, 'Branch', /Head Office/);
-          await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
+          await expect(page).toHaveURL(/\/admin$/);
 
-          // The URL updates before the (already-visited, but possibly still cold under this
-          // worker) /admin route finishes compiling: app/loading.tsx's 'Loading…' fallback can
-          // still be showing, with an empty document title, right after the URL match.
+          // The URL updates before the /admin page has streamed in: app/loading.tsx's 'Loading…'
+          // fallback can still be showing, with an empty document title, right after the URL match.
           // /admin/page.tsx's `metadata` is a static object (not `generateMetadata`), so it can't
           // stream in separately from the page body (see streaming-metadata docs) — waiting for
           // the page's own heading also waits for the title.
           await expect(
             page.getByRole('heading', { level: 1, name: 'Administration Overview' }),
-          ).toBeVisible({ timeout: 15000 });
+          ).toBeVisible();
 
           await expect(page.locator('html')).toHaveClass(new RegExp(colorScheme));
           await expect(page).toHaveTitle(/.+/);
@@ -233,10 +187,7 @@ test.describe('working context', () => {
           // Context switcher dialog.
           await page.getByRole('button', { name: /switch organisation or branch/i }).click();
           const dialog = page.getByRole('dialog', { name: /switch working context/i });
-          // First hit of the run's /api/context/organisations route handler (a cold `next dev` compile).
-          await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible({
-            timeout: 20000,
-          });
+          await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible();
           await expect(dialog).toBeInViewport();
           // MUI's Fade sets `opacity` directly on the dialog's transition container (not the
           // dialog paper); axe blends ancestor opacity into color-contrast, so scanning mid-fade

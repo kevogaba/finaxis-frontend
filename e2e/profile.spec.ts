@@ -22,9 +22,6 @@ const tab = (page: Page, name: string) =>
     .getByRole('tab', { name, exact: true });
 
 test.describe('profile', () => {
-  // /profile and its tabs can be the first hit of their route tree under a cold `next dev` compile.
-  test.describe.configure({ timeout: 60000 });
-
   test('overview: identity, active context, membership, and sign-in time', async ({
     context,
     page,
@@ -60,13 +57,11 @@ test.describe('profile', () => {
     await addCookie(context, testInfo, CONTEXT_COOKIE_NAME, 'stale-context-token');
 
     await page.goto('/profile/contexts');
-    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile%2Fcontexts$/, {
-      timeout: 20000,
-    });
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile%2Fcontexts$/);
     await selectMuiOption(page, 'Organisation', /Greenfield/);
     await selectMuiOption(page, 'Branch', /Head Office/);
 
-    await expect(page).toHaveURL((url) => url.pathname === '/profile/contexts', { timeout: 15000 });
+    await expect(page).toHaveURL((url) => url.pathname === '/profile/contexts');
     await expect(tab(page, 'Contexts')).toHaveAttribute('aria-current', 'page');
   });
 
@@ -87,10 +82,7 @@ test.describe('profile', () => {
 
     await main(page).getByRole('button', { name: 'Switch context' }).click();
     const dialog = page.getByRole('dialog', { name: /switch working context/i });
-    // First hit of the run's /api/context/organisations route handler (a cold `next dev` compile).
-    await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible({
-      timeout: 20000,
-    });
+    await expect(dialog.getByRole('combobox', { name: 'Organisation' })).toBeVisible();
     await dialog.getByRole('combobox', { name: 'Organisation' }).click();
     await clickMuiOption(page.getByRole('option', { name: /Greenfield/ }));
     await dialog.getByRole('combobox', { name: 'Branch' }).click();
@@ -100,9 +92,7 @@ test.describe('profile', () => {
       page.getByRole('alert').filter({ hasText: /Switched to Greenfield SACCO/ }),
     ).toBeVisible();
     await expect(page).toHaveURL((url) => url.pathname === '/profile/contexts');
-    await expect(branches.getByRole('row', { name: /Westlands Branch/ })).toContainText('Current', {
-      timeout: 15000,
-    });
+    await expect(branches.getByRole('row', { name: /Westlands Branch/ })).toContainText('Current');
     await expect(branches.getByRole('row', { name: /Head Office/ })).not.toContainText('Current');
   });
 
@@ -197,15 +187,11 @@ test.describe('profile', () => {
     await expect(tab(page, 'Roles & permissions')).toBeInViewport({ ratio: 0.95 });
 
     await page.goto('/profile/security');
-    await expect(page.getByRole('heading', { level: 1, name: 'My profile' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'My profile' })).toBeVisible();
     await expect(tab(page, 'Security')).toBeInViewport({ ratio: 0.95 });
 
     await page.goto('/profile/activity');
-    await expect(page.getByRole('heading', { level: 1, name: 'My profile' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'My profile' })).toBeVisible();
     await expect(tab(page, 'Activity')).toBeInViewport({ ratio: 0.95 });
   });
 
@@ -219,7 +205,7 @@ test.describe('profile', () => {
     await expect(tab(page, 'Activity')).toHaveCount(0);
 
     await page.goto('/profile/activity');
-    await expect(main(page).getByText("You don't have permission")).toBeVisible({ timeout: 15000 });
+    await expect(main(page).getByText("You don't have permission")).toBeVisible();
     await expect(main(page).getByText(/needs the audit permission \(audit\.view\)/)).toBeVisible();
     // The kit's record root matches only its own path (6110b09), so nothing claims the hidden
     // tab's path.
@@ -247,7 +233,7 @@ test.describe('profile', () => {
     await page.goto('/profile/activity');
     await expect(
       main(page).getByText("Activity isn't available in the platform workspace"),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
     // No request was made: an ungated read would render the 403 ErrorState (an alert) instead.
     await expect(main(page).getByRole('alert')).toHaveCount(0);
     await expect(
@@ -266,9 +252,6 @@ const TABS = [
 
 // Layer a11y gate: light and dark, desktop and 375 px (long values at 375 px), every tab.
 test.describe('profile accessibility', () => {
-  // Five tab navigations and five scans per case, each tab possibly a cold compile.
-  test.describe.configure({ timeout: 120000 });
-
   for (const a11yCase of A11Y_CASES) {
     test(`every tab has no serious or critical violations (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
       context,
@@ -281,13 +264,11 @@ test.describe('profile accessibility', () => {
       for (const profileTab of TABS) {
         if (profileTab.path !== '/profile') {
           await tab(page, profileTab.name).click();
-          await expect(page).toHaveURL((url) => url.pathname === profileTab.path, {
-            timeout: 15000,
-          });
+          await expect(page).toHaveURL((url) => url.pathname === profileTab.path);
         }
         await expect(
           main(page).getByRole('region', { name: profileTab.region, exact: true }),
-        ).toBeVisible({ timeout: 15000 });
+        ).toBeVisible();
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);
       }

@@ -63,11 +63,10 @@ async function enterUser(
   await enterAdmin(page, `/admin/users/${id}`, { heading: name, branch });
 }
 
-/** A record once the context is selected. Bounded: a record route can be the first hit of its tree
- * under a cold `next dev` compile. */
+/** A record once the context is selected. */
 async function openUser(page: Page, id: string, name: string | RegExp) {
   await page.goto(`/admin/users/${id}`);
-  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
 }
 
 const TAB_SEGMENTS = {
@@ -78,9 +77,7 @@ const TAB_SEGMENTS = {
 
 async function openTab(page: Page, label: keyof typeof TAB_SEGMENTS) {
   await page.getByRole('tab', { name: label }).click();
-  await expect
-    .poll(() => new URL(page.url()).pathname.split('/').pop(), { timeout: 15000 })
-    .toBe(TAB_SEGMENTS[label]);
+  await expect.poll(() => new URL(page.url()).pathname.split('/').pop()).toBe(TAB_SEGMENTS[label]);
 }
 
 /** A click on a client control, once React owns it (a click on the SSR markup is dropped). */
@@ -176,8 +173,6 @@ const searchParam = (page: Page, name: string) => new URL(page.url()).searchPara
 const containing = (text: string) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 
 test.describe('users: directory and lifecycle', () => {
-  // A users route can be the first hit of its tree under a cold `next dev` compile.
-  test.describe.configure({ timeout: 90000 });
   // The organisation's zone is Africa/Nairobi: a time rendered in the browser's zone would differ.
   test.use({ timezoneId: 'UTC' });
 
@@ -203,9 +198,7 @@ test.describe('users: directory and lifecycle', () => {
     await expectHydrated(search);
     await search.fill('mwangi');
     await search.press('Enter');
-    await expect(page).toHaveURL((url) => url.searchParams.get('q') === 'mwangi', {
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL((url) => url.searchParams.get('q') === 'mwangi');
     await expect(rowsOf(page, 'Users')).toHaveCount(3); // header + Joann + Ann
     await expect(
       rowsOf(page, 'Users').nth(1).getByRole('link', { name: 'Joann Mwangi', exact: true }),
@@ -216,11 +209,10 @@ test.describe('users: directory and lifecycle', () => {
 
     // Wait for each cleared render: the next push builds on the rendered query.
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(mainText(page, '13 users', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '13 users', { exact: true })).toBeVisible();
     await selectMuiOption(page, 'Membership', /^Pending approval$/);
     await expect(page).toHaveURL(
       (url) => url.searchParams.get('membershipStatus') === 'PENDING_APPROVAL',
-      { timeout: 15000 },
     );
     await expect(rowsOf(page, 'Users')).toHaveCount(5); // header + Amina, Brian, Carol, Daniel
     // Daniel's User status cell reads `Provisioning identity` as well, so the cell is named: the
@@ -232,11 +224,9 @@ test.describe('users: directory and lifecycle', () => {
     ).toHaveText('Awaiting approval');
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(mainText(page, '13 users', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '13 users', { exact: true })).toBeVisible();
     await press(page.getByRole('button', { name: 'Go to next page' }));
-    await expect(page).toHaveURL((url) => url.searchParams.get('page') === '1', {
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL((url) => url.searchParams.get('page') === '1');
     await expect(rowsOf(page, 'Users')).toHaveCount(4); // header + Amina, Victor, Jane
     await expect(
       rowsOf(page, 'Users').nth(1).getByRole('link', { name: 'Amina Odhiambo', exact: true }),
@@ -319,12 +309,10 @@ test.describe('users: directory and lifecycle', () => {
     await expect(dialog.locator('input[name="membershipId"]')).toHaveValue(USERS.aminaMembership);
     await dialog.getByRole('button', { name: 'Approve', exact: true }).click();
 
-    await expect(dialog).toBeHidden({ timeout: 15000 });
+    await expect(dialog).toBeHidden();
     await expect(toast(page, 'Approval recorded')).toBeVisible();
     // The 202: the hero's onboarding chip moves on while the membership stays pending.
-    await expect(hero(page).getByText('Provisioning identity', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(hero(page).getByText('Provisioning identity', { exact: true })).toBeVisible();
     await expect(
       hero(page).getByText('Membership pending approval', { exact: true }),
     ).toBeVisible();
@@ -349,11 +337,9 @@ test.describe('users: directory and lifecycle', () => {
     ).toBeVisible();
     await expect(hero(page).getByText('Membership active', { exact: true })).toHaveCount(0);
 
-    await expect(await act(page, 'Approve')).toBeHidden({ timeout: 15000 });
+    await expect(await act(page, 'Approve')).toBeHidden();
     await expect(toast(page, 'Approval recorded')).toBeVisible();
-    await expect(hero(page).getByText('Membership active', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(hero(page).getByText('Membership active', { exact: true })).toBeVisible();
     await expect(hero(page).getByText('Active', { exact: true })).toBeVisible();
     await expect(hero(page).getByText('Awaiting approval', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Suspend', exact: true })).toBeVisible();
@@ -425,18 +411,14 @@ test.describe('users: directory and lifecycle', () => {
     const reason = dialog.getByRole('textbox', { name: /^Reason/ });
     await reason.fill('  a  ');
     await dialog.getByRole('button', { name: 'Reject & revoke', exact: true }).click();
-    await expect(dialog.getByText('Give a reason of at least 3 characters.')).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(dialog.getByText('Give a reason of at least 3 characters.')).toBeVisible();
     await expect(reason).toHaveValue('  a  ');
 
     await reason.fill('Duplicate invitation');
     await dialog.getByRole('button', { name: 'Reject & revoke', exact: true }).click();
-    await expect(dialog).toBeHidden({ timeout: 15000 });
+    await expect(dialog).toBeHidden();
     await expect(toast(page, 'Membership revoked')).toBeVisible();
-    await expect(hero(page).getByText('Membership revoked', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(hero(page).getByText('Membership revoked', { exact: true })).toBeVisible();
     await expect(hero(page).getByText('Revoked', { exact: true })).toBeVisible();
     // Revoked is terminal: nothing is left to offer, so the title takes focus.
     await expect(hero(page).getByRole('button')).toHaveCount(0);
@@ -457,10 +439,8 @@ test.describe('users: directory and lifecycle', () => {
     // (contract §E.3, BG-11), which a membership-status check alone cannot see.
     const other = await context.newPage();
     await openUser(other, USERS.amina, 'Amina Odhiambo');
-    await expect(await act(other, 'Approve')).toBeHidden({ timeout: 15000 });
-    await expect(hero(other).getByText('Provisioning identity', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(await act(other, 'Approve')).toBeHidden();
+    await expect(hero(other).getByText('Provisioning identity', { exact: true })).toBeVisible();
     await expect(
       hero(other).getByText('Membership pending approval', { exact: true }),
     ).toBeVisible();
@@ -469,16 +449,14 @@ test.describe('users: directory and lifecycle', () => {
     // The first tab never refreshed, so its Reject & revoke is stale: the server refuses it, the
     // dialog stays open with the reason the administrator typed, and no revoke is sent.
     const dialog = await act(page, 'Reject & revoke', 'Wrong person');
-    await expect(dialog.getByText(MEMBERSHIP_CHANGED)).toBeVisible({ timeout: 15000 });
+    await expect(dialog.getByText(MEMBERSHIP_CHANGED)).toBeVisible();
     await expect(dialog.getByRole('textbox', { name: /^Reason/ })).toHaveValue('Wrong person');
     await expect(toast(page, 'Membership revoked')).toHaveCount(0);
 
     // A fresh read: she is still provisioning, not revoked, and still revocable by an administrator
     // who sees that (the page showed her as provisioning, so the guard has nothing to compare).
     await page.reload();
-    await expect(page.getByRole('heading', { level: 1, name: 'Amina Odhiambo' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Amina Odhiambo' })).toBeVisible();
     await expect(hero(page).getByText('Provisioning identity', { exact: true })).toBeVisible();
     await expect(
       hero(page).getByText('Membership pending approval', { exact: true }),
@@ -495,20 +473,16 @@ test.describe('users: directory and lifecycle', () => {
     await enterUser(page, USERS.esther, 'Esther Njoki');
     await expect(hero(page).getByText('Awaiting first sign-in', { exact: true })).toBeVisible();
 
-    await expect(await act(page, 'Suspend', 'Cash audit')).toBeHidden({ timeout: 15000 });
+    await expect(await act(page, 'Suspend', 'Cash audit')).toBeHidden();
     await expect(toast(page, 'Membership suspended')).toBeVisible();
-    await expect(hero(page).getByText('Membership suspended', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(hero(page).getByText('Membership suspended', { exact: true })).toBeVisible();
     await expect(hero(page).getByText('Suspended', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reactivate', exact: true })).toBeFocused();
 
     // Reactivate's reason is optional.
-    await expect(await act(page, 'Reactivate')).toBeHidden({ timeout: 15000 });
+    await expect(await act(page, 'Reactivate')).toBeHidden();
     await expect(toast(page, 'Membership reactivated')).toBeVisible();
-    await expect(hero(page).getByText('Membership active', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(hero(page).getByText('Membership active', { exact: true })).toBeVisible();
     await expect(hero(page).getByText('Awaiting first sign-in', { exact: true })).toBeVisible();
     await expect(hero(page).getByText('Suspended', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Suspend', exact: true })).toBeFocused();
@@ -516,7 +490,7 @@ test.describe('users: directory and lifecycle', () => {
     // The default view is the user record, which the fake (like the platform, BG-16) keys both by.
     await openTab(page, 'Audit');
     const trail = page.getByRole('region', { name: 'Audit trail' });
-    await expect(trail).toContainText('Suspended membership', { timeout: 15000 });
+    await expect(trail).toContainText('Suspended membership');
     await expect(trail).toContainText('Reactivated membership');
     await expect(rowsOf(page, 'Audit events')).toHaveCount(3); // header + the two
   });
@@ -531,33 +505,25 @@ test.describe('users: directory and lifecycle', () => {
 
     // Positive controls: she holds one role and one branch before the revoke.
     await openTab(page, 'Roles & access');
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(2, { timeout: 15000 });
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(2);
     await openTab(page, 'Branch assignments');
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2, { timeout: 15000 });
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2);
     await page.getByRole('tab', { name: 'Overview' }).click();
-    await expect(page.getByRole('heading', { level: 2, name: 'Profile' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 2, name: 'Profile' })).toBeVisible();
 
     const dialog = await act(page, 'Revoke', 'Left the SACCO');
-    await expect(dialog).toBeHidden({ timeout: 15000 });
-    await expect(hero(page).getByText('Membership revoked', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(dialog).toBeHidden();
+    await expect(hero(page).getByText('Membership revoked', { exact: true })).toBeVisible();
     await expect(hero(page).getByText('Revoked', { exact: true })).toBeVisible();
     await expect(hero(page).getByRole('button')).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Gladys Chebet' })).toBeFocused();
 
     // Every assignment went with it, and a revoked membership takes no new one.
     await openTab(page, 'Roles & access');
-    await expect(mainText(page, 'No roles assigned', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(mainText(page, 'No roles assigned', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Assign role' })).toHaveCount(0);
     await openTab(page, 'Branch assignments');
-    await expect(mainText(page, 'No branch assignments', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(mainText(page, 'No branch assignments', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Assign branch' })).toHaveCount(0);
   });
 
@@ -597,8 +563,6 @@ test.describe('users: directory and lifecycle', () => {
 });
 
 test.describe('users: access and audit', () => {
-  test.describe.configure({ timeout: 90000 });
-
   test('assigns and revokes roles, offering branch scope only where the user is assigned', async ({
     context,
     page,
@@ -606,7 +570,7 @@ test.describe('users: access and audit', () => {
     await authenticate(context, testInfo, 'users');
     await enterUser(page, USERS.felix, 'Felix Omondi');
     await openTab(page, 'Roles & access');
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4, { timeout: 15000 }); // header + 3
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4); // header + 3
     // A DISABLED role grants nothing: the table says so beside its name, once.
     const disabled = page
       .getByRole('table', { name: 'Role assignments' })
@@ -632,9 +596,9 @@ test.describe('users: access and audit', () => {
     await expect(page.getByRole('option')).toHaveText('Westlands Branch (WESTLANDS)');
     await clickMuiOption(page.getByRole('option', { name: 'Westlands Branch (WESTLANDS)' }));
     await drawer.getByRole('button', { name: 'Assign role' }).click();
-    await expect(drawer).toBeHidden({ timeout: 15000 });
+    await expect(drawer).toBeHidden();
     await expect(toast(page, 'Role assigned')).toBeVisible();
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(5, { timeout: 15000 });
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(5);
 
     await page
       .getByRole('button', {
@@ -643,10 +607,10 @@ test.describe('users: access and audit', () => {
       .click();
     const revoke = page.getByRole('alertdialog');
     await revoke.getByRole('button', { name: 'Revoke' }).click();
-    await expect(revoke).toBeHidden({ timeout: 15000 });
+    await expect(revoke).toBeHidden();
     // The revoked row's button unmounts, so focus falls back to the record title.
     await expect(page.getByRole('heading', { level: 1, name: 'Felix Omondi' })).toBeFocused();
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4, { timeout: 15000 });
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4);
 
     // Wanjiru holds no branch assignment: "One branch" is disabled, and the drawer says why.
     await openUser(page, USERS.wanjiru, WANJIRU);
@@ -670,7 +634,7 @@ test.describe('users: access and audit', () => {
     await authenticate(context, testInfo, 'users');
     await enterUser(page, USERS.felix, 'Felix Omondi');
     await openTab(page, 'Roles & access');
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4, { timeout: 15000 });
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4);
 
     // Without these the cross-tab guard is silently off, whatever the unit tests of the pieces say.
     await press(page.getByRole('button', { name: 'Assign role' }));
@@ -700,15 +664,11 @@ test.describe('users: access and audit', () => {
     // Hassan's membership is revoked and so are his Teller and Head Office assignments.
     await enterUser(page, USERS.hassan, 'Hassan Ali');
     await openTab(page, 'Roles & access');
-    await expect(mainText(page, 'No roles assigned', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(mainText(page, 'No roles assigned', { exact: true })).toBeVisible();
     await expect(mainText(page, 'This user holds no roles.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Assign role' })).toHaveCount(0);
     await openTab(page, 'Branch assignments');
-    await expect(mainText(page, 'No branch assignments', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(mainText(page, 'No branch assignments', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Assign branch' })).toHaveCount(0);
   });
 
@@ -720,7 +680,7 @@ test.describe('users: access and audit', () => {
     await openDirectory(page, /Head Office/);
     await openRecord(page, 'Users', 'Felix Omondi');
     await openTab(page, 'Roles & access');
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4, { timeout: 15000 });
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4);
 
     // Contract §E.4: Felix holds Teller at Westlands, so a Head Office context would get a 404
     // revoking it. His institution-wide Teller and Loans officer rows can be revoked from anywhere.
@@ -765,7 +725,7 @@ test.describe('users: access and audit', () => {
     await authenticate(context, testInfo, 'users');
     await enterUser(page, USERS.felix, 'Felix Omondi');
     await openTab(page, 'Branch assignments');
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2, { timeout: 15000 }); // Westlands
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2); // Westlands
     await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Westlands Branch');
     await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Home');
 
@@ -774,9 +734,9 @@ test.describe('users: access and audit', () => {
     await selectMuiOption(page, 'Branch', /^Head Office \(HEAD_OFFICE\)$/);
     await selectMuiOption(page, 'Assignment type', /^Operate$/);
     await drawer.getByRole('button', { name: 'Assign branch' }).click();
-    await expect(drawer).toBeHidden({ timeout: 15000 });
+    await expect(drawer).toBeHidden();
     await expect(toast(page, 'Branch assigned')).toBeVisible();
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(3, { timeout: 15000 });
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(3);
     // Rows are ordered by branch name, so Head Office now precedes Westlands.
     await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Head Office');
     await expect(rowsOf(page, 'Branch assignments').nth(2)).toContainText('Westlands Branch');
@@ -786,9 +746,9 @@ test.describe('users: access and audit', () => {
       .click();
     const revoke = page.getByRole('alertdialog');
     await revoke.getByRole('button', { name: 'Revoke' }).click();
-    await expect(revoke).toBeHidden({ timeout: 15000 });
+    await expect(revoke).toBeHidden();
     await expect(page.getByRole('heading', { level: 1, name: 'Felix Omondi' })).toBeFocused();
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2, { timeout: 15000 });
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2);
 
     // A staff member's last assignment can't go (409), and the dialog names why.
     await page
@@ -796,12 +756,7 @@ test.describe('users: access and audit', () => {
       .click();
     const last = page.getByRole('alertdialog');
     await last.getByRole('button', { name: 'Revoke' }).click();
-    await expect(last.getByRole('alert')).toContainText(
-      "may be the user's last branch assignment",
-      {
-        timeout: 15000,
-      },
-    );
+    await expect(last.getByRole('alert')).toContainText("may be the user's last branch assignment");
     await expect(last).toBeVisible();
     // Nothing changed behind it: the row is still there once the dialog is closed.
     await last.getByRole('button', { name: 'Cancel' }).click();
@@ -816,7 +771,7 @@ test.describe('users: access and audit', () => {
     await authenticate(context, testInfo, 'users');
     await enterUser(page, USERS.felix, 'Felix Omondi');
     await openTab(page, 'Branch assignments');
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2, { timeout: 15000 });
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2);
 
     await press(page.getByRole('button', { name: 'Assign branch' }));
     const drawer = page.getByRole('dialog', { name: 'Assign to a branch' });
@@ -843,7 +798,7 @@ test.describe('users: access and audit', () => {
     await openTab(page, 'Branch assignments');
     // The scan is forced to Westlands (§E.4), and Jane can switch: the note offers it, inside it.
     const note = mainText(page, /^Only Westlands Branch is visible with a branch selected\./);
-    await expect(note).toBeVisible({ timeout: 15000 });
+    await expect(note).toBeVisible();
     await expect(note.getByRole('button', { name: 'Switch to All branches' })).toBeVisible();
     await expect(mainText(page, PARTIAL_SCAN_NOTE)).toHaveCount(0);
     await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2);
@@ -854,7 +809,7 @@ test.describe('users: access and audit', () => {
       page.getByRole('button', {
         name: "Revoke Felix Omondi's Teller assignment (Westlands Branch)",
       }),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
 
     // Esther holds Head Office only, so no branch is on offer for a branch-scoped role here.
     await openUser(page, USERS.esther, 'Esther Njoki');
@@ -878,11 +833,11 @@ test.describe('users: access and audit', () => {
     await openTab(page, 'Branch assignments');
 
     const note = mainText(page, /^Only Head Office is visible with a branch selected\./);
-    await expect(note).toBeVisible({ timeout: 15000 });
+    await expect(note).toBeVisible();
     await press(note.getByRole('button', { name: 'Switch to All branches' }));
 
     // The switch lands and the note, with its button, goes: focus is on the title, never <body>.
-    await expect(note).toHaveCount(0, { timeout: 15000 });
+    await expect(note).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Felix Omondi' })).toBeFocused();
   });
 
@@ -899,7 +854,7 @@ test.describe('users: access and audit', () => {
     // read: the context note stands alone.
     await expect(
       mainText(page, /^Only Head Office is visible with a branch selected\./),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
     await expect(mainText(page, PARTIAL_SCAN_NOTE)).toHaveCount(0);
     // "No branch assignments" would be a false fact under that note: only this branch was visible.
     await expect(mainText(page, 'No assignment at Head Office', { exact: true })).toBeVisible();
@@ -940,7 +895,7 @@ test.describe('users: access and audit', () => {
         page,
         "Only Head Office is visible: your account is assigned to this branch only, so this user's other branch assignments can't be shown.",
       ),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Switch to All branches' })).toHaveCount(0);
     await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2); // header + one row
     await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Head Office');
@@ -965,12 +920,12 @@ test.describe('users: access and audit', () => {
     // Each view is one event, so a dropped `entityId` (every USER event, every MEMBERSHIP event) or
     // a dropped `actorId` (every event) fails the count.
     const events = rowsOf(page, 'Audit events');
-    await expect(events).toHaveCount(2, { timeout: 15000 });
+    await expect(events).toHaveCount(2);
     await expect(events.nth(1)).toContainText('Invited user');
 
     await press(views.getByRole('button', { name: 'Account' }));
-    await expect.poll(() => searchParam(page, 'view'), { timeout: 15000 }).toBe('account');
-    await expect(events.nth(1)).toContainText('Activated on first sign-in', { timeout: 15000 });
+    await expect.poll(() => searchParam(page, 'view')).toBe('account');
+    await expect(events.nth(1)).toContainText('Activated on first sign-in');
     await expect(events).toHaveCount(2);
     await expect(views.getByRole('button', { name: 'Account' })).toHaveAttribute(
       'aria-pressed',
@@ -978,14 +933,14 @@ test.describe('users: access and audit', () => {
     );
 
     await views.getByRole('button', { name: 'Membership' }).click();
-    await expect.poll(() => searchParam(page, 'view'), { timeout: 15000 }).toBe('membership');
-    await expect(events.nth(1)).toContainText('Activated membership', { timeout: 15000 });
+    await expect.poll(() => searchParam(page, 'view')).toBe('membership');
+    await expect(events.nth(1)).toContainText('Activated membership');
     await expect(events).toHaveCount(2);
 
     // Felix performed the account activation himself.
     await views.getByRole('button', { name: 'Performed by' }).click();
-    await expect.poll(() => searchParam(page, 'view'), { timeout: 15000 }).toBe('actor');
-    await expect(events.nth(1)).toContainText('Activated on first sign-in', { timeout: 15000 });
+    await expect.poll(() => searchParam(page, 'view')).toBe('actor');
+    await expect(events.nth(1)).toContainText('Activated on first sign-in');
     await expect(events).toHaveCount(2);
     await expect(views.getByRole('button', { name: 'Performed by' })).toHaveAttribute(
       'aria-pressed',
@@ -1001,27 +956,19 @@ test.describe('users: access and audit', () => {
     await openDirectory(page);
 
     await page.goto(`/admin/users/${USERS.felix}/access?page=7`);
-    await expect(page).toHaveURL((url) => url.searchParams.get('page') === null, {
-      timeout: 15000,
-    });
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4, { timeout: 15000 });
+    await expect(page).toHaveURL((url) => url.searchParams.get('page') === null);
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4);
 
     await page.goto(`/admin/users/${USERS.felix}/branches?page=7&size=10`);
-    await expect(page).toHaveURL((url) => url.searchParams.get('page') === null, {
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL((url) => url.searchParams.get('page') === null);
     expect(searchParam(page, 'size')).toBe('10');
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2, { timeout: 15000 });
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2);
 
     await page.goto(`/admin/users/${USERS.felix}/audit?view=account&page=9&size=10`);
-    await expect(page).toHaveURL((url) => url.searchParams.get('page') === null, {
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL((url) => url.searchParams.get('page') === null);
     expect(searchParam(page, 'view')).toBe('account');
     expect(searchParam(page, 'size')).toBe('10');
-    await expect(rowsOf(page, 'Audit events').nth(1)).toContainText('Activated on first sign-in', {
-      timeout: 15000,
-    });
+    await expect(rowsOf(page, 'Audit events').nth(1)).toContainText('Activated on first sign-in');
   });
 
   test('filters the audit trail by an actor picked from the user search', async ({
@@ -1032,18 +979,14 @@ test.describe('users: access and audit', () => {
     await enterAdmin(page, '/admin/audit', { heading: 'Audit trail', branch: ALL_BRANCHES });
     // The picker keeps the filters already set: an Entity type of User.
     await page.goto('/admin/audit?entityType=USER');
-    await expect(page.getByRole('heading', { level: 1, name: 'Audit trail' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Audit trail' })).toBeVisible();
 
     const actor = page.getByRole('combobox', { name: 'Actor' });
     await expectHydrated(actor);
     await actor.fill('Victor');
     await page.getByRole('option', { name: /Victor Otieno/ }).click();
 
-    await expect(page).toHaveURL((url) => url.searchParams.get('actorId') === USERS.victor, {
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL((url) => url.searchParams.get('actorId') === USERS.victor);
     expect(searchParam(page, 'entityType')).toBe('USER');
     // That the pick drops `page` is pinned by 'starts the filtered trail on its first page after an
     // actor is picked' below: this URL has no `page` to drop (and Victor's four events fit one page).
@@ -1057,9 +1000,7 @@ test.describe('users: access and audit', () => {
 
     // Removing the chip drops the filter and keeps focus on the page (the toolbar's own rule).
     await chip.click();
-    await expect(page).toHaveURL((url) => url.searchParams.get('actorId') === null, {
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL((url) => url.searchParams.get('actorId') === null);
     expect(searchParam(page, 'entityType')).toBe('USER');
     await expect(page.getByRole('button', { name: /^Actor: / })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Clear filters' })).toBeFocused();
@@ -1073,9 +1014,7 @@ test.describe('users: access and audit', () => {
     await enterAdmin(page, '/admin/audit', { heading: 'Audit trail', branch: ALL_BRANCHES });
     // Page 2 of 4 at ten a page (37 events), so a `page` left in the URL would be a real page.
     await page.goto('/admin/audit?size=10&page=1');
-    await expect(page.getByRole('status').filter({ hasText: /^37 events$/ })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('status').filter({ hasText: /^37 events$/ })).toBeVisible();
     expect(searchParam(page, 'page')).toBe('1');
 
     const actor = page.getByRole('combobox', { name: 'Actor' });
@@ -1083,9 +1022,7 @@ test.describe('users: access and audit', () => {
     await actor.fill('Jane');
     await page.getByRole('option', { name: /Backend Jane Manager/ }).click();
 
-    await expect(page).toHaveURL((url) => url.searchParams.get('actorId') === IDS.jane, {
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL((url) => url.searchParams.get('actorId') === IDS.jane);
     expect(searchParam(page, 'page')).toBeNull();
     expect(searchParam(page, 'size')).toBe('10');
     // Jane did 27 things: 3 pages, and the first one is shown.
@@ -1095,8 +1032,6 @@ test.describe('users: access and audit', () => {
 });
 
 test.describe('users: gating and ids', () => {
-  test.describe.configure({ timeout: 90000 });
-
   test('offers no membership actions without membership.view, and says why', async ({
     context,
     page,
@@ -1114,7 +1049,7 @@ test.describe('users: gating and ids', () => {
 
     // A direct visit to the Audit tab shows the forbidden state, by its content.
     await page.goto(`/admin/users/${USERS.amina}/audit`);
-    await expect(mainText(page, FORBIDDEN_TITLE, { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, FORBIDDEN_TITLE, { exact: true })).toBeVisible();
     await expect(page.getByRole('table', { name: 'Audit events' })).toHaveCount(0);
   });
 
@@ -1132,7 +1067,7 @@ test.describe('users: gating and ids', () => {
     }
 
     await openTab(page, 'Roles & access');
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(2, { timeout: 15000 });
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(2);
     await expect(rowsOf(page, 'Role assignments').nth(1)).toContainText('Teller');
     await expect(page.getByRole('button', { name: 'Assign role' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^Revoke/ })).toHaveCount(0);
@@ -1144,7 +1079,7 @@ test.describe('users: gating and ids', () => {
     );
 
     await openTab(page, 'Branch assignments');
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2, { timeout: 15000 });
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2);
     await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Westlands Branch');
     await expect(page.getByRole('button', { name: 'Assign branch' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^Revoke/ })).toHaveCount(0);
@@ -1178,7 +1113,7 @@ test.describe('users: gating and ids', () => {
       '/admin/users/not-a-uuid/audit',
     ]) {
       await page.goto(path);
-      await expect(notFoundHeading(page), path).toBeVisible({ timeout: 15000 });
+      await expect(notFoundHeading(page), path).toBeVisible();
       await expect(page.getByRole('tab', { name: 'Overview' })).toHaveCount(0);
     }
   });
@@ -1198,12 +1133,10 @@ test.describe('users: gating and ids', () => {
     );
 
     await page.goto(`/admin/users/${upper}/access`);
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4, { timeout: 15000 });
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(4);
 
     await page.goto(`/admin/users/${upper}/audit`);
-    await expect(rowsOf(page, 'Audit events').nth(1)).toContainText('Invited user', {
-      timeout: 15000,
-    });
+    await expect(rowsOf(page, 'Audit events').nth(1)).toContainText('Invited user');
     // A row's link into the full trail carries the lower-case id too. The User record view holds
     // exactly one event, so the link is the only one: a duplicate would fail the strict locator.
     await expect(rowsOf(page, 'Audit events')).toHaveCount(2); // header + the invitation
@@ -1222,11 +1155,9 @@ test.describe('users: gating and ids', () => {
 
     // 511 active assignments, 500 of them read: Felix's row is in the window, but the list is
     // flagged, never presented as the whole.
-    await expect(fact(page, 'Branch assignments')).toHaveText('At least 1 (partial)', {
-      timeout: 15000,
-    });
+    await expect(fact(page, 'Branch assignments')).toHaveText('At least 1 (partial)');
     await openTab(page, 'Branch assignments');
-    await expect(mainText(page, PARTIAL_SCAN_NOTE)).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, PARTIAL_SCAN_NOTE)).toBeVisible();
     await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2); // Westlands
     await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Westlands Branch');
     // No branch is selected, so there is no context note and nothing to switch.
@@ -1237,7 +1168,7 @@ test.describe('users: gating and ids', () => {
     // drawer's hint says the scan was partial instead of claiming she has no branch.
     await openUser(page, USERS.ann, 'Ann Mwangi');
     await openTab(page, 'Branch assignments');
-    await expect(mainText(page, PARTIAL_SCAN_NOTE)).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, PARTIAL_SCAN_NOTE)).toBeVisible();
     await expect(mainText(page, 'No branch assignments found', { exact: true })).toBeVisible();
     await expect(
       mainText(
@@ -1273,9 +1204,6 @@ test.describe('users: gating and ids', () => {
     // Joann's own Head Office row is in the window: a floor, not a count.
     await expect(fact(page, 'Branch assignments')).toHaveText(
       'At least 1 at Head Office (partial)',
-      {
-        timeout: 15000,
-      },
     );
     await openTab(page, 'Branch assignments');
     const notes = mainText(
@@ -1298,22 +1226,18 @@ test.describe('users: gating and ids', () => {
     await openUser(page, USERS.felix, 'Felix Omondi');
     await expect(fact(page, 'Branch assignments')).toHaveText(
       'None found at Head Office (partial)',
-      {
-        timeout: 15000,
-      },
     );
     // The tab doesn't claim "No assignment at Head Office" for a branch whose list was capped.
     await openTab(page, 'Branch assignments');
-    await expect(mainText(page, 'No branch assignments found', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(mainText(page, 'No branch assignments found', { exact: true })).toBeVisible();
     await expect(mainText(page, /^No assignment at /)).toHaveCount(0);
   });
 });
 
 test.describe('users: accessibility', () => {
-  // Each case scans eight surfaces after /select-context.
-  test.describe.configure({ timeout: 180000 });
+  // Each case scans eight surfaces after /select-context: 18-24 s on the production build at
+  // 4 workers on 4 CPUs, so the 30 s default is too close.
+  test.describe.configure({ timeout: 75000 });
 
   for (const a11yCase of A11Y_CASES) {
     test(`has no serious or critical accessibility violations (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
@@ -1322,9 +1246,7 @@ test.describe('users: accessibility', () => {
     }, testInfo) => {
       const scan = async (path: string, heading: string | RegExp) => {
         await page.goto(path);
-        await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible({
-          timeout: 15000,
-        });
+        await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);
       };
@@ -1382,7 +1304,7 @@ test.describe('users: accessibility', () => {
       const actor = page.getByRole('combobox', { name: 'Actor' });
       await expectHydrated(actor);
       await actor.fill('a');
-      await expect(page.getByRole('option').first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('option').first()).toBeVisible();
       await expect(page.locator('.MuiAutocomplete-popper')).toHaveCSS('opacity', '1');
       await expectNoSeriousOrCriticalViolations(page);
     });
@@ -1404,7 +1326,7 @@ test.describe('users: accessibility', () => {
         ['Branch assignments', 'Branch assignments'],
       ] as const) {
         await openTab(page, tab);
-        await expect(rowsOf(page, table)).toHaveCount(2, { timeout: 15000 });
+        await expect(rowsOf(page, table)).toHaveCount(2);
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);
       }

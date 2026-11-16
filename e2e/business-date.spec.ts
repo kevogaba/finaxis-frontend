@@ -2,16 +2,14 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { authenticate, selectMuiOption } from './support/auth';
 
-/** Bounded URL/heading waits, like audit.spec's `enter()`: the first hit of a route tree under a
- * cold `next dev` compile can update the URL before the RSC payload (and its `h1`) has rendered. */
+/** The URL updates before the RSC payload (and its `h1`) has rendered, so the heading is awaited
+ * after the URL, like audit.spec's `enter()`. */
 async function enter(page: Page) {
   await page.goto('/admin/business-date');
   await selectMuiOption(page, 'Organisation', /Greenfield/);
   await selectMuiOption(page, 'Branch', /Head Office/);
-  await expect(page).toHaveURL(/\/admin\/business-date/, { timeout: 15000 });
-  await expect(page.getByRole('heading', { level: 1, name: 'Business date' })).toBeVisible({
-    timeout: 15000,
-  });
+  await expect(page).toHaveURL(/\/admin\/business-date/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Business date' })).toBeVisible();
 }
 
 const hero = (page: Page) => page.getByRole('region', { name: 'Current business date' });
@@ -27,9 +25,6 @@ async function run(page: Page, action: string, reason?: string) {
 }
 
 test.describe('business date', () => {
-  // /admin/business-date can be the first hit of its route tree under a cold `next dev` compile.
-  test.describe.configure({ timeout: 60000 });
-
   test('shows the date, status, history, and the app-bar indicator', async ({
     context,
     page,
@@ -287,10 +282,8 @@ test.describe('business date', () => {
   });
 
   // Layer a11y gate: light and dark, both at desktop and 375px, like audit.spec's own matrix
-  // (e2e/audit.spec.ts:329-387). Each case scans the page, opens the dialog, and scans again.
+  // ('audit accessibility'). Each case scans the page, opens the dialog, and scans again.
   test.describe('business date accessibility', () => {
-    test.describe.configure({ timeout: 90000 });
-
     const AXE_VIEWPORTS = [
       { label: 'desktop', width: 1280, height: 800, scenario: 'default' as const },
       { label: '375px', width: 375, height: 812, scenario: 'long-names' as const },

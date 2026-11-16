@@ -32,9 +32,6 @@ async function lifecycle(page: Page, label: string, reason?: string) {
 }
 
 test.describe('branches', () => {
-  // A branch route can be the first hit of its tree under a cold `next dev` compile.
-  test.describe.configure({ timeout: 90000 });
-
   test('searches, filters, and sorts the directory through the URL', async ({
     context,
     page,
@@ -47,26 +44,26 @@ test.describe('branches', () => {
 
     await page.getByRole('searchbox', { name: 'Search' }).fill('west');
     await page.getByRole('searchbox', { name: 'Search' }).press('Enter');
-    await expect(page).toHaveURL(/q=west/, { timeout: 15000 });
+    await expect(page).toHaveURL(/q=west/);
     await expect(rowsOf(page, 'Branches')).toHaveCount(2);
 
     // Wait for each cleared render (as audit.spec does): the next push builds on the rendered
     // query, and the sort headers' hrefs are server-built from it.
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(mainText(page, '6 branches')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '6 branches')).toBeVisible();
     await selectMuiOption(page, 'Status', /^Suspended$/);
-    await expect(page).toHaveURL(/status=SUSPENDED/, { timeout: 15000 });
+    await expect(page).toHaveURL(/status=SUSPENDED/);
     await expect(rowsOf(page, 'Branches').nth(1)).toContainText('Kisumu Branch');
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(mainText(page, '6 branches')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '6 branches')).toBeVisible();
     const byName = page.getByRole('columnheader', { name: 'Branch', exact: true });
     await byName.getByRole('link').click();
-    await expect(page).toHaveURL(/sortBy=branchName&sortDir=ASC/, { timeout: 15000 });
+    await expect(page).toHaveURL(/sortBy=branchName&sortDir=ASC/);
     await expect(byName).toHaveAttribute('aria-sort', 'ascending');
     await expect(rowsOf(page, 'Branches').nth(1)).toContainText('Head Office');
     await byName.getByRole('link').click();
-    await expect(page).toHaveURL(/sortDir=DESC/, { timeout: 15000 });
+    await expect(page).toHaveURL(/sortDir=DESC/);
     await expect(rowsOf(page, 'Branches').nth(1)).toContainText('Westlands Branch');
   });
 
@@ -78,9 +75,7 @@ test.describe('branches', () => {
     await openDirectory(page);
 
     await page.getByRole('link', { name: 'Create branch' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Create branch' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Create branch' })).toBeVisible();
     await page.getByRole('textbox', { name: 'Branch code' }).fill('nairobi cbd');
     await page.getByRole('button', { name: 'Create draft' }).click();
     await expect(
@@ -90,7 +85,7 @@ test.describe('branches', () => {
     await page.getByRole('textbox', { name: 'Branch code' }).fill('NAIROBI_CBD');
     await page.getByRole('textbox', { name: 'Branch name' }).fill('Nairobi CBD Branch');
     await page.getByRole('button', { name: 'Create draft' }).click();
-    await expect(page).toHaveURL(/\/admin\/branches\/[0-9a-f-]{36}$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/admin\/branches\/[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Nairobi CBD Branch' })).toBeVisible();
     await expect(statusChip(page, 'Draft')).toBeVisible();
 
@@ -120,7 +115,7 @@ test.describe('branches', () => {
     await expect(statusChip(page, 'Active')).toBeVisible();
 
     await page.getByRole('tab', { name: 'Audit' }).click();
-    await expect(page).toHaveURL(/\/audit$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/audit$/);
     await expect(page.getByRole('table', { name: 'Audit events' })).toContainText(
       'Activated branch',
     );
@@ -180,7 +175,7 @@ test.describe('branches', () => {
     await openDirectory(page);
     await openRecord(page, 'Branches', 'Westlands Branch');
     await page.getByRole('tab', { name: 'Users' }).click();
-    await expect(rowsOf(page, 'Branch users')).toHaveCount(4, { timeout: 15000 }); // header + 3
+    await expect(rowsOf(page, 'Branch users')).toHaveCount(4); // header + 3
 
     await page.getByRole('button', { name: 'Assign user' }).click();
     const drawer = page.getByRole('dialog', { name: 'Assign a user' });
@@ -218,16 +213,12 @@ test.describe('branches', () => {
     await openDirectory(page, /Head Office/);
 
     await page.goto(`/admin/branches/${BRANCH_SCENARIO_IDS.thikaRoad}`);
-    await expect(mainText(page, 'Switch to All branches to manage this branch')).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(mainText(page, 'Switch to All branches to manage this branch')).toBeVisible();
     await page.getByRole('button', { name: 'Switch to All branches' }).click();
     await expect(
       page.getByRole('alert').filter({ hasText: 'Switched to Greenfield SACCO · All branches' }),
     ).toBeVisible();
-    await expect(page.getByRole('heading', { level: 1, name: 'Thika Road Branch' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Thika Road Branch' })).toBeVisible();
   });
 
   test('suspending the working branch sends the user back to context selection (index item 1)', async ({
@@ -245,7 +236,7 @@ test.describe('branches', () => {
     await dialog.getByRole('button', { name: 'Suspend', exact: true }).click();
     // The selected branch left ACTIVE, so its context token is now invalid (contract §E.4): the
     // refresh must land on context selection, never an error page.
-    await expect(page).toHaveURL(/\/select-context/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/select-context/);
   });
 
   test('offers no mutations without the permissions', async ({ context, page }, testInfo) => {
@@ -257,7 +248,7 @@ test.describe('branches', () => {
     await openRecord(page, 'Branches', 'Westlands Branch');
     await expect(page.getByRole('button', { name: /^(Suspend|Close branch)$/ })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Users' }).click();
-    await expect(rowsOf(page, 'Branch users')).toHaveCount(2, { timeout: 15000 });
+    await expect(rowsOf(page, 'Branch users')).toHaveCount(2);
     await expect(page.getByRole('button', { name: 'Assign user' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^Revoke/ })).toHaveCount(0);
 
@@ -270,9 +261,7 @@ test.describe('branches', () => {
     // to the rendered one. Whatever the actual cause, `getByRole('main')` excludes a hidden
     // duplicate landmark from resolution, so scoping to it is deterministic either way and matches
     // what a user/screen-reader perceives as the page's content.
-    await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible();
   });
 
   for (const a11yCase of A11Y_CASES) {
@@ -292,9 +281,7 @@ test.describe('branches', () => {
         [`/admin/branches/${IDS.westlands}/users`, 'Westlands Branch'],
       ] as const) {
         await page.goto(path);
-        await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible({
-          timeout: 15000,
-        });
+        await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);
       }

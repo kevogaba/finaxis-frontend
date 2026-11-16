@@ -95,12 +95,15 @@ honours a dotted `color`.
   `pnpm test:e2e` rebuilds; `pnpm exec playwright test` alone runs against the existing
   `.next-e2e/` (and says to run `pnpm build:e2e` when there is none). To write a spec against
   `next dev` without rebuilding after each edit, run `E2E_DEV_SERVER=1 pnpm exec playwright test`
-  with the spec's path; CI never does. Never set `FINAXIS_E2E_BUILD` in a `.env*` file: every
+  with the spec's path; CI never does. That mode runs one worker with longer waits
+  (120 s per test, 45 s per assertion), as `next dev` compiles each route on its first visit. Never set `FINAXIS_E2E_BUILD` in a `.env*` file: every
   `pnpm build` would become an e2e build. The session bypass the specs sign in through, and the guard that keeps
   it out of every normal build (`pnpm test:e2e:guard`), are described in
   `docs/authentication/security.md`. Tests that need
   a signed-in session call `authenticate(context, testInfo, scenario)` from
   `e2e/support/auth.ts`, which gives each test its own scenario-seeded fake backend; unauthenticated and fake-API smoke specs don't.
+  Waits use Playwright's defaults (5 s per assertion, 30 s per test); the few longer ones (three
+  accessibility matrices that scan many pages) state their measured reason beside them.
   `e2e/click-helpers.spec.ts` uses neither the app nor the fake API (it checks the click helpers
   on a static page, `page.setContent`), but Playwright still starts both servers for it, so an
   app start-up failure blocks it too.

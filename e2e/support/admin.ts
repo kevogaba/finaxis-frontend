@@ -11,10 +11,9 @@ interface EnterAdminOptions {
 }
 
 /**
- * Opens a tenant admin page through context selection. Waits are bounded: a route can be the first
- * hit of its tree under a cold `next dev` compile, and the URL updates before the RSC payload (and
- * its h1) renders. `/select-context` drops a deep link's query string, so `pathname` has none —
- * navigate to a query afterwards.
+ * Opens a tenant admin page through context selection. The URL updates before the RSC payload (and
+ * its h1) renders, so the heading is awaited after the URL. `/select-context` drops a deep link's
+ * query string, so `pathname` has none — navigate to a query afterwards.
  */
 export async function enterAdmin(
   page: Page,
@@ -24,10 +23,8 @@ export async function enterAdmin(
   await page.goto(pathname);
   await selectMuiOption(page, 'Organisation', organisation);
   if (branch) await selectMuiOption(page, 'Branch', branch);
-  await expect(page).toHaveURL((url) => url.pathname === pathname, { timeout: 15000 });
-  await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible({
-    timeout: 15000,
-  });
+  await expect(page).toHaveURL((url) => url.pathname === pathname);
+  await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
 }
 
 /**
@@ -68,11 +65,10 @@ export const rowsOf = (page: Page, table: string) =>
 export const notFoundHeading = (page: Page) =>
   page.getByRole('heading', { level: 1, name: "We couldn't find that page" });
 
-/** Opens a record from its directory: the exact link in the named table, then its `h1` (bounded: a
- * record route can be the first hit of its tree under a cold `next dev` compile). */
+/** Opens a record from its directory: the exact link in the named table, then its `h1`. */
 export async function openRecord(page: Page, table: string, name: string): Promise<void> {
   await page.getByRole('table', { name: table }).getByRole('link', { name, exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
 }
 
 export async function expectNoSeriousOrCriticalViolations(page: Page): Promise<void> {

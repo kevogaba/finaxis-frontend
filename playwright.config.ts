@@ -31,6 +31,10 @@ export default defineConfig({
   // 1243): 4 workers ran the full suite in 8.3, 7.7 and 7.6 min (504 passed, none flaky), 3 in
   // 8.4 min, 1 in 19.7 min. On CI, 1 worker took 16.6 min.
   workers: process.env.E2E_DEV_SERVER === '1' ? 1 : '100%',
+  // Waits are Playwright's defaults (5 s per assertion, 30 s per test) against the production build.
+  // `next dev` (E2E_DEV_SERVER=1, local spec-writing only) compiles each route on its first visit,
+  // which takes tens of seconds, so that mode alone gets one allowance here — never per call.
+  ...(process.env.E2E_DEV_SERVER === '1' && { timeout: 120_000, expect: { timeout: 45_000 } }),
   reporter: [['html', { open: 'never' }]],
   use: {
     baseURL,

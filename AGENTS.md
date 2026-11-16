@@ -151,6 +151,15 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   servers for it): it checks the e2e click helpers on a static page (`page.setContent`), and
   helper self-tests like it belong there, not in app specs. The guard specs in `e2e/guard/` run
   only under `playwright.guard.config.ts`, against the normal production build and no fake API.
+- E2E specs run in parallel, one worker per CPU (one worker under `E2E_DEV_SERVER=1`): every test
+  mints its own fake-API run (`authenticate()`, or an `e2e.<scenario>.<uuid>` bearer in fake-API
+  specs) and the fake API keys all
+  mutable state by run. Never share a run between tests or depend on test order. On CI a flaky test
+  fails the run (one retry, `failOnFlakyTests`): fix its cause, never add retries or skip it.
+- E2E waits use Playwright's defaults (5 s per assertion, 30 s per test). A longer one needs a
+  stated, measured production reason in a comment (e.g. an accessibility matrix that scans a dozen
+  pages); never size a wait for a dev-server compile — `playwright.config.ts`'s `E2E_DEV_SERVER=1`
+  allowance is the only one.
 - The backend's wire format is snake_case and differs from the published OpenAPI casing; never
   generate a client from the OpenAPI as-is. Follow
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`.

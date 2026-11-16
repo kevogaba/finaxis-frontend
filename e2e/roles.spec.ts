@@ -23,13 +23,10 @@ async function openDirectory(page: Page, branch: RegExp | null = ALL_BRANCHES) {
 
 async function openTab(page: Page, tab: 'Permissions' | 'Assignments' | 'Audit') {
   await page.getByRole('tab', { name: tab }).click();
-  await expect(page).toHaveURL(new RegExp(`/${tab.toLowerCase()}$`), { timeout: 15000 });
+  await expect(page).toHaveURL(new RegExp(`/${tab.toLowerCase()}$`));
 }
 
 test.describe('roles', () => {
-  // A roles route can be the first hit of its tree under a cold `next dev` compile.
-  test.describe.configure({ timeout: 90000 });
-
   test('searches, filters, and sorts the directory through the URL', async ({
     context,
     page,
@@ -44,32 +41,32 @@ test.describe('roles', () => {
 
     await page.getByRole('searchbox', { name: 'Search' }).fill('tell');
     await page.getByRole('searchbox', { name: 'Search' }).press('Enter');
-    await expect(page).toHaveURL(/q=tell/, { timeout: 15000 });
+    await expect(page).toHaveURL(/q=tell/);
     await expect(rowsOf(page, 'Roles')).toHaveCount(2);
 
     // Wait for each cleared render (as branches.spec does): the next push builds on the rendered
     // query, and the sort headers' hrefs are server-built from it.
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(mainText(page, '6 roles')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '6 roles')).toBeVisible();
     await selectMuiOption(page, 'Type', /^System role$/);
-    await expect(page).toHaveURL(/type=system/, { timeout: 15000 });
+    await expect(page).toHaveURL(/type=system/);
     await expect(rowsOf(page, 'Roles')).toHaveCount(3);
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(mainText(page, '6 roles')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '6 roles')).toBeVisible();
     await selectMuiOption(page, 'Status', /^Disabled$/);
-    await expect(page).toHaveURL(/status=DISABLED/, { timeout: 15000 });
+    await expect(page).toHaveURL(/status=DISABLED/);
     await expect(rowsOf(page, 'Roles').nth(1)).toContainText('Loans officer');
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(mainText(page, '6 roles')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '6 roles')).toBeVisible();
     const byName = page.getByRole('columnheader', { name: 'Role', exact: true });
     await byName.getByRole('link').click();
-    await expect(page).toHaveURL(/sortBy=roleName&sortDir=ASC/, { timeout: 15000 });
+    await expect(page).toHaveURL(/sortBy=roleName&sortDir=ASC/);
     await expect(byName).toHaveAttribute('aria-sort', 'ascending');
     await expect(rowsOf(page, 'Roles').nth(1)).toContainText('Branch manager');
     await byName.getByRole('link').click();
-    await expect(page).toHaveURL(/sortDir=DESC/, { timeout: 15000 });
+    await expect(page).toHaveURL(/sortDir=DESC/);
     await expect(rowsOf(page, 'Roles').nth(1)).toContainText('Tenant admin');
   });
 
@@ -81,9 +78,7 @@ test.describe('roles', () => {
     await openDirectory(page);
 
     await page.getByRole('link', { name: 'Create role' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Create role' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Create role' })).toBeVisible();
     await page.getByRole('textbox', { name: 'Role code' }).fill('credit clerk');
     await page.getByRole('button', { name: 'Create role' }).click();
     await expect(
@@ -96,9 +91,7 @@ test.describe('roles', () => {
     await page.getByRole('textbox', { name: 'Role code' }).fill('CREDIT_CLERK');
     await page.getByRole('textbox', { name: 'Role name' }).fill('Credit clerk');
     await page.getByRole('button', { name: 'Create role' }).click();
-    await expect(page).toHaveURL(/\/admin\/roles\/[0-9a-f-]{36}\/permissions$/, {
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(/\/admin\/roles\/[0-9a-f-]{36}\/permissions$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Credit clerk' })).toBeVisible();
     await expect(mainText(page, 'No permissions granted')).toBeVisible();
 
@@ -116,7 +109,7 @@ test.describe('roles', () => {
     await drawer.getByRole('checkbox', { name: /^Start close of business/ }).check();
     await expect(drawer.getByRole('status')).toHaveText('3 selected');
     await drawer.getByRole('button', { name: 'Grant permissions' }).click();
-    await expect(drawer).toBeHidden({ timeout: 15000 });
+    await expect(drawer).toBeHidden();
     await expect(page.getByRole('alert').filter({ hasText: 'Permissions granted' })).toBeVisible();
     await expect(rowsOf(page, 'Granted permissions')).toHaveCount(4); // header + 3
 
@@ -179,13 +172,11 @@ test.describe('roles', () => {
     await openRecord(page, 'Roles', 'Teller');
 
     await page.getByRole('link', { name: 'Edit', exact: true }).click();
-    await expect(page).toHaveURL(/\/edit$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/edit$/);
     await expect(page.getByRole('textbox', { name: 'Role code' })).toHaveAttribute('readonly');
     await page.getByRole('textbox', { name: 'Role name' }).fill('Senior teller');
     await page.getByRole('button', { name: 'Save changes' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Senior teller' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Senior teller' })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/admin/roles/${ROLE_SCENARIO_IDS.teller}$`));
 
     await page.getByRole('button', { name: 'Deactivate', exact: true }).click();
@@ -202,7 +193,6 @@ test.describe('roles', () => {
     await openTab(page, 'Audit');
     await expect(page.getByRole('table', { name: 'Audit events' })).toContainText(
       'Deactivated role',
-      { timeout: 15000 },
     );
 
     await page.getByRole('link', { name: 'Back to roles' }).click();
@@ -225,10 +215,10 @@ test.describe('roles', () => {
     await openRecord(page, 'Roles', 'Teller');
     // The Overview's assignment count and the Audit tab are the positive controls for the
     // `roles-limited` case.
-    await expect(mainText(page, 'Active assignments')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, 'Active assignments')).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Audit' })).toBeVisible();
     await openTab(page, 'Assignments');
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(3, { timeout: 15000 }); // header + 2
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(3); // header + 2
 
     await page.getByRole('button', { name: 'Assign role' }).click();
     const drawer = page.getByRole('dialog', { name: 'Assign this role' });
@@ -245,7 +235,7 @@ test.describe('roles', () => {
     // The drawer kept the user, the scope and the key; only the branch changes for the retry.
     await selectMuiOption(page, 'Branch', /^Head Office/);
     await drawer.getByRole('button', { name: 'Assign role' }).click();
-    await expect(drawer).toBeHidden({ timeout: 15000 });
+    await expect(drawer).toBeHidden();
     await expect(page.getByRole('alert').filter({ hasText: 'Role assigned' })).toBeVisible();
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(4);
 
@@ -278,7 +268,7 @@ test.describe('roles', () => {
     await dialog.getByRole('button', { name: 'Revoke' }).click();
     await expect(dialog).toBeHidden();
     // Jane keeps TENANT_ADMIN, so the page survives her own revoke.
-    await expect(mainText(page, 'Nobody holds this role')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, 'Nobody holds this role')).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: COMPLIANCE })).toBeVisible();
   });
 
@@ -326,7 +316,7 @@ test.describe('roles', () => {
     await openDirectory(page, /Head Office/);
     await openRecord(page, 'Roles', 'Teller');
     await openTab(page, 'Assignments');
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(3, { timeout: 15000 }); // header + 2
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(3); // header + 2
 
     // Contract §E.4: Grace holds Teller at Westlands only, so a Head Office context would get a
     // 404 revoking it. Tom holds it institution-wide, which any branch may revoke.
@@ -347,7 +337,7 @@ test.describe('roles', () => {
     await openDirectory(page, /Westlands/);
     await openRecord(page, 'Roles', 'Teller');
     await openTab(page, 'Assignments');
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(3, { timeout: 15000 }); // header + 2
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(3); // header + 2
 
     await expect(
       page.getByRole('button', {
@@ -370,9 +360,7 @@ test.describe('roles', () => {
     await openRecord(page, 'Roles', 'Loans officer');
     await openTab(page, 'Assignments');
 
-    await expect(mainText(page, 'Activate this role to assign it.', { exact: true })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(mainText(page, 'Activate this role to assign it.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Assign role' })).toHaveCount(0);
   });
 
@@ -388,17 +376,15 @@ test.describe('roles', () => {
     await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
     await openTab(page, 'Permissions');
     // Default TENANT_ADMIN holds 19 codes: page 1 of 2 at the default size of 10.
-    await expect(rowsOf(page, 'Granted permissions')).toHaveCount(11, { timeout: 15000 });
+    await expect(rowsOf(page, 'Granted permissions')).toHaveCount(11);
     await expect(page.getByRole('button', { name: /^Remove / })).toHaveCount(0);
     await openTab(page, 'Assignments');
-    await expect(rowsOf(page, 'Role assignments')).toHaveCount(2, { timeout: 15000 }); // Jane
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(2); // Jane
     await expect(page.getByRole('button', { name: 'Assign role' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^Revoke/ })).toHaveCount(0);
 
     await page.goto('/admin/roles/new');
-    await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible();
   });
 
   test('hides Edit, Assignments, Audit, and the assignment count without their permissions', async ({
@@ -422,8 +408,9 @@ test.describe('roles', () => {
   });
 
   test.describe('accessibility', () => {
-    // Each case scans a dozen pages, a validation state and two drawers after /select-context.
-    test.describe.configure({ timeout: 180000 });
+    // Each case scans a dozen pages, a validation state and two drawers after /select-context:
+    // 20-23 s on the production build at 4 workers on 4 CPUs, so the 30 s default is too close.
+    test.describe.configure({ timeout: 75000 });
 
     const COMPLIANCE_PATH = `/admin/roles/${ROLE_SCENARIO_IDS.compliance}`;
     const COMPLIANCE_HEADING = /^Compliance, risk/;
@@ -444,9 +431,7 @@ test.describe('roles', () => {
       }, testInfo) => {
         const scan = async (path: string, heading: string | RegExp) => {
           await page.goto(path);
-          await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible({
-            timeout: 15000,
-          });
+          await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
           await expectA11yCaseApplied(page, a11yCase);
           await expectNoSeriousOrCriticalViolations(page);
         };

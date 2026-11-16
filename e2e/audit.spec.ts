@@ -17,28 +17,24 @@ function requireBox(box: BoundingBox | null): BoundingBox {
 }
 
 /**
- * Bounded URL/heading waits, like shell.spec's `enterGreenfield`: `/admin/audit` can be the first
- * hit of its route tree under a cold `next dev` compile, and the URL updates before the RSC
- * payload (and its `h1`) has actually rendered.
+ * The URL updates before the RSC payload (and its `h1`) has rendered, so the heading is awaited
+ * after the URL, like shell.spec's `enterGreenfield`.
  */
 async function enter(page: Page, path: '/admin/audit' | '/admin' = '/admin/audit') {
   await page.goto(path);
   await selectMuiOption(page, 'Organisation', /Greenfield/);
   await selectMuiOption(page, 'Branch', /Head Office/);
   const isAudit = path === '/admin/audit';
-  await expect(page).toHaveURL(isAudit ? /\/admin\/audit/ : /\/admin$/, { timeout: 15000 });
+  await expect(page).toHaveURL(isAudit ? /\/admin\/audit/ : /\/admin$/);
   await expect(
     page.getByRole('heading', {
       level: 1,
       name: isAudit ? 'Audit trail' : 'Administration Overview',
     }),
-  ).toBeVisible({ timeout: 15000 });
+  ).toBeVisible();
 }
 
 test.describe('audit trail', () => {
-  // /admin/audit can be the first hit of its route tree under a cold `next dev` compile.
-  test.describe.configure({ timeout: 60000 });
-
   test('lists events, filters through the URL, and paginates', async ({
     context,
     page,
@@ -62,8 +58,7 @@ test.describe('audit trail', () => {
     await expect(table.getByRole('row').nth(1)).toContainText('10:59');
 
     await selectMuiOption(page, 'Entity type', /^Branch$/);
-    // The first filter push can land on a cold `next dev` compile (seen right after `pnpm build`).
-    await expect(page).toHaveURL(/entityType=BRANCH/, { timeout: 15000 });
+    await expect(page).toHaveURL(/entityType=BRANCH/);
     await expect(page.getByText('6 events')).toBeVisible();
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
@@ -98,9 +93,7 @@ test.describe('audit trail', () => {
       .first()
       .click();
     const drawer = page.getByRole('dialog', { name: /invited user/i });
-    // Bounded: the first drawer open in this file, possibly the first hit of the drawer's client
-    // bundle under a cold `next dev` compile.
-    await expect(drawer).toBeVisible({ timeout: 15000 });
+    await expect(drawer).toBeVisible();
     await expect(drawer.getByText(/"status": "DRAFT"/)).toBeVisible();
     await expect(drawer.getByText('New teller joining the Westlands team')).toBeVisible();
     // The newest seed (index 0) is user.invite, SUCCESS/INFO. exact: true is required — Playwright's
@@ -152,9 +145,7 @@ test.describe('audit trail', () => {
     // An unknown but well-formed event id 404s on the detail read; the list stays usable next to
     // the inline error (Ruling 39), never a `notFound()` full-page replacement.
     await page.goto('/admin/audit?event=00000000-0000-4000-8000-000000000000');
-    await expect(page.getByRole('heading', { level: 1, name: 'Audit trail' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Audit trail' })).toBeVisible();
     await expect(page.getByRole('alert').filter({ hasText: 'Not found' })).toBeVisible();
     await expect(page.getByRole('table', { name: 'Audit events' })).toBeVisible();
 
@@ -175,13 +166,10 @@ test.describe('audit trail', () => {
     ).toBeVisible();
 
     // 30 events at the default size 20 gives 2 pages (0, 1); a bookmarked ?page=5 redirects to
-    // the last one instead of showing an empty page next to "previous page" pagination. Bounded
-    // at 15000, not the 5000 default: the redirect target re-runs the full list+tenant+branches
-    // round trip a second time (once for ?page=5, once more for the redirected ?page=1).
+    // the last one instead of showing an empty page next to "previous page" pagination (the list,
+    // tenant and branches round trip runs twice: once for ?page=5, once for ?page=1).
     await page.goto('/admin/audit?page=5');
-    await expect(page).toHaveURL((url) => url.searchParams.get('page') === '1', {
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL((url) => url.searchParams.get('page') === '1');
     await expect(page.getByRole('status').filter({ hasText: /^30 events$/ })).toBeVisible();
   });
 
@@ -202,20 +190,20 @@ test.describe('audit trail', () => {
     await selectMuiOption(page, 'Entity type', /^Branch$/);
     await expect(page.locator('[aria-busy="true"]')).toHaveCount(1);
     await expect(page.getByRole('progressbar', { name: 'Loading' })).toBeVisible();
-    await expect(page).toHaveURL(/entityType=BRANCH/, { timeout: 15000 });
+    await expect(page).toHaveURL(/entityType=BRANCH/);
     await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
 
     // Back to the unfiltered list (still through the delayed route) so the newest seed
     // (user.invite) is the first row again for the link check below.
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(page.getByText('30 events')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('30 events')).toBeVisible();
 
     const timeLink = page.getByRole('link', { name: /view event/i }).first();
     await timeLink.click();
     // Decorative (aria-hidden), so it's found by its MUI class, not a role.
     await expect(timeLink.locator('.MuiCircularProgress-root')).toBeVisible();
     const drawer = page.getByRole('dialog', { name: /invited user/i });
-    await expect(drawer).toBeVisible({ timeout: 15000 });
+    await expect(drawer).toBeVisible();
 
     // Closing goes through the same delayed route: the LinearProgress/aria-busy pair is dimmed
     // behind the modal's own backdrop and hidden from assistive tech (MUI's Modal marks the rest
@@ -226,7 +214,7 @@ test.describe('audit trail', () => {
     await expect(closeButton).toBeDisabled();
     // Lets the close actually land (past the 800ms delay) before unroute() — otherwise the route
     // handler's `route.continue()` can fire after the test (and the page) is already gone.
-    await expect(page).not.toHaveURL(/event=/, { timeout: 15000 });
+    await expect(page).not.toHaveURL(/event=/);
 
     await page.unroute('**/admin/audit*');
   });
@@ -238,9 +226,7 @@ test.describe('audit trail', () => {
     await expect(page.getByRole('link', { name: 'Audit trail' })).toHaveCount(0);
 
     await page.goto('/admin/audit');
-    await expect(page.getByRole('heading', { level: 1, name: 'Audit trail' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Audit trail' })).toBeVisible();
     // Filtered: Next's route announcer is also an alert.
     await expect(page.getByRole('alert').filter({ hasText: 'Access denied' })).toBeVisible();
   });
@@ -323,12 +309,8 @@ test.describe('audit trail', () => {
   });
 
   // Layer a11y gate: light and dark, both at desktop and 375px. Each case authenticates, enters,
-  // scans the list, opens the drawer, and scans again — more sequential work than the file's other
-  // tests. Under full-suite worker contention this can exceed the outer describe's 60s budget, like
-  // context.spec's own axe matrix (e2e/context.spec.ts:209-214).
+  // scans the list, opens the drawer, and scans again.
   test.describe('audit accessibility', () => {
-    test.describe.configure({ timeout: 90000 });
-
     const AXE_VIEWPORTS = [
       { label: 'desktop', width: 1280, height: 800, scenario: 'default' as const },
       { label: '375px', width: 375, height: 812, scenario: 'long-names' as const },
@@ -371,9 +353,7 @@ test.describe('audit trail', () => {
             .first()
             .click();
           const drawer = page.getByRole('dialog', { name: /invited user/i });
-          // Bounded: the first drawer open in this worker may still be compiling its client
-          // bundle, like the drawer test's own first open at :98.
-          await expect(drawer).toBeInViewport({ timeout: 15000 });
+          await expect(drawer).toBeInViewport();
 
           const drawerResults = await new AxeBuilder({ page }).analyze();
           expect(

@@ -56,8 +56,6 @@ const expectParam = (page: Page, name: string, value: string) =>
   expect.poll(() => param(page, name), { message: `the "${name}" query parameter` }).toBe(value);
 
 test.describe('platform records: institution branches', () => {
-  // Every route here can be the first hit of its tree under a cold `next dev` compile.
-  test.describe.configure({ timeout: 60000 });
   // The platform shows UTC, whatever the viewer's zone (Ruling 13): a browser in Nairobi (UTC+3)
   // would read 11:00 for a seed's 08:00Z if any time were rendered in its own zone.
   test.use({ timezoneId: 'Africa/Nairobi' });
@@ -168,12 +166,8 @@ test.describe('platform records: institution branches', () => {
     await page.getByRole('link', { name: 'Back to branches' }).click();
     await openRecord(page, 'Branches', 'Mombasa Road Branch');
     await page.getByRole('main').getByRole('link', { name: 'Head Office', exact: true }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Head Office' })).toBeVisible({
-      timeout: 15000,
-    });
-    await expect(page).toHaveURL((url) => url.pathname.endsWith(`/branches/${R.acmeHeadOffice}`), {
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Head Office' })).toBeVisible();
+    await expect(page).toHaveURL((url) => url.pathname.endsWith(`/branches/${R.acmeHeadOffice}`));
   });
 
   test("creates a branch draft where you're a member, and opens it", async ({
@@ -184,9 +178,9 @@ test.describe('platform records: institution branches', () => {
     await enterPlatform(page, `${ACME}/branches`, 'Acme SACCO');
 
     await page.getByRole('link', { name: 'Create branch draft' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Create branch draft' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Create branch draft' }),
+    ).toBeVisible();
     await expect(
       mainText(
         page,
@@ -208,9 +202,7 @@ test.describe('platform records: institution branches', () => {
     await expectHydrated(create);
     await create.click();
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Thika Road Branch' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Thika Road Branch' })).toBeVisible();
     await expect(statusChip(page, 'Draft')).toBeVisible();
     // The platform can't move a draft on: only the copy-id button is offered, no lifecycle action.
     await expect(page.getByRole('main').getByRole('button')).toHaveCount(1);
@@ -293,17 +285,15 @@ test.describe('platform records: institution branches', () => {
     await expect(page.getByRole('link', { name: 'Create branch draft' })).toHaveCount(0);
 
     await page.goto(`${kilimo}/branches/new`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Create branch draft' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Create branch draft' }),
+    ).toBeVisible();
     await expect(mainText(page, 'Only an active institution can take new branches')).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Branch code' })).toHaveCount(0);
   });
 });
 
 test.describe('platform records: users and accounts', () => {
-  test.describe.configure({ timeout: 60000 });
-
   test("lists an institution's users and filters them in the URL", async ({
     context,
     page,
@@ -342,9 +332,7 @@ test.describe('platform records: users and accounts', () => {
 
     // The account is global: Esi's membership at Pwani shows the same suspension.
     await page.goto(`/platform-admin/tenants/${T.pwani}/users/${R.esi}`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Esi Mensah' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Esi Mensah' })).toBeVisible();
     await expect(statusChip(page, 'Account suspended')).toBeVisible();
 
     await act(page, 'Reactivate account');
@@ -419,7 +407,7 @@ test.describe('platform records: users and accounts', () => {
     const tab = page
       .getByRole('navigation', { name: 'Acme SACCO sections' })
       .getByRole('tab', { name: 'Users', selected: true });
-    await expect(tab).toBeVisible({ timeout: 15000 });
+    await expect(tab).toBeVisible();
 
     // Inside the scroller's rect, and still there three frames later: a nudge that the animation
     // overwrites on its next frame must not pass for settled.
@@ -445,7 +433,7 @@ test.describe('platform records: users and accounts', () => {
         return before && inside();
       });
     await expect
-      .poll(insideScroller, { timeout: 10000, message: 'the selected tab inside the tab scroller' })
+      .poll(insideScroller, { message: 'the selected tab inside the tab scroller' })
       .toBe(true);
   });
 
@@ -492,9 +480,7 @@ test.describe('platform records: users and accounts', () => {
     await expect(page.getByRole('link', { name: 'Create branch draft' })).toHaveCount(0);
 
     await page.goto(`${ACME}/users/${R.esi}`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Esi Mensah' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Esi Mensah' })).toBeVisible();
     await expect(statusChip(page, 'Account active')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Suspend account' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Deactivate account' })).toHaveCount(0);
@@ -503,17 +489,13 @@ test.describe('platform records: users and accounts', () => {
     // boundary with the document, so the absence isn't a bell that hasn't arrived yet (test 14
     // proves the same page shows it with the code).
     await page.goto('/platform-admin');
-    await expect(page.getByRole('heading', { level: 1, name: 'Platform overview' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Platform overview' })).toBeVisible();
     await expect(page.getByRole('banner')).toBeVisible();
     await expect(page.getByRole('button', { name: /^Notifications/ })).toHaveCount(0);
   });
 });
 
 test.describe('platform records: platform users, overview and notifications', () => {
-  test.describe.configure({ timeout: 60000 });
-
   test("lists the platform's own members and opens one", async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'platform-records');
     await enterPlatform(page, '/platform-admin', 'Platform overview');
@@ -522,9 +504,7 @@ test.describe('platform records: platform users, overview and notifications', ()
     const platformUsers = rail.getByRole('link', { name: 'Platform users' });
     await expect(platformUsers).toHaveAttribute('href', '/platform-admin/users');
     await platformUsers.click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Platform users' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Platform users' })).toBeVisible();
 
     // Header + the platform organisation's three members: Sara, Peter, Jane.
     await expect(rowsOf(page, 'Users')).toHaveCount(4);
@@ -581,9 +561,7 @@ test.describe('platform records: platform users, overview and notifications', ()
     await expect(rows.nth(3)).toContainText('Umoja Teachers SACCO');
 
     await page.getByRole('link', { name: 'Review pending institutions', exact: true }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'SACCO institutions' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'SACCO institutions' })).toBeVisible();
     await expectParam(page, 'status', 'PENDING_APPROVAL');
     await expectParam(page, 'sortBy', 'createdAt');
     await expectParam(page, 'sortDir', 'ASC');
@@ -610,9 +588,7 @@ test.describe('platform records: platform users, overview and notifications', ()
     // The link closes the dialog (asserted first: an open modal hides the page's h1 from the
     // accessibility tree, so the heading below would otherwise fail for the wrong reason).
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole('heading', { level: 1, name: 'SACCO institutions' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'SACCO institutions' })).toBeVisible();
     // The tile's own list (PENDING_HREF): pending approval, oldest first.
     await expectParam(page, 'status', 'PENDING_APPROVAL');
     await expectParam(page, 'sortBy', 'createdAt');
@@ -628,7 +604,7 @@ test.describe('platform records: platform users, overview and notifications', ()
     await page.goto(`/platform-admin/tenants/${T.harambee}`);
     await expect(
       page.getByRole('heading', { level: 1, name: 'Harambee Farmers SACCO' }),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
     await act(page, 'Approve');
     await expect(toast(page, 'Approved. Provisioning is queued.')).toBeVisible();
 
@@ -645,8 +621,6 @@ test.describe('platform records: platform users, overview and notifications', ()
 });
 
 test.describe('platform records: ids', () => {
-  test.describe.configure({ timeout: 60000 });
-
   test('answers unknown, malformed and platform-organisation ids with the not-found page', async ({
     context,
     page,
@@ -669,7 +643,7 @@ test.describe('platform records: ids', () => {
     ];
     for (const { path, leaks } of cases) {
       await page.goto(path);
-      await expect(notFoundHeading(page), path).toBeVisible({ timeout: 15000 });
+      await expect(notFoundHeading(page), path).toBeVisible();
       if (leaks) await expect(page.getByRole('heading', { name: leaks }), path).toHaveCount(0);
     }
   });
@@ -679,9 +653,9 @@ test.describe('platform records: ids', () => {
     await enterPlatform(page, '/platform-admin', 'Platform overview');
 
     await page.goto(`${ACME}/branches/${R.acmeMombasaRoad.toUpperCase()}`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Mombasa Road Branch' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Mombasa Road Branch' }),
+    ).toBeVisible();
     // The record resolves from the upper-cased id (lower-cased before the read: the fake's lookup
     // is case-sensitive). Its links are canonical; Acme's id has no letters, so the tenant id's
     // canonicalisation is pinned by records-id-guard.test.tsx, not here.
@@ -762,8 +736,6 @@ const SURFACES = [
 // The describe's title is what the two --grep chunks select on ("accessibility …(light" and
 // "accessibility …(dark"): the grep text is project, file, describe and test title joined by spaces.
 test.describe('platform records: accessibility', () => {
-  test.describe.configure({ timeout: 60000 });
-
   for (const surface of SURFACES) {
     for (const a11yCase of A11Y_CASES) {
       test(`has no serious or critical violations: ${surface.label} (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({

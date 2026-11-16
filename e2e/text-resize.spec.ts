@@ -7,9 +7,6 @@ import { authenticate, expectHydrated, selectMuiOption } from './support/auth';
 
 const ALL_BRANCHES = /All branches \(institution level\)/;
 
-/** A route's first hit compiles under a cold `next dev` (tens of seconds); warm, this resolves at once. */
-const FIRST_HIT = 45000;
-
 const WIDTHS = [375, 768, 1440] as const;
 const SIZES = ['100%', '200%'] as const;
 
@@ -18,12 +15,8 @@ async function openWizard(page: Page) {
   await page.goto('/admin/users/new');
   await selectMuiOption(page, 'Organisation', /Greenfield/);
   await selectMuiOption(page, 'Branch', ALL_BRANCHES);
-  await expect(page).toHaveURL((url) => url.pathname === '/admin/users/new', {
-    timeout: FIRST_HIT,
-  });
-  await expect(page.getByRole('heading', { level: 1, name: 'Invite user' })).toBeVisible({
-    timeout: FIRST_HIT,
-  });
+  await expect(page).toHaveURL((url) => url.pathname === '/admin/users/new');
+  await expect(page.getByRole('heading', { level: 1, name: 'Invite user' })).toBeVisible();
   await expectHydrated(page.getByRole('button', { name: 'Continue' }));
 }
 

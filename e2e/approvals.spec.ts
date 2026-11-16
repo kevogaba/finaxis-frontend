@@ -57,10 +57,10 @@ async function enterQueue(page: Page, branch: RegExp = ALL_BRANCHES) {
   await enterAdmin(page, '/admin/approvals/users', { heading: 'Approval queue', branch });
 }
 
-/** A request page once the context is selected. Bounded: the first hit of its tree compiles. */
+/** A request page once the context is selected. */
 async function openRequest(page: Page, path: string, name: string) {
   await page.goto(path);
-  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
 }
 
 const userPath = (id: string) => `/admin/approvals/users/${id}`;
@@ -96,7 +96,7 @@ async function decide(page: Page, label: string, reason?: string) {
 /** The tenant bell, once its count streamed in (its own Suspense boundary). */
 async function bell(page: Page, name: string) {
   const button = page.getByRole('banner').getByRole('button', { name, exact: true });
-  await expect(button).toBeVisible({ timeout: 15000 });
+  await expect(button).toBeVisible();
   return button;
 }
 
@@ -107,10 +107,6 @@ const fact = (scope: Locator, label: string) =>
   scope.locator('dt').filter({ hasText: label }).locator('xpath=following-sibling::dd[1]');
 
 test.describe('approvals: the queue', () => {
-  // Each test signs in, selects a context and can be the first hit of a route tree under a cold
-  // `next dev` compile (users.spec.ts uses the same budget).
-  test.describe.configure({ timeout: 90000 });
-
   test('opens the first tab from the rail, listing who waits newest first', async ({
     context,
     page,
@@ -154,7 +150,7 @@ test.describe('approvals: the queue', () => {
 
     // The rail opens /admin/approvals, which opens the first tab the holder can see.
     await page.goto('/admin/approvals');
-    await expect(page).toHaveURL(/\/admin\/approvals\/users$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/admin\/approvals\/users$/);
   });
 
   test('lists pending branches newest first, sorts them by name, and never lists a draft', async ({
@@ -165,7 +161,7 @@ test.describe('approvals: the queue', () => {
     await enterQueue(page);
 
     await press(page.getByRole('tab', { name: 'Branch activation (3)', exact: true }));
-    await expect(page).toHaveURL(/\/admin\/approvals\/branches$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/admin\/approvals\/branches$/);
     const table = page.getByRole('table', { name: 'Branches' });
     const names = table.locator('tbody').getByRole('link');
     await expect(rowsOf(page, 'Branches')).toHaveCount(4); // header + 3
@@ -174,9 +170,7 @@ test.describe('approvals: the queue', () => {
 
     await table.getByRole('link', { name: 'Branch', exact: true }).click();
     // Read the params, never an order-dependent regex.
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get('sortBy'), { timeout: 15000 })
-      .toBe('branchName');
+    await expect.poll(() => new URL(page.url()).searchParams.get('sortBy')).toBe('branchName');
     expect(new URL(page.url()).searchParams.get('sortDir')).toBe('ASC');
     await expect(names).toHaveText(['Kericho Branch', TEXT.longBranch, 'Naivasha Branch']);
   });
@@ -200,7 +194,7 @@ test.describe('approvals: the queue', () => {
     await page.goto(branchPath(APPROVALS.kericho));
     await expect(
       page.getByRole('heading', { level: 1, name: 'Branch not available here' }),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
   });
 
   test('hides the queue and the bell from a holder who can decide nothing', async ({
@@ -224,24 +218,16 @@ test.describe('approvals: the queue', () => {
     // date chip (streamed beside the bell) has arrived, so no bell is no bell, not a late one.
     await page.goto('/admin');
     const banner = page.getByRole('banner');
-    await expect(banner.getByRole('link', { name: /Business date · Open$/ })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(banner.getByRole('link', { name: /Business date · Open$/ })).toBeVisible();
     await expect(banner.getByRole('button', { name: /^Notifications/ })).toHaveCount(0);
 
     await page.goto('/admin/approvals');
-    await expect(page.getByRole('heading', { level: 1, name: 'Approval queue' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Approval queue' })).toBeVisible();
     await expect(mainText(page, NO_APPROVAL_ACCESS)).toBeVisible();
   });
 });
 
 test.describe('approvals: ids', () => {
-  // Each test signs in, selects a context and can be the first hit of a route tree under a cold
-  // `next dev` compile (users.spec.ts uses the same budget).
-  test.describe.configure({ timeout: 90000 });
-
   test('answers a malformed or unknown id with not-found, and reads a mixed-case one', async ({
     context,
     page,
@@ -256,7 +242,7 @@ test.describe('approvals: ids', () => {
       branchPath(UNKNOWN_ID),
     ]) {
       await page.goto(path);
-      await expect(notFoundHeading(page)).toBeVisible({ timeout: 15000 });
+      await expect(notFoundHeading(page)).toBeVisible();
     }
     await openRequest(page, userPath(APPROVALS.rose.toUpperCase()), 'Rose Atieno');
     await openRequest(page, branchPath(APPROVALS.kericho.toUpperCase()), 'Kericho Branch');
@@ -264,10 +250,6 @@ test.describe('approvals: ids', () => {
 });
 
 test.describe('approvals: the notifications bell', () => {
-  // Each test signs in, selects a context and can be the first hit of a route tree under a cold
-  // `next dev` compile (users.spec.ts uses the same budget).
-  test.describe.configure({ timeout: 90000 });
-
   test('counts what can be decided, and opens each queue', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'approvals');
     await enterQueue(page);
@@ -280,7 +262,7 @@ test.describe('approvals: the notifications bell', () => {
     await expect(dialog).toContainText('3 branches are waiting for activation.');
     await expect(dialog).not.toContainText('Switch to All branches');
     await clickInMuiPopover(dialog.getByRole('link', { name: 'Review branch activation' }));
-    await expect(page).toHaveURL(/\/admin\/approvals\/branches$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/admin\/approvals\/branches$/);
 
     await press(await bell(page, 'Notifications: 11 approvals waiting'));
     await clickInMuiPopover(
@@ -288,7 +270,7 @@ test.describe('approvals: the notifications bell', () => {
         .getByRole('dialog', { name: 'Notifications' })
         .getByRole('link', { name: 'Review user onboarding' }),
     );
-    await expect(page).toHaveURL(/\/admin\/approvals\/users$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/admin\/approvals\/users$/);
   });
 
   test('counts one fewer after a decision', async ({ context, page }, testInfo) => {
@@ -358,10 +340,6 @@ test.describe('approvals: the notifications bell', () => {
 });
 
 test.describe('approvals: user onboarding decisions', () => {
-  // Each test signs in, selects a context and can be the first hit of a route tree under a cold
-  // `next dev` compile (users.spec.ts uses the same budget).
-  test.describe.configure({ timeout: 90000 });
-
   test('approves a member whose identity must be created (202), focusing the title', async ({
     context,
     page,
@@ -475,7 +453,7 @@ test.describe('approvals: user onboarding decisions', () => {
     const dialog = await decide(stale, 'Reject & revoke', 'Duplicate invitation');
     await expect(dialog.getByRole('alert')).toContainText(APPROVAL_CHANGED);
     await stale.reload();
-    await expect(mainText(stale, APPROVED_NOTE)).toBeVisible({ timeout: 15000 });
+    await expect(mainText(stale, APPROVED_NOTE)).toBeVisible();
   });
 
   test('refuses a stale Reject & revoke on the user record too (P-3)', async ({
@@ -552,10 +530,6 @@ test.describe('approvals: user onboarding decisions', () => {
 });
 
 test.describe('approvals: branch activation decisions', () => {
-  // Each test signs in, selects a context and can be the first hit of a route tree under a cold
-  // `next dev` compile (users.spec.ts uses the same budget).
-  test.describe.configure({ timeout: 90000 });
-
   test('activates a branch someone else drafted, focusing the title', async ({
     context,
     page,
@@ -690,8 +664,6 @@ const SURFACES = [
 // The describe's title is what the two --grep chunks select on ("approvals: accessibility .*\(light"
 // and "…\(dark"): the grep text is the project, file, describe and test titles joined by spaces.
 test.describe('approvals: accessibility', () => {
-  test.describe.configure({ timeout: 60000 });
-
   for (const surface of SURFACES) {
     for (const a11yCase of A11Y_CASES) {
       test(`has no serious or critical violations: ${surface.label} (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
