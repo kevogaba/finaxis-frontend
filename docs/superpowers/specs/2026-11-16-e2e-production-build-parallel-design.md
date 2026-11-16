@@ -114,8 +114,11 @@ it.
   16 GB box checks that one-per-CPU is not slower or flakier than one fewer; if it is, that finding
   goes back to the user before any change to the rule. The measurements go in the config comment,
   the way the current one's do.
-- `retries: CI ? 1 : 0` with `failOnFlakyTests: !!CI`; `trace: 'on-first-retry'` and
-  `video: 'retain-on-failure'` stay.
+- `retries: CI ? 1 : 0` with `failOnFlakyTests: !!CI`; `trace: 'on-first-retry'` stays.
+  `video` changed from `'retain-on-failure'` to `'on-first-retry'` in a fourth stacked PR _(decided
+  by the user after PR 3's CI e2e step ran 11.1 min)_: recording every test's video competed with
+  the workers for CI's four vCPUs; a flaky test's failed first attempt now keeps its error,
+  screenshot and ARIA snapshot, but no video.
 - Audit for shared state before raising workers: any test that reuses a fixed fake-API run (e.g.
   the `default.shared` fallback) or a process-wide fake-API value gets its own run. Coupling that
   parallelism exposes is fixed in the test or the fake, never hidden by serialising the spec.

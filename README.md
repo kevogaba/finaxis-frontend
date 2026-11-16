@@ -128,7 +128,9 @@ honours a dotted `color`.
   `pnpm exec playwright test` headless, which is Playwright's `chromium-headless-shell`, with
   `CI=true`: servers never reused, and one retry — it tells a flaky test from a hard failure and
   records a trace and a video (the only video recorded), and a test that needed it fails the run
-  (`failOnFlakyTests`). Locally and on CI the suite runs one worker per CPU against the production
+  (`failOnFlakyTests`). A flaky test's recorded retry is the run that passed; its failed first
+  attempt keeps the error, a screenshot and an ARIA snapshot. Locally there is no retry, so a
+  failure keeps those three; add `--trace retain-on-failure` for a trace with a screencast. Locally and on CI the suite runs one worker per CPU against the production
   build (`--workers=N` lowers it on a machine with many CPUs); with `E2E_DEV_SERVER=1` it runs one
   worker, as `next dev` compiles on demand.
   Another Chromium (an older installed build, or a full Chrome through `channel` or
