@@ -40,7 +40,10 @@ export default defineConfig({
     baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    // Video only on the retry: `retain-on-failure` records every test's video and discards the
+    // passing ones, encoding 500+ videos on the same CPUs the workers run on. A failing test's
+    // retry is still recorded (with its trace); its first attempt keeps the screenshot and error.
+    video: 'on-first-retry',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
