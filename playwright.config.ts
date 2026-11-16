@@ -1,5 +1,8 @@
+import { existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
+/** The e2e build's standalone server, relative to the repository root (where pnpm runs). */
+const E2E_SERVER = '.next-e2e/standalone/server.js';
 const PORT = Number(process.env.PORT) || 3100;
 const baseURL = `http://localhost:${PORT}`;
 const FAKE_API_PORT = process.env.FAKE_API_PORT ?? '3199';
@@ -36,19 +39,58 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },
-    {
-      // Non-production dev server so the gated E2E session bypass works; all backend calls go to
-      // the fake API. PLATFORM_ORGANISATION_ID matches the fake API's reserved organisation.
+    appServer(),
+  ],
+});
+
+/**
+ * The app under test: the e2e flavour of the production build (`pnpm build:e2e`, served from its
+ * standalone `server.js`), so the suite exercises the code that ships — production React, minified
+ * bundles, the production CSP. Its session bypass exists only because that build was made with
+ * `FINAXIS_E2E_BUILD=1` (next.config.ts); every backend call goes to the fake API, and
+ * PLATFORM_ORGANISATION_ID matches the fake API's reserved organisation.
+ * `E2E_DEV_SERVER=1` swaps in `next dev` for writing a spec without rebuilding after each app
+ * change. CI never sets it.
+ */
+function appServer() {
+  const env = {
+    ...process.env,
+    FINAXIS_E2E_TEST_MODE: '1',
+    FINAXIS_API_URL: FAKE_API_URL,
+    PLATFORM_ORGANISATION_ID: '00000000-0000-0000-0000-000000000000',
+  };
+
+  if (process.env.E2E_DEV_SERVER === '1') {
+    return {
       command: 'pnpm dev',
-      env: {
-        ...process.env,
-        FINAXIS_E2E_TEST_MODE: '1',
-        FINAXIS_API_URL: FAKE_API_URL,
-        PLATFORM_ORGANISATION_ID: '00000000-0000-0000-0000-000000000000',
-      },
+      env,
       url: baseURL,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
+    };
+  }
+
+  if (!existsSync(E2E_SERVER)) {
+    throw new Error(
+      'No e2e build found: run `pnpm build:e2e` first (or `pnpm test:e2e`, which builds it).',
+    );
+  }
+
+  return {
+    // `.env.local` supplies local auth settings the way `next dev` would load them; the explicit
+    // `env` below wins over it.
+    command: `node --env-file-if-exists=.env.local ${E2E_SERVER}`,
+    env: {
+      ...env,
+      PORT: String(PORT),
+      // Loopback only, whatever HOSTNAME a container exports: this server accepts the bypass.
+      HOSTNAME: '127.0.0.1',
+      // Plain HTTP on localhost for a production build (config/env.server.ts).
+      FINAXIS_ALLOW_INSECURE_LOCAL_ORIGINS: '1',
     },
-  ],
-});
+    url: baseURL,
+    // Never test a server this run did not start (a forgotten `pnpm dev`, an older build).
+    reuseExistingServer: false,
+    timeout: 60_000,
+  };
+}
