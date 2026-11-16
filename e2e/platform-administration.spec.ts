@@ -32,7 +32,7 @@ test.describe('Platform administration workspace', () => {
     await page.getByRole('link', { name: 'Acme SACCO' }).click();
     await expect(page).toHaveURL(new RegExp(`/platform-admin/tenants/${PLATFORM_TENANT_ID}$`));
     await expect(page.getByRole('heading', { name: 'Acme SACCO' }).first()).toBeVisible();
-    await expect(page.getByText('COMPLETED')).toBeVisible();
+    await expect(page.getByRole('main').getByText('COMPLETED')).toBeVisible();
   });
 
   test('keeps tenant contexts out of the platform workspace', async ({

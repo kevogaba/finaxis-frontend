@@ -79,8 +79,10 @@ test.describe('Authenticated context selection', () => {
     await page.goto('/select-context');
 
     await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
-    await expect(page.getByText(/No organisations are available for your account/i)).toBeVisible();
-    await expect(page.getByText(/Contact an administrator/i)).toBeVisible();
+    await expect(
+      page.getByRole('main').getByText(/No organisations are available for your account/i),
+    ).toBeVisible();
+    await expect(page.getByRole('main').getByText(/Contact an administrator/i)).toBeVisible();
     await expect(page.getByRole('combobox', { name: 'Organisation' })).toHaveCount(0);
     await expect(page.getByRole('banner')).toHaveCount(0);
   });

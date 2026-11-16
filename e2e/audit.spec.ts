@@ -42,7 +42,7 @@ test.describe('audit trail', () => {
     await authenticate(context, testInfo);
     await enter(page);
 
-    await expect(page.getByText('30 events')).toBeVisible();
+    await expect(page.getByRole('main').getByText('30 events')).toBeVisible();
     const table = page.getByRole('table', { name: 'Audit events' });
     await expect(table.getByRole('row')).toHaveCount(21); // header + 20
 
@@ -59,10 +59,10 @@ test.describe('audit trail', () => {
 
     await selectMuiOption(page, 'Entity type', /^Branch$/);
     await expect(page).toHaveURL(/entityType=BRANCH/);
-    await expect(page.getByText('6 events')).toBeVisible();
+    await expect(page.getByRole('main').getByText('6 events')).toBeVisible();
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(page.getByText('30 events')).toBeVisible();
+    await expect(page.getByRole('main').getByText('30 events')).toBeVisible();
 
     // Race check (carried from Task 2's cv-M6 fix): fill From with a value earlier than every
     // seed (all seeds are 2026-09-07T07:30-07:59Z; midnight keeps every one of them in both UTC
@@ -70,7 +70,7 @@ test.describe('audit trail', () => {
     // without waiting for the From field's own navigation — the mousedown blur and the button's
     // click both push a URL, and useListNavigation must build the second on the first's pending
     // query instead of discarding it.
-    await page.getByLabel('From', { exact: true }).fill('2026-09-07T00:00');
+    await page.getByRole('main').getByLabel('From', { exact: true }).fill('2026-09-07T00:00');
     await page.getByRole('button', { name: /next page/i }).click();
     await expect(table.getByRole('row')).toHaveCount(11);
     // One predicate on the settled URL, not two separate `toHaveURL` polls: a transient
@@ -127,8 +127,8 @@ test.describe('audit trail', () => {
       .first()
       .click();
     await expect(page).toHaveURL(/actorId=/);
-    await expect(page.getByText('Actor: Backend Jane Manager')).toBeVisible();
-    await expect(page.getByText('25 events')).toBeVisible();
+    await expect(page.getByRole('main').getByText('Actor: Backend Jane Manager')).toBeVisible();
+    await expect(page.getByRole('main').getByText('25 events')).toBeVisible();
   });
 
   test('shows the rail link with audit.view, a not-found detail, an empty filtered state, and redirects a page past the end', async ({
@@ -196,7 +196,7 @@ test.describe('audit trail', () => {
     // Back to the unfiltered list (still through the delayed route) so the newest seed
     // (user.invite) is the first row again for the link check below.
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(page.getByText('30 events')).toBeVisible();
+    await expect(page.getByRole('main').getByText('30 events')).toBeVisible();
 
     const timeLink = page.getByRole('link', { name: /view event/i }).first();
     await timeLink.click();
@@ -244,7 +244,7 @@ test.describe('audit trail', () => {
       await page.getByRole('combobox', { name: 'Entity type' }).locator('..').boundingBox(),
     );
     const fromBox = requireBox(
-      await page.getByLabel('From', { exact: true }).locator('..').boundingBox(),
+      await page.getByRole('main').getByLabel('From', { exact: true }).locator('..').boundingBox(),
     );
     const nextButtonBox = requireBox(
       await page.getByRole('button', { name: 'Go to next page' }).boundingBox(),
@@ -296,13 +296,17 @@ test.describe('audit trail', () => {
       await enter(page);
 
       // Both From and To show it.
-      await expect(page.getByText('Your local time (UTC)')).toHaveCount(2);
+      await expect(page.getByRole('main').getByText('Your local time (UTC)')).toHaveCount(2);
 
       const entityTypeBox = requireBox(
         await page.getByRole('combobox', { name: 'Entity type' }).locator('..').boundingBox(),
       );
       const fromBox = requireBox(
-        await page.getByLabel('From', { exact: true }).locator('..').boundingBox(),
+        await page
+          .getByRole('main')
+          .getByLabel('From', { exact: true })
+          .locator('..')
+          .boundingBox(),
       );
       expect(Math.abs(entityTypeBox.y - fromBox.y)).toBeLessThanOrEqual(1);
     });

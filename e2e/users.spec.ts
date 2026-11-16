@@ -1073,10 +1073,9 @@ test.describe('users: gating and ids', () => {
     await expect(page.getByRole('button', { name: /^Revoke/ })).toHaveCount(0);
     await expect(page.getByRole('columnheader', { name: 'Actions' })).toHaveCount(0);
     // With nothing focusable inside, the scrollable table is still reachable by keyboard.
-    await expect(page.locator('[role="region"][aria-label="Role assignments"]')).toHaveAttribute(
-      'tabindex',
-      '0',
-    );
+    await expect(
+      page.getByRole('main').locator('[role="region"][aria-label="Role assignments"]'),
+    ).toHaveAttribute('tabindex', '0');
 
     await openTab(page, 'Branch assignments');
     await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2);

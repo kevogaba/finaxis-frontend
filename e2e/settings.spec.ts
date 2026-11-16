@@ -139,7 +139,7 @@ test.describe('settings', () => {
     await authenticate(context, testInfo, 'no-settings-permission');
     await enter(page);
 
-    await expect(page.getByText("You don't have permission")).toBeVisible();
+    await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible();
     await expect(
       page
         .getByRole('navigation', { name: 'Administration' })

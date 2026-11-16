@@ -148,7 +148,7 @@ test.describe('platform tenants', () => {
 
       // Seeded createdAt (08:00 UTC): Umoja 5 Sep, Harambee 4 Sep, Mwangaza 3 Sep, Pwani 20 Aug,
       // Kilimo 10 Aug, Nairobi Metropolitan 1 Aug, Acme 1 Jul.
-      const from = page.getByLabel('Created from', { exact: true });
+      const from = page.getByRole('main').getByLabel('Created from', { exact: true });
       await expectHydrated(from);
       await from.fill('2026-08-15T00:00');
       await from.press('Enter');
@@ -165,7 +165,7 @@ test.describe('platform tenants', () => {
 
       // Created to commits on blur (Tab only moves between the field's own segments) and stores
       // the chosen minute's last millisecond.
-      const to = page.getByLabel('Created to', { exact: true });
+      const to = page.getByRole('main').getByLabel('Created to', { exact: true });
       await to.fill('2026-09-03T08:00');
       await to.blur();
       await expect(page).toHaveURL(
@@ -179,17 +179,23 @@ test.describe('platform tenants', () => {
       await expect(rowsOf(page, 'Institutions').nth(2)).toContainText('Pwani Fishermen SACCO');
 
       // Both fields show what the URL holds after the render, and Clear filters empties them.
-      await expect(page.getByLabel('Created from', { exact: true })).toHaveValue(
+      await expect(page.getByRole('main').getByLabel('Created from', { exact: true })).toHaveValue(
         '2026-08-15T00:00',
       );
-      await expect(page.getByLabel('Created to', { exact: true })).toHaveValue('2026-09-03T08:00');
+      await expect(page.getByRole('main').getByLabel('Created to', { exact: true })).toHaveValue(
+        '2026-09-03T08:00',
+      );
       await page.getByRole('link', { name: 'Clear filters' }).click();
       await expect(mainText(page, '7 institutions')).toBeVisible();
       await expect(page).toHaveURL(
         (url) => !url.searchParams.has('createdFrom') && !url.searchParams.has('createdTo'),
       );
-      await expect(page.getByLabel('Created from', { exact: true })).toHaveValue('');
-      await expect(page.getByLabel('Created to', { exact: true })).toHaveValue('');
+      await expect(page.getByRole('main').getByLabel('Created from', { exact: true })).toHaveValue(
+        '',
+      );
+      await expect(page.getByRole('main').getByLabel('Created to', { exact: true })).toHaveValue(
+        '',
+      );
     });
   });
 
