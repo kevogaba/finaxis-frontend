@@ -26,7 +26,7 @@ test.describe('admin E2E helpers', () => {
     });
 
     await expectA11yCaseApplied(page, darkNarrow);
-    await expect(page.getByText('30 events')).toBeVisible();
+    await expect(page.getByRole('main').getByText('30 events')).toBeVisible();
     await expectNoSeriousOrCriticalViolations(page);
   });
 });

@@ -204,7 +204,7 @@ test.describe('business date', () => {
     await authenticate(context, testInfo, 'business-date-no-history');
     await enter(page);
 
-    await expect(page.getByText('No business date changes yet')).toBeVisible();
+    await expect(page.getByRole('main').getByText('No business date changes yet')).toBeVisible();
     await expect(page.getByRole('combobox', { name: /rows per page/i })).toBeVisible();
   });
 

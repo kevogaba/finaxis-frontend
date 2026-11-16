@@ -160,6 +160,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   stated, measured production reason in a comment (e.g. an accessibility matrix that scans a dozen
   pages); never size a wait for a dev-server compile — `playwright.config.ts`'s `E2E_DEV_SERVER=1`
   allowance is the only one.
+- An E2E assertion that something is shown scopes its text, label or id query to a rendered
+  container — `mainText(page, …)` / `page.getByRole('main')` (`e2e/support/admin.ts`), a dialog,
+  a table — never the whole page: the production build can briefly hold a hidden copy of a page's
+  content in the DOM, page-wide `getByText`/`getByLabel`/`locator` match hidden elements too, and a
+  strict assertion then sees two. `getByRole` skips hidden elements. Absence checks
+  (`toHaveCount(0)`) stay page-wide, where they are stricter.
 - The backend's wire format is snake_case and differs from the published OpenAPI casing; never
   generate a client from the OpenAPI as-is. Follow
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`.

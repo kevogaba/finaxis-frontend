@@ -112,7 +112,7 @@ async function boxOf(locator: Locator) {
 /** A select's label box: MUI names the select by its label's id, the first id in `aria-labelledby`. */
 async function labelBox(page: Page, select: Locator) {
   const [labelId] = ((await select.getAttribute('aria-labelledby')) ?? '').split(' ');
-  return boxOf(page.locator(`[id="${labelId}"]`));
+  return boxOf(page.getByRole('main').locator(`[id="${labelId}"]`));
 }
 
 /** A row's bottom rule: its border's width, its colour, and the row's own text colour beside it. */
@@ -298,10 +298,10 @@ test.describe('users invite: sending', () => {
       'Send the application invitation',
     ]) {
       const flag = page.getByRole('checkbox', { name });
-      const description = page.locator(
-        `[id="${(await flag.getAttribute('aria-describedby')) ?? ''}"]`,
-      );
-      const label = await boxOf(page.getByText(name, { exact: true }));
+      const description = page
+        .getByRole('main')
+        .locator(`[id="${(await flag.getAttribute('aria-describedby')) ?? ''}"]`);
+      const label = await boxOf(mainText(page, name, { exact: true }));
       expect(Math.abs((await boxOf(description)).x - label.x), name).toBeLessThanOrEqual(1);
     }
     await next(page, 'Review');
