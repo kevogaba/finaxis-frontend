@@ -142,13 +142,15 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   violations.
 - Update `README.md` (and this file) when the architecture changes — e.g. swapping the mock auth
   module for a real identity provider, or changing the MUI/Tailwind boundary.
-- E2E tests run against the standalone fake API in `e2e/fake-api/` — never add backend fixtures to
-  app code. Fake-API files run under plain `node`: relative `.mts` imports, `import type` for types,
+- E2E tests run against the e2e flavour of the production build (`pnpm build:e2e`, served from
+  `.next-e2e/standalone/server.js`) and the standalone fake API in `e2e/fake-api/` — never add
+  backend fixtures to app code. Fake-API files run under plain `node`: relative `.mts` imports, `import type` for types,
   erasable TypeScript only (no enums, namespaces, parameter properties). Add only endpoints a layer
   uses, mirroring the contract document exactly (including backend quirks). The one spec that uses
   neither the app nor the fake API is `e2e/click-helpers.spec.ts` (Playwright still starts both
   servers for it): it checks the e2e click helpers on a static page (`page.setContent`), and
-  helper self-tests like it belong there, not in app specs.
+  helper self-tests like it belong there, not in app specs. The guard specs in `e2e/guard/` run
+  only under `playwright.guard.config.ts`, against the normal production build and no fake API.
 - The backend's wire format is snake_case and differs from the published OpenAPI casing; never
   generate a client from the OpenAPI as-is. Follow
   `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`.
@@ -162,6 +164,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - All authenticated pages/routes validate the session server-side (`auth.api.getSession` via
   `auth/get-authenticated-user.ts`) — never rely solely on `proxy.ts`'s cookie-presence check.
 - Never expose Keycloak access/refresh/ID tokens to Client Components or client-visible state.
+- The e2e session bypass (`auth/e2e-test-mode.ts`) needs `FINAXIS_E2E_TEST_MODE=1` at runtime and,
+  in a production build, the build-time `FINAXIS_E2E_BUILD` switch that `next.config.ts` inlines
+  only into the `.next-e2e` build. Never widen that gate, never set `FINAXIS_E2E_BUILD` in a `.env*`
+  file, and keep `pnpm test:e2e:guard` (the normal build must send a bypass session to `/login`)
+  after `pnpm build` in both workflows (`docs/authentication/security.md`).
 - Never disable Better Auth's CSRF or origin checks (`disableCSRFCheck`/`disableOriginCheck`).
 - Never use a wildcard trusted origin.
 - Never persist auth tokens in local storage or session storage.

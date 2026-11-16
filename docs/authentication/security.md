@@ -189,6 +189,35 @@ part of the default `pnpm test:e2e` gate. Running it for real against a live Key
 surfaced both the `form-action` CSP gap above and the submit-button-disabling bug described in
 `components/shell/user-menu.tsx` — neither was reachable from jsdom-based unit tests.
 
+### The e2e session bypass and its guard
+
+The authenticated e2e specs sign in through a test-only bypass (`auth/e2e-test-mode.ts`): a fixed
+session cookie stands for a synthetic user, and a run cookie names an isolated fake-API backend.
+It never touches Keycloak and never yields a real token. It turns on only with two keys:
+
+| Server                                           | `FINAXIS_E2E_TEST_MODE=1` at runtime | Bypass |
+| ------------------------------------------------ | ------------------------------------ | ------ |
+| `next dev`                                       | yes                                  | on     |
+| The e2e build (`pnpm build:e2e`, `.next-e2e/`)   | yes                                  | on     |
+| A normal production build (`pnpm build`, Docker) | any value                            | off    |
+| Any                                              | no                                   | off    |
+
+The e2e build is made with `FINAXIS_E2E_BUILD=1`, which `next.config.ts` inlines into server code
+(`compiler.defineServer`) and uses to write the build to its own `.next-e2e/` directory. In every
+other build the switch is an empty string literal: the minifier folds the gate to
+`"1"===process.env.FINAXIS_E2E_TEST_MODE&&!1`, so no runtime environment can turn it on, and
+nothing that ships (`pnpm start`, the Dockerfile, the Release workflow) reads `.next-e2e/`.
+
+Never set `FINAXIS_E2E_BUILD` in a `.env*` file: Next loads those before `next.config.ts`, so
+every `pnpm build` would become an e2e build (it would then fail loudly, as `.next/standalone` would
+not exist).
+
+Both CI workflows run the **guard** after `pnpm build`: `pnpm test:e2e:guard`
+(`playwright.guard.config.ts`, `e2e/guard/`) starts the normal production build with every runtime
+e2e setting on, opens `/profile`, `/admin` and `/platform-admin` with the bypass's session cookie,
+and requires each to land on `/login`. Pointed at the e2e build (`GUARD_DIST_DIR=.next-e2e`), it
+fails.
+
 ## Troubleshooting
 
 | Symptom                                                                                                   | Likely cause                                                                                                                                                                       |

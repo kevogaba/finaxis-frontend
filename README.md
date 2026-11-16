@@ -50,8 +50,10 @@ Open [http://localhost:3000](http://localhost:3000) — the root route redirects
 | `pnpm format` / `format:check` | Prettier                                                          |
 | `pnpm test` / `test:run`       | Vitest (watch / single run)                                       |
 | `pnpm test:coverage`           | Vitest with V8 coverage                                           |
-| `pnpm test:e2e`                | Playwright end-to-end tests (Keycloak-independent)                |
-| `pnpm test:e2e:ui`             | Playwright UI mode                                                |
+| `pnpm test:e2e`                | Build the e2e flavour, then run Playwright (Keycloak-independent) |
+| `pnpm test:e2e:ui`             | Build the e2e flavour, then Playwright UI mode                    |
+| `pnpm build:e2e`               | Production build with the e2e switch, into `.next-e2e/`           |
+| `pnpm test:e2e:guard`          | Check the normal production build ignores the e2e bypass          |
 | `pnpm test:e2e:keycloak`       | Real-Keycloak smoke test (manual; requires a live local Keycloak) |
 | `pnpm fake-api`                | Run the E2E fake backend alone (port 3199)                        |
 | `pnpm check`                   | format:check + lint + typecheck + unit tests                      |
@@ -83,11 +85,19 @@ honours a dotted `color`.
 - **Unit/component**: `pnpm test:run` (or `pnpm test:coverage` for coverage). Tests live next to
   the code they cover (e.g. `components/auth/continue-with-keycloak-button.test.tsx`) and query
   the DOM by role and accessible name rather than implementation details.
-- **End-to-end**: `pnpm test:e2e`. Playwright starts two servers: the standalone fake platform API
-  (`e2e/fake-api/`, plain `node` with type stripping, zero dependencies) and the Next dev server
-  pointed at it. Locally it reuses servers already listening on ports 3100/3199
-  (`reuseExistingServer`) instead of starting its own, so stop any `pnpm dev`/`pnpm fake-api` you
-  have running first — otherwise the suite runs against whatever is already there. Tests that need
+- **End-to-end**: `pnpm test:e2e` builds the e2e flavour of the production build
+  (`pnpm build:e2e`: `FINAXIS_E2E_BUILD=1`, written to `.next-e2e/`), then runs Playwright, which
+  starts two servers: the standalone fake platform API (`e2e/fake-api/`, plain `node` with type
+  stripping, zero dependencies) and that build's standalone `server.js` pointed at it, bound to
+  `127.0.0.1:3100`. The suite therefore tests what ships: production React, minified bundles, the
+  production CSP. The app server is never reused: if port 3100 is taken (a forgotten `pnpm dev`),
+  the run refuses to start; locally a fake API already on 3199 is reused. After an app change,
+  `pnpm test:e2e` rebuilds; `pnpm exec playwright test` alone runs against the existing
+  `.next-e2e/` (and says to run `pnpm build:e2e` when there is none). To write a spec against
+  `next dev` without rebuilding after each edit, run `E2E_DEV_SERVER=1 pnpm exec playwright test
+<spec>`; CI never does. The session bypass the specs sign in through, and the guard that keeps
+  it out of every normal build (`pnpm test:e2e:guard`), are described in
+  `docs/authentication/security.md`. Tests that need
   a signed-in session call `authenticate(context, testInfo, scenario)` from
   `e2e/support/auth.ts`, which gives each test its own scenario-seeded fake backend; unauthenticated and fake-API smoke specs don't.
   `e2e/click-helpers.spec.ts` uses neither the app nor the fake API (it checks the click helpers
@@ -108,14 +118,16 @@ honours a dotted `color`.
   Keycloak's logout confirmation page, and a truly cleared session — and skips (rather than
   fails) with an actionable message if Keycloak isn't reachable on `:8080`. See
   `docs/authentication/security.md` for what running it for real uncovered.
-- **Running the end-to-end suite as CI does**: CI installs the Chromium build `@playwright/test`
-  pins (`pnpm exec playwright install --with-deps chromium`) and runs it headless, which is
-  Playwright's `chromium-headless-shell`, with `CI=true` (two retries, servers never reused).
+- **Running the end-to-end suite as CI does**: after `pnpm build`, CI installs the Chromium build
+  `@playwright/test` pins (`pnpm exec playwright install --with-deps chromium`), runs the guard
+  (`pnpm test:e2e:guard`), builds the e2e flavour (`pnpm build:e2e`) and runs
+  `pnpm exec playwright test` headless, which is Playwright's `chromium-headless-shell`, with
+  `CI=true` (two retries, servers never reused).
   Another Chromium (an older installed build, or a full Chrome through `channel` or
   `executablePath`) lays out buttons and text a few pixels differently, so a layout-sensitive test
   can pass there and fail on CI. To see what CI sees, install the pinned build and run
-  `CI=true pnpm test:e2e <spec> --retries=0` with ports 3100 and 3199 free. `next dev` refuses to
-  start while another dev server of the same checkout runs, and names its PID: stop that process
+  `CI=true pnpm test:e2e <spec> --retries=0` with ports 3100 and 3199 free. With
+  `E2E_DEV_SERVER=1`, `next dev` refuses to start while another dev server of the same checkout runs, and names its PID: stop that process
   (stopping `pnpm` alone can leave its `next-server` child running). A `.next/dev/lock` left by a
   server that has exited is ignored on Linux and macOS.
 
