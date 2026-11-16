@@ -18,6 +18,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "pnpm build:e2e && playwright test",
     "test:e2e:ui": "pnpm build:e2e && playwright test --ui",
+    "test:e2e:guard": "playwright test --config=playwright.guard.config.ts",
     "test:e2e:keycloak": "playwright test --config=playwright.keycloak.config.ts",
     "fake-api": "node e2e/fake-api/server.mts",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:run",

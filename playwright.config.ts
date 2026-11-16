@@ -12,8 +12,9 @@ process.env.FINAXIS_E2E_TEST_MODE = '1';
 export default defineConfig({
   testDir: './e2e',
   // The real-Keycloak smoke test is separate and manually invoked via
-  // `pnpm test:e2e:keycloak` (playwright.keycloak.config.ts).
-  testIgnore: /keycloak-smoke\.spec\.ts/,
+  // `pnpm test:e2e:keycloak` (playwright.keycloak.config.ts); the guard specs run against the
+  // normal production build via `pnpm test:e2e:guard` (playwright.guard.config.ts).
+  testIgnore: [/keycloak-smoke\.spec\.ts/, /[\\/]e2e[\\/]guard[\\/]/],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
