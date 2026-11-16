@@ -9,9 +9,6 @@ import {
 import { authenticate } from './support/auth';
 
 test.describe('admin E2E helpers', () => {
-  // Institution-level /admin/audit can be the first hit of its route tree under `next dev`.
-  test.describe.configure({ timeout: 90000 });
-
   test('enter the audit trail at All branches, dark at 375 px, with no serious a11y violations', async ({
     context,
     page,

@@ -6,16 +6,14 @@ async function enterGreenfield(page: Page) {
   await page.goto('/admin');
   await selectMuiOption(page, 'Organisation', /Greenfield/);
   await selectMuiOption(page, 'Branch', /Head Office/);
-  // Slower default timeout: this can be the first hit of the /admin route tree under a cold
-  // `next dev` compile (see the platform-admin equivalent below).
-  await expect(page).toHaveURL(/\/admin$/, { timeout: 15000 });
-  // The URL updates before the route finishes compiling: app/loading.tsx's 'Loading…' fallback
+  await expect(page).toHaveURL(/\/admin$/);
+  // The URL updates before the page has streamed in: app/loading.tsx's 'Loading…' fallback
   // can still be showing right after the URL match (observed: a caller's very next assertion
   // failed with "element(s) not found" while the page snapshot showed only the loading status).
   // Wait for the page's own heading here, once, so every caller sees settled content.
   await expect(
     page.getByRole('heading', { level: 1, name: 'Administration Overview' }),
-  ).toBeVisible({ timeout: 15000 });
+  ).toBeVisible();
 }
 
 // The platform operator has a single branch, so selecting the organisation auto-selects it and
@@ -23,20 +21,12 @@ async function enterGreenfield(page: Page) {
 async function enterPlatformAdmin(page: Page) {
   await page.goto('/platform-admin');
   await selectMuiOption(page, 'Organisation', /Platform/);
-  // Slower default timeout: this route tree gets no warm-compile head start from an earlier test
-  // when the a11y matrix below hits it first (see e2e/platform-administration.spec.ts).
-  await expect(page).toHaveURL(/\/platform-admin$/, { timeout: 15000 });
-  // Same cold-compile race as enterGreenfield above: wait for the page's own heading here, once.
-  await expect(page.getByRole('heading', { level: 1, name: 'Platform overview' })).toBeVisible({
-    timeout: 15000,
-  });
+  await expect(page).toHaveURL(/\/platform-admin$/);
+  // Same streaming race as enterGreenfield above: wait for the page's own heading here, once.
+  await expect(page.getByRole('heading', { level: 1, name: 'Platform overview' })).toBeVisible();
 }
 
 test.describe('application shell', () => {
-  // /platform-admin can be the first hit of its route tree under a cold `next dev` compile (see
-  // e2e/platform-administration.spec.ts), which the a11y matrix below multiplies by 4 targets.
-  test.describe.configure({ timeout: 60000 });
-
   test('shows the rail, workspace, context, account, and footer', async ({
     context,
     page,

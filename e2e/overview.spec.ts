@@ -14,11 +14,6 @@ import {
 const ALL_BRANCHES = /All branches \(institution level\)/;
 const HEAD_OFFICE = /Head Office/;
 
-/** A route's first hit compiles under a cold `next dev`, which takes tens of seconds (layer 11's
- * lesson): every first visit here (the overview, a request page, the audit trail) is bounded by it.
- * Warm, these waits resolve in well under a second. */
-const FIRST_HIT = 45000;
-
 // The app's copy, repeated here: Playwright can't resolve the app's `@/` imports. Each string is
 // asserted verbatim, so a reworded message fails here (rule 10).
 const NOT_PERMITTED = "Can't be checked with your permissions.";
@@ -31,12 +26,10 @@ const READINESS_NOTE =
   "Each item is computed from live data. An item your role can't read says so.";
 
 /** The overview through context selection (All branches unless told), once every card has
- * streamed in. `/admin` and `/select-context` are first hits: the picker waits for them. */
+ * streamed in. */
 async function enterOverview(page: Page, branch: RegExp = ALL_BRANCHES) {
   await page.goto('/admin');
-  await expect(page.getByRole('combobox', { name: 'Organisation' })).toBeVisible({
-    timeout: FIRST_HIT,
-  });
+  await expect(page.getByRole('combobox', { name: 'Organisation' })).toBeVisible();
   await selectMuiOption(page, 'Organisation', /Greenfield/);
   await selectMuiOption(page, 'Branch', branch);
   await settled(page);
@@ -45,13 +38,11 @@ async function enterOverview(page: Page, branch: RegExp = ALL_BRANCHES) {
 /** The heading, then no card skeleton left: each card streams behind its own Suspense boundary,
  * and a skeleton's body is `aria-busy` until its card arrives. */
 async function settled(page: Page) {
-  await expect(page).toHaveURL((url) => url.pathname === '/admin', { timeout: FIRST_HIT });
+  await expect(page).toHaveURL((url) => url.pathname === '/admin');
   await expect(
     page.getByRole('heading', { level: 1, name: 'Administration Overview' }),
-  ).toBeVisible({ timeout: FIRST_HIT });
-  await expect(page.getByRole('main').locator('[aria-busy="true"]')).toHaveCount(0, {
-    timeout: FIRST_HIT,
-  });
+  ).toBeVisible();
+  await expect(page.getByRole('main').locator('[aria-busy="true"]')).toHaveCount(0);
 }
 
 const card = (page: Page, name: string) =>
@@ -107,7 +98,7 @@ const CHIP_SCENES = [
 async function bell(page: Page, label: string) {
   await expect(
     page.getByRole('banner').getByRole('button', { name: label, exact: true }),
-  ).toBeVisible({ timeout: FIRST_HIT });
+  ).toBeVisible();
 }
 
 /** The Review links of the preview, in order, each by its exact name. */
@@ -145,8 +136,6 @@ async function expectLinks(page: Page, links: readonly [string, string | null, s
 }
 
 test.describe('overview: the cards', () => {
-  test.describe.configure({ timeout: 90000 });
-
   test('shows every card ready, with nothing waiting', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'overview-ready');
     await enterOverview(page);
@@ -343,11 +332,8 @@ test.describe('overview: the cards', () => {
     await review.click();
     await expect(page).toHaveURL(
       (url) => url.pathname === `/admin/approvals/users/${OVERVIEW.halima}`,
-      { timeout: FIRST_HIT },
     );
-    await expect(page.getByRole('heading', { level: 1, name: 'Halima Odhiambo' })).toBeVisible({
-      timeout: FIRST_HIT,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Halima Odhiambo' })).toBeVisible();
   });
 
   test('opens an event from the activity', async ({ context, page }, testInfo) => {
@@ -363,11 +349,8 @@ test.describe('overview: the cards', () => {
     await expect(page).toHaveURL(
       (url) =>
         url.pathname === '/admin/audit' && url.searchParams.get('event') === OVERVIEW.welcomeEvent,
-      { timeout: FIRST_HIT },
     );
-    await expect(page.getByRole('dialog', { name: 'Sent welcome email' })).toBeVisible({
-      timeout: FIRST_HIT,
-    });
+    await expect(page.getByRole('dialog', { name: 'Sent welcome email' })).toBeVisible();
   });
 
   // At 375 px each summary entry wraps its link under its sentence: the next entry must sit at least
@@ -458,8 +441,6 @@ const SURFACES = [
 ] as const;
 
 test.describe('overview: accessibility', () => {
-  test.describe.configure({ timeout: 60000 });
-
   for (const surface of SURFACES) {
     for (const a11yCase of A11Y_CASES) {
       test(`has no serious or critical violations: ${surface.label} (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({

@@ -11,10 +11,6 @@ const ORGANISATION_ID = '11111111-1111-4111-8111-111111111111';
 const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
 
 test.describe('Authenticated context selection', () => {
-  // /profile and /select-context can be the first hit of their route tree under a cold `next dev`
-  // compile.
-  test.describe.configure({ timeout: 60000 });
-
   test('stops authenticated profile access at shell-free /select-context', async ({
     context,
     page,
@@ -23,10 +19,8 @@ test.describe('Authenticated context selection', () => {
 
     await page.goto('/profile');
 
-    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/, { timeout: 20000 });
-    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/);
+    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
     await expect(page.getByRole('banner')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Users', exact: true })).toHaveCount(0);
   });
@@ -37,7 +31,7 @@ test.describe('Authenticated context selection', () => {
   }, testInfo) => {
     await authenticate(context, testInfo);
     await page.goto('/profile');
-    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/, { timeout: 20000 });
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/);
 
     const organisationRequest = page.waitForRequest(
       sameOriginRequest(testInfo, '/api/context/organisation', 'POST'),
@@ -54,7 +48,7 @@ test.describe('Authenticated context selection', () => {
 
     expect((await organisationResponse).status()).toBe(200);
     expect((await branchResponse).status()).toBe(200);
-    await expect(page.getByRole('combobox', { name: 'Branch' })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('combobox', { name: 'Branch' })).toBeVisible();
 
     const branchRequest = page.waitForRequest(
       sameOriginRequest(testInfo, '/api/context/branch', 'POST'),
@@ -63,9 +57,9 @@ test.describe('Authenticated context selection', () => {
     const branchPost = await branchRequest;
     expect(branchPost.postDataJSON()).toEqual({ branch_id: BRANCH_ID });
 
-    await expect(page).toHaveURL(/\/profile$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/profile$/);
     const banner = page.getByRole('banner');
-    await expect(banner.getByText('Administration')).toBeVisible({ timeout: 15000 });
+    await expect(banner.getByText('Administration')).toBeVisible();
     await expect(banner.getByText('Greenfield SACCO')).toBeVisible();
     await expect(banner.getByText('Head Office')).toBeVisible();
     const main = page.getByRole('main');
@@ -98,13 +92,10 @@ test.describe('Authenticated context selection', () => {
     await authenticate(context, testInfo, 'selection-forbidden');
     await page.goto('/select-context');
 
-    // The 403 response can be slow under a cold `next dev` compile of the route handler, so wait
-    // for it explicitly rather than trusting the alert to render inside the default assertion
-    // timeout (see the equivalent wait in the success-path test above).
-    const organisationResponse = page.waitForResponse(
-      (response) =>
-        sameOriginRequest(testInfo, '/api/context/organisation', 'POST')(response.request()),
-      { timeout: 20000 },
+    // Wait for the 403 response itself, then for the alert it produces (see the equivalent wait in
+    // the success-path test above).
+    const organisationResponse = page.waitForResponse((response) =>
+      sameOriginRequest(testInfo, '/api/context/organisation', 'POST')(response.request()),
     );
     await selectMuiOption(page, 'Organisation', /Greenfield SACCO/);
     expect((await organisationResponse).status()).toBe(403);
@@ -128,10 +119,8 @@ test.describe('Authenticated context selection', () => {
 
     await page.goto('/profile');
 
-    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/, { timeout: 20000 });
-    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page).toHaveURL(/\/select-context\?next=%2Fprofile$/);
+    await expect(page.getByRole('heading', { name: 'Select your context' })).toBeVisible();
     await expect(page.getByRole('banner')).toHaveCount(0);
     await expect(page.getByText('Backend Jane Manager')).toHaveCount(0);
   });

@@ -21,9 +21,6 @@ async function reset(page: Page, label: string) {
 }
 
 test.describe('settings', () => {
-  // /admin/settings can be the first hit of its route tree under a cold `next dev` compile.
-  test.describe.configure({ timeout: 60000 });
-
   test('shows the catalogue in groups, honest read-only labels, and collapsed extras', async ({
     context,
     page,
@@ -151,8 +148,6 @@ test.describe('settings', () => {
   });
 
   test.describe('accessibility', () => {
-    test.describe.configure({ timeout: 90000 });
-
     for (const a11yCase of A11Y_CASES) {
       test(`has no serious a11y violations (${a11yCase.colorScheme}, ${a11yCase.label}; extras and dialog open)`, async ({
         context,

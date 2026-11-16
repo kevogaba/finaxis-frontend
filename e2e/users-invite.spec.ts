@@ -36,13 +36,6 @@ const USERNAME_IN_USE = 'This username belongs to someone in this institution.';
 
 const RECORD = /\/admin\/users\/[0-9a-f-]{36}$/;
 
-/** A route's first hit compiles under a cold `next dev` (the "Compiling" indicator), which takes
- * tens of seconds. Used where a first hit can come in any order: each wizard visit and each
- * matrix surface's first visit, the email check's first answer with the Identity step that issues
- * it, and the record a send opens. Warm, these waits resolve in well under a second; the bound only
- * matters when they fail. */
-const FIRST_HIT = 45000;
-
 interface Identity {
   name: string;
   email: string;
@@ -55,21 +48,18 @@ const NEEMA: Identity = {
   username: 'neema.wanjiku',
 };
 
-/** enterAdmin's steps with FIRST_HIT bounds: a test's first visit to a page can be its
- * route's first hit under a cold `next dev`. */
-async function enterFirstHit(page: Page, path: string, heading: string) {
+/** An invite page at institution level (All branches), entered through context selection. */
+async function enterAtInstitution(page: Page, path: string, heading: string) {
   await page.goto(path);
   await selectMuiOption(page, 'Organisation', /Greenfield/);
   await selectMuiOption(page, 'Branch', ALL_BRANCHES);
-  await expect(page).toHaveURL((url) => url.pathname === path, { timeout: FIRST_HIT });
-  await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible({
-    timeout: FIRST_HIT,
-  });
+  await expect(page).toHaveURL((url) => url.pathname === path);
+  await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
 }
 
 /** The wizard as the first navigation of a test, once React owns its Continue. */
 async function openWizard(page: Page) {
-  await enterFirstHit(page, '/admin/users/new', 'Invite user');
+  await enterAtInstitution(page, '/admin/users/new', 'Invite user');
   await expectHydrated(page.getByRole('button', { name: 'Continue' }));
 }
 
@@ -85,12 +75,10 @@ async function choose(page: Page, scope: Page | Locator, label: string, option: 
 
 const group = (page: Page, name: string) => page.getByRole('group', { name, exact: true });
 
-/** Continue, then wait for the next step's heading. Identity's Continue is a request (the email
- * check) and can be its route's first hit, so the caller passes FIRST_HIT there; the other steps
- * change in the browser and keep the 15 s bound. */
-async function next(page: Page, step: string, timeout = 15000) {
+/** Continue, then wait for the next step's heading. */
+async function next(page: Page, step: string) {
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByRole('heading', { level: 2, name: step })).toBeVisible({ timeout });
+  await expect(page.getByRole('heading', { level: 2, name: step })).toBeVisible();
 }
 
 async function fillIdentity(page: Page, identity: Identity = NEEMA) {
@@ -178,18 +166,12 @@ async function expectFocusStopsClearTheBars(page: Page, step: string, minimum: n
 }
 
 test.describe('users invite: entry and identity', () => {
-  // Each test signs in, selects a context and can be the first hit of a route tree under a cold
-  // `next dev` compile (users.spec.ts uses the same budget).
-  test.describe.configure({ timeout: 90000 });
-
   test('opens the wizard from the directory', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'users-invite');
     await enterAdmin(page, '/admin/users', { heading: 'Users & access', branch: ALL_BRANCHES });
 
     await page.getByRole('link', { name: 'Invite user' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Invite user' })).toBeVisible({
-      timeout: FIRST_HIT,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Invite user' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'Identity' })).toBeVisible();
     await expect(page.getByRole('form', { name: 'Invite user' }).getByRole('listitem')).toHaveCount(
       4,
@@ -209,7 +191,7 @@ test.describe('users invite: entry and identity', () => {
       await expect(page.getByRole('link', { name: 'Invite user' })).toHaveCount(0);
 
       await page.goto('/admin/users/new');
-      await expect(mainText(page, INVITE_FORBIDDEN)).toBeVisible({ timeout: FIRST_HIT });
+      await expect(mainText(page, INVITE_FORBIDDEN)).toBeVisible();
       await expect(page.getByRole('button', { name: 'Continue' })).toHaveCount(0);
     });
   }
@@ -225,24 +207,22 @@ test.describe('users invite: entry and identity', () => {
     // Esther is an ACTIVE member.
     await fillIdentity(page, { ...NEEMA, email: 'esther.njoki@greenfield.example' });
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(email).toHaveAccessibleDescription(ACTIVE_EMAIL, { timeout: FIRST_HIT });
+    await expect(email).toHaveAccessibleDescription(ACTIVE_EMAIL);
     await expect(email).toBeFocused();
     await expect(mainText(page, 'Check these fields: Email.')).toBeVisible();
 
     // Hassan's membership was revoked: his email can never come back (BG-28). Letter case aside.
     await email.fill('Hassan.Ali@greenfield.example');
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(email).toHaveAccessibleDescription(REVOKED_EMAIL, { timeout: 15000 });
+    await expect(email).toHaveAccessibleDescription(REVOKED_EMAIL);
     await expect(page.getByRole('heading', { level: 2, name: 'Identity' })).toBeVisible();
 
     await email.fill(NEEMA.email);
-    await next(page, 'Access', FIRST_HIT);
+    await next(page, 'Access');
   });
 });
 
 test.describe('users invite: sending', () => {
-  test.describe.configure({ timeout: 90000 });
-
   test('refuses what the platform would answer with a 500, before sending (BG-07)', async ({
     context,
     page,
@@ -250,7 +230,7 @@ test.describe('users invite: sending', () => {
     await authenticate(context, testInfo, 'users-invite');
     await openWizard(page);
     await fillIdentity(page);
-    await next(page, 'Access', FIRST_HIT);
+    await next(page, 'Access');
 
     // Only ACTIVE roles and branches are offered: no Loans officer (DISABLED), no Kisumu (pending).
     const roleRow = group(page, 'Role 1');
@@ -296,7 +276,7 @@ test.describe('users invite: sending', () => {
     await authenticate(context, testInfo, 'users-invite');
     await openWizard(page);
     await fillIdentity(page);
-    await next(page, 'Access', FIRST_HIT);
+    await next(page, 'Access');
     await fillAccess(page);
     await page.getByRole('button', { name: 'Add role' }).click();
     const second = group(page, 'Role 2');
@@ -334,10 +314,10 @@ test.describe('users invite: sending', () => {
     await expect(page.getByRole('note')).toHaveText(REVIEW_NOTE);
     // Amina, Brian and Carol await approval (Daniel's approval already ran, BG-11); Jane holds
     // user.approve and user.view but not branch.activate here, so Kisumu doesn't count.
-    await expect(bell(page, 3)).toBeVisible({ timeout: 15000 });
+    await expect(bell(page, 3)).toBeVisible();
     await sendInvitation(page);
 
-    await expect(page).toHaveURL(RECORD, { timeout: FIRST_HIT });
+    await expect(page).toHaveURL(RECORD);
     await expect(page.getByRole('heading', { level: 1, name: NEEMA.name })).toBeVisible();
     await expect(statusChip(page, 'Awaiting approval')).toBeVisible();
     // Jane invited her, so the platform would refuse Jane's approval (BG-02, BG-08).
@@ -346,7 +326,7 @@ test.describe('users invite: sending', () => {
     await expect(approve).toHaveAccessibleDescription(USER_MAKER_CHECKER_BLOCKED);
     // refresh() before the redirect (invite-actions.ts): the shell's bell sits in the layout the
     // redirect keeps, so it must count the new member without a reload.
-    await expect(bell(page, 4)).toBeVisible({ timeout: 15000 });
+    await expect(bell(page, 4)).toBeVisible();
   });
 
   test('keeps every answer after a refusal it can’t check, and sends again safely', async ({
@@ -357,13 +337,13 @@ test.describe('users invite: sending', () => {
     await openWizard(page);
     // Otieno's username belongs to an account in another institution (a 500, BG-07).
     await fillIdentity(page, { ...NEEMA, username: TEXT.takenUsername });
-    await next(page, 'Access', FIRST_HIT);
+    await next(page, 'Access');
     await fillAccess(page);
     await next(page, 'Invitation');
     await next(page, 'Review');
     await sendInvitation(page);
 
-    await expect(mainText(page, INVITE_FAILED)).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, INVITE_FAILED)).toBeVisible();
     await expect(mainText(page, /Reference: [0-9a-f-]{36}/)).toBeVisible();
     await expect(page.getByRole('region', { name: 'Access', exact: true })).toContainText(
       'Teller (TELLER) · Institution (all branches)',
@@ -372,11 +352,11 @@ test.describe('users invite: sending', () => {
     await page.getByRole('button', { name: 'Edit identity' }).click();
     await expect(page.getByRole('textbox', { name: 'Email' })).toHaveValue(NEEMA.email);
     await page.getByRole('textbox', { name: 'Username' }).fill(NEEMA.username);
-    await next(page, 'Access', FIRST_HIT);
+    await next(page, 'Access');
     await next(page, 'Invitation');
     await next(page, 'Review');
     await sendInvitation(page);
-    await expect(page).toHaveURL(RECORD, { timeout: FIRST_HIT });
+    await expect(page).toHaveURL(RECORD);
     await expect(page.getByRole('heading', { level: 1, name: NEEMA.name })).toBeVisible();
   });
 
@@ -389,15 +369,13 @@ test.describe('users invite: sending', () => {
     // Esther, a member here, holds esther.njoki: the platform answers a new email with her
     // username with a 500 (BG-07), and the action then finds her and names the username.
     await fillIdentity(page, { ...NEEMA, username: 'esther.njoki' });
-    await next(page, 'Access', FIRST_HIT);
+    await next(page, 'Access');
     await fillAccess(page);
     await next(page, 'Invitation');
     await next(page, 'Review');
     await sendInvitation(page);
 
-    await expect(page.getByRole('heading', { level: 2, name: 'Identity' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 2, name: 'Identity' })).toBeVisible();
     const username = page.getByRole('textbox', { name: 'Username' });
     await expect(username).toHaveAccessibleDescription(USERNAME_IN_USE);
     await expect(username).toBeFocused();
@@ -417,7 +395,7 @@ test.describe('users invite: sending', () => {
     await page.getByRole('textbox', { name: 'Email' }).fill(NEEMA.email);
     await page.getByRole('textbox', { name: 'Username' }).fill(NEEMA.username);
     await choose(page, page, 'Membership type', 'Auditor');
-    await next(page, 'Access', FIRST_HIT);
+    await next(page, 'Access');
     await choose(page, group(page, 'Role 1'), 'Role', 'Teller (TELLER)');
 
     // Branches are optional for an auditor, but the row the step starts with is unfinished.
@@ -439,13 +417,13 @@ test.describe('users invite: sending', () => {
     await authenticate(context, testInfo, 'users-invite');
     await openWizard(page);
     await fillIdentity(page, { name: 'Rehema W.', email: TEXT.rehemaEmail, username: 'rehema.w' });
-    await next(page, 'Access', FIRST_HIT);
+    await next(page, 'Access');
     await fillAccess(page);
     await next(page, 'Invitation');
     await next(page, 'Review');
     await sendInvitation(page);
 
-    await expect(page).toHaveURL(RECORD, { timeout: FIRST_HIT });
+    await expect(page).toHaveURL(RECORD);
     await expect(page.getByRole('heading', { level: 1, name: TEXT.rehemaName })).toBeVisible();
   });
 
@@ -474,7 +452,7 @@ test.describe('users invite: sending', () => {
         await page.addStyleTag({ content: `html { font-size: ${viewport.text}; }` });
       }
       await fillIdentity(page);
-      await next(page, 'Access', FIRST_HIT);
+      await next(page, 'Access');
       for (const add of ['Add branch', 'Add branch', 'Add role', 'Add role']) {
         await page.getByRole('button', { name: add }).click();
       }
@@ -519,7 +497,7 @@ test.describe('users invite: sending', () => {
     await authenticate(context, testInfo, 'users-invite');
     await openWizard(page);
     await fillIdentity(page);
-    await next(page, 'Access', FIRST_HIT);
+    await next(page, 'Access');
     for (const add of ['Add branch', 'Add branch', 'Add role', 'Add role']) {
       await page.getByRole('button', { name: add }).click();
     }
@@ -621,7 +599,7 @@ const SURFACES: readonly Surface[] = [
     heading: 'Invite user',
     open: async (page) => {
       await fillIdentity(page);
-      await next(page, 'Access', FIRST_HIT);
+      await next(page, 'Access');
       await choose(
         page,
         group(page, 'Branch assignment 1'),
@@ -640,7 +618,7 @@ const SURFACES: readonly Surface[] = [
     heading: 'Invite user',
     open: async (page) => {
       await fillIdentity(page);
-      await next(page, 'Access', FIRST_HIT);
+      await next(page, 'Access');
       await fillAccess(page);
       await next(page, 'Invitation');
     },
@@ -652,7 +630,7 @@ const SURFACES: readonly Surface[] = [
     heading: 'Invite user',
     open: async (page) => {
       await fillIdentity(page);
-      await next(page, 'Access', FIRST_HIT);
+      await next(page, 'Access');
       await fillAccess(page);
       await next(page, 'Invitation');
       await next(page, 'Review');
@@ -666,7 +644,7 @@ const SURFACES: readonly Surface[] = [
     open: async (page) => {
       await fillIdentity(page, { ...NEEMA, email: 'esther.njoki@greenfield.example' });
       await page.getByRole('button', { name: 'Continue' }).click();
-      await expect(mainText(page, ACTIVE_EMAIL)).toBeVisible({ timeout: FIRST_HIT });
+      await expect(mainText(page, ACTIVE_EMAIL)).toBeVisible();
     },
   },
   {
@@ -676,12 +654,12 @@ const SURFACES: readonly Surface[] = [
     heading: 'Invite user',
     open: async (page) => {
       await fillIdentity(page, { ...NEEMA, username: TEXT.takenUsername });
-      await next(page, 'Access', FIRST_HIT);
+      await next(page, 'Access');
       await fillAccess(page);
       await next(page, 'Invitation');
       await next(page, 'Review');
       await sendInvitation(page);
-      await expect(mainText(page, INVITE_FAILED)).toBeVisible({ timeout: 15000 });
+      await expect(mainText(page, INVITE_FAILED)).toBeVisible();
     },
   },
   {
@@ -695,8 +673,6 @@ const SURFACES: readonly Surface[] = [
 // The describe's title is what the two --grep chunks select on ("users invite: accessibility .*\(light"
 // and "…\(dark"): the grep text is the project, file, describe and test titles joined by spaces.
 test.describe('users invite: accessibility', () => {
-  test.describe.configure({ timeout: 60000 });
-
   for (const surface of SURFACES) {
     for (const a11yCase of A11Y_CASES) {
       test(`has no serious or critical violations: ${surface.label} (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
@@ -705,7 +681,7 @@ test.describe('users invite: accessibility', () => {
       }, testInfo) => {
         await applyA11yCase(page, a11yCase);
         await authenticate(context, testInfo, surface.scenario);
-        await enterFirstHit(page, surface.path, surface.heading);
+        await enterAtInstitution(page, surface.path, surface.heading);
         if (surface.open) await surface.open(page);
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);

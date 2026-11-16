@@ -92,9 +92,6 @@ async function expectFocusStopsClearTheBars(page: Page, step: string, minimum: n
 }
 
 test.describe('platform tenants', () => {
-  // Every route here can be the first hit of its tree under a cold `next dev` compile.
-  test.describe.configure({ timeout: 90000 });
-
   test('lists the institutions without the platform organisation, and filters and sorts them through the URL', async ({
     context,
     page,
@@ -110,29 +107,29 @@ test.describe('platform tenants', () => {
 
     await page.getByRole('searchbox', { name: 'Search' }).fill('pwani');
     await page.getByRole('searchbox', { name: 'Search' }).press('Enter');
-    await expect(page).toHaveURL(/q=pwani/, { timeout: 15000 });
+    await expect(page).toHaveURL(/q=pwani/);
     await expect(rowsOf(page, 'Institutions')).toHaveCount(2);
     await expect(mainText(page, '1 institution', { exact: true })).toBeVisible();
 
     // Wait for each cleared render (as branches.spec does): the next push builds on it.
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(mainText(page, '7 institutions')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '7 institutions')).toBeVisible();
     await selectMuiOption(page, 'Country', /^Uganda$/);
-    await expect(page).toHaveURL(/country=UG/, { timeout: 15000 });
+    await expect(page).toHaveURL(/country=UG/);
     await expect(rowsOf(page, 'Institutions')).toHaveCount(2);
     await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Harambee Farmers SACCO');
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(mainText(page, '7 institutions')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '7 institutions')).toBeVisible();
     await selectMuiOption(page, 'Status', /^Suspended$/);
-    await expect(page).toHaveURL(/status=SUSPENDED/, { timeout: 15000 });
+    await expect(page).toHaveURL(/status=SUSPENDED/);
     await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Kilimo Bora SACCO');
 
     await page.getByRole('link', { name: 'Clear filters' }).click();
-    await expect(mainText(page, '7 institutions')).toBeVisible({ timeout: 15000 });
+    await expect(mainText(page, '7 institutions')).toBeVisible();
     const byName = page.getByRole('columnheader', { name: 'Institution', exact: true });
     await byName.getByRole('link').click();
-    await expect(page).toHaveURL(/sortBy=displayName&sortDir=ASC/, { timeout: 15000 });
+    await expect(page).toHaveURL(/sortBy=displayName&sortDir=ASC/);
     await expect(byName).toHaveAttribute('aria-sort', 'ascending');
     await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Acme SACCO');
   });
@@ -157,9 +154,8 @@ test.describe('platform tenants', () => {
       await from.press('Enter');
       await expect(page).toHaveURL(
         (url) => url.searchParams.get('createdFrom') === '2026-08-15T00:00:00.000Z',
-        { timeout: 15000 },
       );
-      await expect(mainText(page, '4 institutions')).toBeVisible({ timeout: 15000 });
+      await expect(mainText(page, '4 institutions')).toBeVisible();
       await expect(rowsOf(page, 'Institutions')).toHaveCount(5); // header + 4
       await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Umoja Teachers SACCO');
       await expect(rowsOf(page, 'Institutions').nth(4)).toContainText('Pwani Fishermen SACCO');
@@ -176,9 +172,8 @@ test.describe('platform tenants', () => {
         (url) =>
           url.searchParams.get('createdFrom') === '2026-08-15T00:00:00.000Z' &&
           url.searchParams.get('createdTo') === '2026-09-03T08:00:59.999Z',
-        { timeout: 15000 },
       );
-      await expect(mainText(page, '2 institutions')).toBeVisible({ timeout: 15000 });
+      await expect(mainText(page, '2 institutions')).toBeVisible();
       await expect(rowsOf(page, 'Institutions')).toHaveCount(3); // header + 2
       await expect(rowsOf(page, 'Institutions').nth(1)).toContainText('Mwangaza Savings SACCO');
       await expect(rowsOf(page, 'Institutions').nth(2)).toContainText('Pwani Fishermen SACCO');
@@ -189,7 +184,7 @@ test.describe('platform tenants', () => {
       );
       await expect(page.getByLabel('Created to', { exact: true })).toHaveValue('2026-09-03T08:00');
       await page.getByRole('link', { name: 'Clear filters' }).click();
-      await expect(mainText(page, '7 institutions')).toBeVisible({ timeout: 15000 });
+      await expect(mainText(page, '7 institutions')).toBeVisible();
       await expect(page).toHaveURL(
         (url) => !url.searchParams.has('createdFrom') && !url.searchParams.has('createdTo'),
       );
@@ -218,7 +213,7 @@ test.describe('platform tenants', () => {
       '/platform-admin/tenants/16000000-0000-4000-8000-0000000000ff/amend',
     ]) {
       await page.goto(path);
-      await expect(notFoundHeading(page), path).toBeVisible({ timeout: 15000 });
+      await expect(notFoundHeading(page), path).toBeVisible();
       await expect(page).toHaveURL((url) => url.pathname === path);
       await expect(page.getByRole('textbox', { name: 'Tenant code' })).toHaveCount(0);
       await expect(page.getByRole('tab', { name: 'Overview' })).toHaveCount(0);
@@ -232,9 +227,9 @@ test.describe('platform tenants', () => {
     await authenticate(context, testInfo, 'platform-tenants');
     await openDirectory(page);
     await page.getByRole('link', { name: 'Create tenant draft' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Create tenant draft' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Create tenant draft' }),
+    ).toBeVisible();
 
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(
@@ -258,9 +253,7 @@ test.describe('platform tenants', () => {
 
     // BG-07: the create fails with the 500, the directory confirms the code, and the wizard
     // returns to its step.
-    await expect(page.getByRole('heading', { level: 2, name: 'Institution' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 2, name: 'Institution' })).toBeVisible();
     await expect(mainText(page, 'This code is already in use.')).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Tenant code' })).toBeFocused();
 
@@ -269,14 +262,14 @@ test.describe('platform tenants', () => {
     await next(page, 'Initial settings');
     await next(page, 'Review');
     await page.getByRole('button', { name: 'Create draft' }).click();
-    await expect(page).toHaveURL(/\/platform-admin\/tenants\/[0-9a-f-]{36}$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/platform-admin\/tenants\/[0-9a-f-]{36}$/);
     await expect(
       page.getByRole('heading', { level: 1, name: 'Tujenge Traders SACCO' }),
     ).toBeVisible();
     await expect(statusChip(page, 'Draft')).toBeVisible();
 
     await expect(await act(page, 'Submit for approval')).toBeHidden();
-    await expect(statusChip(page, 'Pending approval')).toBeVisible({ timeout: 15000 });
+    await expect(statusChip(page, 'Pending approval')).toBeVisible();
     // Jane created and submitted it, so the platform refuses her approval (BG-08).
     const refused = await act(page, 'Approve');
     await expect(refused.getByRole('alert')).toContainText('created or submitted the request');
@@ -299,7 +292,7 @@ test.describe('platform tenants', () => {
     await expect(page.getByRole('button', { name: 'Suspend', exact: true })).toBeFocused();
 
     await page.getByRole('tab', { name: 'Provisioning' }).click();
-    await expect(page).toHaveURL(/\/provisioning$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/provisioning$/);
     const steps = page.getByRole('list', { name: 'Provisioning steps' }).getByRole('listitem');
     await expect(steps.nth(2)).toContainText('Done');
     await expect(steps.nth(3)).toContainText('In progress');
@@ -369,7 +362,7 @@ test.describe('platform tenants', () => {
     await openDirectory(page);
     await openRecord(page, 'Institutions', 'Pwani Fishermen SACCO');
     await page.getByRole('tab', { name: 'Provisioning' }).click();
-    await expect(page).toHaveURL(/\/provisioning$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/provisioning$/);
     await expect(mainText(page, 'KEYCLOAK_UNAVAILABLE')).toBeVisible();
 
     await expect(await act(page, 'Retry bootstrap')).toBeHidden();
@@ -397,7 +390,7 @@ test.describe('platform tenants', () => {
     await page.getByRole('link', { name: 'Amend draft' }).click();
     await expect(
       page.getByRole('heading', { level: 1, name: 'Amend Umoja Teachers SACCO' }),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Tenant code' })).toHaveAttribute(
       'readonly',
       '',
@@ -415,7 +408,6 @@ test.describe('platform tenants', () => {
 
     await expect(page).toHaveURL(
       new RegExp(`/platform-admin/tenants/${TENANT_SCENARIO_IDS.umoja}$`),
-      { timeout: 15000 },
     );
     await expect(
       page.getByRole('heading', { level: 1, name: 'Umoja Teachers Co-operative SACCO' }),
@@ -434,7 +426,7 @@ test.describe('platform tenants', () => {
     await page.goto(`/platform-admin/tenants/${TENANT_SCENARIO_IDS.pwani}/amend`);
     await expect(
       page.getByRole('heading', { level: 1, name: 'Amend Pwani Fishermen SACCO' }),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
     await expect(mainText(page, 'Only a draft can be amended', { exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Tenant code' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Save draft' })).toHaveCount(0);
@@ -442,13 +434,10 @@ test.describe('platform tenants', () => {
     await page.getByRole('link', { name: 'Back to the record' }).click();
     await expect(page).toHaveURL(
       (url) => url.pathname === `/platform-admin/tenants/${TENANT_SCENARIO_IDS.pwani}`,
-      {
-        timeout: 15000,
-      },
     );
     await expect(
       page.getByRole('heading', { level: 1, name: 'Pwani Fishermen SACCO' }),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
   });
 
   test('sends a stale platform context to context selection and back to the same tab (index item 1)', async ({
@@ -460,12 +449,12 @@ test.describe('platform tenants', () => {
     const tab = `/platform-admin/tenants/${TENANT_SCENARIO_IDS.pwani}/provisioning`;
 
     await page.goto(tab);
-    await expect(page).toHaveURL(/\/select-context\?next=/, { timeout: 20000 });
+    await expect(page).toHaveURL(/\/select-context\?next=/);
     await selectMuiOption(page, 'Organisation', /Platform/);
-    await expect(page).toHaveURL((url) => url.pathname === tab, { timeout: 15000 });
+    await expect(page).toHaveURL((url) => url.pathname === tab);
     await expect(
       page.getByRole('heading', { level: 1, name: 'Pwani Fishermen SACCO' }),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Provisioning' })).toHaveAttribute(
       'aria-selected',
       'true',
@@ -484,20 +473,16 @@ test.describe('platform tenants', () => {
     await openRecord(page, 'Institutions', 'Acme SACCO');
     await expect(page.getByRole('button', { name: /^(Suspend|Deprovision)$/ })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Provisioning' }).click();
-    await expect(page).toHaveURL(/\/provisioning$/, { timeout: 15000 });
+    await expect(page).toHaveURL(/\/provisioning$/);
     await expect(page.getByRole('list', { name: 'Provisioning steps' })).toBeVisible();
 
     await page.goto('/platform-admin/tenants/new');
-    await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible();
 
     // Acme is ACTIVE, so were the permission check dropped this page would say "Only a draft can be
     // amended" instead: the forbidden state proves tenant.update_draft is checked first.
     await page.goto(`/platform-admin/tenants/${IDS.acme}/amend`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Amend Acme SACCO' })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(page.getByRole('heading', { level: 1, name: 'Amend Acme SACCO' })).toBeVisible();
     await expect(mainText(page, "You don't have permission")).toBeVisible();
     await expect(mainText(page, 'Only a draft can be amended')).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: 'Tenant code' })).toHaveCount(0);
@@ -525,9 +510,7 @@ test.describe('platform tenants', () => {
       await page.goto('/platform-admin/tenants/new');
       await expect(
         page.getByRole('heading', { level: 1, name: 'Create tenant draft' }),
-      ).toBeVisible({
-        timeout: 15000,
-      });
+      ).toBeVisible();
       await expectHydrated(page.getByRole('button', { name: 'Continue' }));
       // Fields keep a readable width on a wide screen, as the branch and role forms do.
       const codeField = await page.getByRole('textbox', { name: 'Tenant code' }).boundingBox();
@@ -556,7 +539,9 @@ test.describe('platform tenants', () => {
       context,
       page,
     }, testInfo) => {
-      test.setTimeout(120000);
+      // Walks every wizard step and the record, scanning each: 14-16 s on the production build at
+      // 4 workers on 4 CPUs, so the 30 s default is too close.
+      test.setTimeout(60000);
       await applyA11yCase(page, a11yCase);
       await authenticate(context, testInfo, 'platform-tenants');
       await openDirectory(page);
@@ -566,7 +551,7 @@ test.describe('platform tenants', () => {
       await page.goto('/platform-admin/tenants/new');
       await expect(
         page.getByRole('heading', { level: 1, name: 'Create tenant draft' }),
-      ).toBeVisible({ timeout: 15000 });
+      ).toBeVisible();
       await expectA11yCaseApplied(page, a11yCase);
       await expectNoSeriousOrCriticalViolations(page);
       // The error summary and the invalid fields; Continue is a client handler.
@@ -595,9 +580,7 @@ test.describe('platform tenants', () => {
         [`/platform-admin/tenants/${IDS.acme}`, 'Acme SACCO'],
       ] as const) {
         await page.goto(path);
-        await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible({
-          timeout: 15000,
-        });
+        await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);
       }
