@@ -241,18 +241,22 @@ test.describe('business date', () => {
 
     // Deterministic server-HTML check (belt-and-braces alongside the console/pageerror
     // listeners above): page.request shares this context's cookies, and before the fix the
-    // Flight payload carries only a client-module reference for the icon, so this needle
-    // appears in the raw response only when SSR actually rendered it. Scoped to a window around
-    // the chip's own (unique) accessible name, not a `<header>`…`</header>` tag slice: the
-    // indicator is inside a `<Suspense fallback={null}>` (app/(authenticated)/layout.tsx), so its
-    // real markup streams in out-of-band, later in the same response, not between those tags —
-    // and the hero and the rail link also render an EventOutlinedIcon, so an unscoped needle would
-    // still pass even if the chip's own icon lost SSR.
+    // Flight payload carries only a client-module reference for the icon, so MUI drops it and the
+    // chip's server markup has no icon. Scoped to the chip's own element — the anchor carrying its
+    // (unique) accessible name — not a `<header>`…`</header>` tag slice: the indicator is inside a
+    // `<Suspense fallback={null}>` (app/(authenticated)/layout.tsx), so its real markup streams in
+    // out-of-band, later in the same response, not between those tags — and the hero and the rail
+    // link also render a calendar icon, so an unscoped needle would still pass even if the chip's
+    // own icon lost SSR. The needle is MUI's chip-icon slot class: a production build carries no
+    // `data-testid` on MUI icons (MUI adds those in development only).
     const pageHtml = await (await page.request.get('/admin/business-date')).text();
-    const chipTextIndex = pageHtml.indexOf('Mon, 7 Sep 2026 · Business date · Open');
-    expect(chipTextIndex).toBeGreaterThan(-1);
-    const chipHtml = pageHtml.slice(Math.max(0, chipTextIndex - 500), chipTextIndex + 500);
-    expect(chipHtml).toContain('data-testid="EventOutlinedIcon"');
+    const chipName = pageHtml.indexOf('aria-label="Mon, 7 Sep 2026 · Business date · Open"');
+    expect(chipName).toBeGreaterThan(-1);
+    const chipHtml = pageHtml.slice(
+      pageHtml.lastIndexOf('<a', chipName),
+      pageHtml.indexOf('</a>', chipName),
+    );
+    expect(chipHtml).toMatch(/<svg [^>]*class="[^"]*\bMuiChip-icon\b/);
 
     await expect(
       page

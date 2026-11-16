@@ -10,6 +10,7 @@ import {
   openRecord,
   rowsOf,
   statusChip,
+  focusClearance,
 } from './support/admin';
 import {
   addCookie,
@@ -58,32 +59,6 @@ async function fillAdministrator(page: Page) {
   await page.getByRole('textbox', { name: 'Username' }).fill('amina.otieno');
   await page.getByRole('textbox', { name: 'Full name' }).fill('Amina Otieno');
   await page.getByRole('textbox', { name: 'Phone' }).fill('+254712000140');
-}
-
-/** The focused control's room above the wizard's sticky action bar and below the sticky app bar. A
- * control closer than 0 is under a bar and, for keyboard users, hidden (WCAG 2.4.11). */
-async function focusClearance(page: Page) {
-  // A frame after the key press: the browser has scrolled the focused control into view.
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
-  return page.evaluate(() => {
-    const focused = document.activeElement;
-    const actionBar = document.querySelector('form button[type="submit"]')?.parentElement;
-    const form = actionBar?.closest('form');
-    const appBar = document.querySelector('header');
-    if (!focused || !actionBar || !form || !appBar) return null;
-    const rect = focused.getBoundingClientRect();
-    const labelled = focused as HTMLInputElement;
-    return {
-      name:
-        focused.getAttribute('aria-label') ??
-        labelled.labels?.[0]?.textContent ??
-        focused.textContent.trim().slice(0, 40),
-      inForm: form.contains(focused),
-      inActionBar: actionBar.contains(focused),
-      belowAppBar: rect.top - appBar.getBoundingClientRect().bottom,
-      aboveActionBar: actionBar.getBoundingClientRect().top - rect.bottom,
-    };
-  });
 }
 
 /** Tabs from a step's heading to the action bar, then Shift+Tabs back out of the form: every stop

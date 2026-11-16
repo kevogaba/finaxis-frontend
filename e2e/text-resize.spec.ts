@@ -31,7 +31,10 @@ async function openWizard(page: Page) {
 async function problems(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const found: string[] = [];
-    const header = document.querySelector('header');
+    // The live page only: a production build's streamed Suspense segments can briefly hold a
+    // hidden copy of the page (`[hidden]`), whose header has no visible controls to check.
+    const isLive = (node: Element) => !node.closest('[hidden]');
+    const header = Array.from(document.querySelectorAll('header')).find(isLive);
     if (!header) return ['no header'];
 
     const controls = Array.from(
@@ -81,7 +84,7 @@ async function problems(page: Page): Promise<string[]> {
     }
 
     // 4. Every step shows its whole label.
-    for (const step of Array.from(document.querySelectorAll('main .MuiStep-root'))) {
+    for (const step of Array.from(document.querySelectorAll('main .MuiStep-root')).filter(isLive)) {
       const label = step.querySelector('.MuiStepLabel-label');
       if (!label) continue;
       const cell = step.getBoundingClientRect();

@@ -7,6 +7,7 @@ import {
   expectNoSeriousOrCriticalViolations,
   mainText,
   statusChip,
+  focusClearance,
 } from './support/admin';
 import { authenticate, clickMuiOption, expectHydrated, selectMuiOption } from './support/auth';
 import { INVITE_SCENARIO_TEXT as TEXT, type ScenarioName } from './fake-api/scenarios.mts';
@@ -144,32 +145,6 @@ const bell = (page: Page, count: number) =>
     .getByRole('button', { name: `Notifications: ${count} approvals waiting`, exact: true });
 
 // 16's two keyboard helpers (`e2e/platform-tenants.spec.ts`), kept in the spec as 16 keeps them.
-
-/** The focused control's room above the wizard's sticky action bar and below the sticky app bar. A
- * control closer than 0 is under a bar and, for keyboard users, hidden (WCAG 2.4.11). */
-async function focusClearance(page: Page) {
-  // A frame after the key press: the browser has scrolled the focused control into view.
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
-  return page.evaluate(() => {
-    const focused = document.activeElement;
-    const actionBar = document.querySelector('form button[type="submit"]')?.parentElement;
-    const form = actionBar?.closest('form');
-    const appBar = document.querySelector('header');
-    if (!focused || !actionBar || !form || !appBar) return null;
-    const rect = focused.getBoundingClientRect();
-    const labelled = focused as HTMLInputElement;
-    return {
-      name:
-        focused.getAttribute('aria-label') ??
-        labelled.labels?.[0]?.textContent ??
-        focused.textContent.trim().slice(0, 40),
-      inForm: form.contains(focused),
-      inActionBar: actionBar.contains(focused),
-      belowAppBar: rect.top - appBar.getBoundingClientRect().bottom,
-      aboveActionBar: actionBar.getBoundingClientRect().top - rect.bottom,
-    };
-  });
-}
 
 /** Tabs from a step's heading to the action bar, then Shift+Tabs back out of the form: every stop
  * clears both sticky bars, and the walk covers at least `minimum` stops. */
