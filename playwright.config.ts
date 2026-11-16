@@ -17,17 +17,20 @@ export default defineConfig({
   testIgnore: [/keycloak-smoke\.spec\.ts/, /[\\/]e2e[\\/]guard[\\/]/],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  // One retry on CI, kept to capture a trace (`trace: 'on-first-retry'`), and a test that needed
-  // it fails the run: a flaky test is a failure to fix, never a pass.
+  // One retry on CI: it tells a flaky test from a hard failure and records a trace
+  // (`trace: 'on-first-retry'`), and a test that needed it fails the run — a flaky test is a
+  // failure to fix, never a pass.
   retries: process.env.CI ? 1 : 0,
   failOnFlakyTests: !!process.env.CI,
-  // One worker per logical CPU (2 on a 2-CPU machine, 4 on CI's 4-vCPU runner, 8 on an 8-CPU
-  // laptop). Each test owns its fake-API run, and the production server has no on-demand compile
-  // for workers to contend for — the reason this was once pinned to 1 on `next dev`.
-  // Measured on a 4-CPU, 16 GB machine (CI's runner shape) against the production build, with CI
-  // settings: 4 workers ran the full suite in 8.3, 7.7 and 7.6 min (504 passed, none flaky), 3
-  // workers in 8.4 min, 1 worker in 19.7 min.
-  workers: '100%',
+  // One worker per logical CPU against the production build (2 on a 2-CPU machine, 4 on CI's
+  // 4-vCPU runner, 8 on an 8-CPU laptop; `--workers=N` lowers it). Each test owns its fake-API run,
+  // and the production server has no on-demand compile for workers to contend for. `next dev`
+  // (E2E_DEV_SERVER=1) has one, so it keeps a single worker: at 4 its clicks slowed to 1.1-1.7 s
+  // and audit.spec timed out.
+  // Measured on a 4-CPU, 16 GB machine with CI=1 but video off and an older local Chromium (build
+  // 1243): 4 workers ran the full suite in 8.3, 7.7 and 7.6 min (504 passed, none flaky), 3 in
+  // 8.4 min, 1 in 19.7 min. On CI, 1 worker took 16.6 min.
+  workers: process.env.E2E_DEV_SERVER === '1' ? 1 : '100%',
   reporter: [['html', { open: 'never' }]],
   use: {
     baseURL,
