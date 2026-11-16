@@ -123,7 +123,11 @@ honours a dotted `color`.
   `@playwright/test` pins (`pnpm exec playwright install --with-deps chromium`), runs the guard
   (`pnpm test:e2e:guard`), builds the e2e flavour (`pnpm build:e2e`) and runs
   `pnpm exec playwright test` headless, which is Playwright's `chromium-headless-shell`, with
-  `CI=true` (two retries, servers never reused).
+  `CI=true`: servers never reused, and one retry — it tells a flaky test from a hard failure and
+  records a trace, and a test that needed it fails the run (`failOnFlakyTests`). Locally and on CI
+  the suite runs one worker per CPU against the production build (`--workers=N` lowers it on a
+  machine with many CPUs); with `E2E_DEV_SERVER=1` it runs one worker, as `next dev` compiles on
+  demand.
   Another Chromium (an older installed build, or a full Chrome through `channel` or
   `executablePath`) lays out buttons and text a few pixels differently, so a layout-sensitive test
   can pass there and fail on CI. To see what CI sees, install the pinned build and run
