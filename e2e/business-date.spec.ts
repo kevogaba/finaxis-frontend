@@ -268,8 +268,13 @@ test.describe('business date', () => {
       .getByRole('link', { name: 'Mon, 7 Sep 2026 · Business date · Open' });
     await expect(chip).toBeVisible();
     // The production signal of a mismatch: the hydrated chip no longer says what the server sent,
-    // because React replaced the server's markup with its own client render.
-    const serverText = chipHtml.replace(/<[^>]*>/g, '');
+    // because React replaced the server's markup with its own client render. The server's text is
+    // read by the browser's own HTML parser (inert: a parsed document runs nothing), not by
+    // stripping tags by hand.
+    const serverText = await page.evaluate(
+      (html) => new DOMParser().parseFromString(html, 'text/html').body.textContent,
+      chipHtml,
+    );
     expect(await chip.textContent()).toBe(serverText);
 
     // Prove hydration actually ran (not just that the server HTML rendered).
