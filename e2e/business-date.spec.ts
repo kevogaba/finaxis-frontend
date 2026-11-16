@@ -225,14 +225,19 @@ test.describe('business date', () => {
     await authenticate(context, testInfo);
     await enter(page);
 
+    // These listeners catch a mismatch on `next dev` (E2E_DEV_SERVER=1), which words it
+    // ("Hydration failed…"). A production build reports nothing at all: React recovers silently by
+    // client-rendering the mismatched subtree, so the content check after the reload is what
+    // catches it there.
+    const hydrationError = /hydrat|Minified React error #(418|419|422|423|425)\b/i;
     const hydrationErrors: string[] = [];
     page.on('console', (message) => {
-      if (message.type() === 'error' && /hydrat/i.test(message.text())) {
+      if (message.type() === 'error' && hydrationError.test(message.text())) {
         hydrationErrors.push(message.text());
       }
     });
     page.on('pageerror', (error) => {
-      if (/hydrat/i.test(error.message)) hydrationErrors.push(error.message);
+      if (hydrationError.test(error.message)) hydrationErrors.push(error.message);
     });
 
     // A full document load, unlike the client navigation enter() ends on, is what hydrates
@@ -241,24 +246,36 @@ test.describe('business date', () => {
 
     // Deterministic server-HTML check (belt-and-braces alongside the console/pageerror
     // listeners above): page.request shares this context's cookies, and before the fix the
-    // Flight payload carries only a client-module reference for the icon, so this needle
-    // appears in the raw response only when SSR actually rendered it. Scoped to a window around
-    // the chip's own (unique) accessible name, not a `<header>`…`</header>` tag slice: the
-    // indicator is inside a `<Suspense fallback={null}>` (app/(authenticated)/layout.tsx), so its
-    // real markup streams in out-of-band, later in the same response, not between those tags —
-    // and the hero and the rail link also render an EventOutlinedIcon, so an unscoped needle would
-    // still pass even if the chip's own icon lost SSR.
+    // Flight payload carries only a client-module reference for the icon, so MUI drops it and the
+    // chip's server markup has no icon. Scoped to the chip's own element — the anchor carrying its
+    // (unique) accessible name — not a `<header>`…`</header>` tag slice: the indicator is inside a
+    // `<Suspense fallback={null}>` (app/(authenticated)/layout.tsx), so its real markup streams in
+    // out-of-band, later in the same response, not between those tags — and the hero and the rail
+    // link also render a calendar icon, so an unscoped needle would still pass even if the chip's
+    // own icon lost SSR. The needle is MUI's chip-icon slot class: a production build carries no
+    // `data-testid` on MUI icons (MUI adds those in development only).
     const pageHtml = await (await page.request.get('/admin/business-date')).text();
-    const chipTextIndex = pageHtml.indexOf('Mon, 7 Sep 2026 · Business date · Open');
-    expect(chipTextIndex).toBeGreaterThan(-1);
-    const chipHtml = pageHtml.slice(Math.max(0, chipTextIndex - 500), chipTextIndex + 500);
-    expect(chipHtml).toContain('data-testid="EventOutlinedIcon"');
+    const chipName = pageHtml.indexOf('aria-label="Mon, 7 Sep 2026 · Business date · Open"');
+    expect(chipName).toBeGreaterThan(-1);
+    const chipHtml = pageHtml.slice(
+      pageHtml.lastIndexOf('<a', chipName),
+      pageHtml.indexOf('</a>', chipName),
+    );
+    expect(chipHtml).toMatch(/<svg [^>]*class="[^"]*\bMuiChip-icon\b/);
 
-    await expect(
-      page
-        .getByRole('banner')
-        .getByRole('link', { name: 'Mon, 7 Sep 2026 · Business date · Open' }),
-    ).toBeVisible();
+    const chip = page
+      .getByRole('banner')
+      .getByRole('link', { name: 'Mon, 7 Sep 2026 · Business date · Open' });
+    await expect(chip).toBeVisible();
+    // The production signal of a mismatch: the hydrated chip no longer says what the server sent,
+    // because React replaced the server's markup with its own client render. The server's text is
+    // read by the browser's own HTML parser (inert: a parsed document runs nothing), not by
+    // stripping tags by hand.
+    const serverText = await page.evaluate(
+      (html) => new DOMParser().parseFromString(html, 'text/html').body.textContent,
+      chipHtml,
+    );
+    expect(await chip.textContent()).toBe(serverText);
 
     // Prove hydration actually ran (not just that the server HTML rendered).
     await hero(page).getByRole('button', { name: 'Start close of business', exact: true }).click();

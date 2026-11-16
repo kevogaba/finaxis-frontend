@@ -86,6 +86,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     '.next/**',
+    // The e2e flavour of the production build (`pnpm build:e2e`):
+    '.next-e2e/**',
     'out/**',
     'build/**',
     'next-env.d.ts',

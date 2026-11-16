@@ -32,6 +32,7 @@ export default defineConfig({
     exclude: [
       'node_modules/**',
       '.next/**',
+      '.next-e2e/**',
       'e2e/**',
       'playwright-report/**',
       'test-results/**',

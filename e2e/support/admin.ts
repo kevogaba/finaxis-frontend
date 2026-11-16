@@ -114,3 +114,38 @@ export async function expectA11yCaseApplied(page: Page, a11yCase: A11yCase): Pro
     ).toBe(false);
   }
 }
+
+/**
+ * The focused control's room above the wizard's sticky action bar and below the sticky app bar. A
+ * control closer than 0 is under a bar and, for keyboard users, hidden (WCAG 2.4.11).
+ *
+ * The bars come from the live page, never the document's first match: for about a second after
+ * hydration, a production build's streamed Suspense segments can still hold a hidden copy of the
+ * page (a `[hidden]` element with its own header and form), and a first-match query that lands in
+ * it reads every real focus stop as outside the form.
+ */
+export async function focusClearance(page: Page) {
+  // A frame after the key press: the browser has scrolled the focused control into view.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  return page.evaluate(() => {
+    const live = (selector: string) =>
+      Array.from(document.querySelectorAll(selector)).find((node) => !node.closest('[hidden]'));
+    const focused = document.activeElement;
+    const actionBar = live('form button[type="submit"]')?.parentElement;
+    const form = actionBar?.closest('form');
+    const appBar = live('header');
+    if (!focused || !actionBar || !form || !appBar) return null;
+    const rect = focused.getBoundingClientRect();
+    const labelled = focused as HTMLInputElement;
+    return {
+      name:
+        focused.getAttribute('aria-label') ??
+        labelled.labels?.[0]?.textContent ??
+        focused.textContent.trim().slice(0, 40),
+      inForm: form.contains(focused),
+      inActionBar: actionBar.contains(focused),
+      belowAppBar: rect.top - appBar.getBoundingClientRect().bottom,
+      aboveActionBar: actionBar.getBoundingClientRect().top - rect.bottom,
+    };
+  });
+}

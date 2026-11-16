@@ -44,6 +44,38 @@ describe('e2e test mode', () => {
     },
   );
 
+  it('stays inert in a production build without the e2e build switch, even with the runtime flag', () => {
+    vi.stubEnv('FINAXIS_E2E_TEST_MODE', '1');
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('FINAXIS_E2E_BUILD', '');
+
+    expect(getE2eAuthenticatedUser(headersWith(session))).toBeNull();
+    expect(getE2eAccessToken(headersWith(session))).toBeNull();
+    expect(getE2eBetterAuthSession(headersWith(session))).toBeNull();
+  });
+
+  it('turns on in the e2e production build only with the runtime flag too', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('FINAXIS_E2E_BUILD', '1');
+    vi.stubEnv('FINAXIS_E2E_TEST_MODE', '1');
+
+    expect(getE2eAuthenticatedUser(headersWith(session))?.id).toBe('e2e-session-user');
+    expect(
+      getE2eAccessToken(headersWith({ ...session, [E2E_RUN_COOKIE_NAME]: 'default.abc' })),
+    ).toBe('e2e.default.abc');
+
+    vi.stubEnv('FINAXIS_E2E_TEST_MODE', '0');
+    expect(getE2eAuthenticatedUser(headersWith(session))).toBeNull();
+  });
+
+  it.each(['true', 'yes', ' 1'])('treats a non-"1" build switch (%j) as off', (value) => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('FINAXIS_E2E_BUILD', value);
+    vi.stubEnv('FINAXIS_E2E_TEST_MODE', '1');
+
+    expect(getE2eAuthenticatedUser(headersWith(session))).toBeNull();
+  });
+
   it('requires the e2e session cookie', () => {
     vi.stubEnv('FINAXIS_E2E_TEST_MODE', '1');
 
