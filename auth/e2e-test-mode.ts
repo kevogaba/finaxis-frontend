@@ -32,8 +32,18 @@ export interface E2eBetterAuthSession {
   };
 }
 
+/**
+ * The bypass needs two keys: the runtime flag, and either a non-production server (`next dev`) or
+ * the e2e build. `FINAXIS_E2E_BUILD` is inlined by `next.config.ts`'s `compiler.defineServer` when
+ * the build is made (`pnpm build:e2e`), so in every normal production build it is an empty string
+ * literal and no runtime environment can turn the bypass on. Each read stays a literal
+ * `process.env.X` access: that is the form the build replaces.
+ */
 function isE2eTestMode(): boolean {
-  return process.env.FINAXIS_E2E_TEST_MODE === '1' && process.env.NODE_ENV !== 'production';
+  return (
+    process.env.FINAXIS_E2E_TEST_MODE === '1' &&
+    (process.env.NODE_ENV !== 'production' || process.env.FINAXIS_E2E_BUILD === '1')
+  );
 }
 
 function cookieValue(headers: Headers, name: string): string | null {
