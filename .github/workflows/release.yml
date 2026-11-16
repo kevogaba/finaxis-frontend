@@ -69,8 +69,17 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
+      # The normal production build must send a bypass session to /login whatever its runtime
+      # environment (docs/authentication/security.md).
+      - name: Check the production build ignores the e2e bypass
+        run: pnpm test:e2e:guard
+
+      - name: Build for end-to-end tests
+        run: pnpm build:e2e
+
+      # Not `pnpm test:e2e`, which would build again.
       - name: End-to-end tests
-        run: pnpm test:e2e
+        run: pnpm exec playwright test
 
       - name: Upload Playwright report
         if: failure()
