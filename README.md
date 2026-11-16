@@ -407,11 +407,14 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   bar for the share ready) and Recent activity (the latest audit events, up to five, each opening
   in the audit trail). A failed read shows in its own card, with its reference; when no card
   applies, one note under the heading says so. Known limits:
-  - Readiness is five fixed rules over live reads (spec §10.8), not a close-of-business check
-    (`docs/backend-gaps.md` BG-21); its counts are `size=1` reads (BG-15).
+  - Readiness is five fixed rules over live reads (spec §10.8), not the platform's
+    close-of-business readiness check, which the UI doesn't read yet (`docs/backend-gaps.md`
+    BG-21); its counts are `size=1` reads (BG-15).
   - Institution profile reads the stored `default_timezone` and `base_currency` settings: a tenant
-    created without them shows Needs attention and says settings can't be saved yet (BG-04).
-  - People needs two active members, so someone other than the requester can approve (BG-02).
+    created without them shows Needs attention and says settings can't be saved yet, since the
+    UI's editing is still off (BG-04).
+  - People needs two active members, so someone other than the requester can approve. It doesn't
+    count the platform's onboarding checker or the institution's maker-checker switches (BG-02).
   - Identities still provisioning are noted apart and never listed as waiting (BG-11): the users
     preview reads past them (one read of at most 100), so it lists up to five requests waiting for
     a decision, and the queue holds the rest.
@@ -420,13 +423,17 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   tab paged in the URL and counted in its label, and opens a page per request with who asked and
   when, the requested access (a user's) or the branch, control checks and a decision bar. The app
   bar's bell counts the same approvals. Known limits:
-  - There is no approval-request model: no return for changes, resubmission, branch rejection or
-    remarks on Approve (`docs/backend-gaps.md` BG-01).
+  - There is no return for changes, resubmission, branch rejection or remark on Approve. The
+    platform now has branch return and withdraw, tenant return and an optional approval remark,
+    which the UI doesn't use yet, but still no approval-request model (`docs/backend-gaps.md`
+    BG-01).
   - User onboarding's "Newest first" is the users endpoint's own order, by when each account was
     created (BG-09): an invitation that reused an existing account sorts by that account's age.
-  - The maker comes from the audit log, so without `audit.view` (or when that read fails) Approve
-    and Activate stay on offer, the check reads "Verified by the platform on approval", and a
-    refusal is explained as permission or maker-checker (BG-08).
+  - The maker comes from the audit log, not yet from the platform's `created_by`, so without
+    `audit.view` (or when that read fails) Approve and Activate stay on offer and the check reads
+    "Verified by the platform on approval". A refusal is explained as permission or maker-checker
+    only for `forbidden`; the platform now gives maker-checker refusals their own codes, which
+    get the generic permission message (BG-08).
   - Each decision re-reads its subject and refuses before any write when it is no longer waiting
     (decided, or approved into identity provisioning), except that each lets its own end state
     through (an active or provisioning membership for Approve, an active branch for Activate, a
@@ -439,13 +446,18 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     revoke has no maker check and doesn't refuse a blocked account, so a blocked account can still
     be rejected, and so can your own invitation.
   - An institution with a single administrator can't approve its own invitees or activate the
-    branches it drafted: another administrator must do both (BG-02).
+    branches it drafted: another administrator must do both. The platform now also lets a
+    platform checker act during onboarding, or the institution switch maker-checker off, but the
+    UI offers neither yet and refuses the maker regardless (BG-02).
   - A user whose identity is still provisioning was already approved: the queue marks them and
     offers no decision (BG-11). Missing prerequisites (a role, a branch) are explained after the
     platform refuses (BG-07).
-  - Activation needs All branches; with a branch selected the queue says so (BG-03). Permission
-    codes carry no scope, so a holder of `branch.activate` at branch scope only is told to switch
-    to All branches, where they don't hold it (BG-33; contract §E.4).
+  - Activation needs All branches; with a branch selected the queue says so, though the platform
+    no longer requires it (BG-03). The queue gates on `branch.activate`, which the platform
+    deprecated for `branch.approve`, so Branch activation is currently hidden from everyone
+    (`docs/backend-gaps.md`, "Backend changes that affect the current UI"). The UI doesn't read
+    `/auth/me`'s permission scopes yet, so a holder at branch scope only is told to switch to All
+    branches, where they don't hold the code (BG-33; contract §E.4).
   - The requested roles show one page of 100 and say so when there are more; branch assignments
     come from the bounded scan (BG-09). The bell has no push updates (BG-22).
 - Business date (`/admin/business-date`, `modules/administration/business-date/`) reads
@@ -455,8 +467,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   shared `ReasonDialog`, gated on its own permission code and `business_date.view`
   (`docs/backend-gaps.md` BG-31), and a 409 lock-timeout response surfaces as a retryable "another
   change is in progress" error without losing the request's idempotency key. Known limits:
-  - No close-of-business readiness checks (the prototype's checklist) — the backend doesn't expose
-    one yet (`docs/backend-gaps.md` BG-21).
+  - No close-of-business readiness checks (the prototype's checklist) — the platform exposes them
+    now, but the page doesn't read them yet (`docs/backend-gaps.md` BG-21).
   - Advancing the date has no upper bound beyond the new date being later than the current
     business date (days can be skipped); the prototype's calendar picker and reason-length
     affordances are a later visual pass.
@@ -466,8 +478,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   (`?actorId=`/`?entityId=`, the latter reachable only via a hand-edited or shared link today).
   Known limits:
   - Only structured filters exist (entity type, entity, action, actor, date range) — no
-    free-text, outcome, severity, branch, or event-type filter, because the backend doesn't
-    expose one yet (`docs/backend-gaps.md` BG-16).
+    free-text, outcome, severity, branch, or subject filter yet, although the platform now has
+    them (`docs/backend-gaps.md` BG-16).
   - An actor is filtered by picking a user in the Actor search (the first 10 matches; it needs
     `user.view`) or by clicking their name on a visible row. The picker (`AuditActorPicker`) takes
     the applied `actorId`, so its search starts over, empty, when the filter changes, and it
@@ -475,9 +487,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - Actor and entity names are resolved only for the IDs on the current page (deduplicated,
     bounded lookups); an actor or entity not resolvable falls back to their id.
   - The branch lookup used to label rows is bounded to the first 500 branches in the tenant.
-  - The Branch column shows the branch stamped on the _request's_ selected context, not
-    necessarily the branch the action was performed on (wire contract §E.4, `docs/backend-gaps.md`
-    BG-16); relabelling this in the UI is left to a later visual pass.
+  - The Branch column shows each row's branch: on rows recorded before the platform's fix, the
+    _request's_ selected context, not necessarily the branch the action was performed on; newer
+    rows carry the branch acted on (wire contract §E.4, `docs/backend-gaps.md` BG-16).
+    Relabelling this in the UI is left to a later visual pass.
   - The table shows short IDs. The drawer's Actor fact shows the resolved name when one is
     available, else the full actor user ID (with the actor's external subject in parentheses when
     it has one); the drawer's entity, request, and correlation IDs always render as full IDs — all
@@ -493,17 +506,22 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   assignments (assign/revoke) as Server Actions behind `ReasonDialog`/`ConfirmDialog`/
   `AssignmentDrawer`. The record page (`RecordHero` + `RecordTabs`) renders Overview, Users, and
   Audit tabs. Known limits:
-  - No address, edit, or opened/closed-date fields (`docs/backend-gaps.md` BG-13).
-  - The maker-checker lookup (who drafted a pending branch) needs `audit.view`
-    (`docs/backend-gaps.md` BG-08); Activate is never disabled for an unknown maker.
-  - A branch the selected branch context can't reach shows a guided "Switch to All branches"
-    state instead of a raw 404 (`docs/backend-gaps.md` BG-03).
-  - No draft delete or reject — a live-created draft is permanent (`docs/backend-gaps.md` BG-01).
+  - No address, edit, or opened/closed-date fields, which the platform now provides
+    (`docs/backend-gaps.md` BG-13).
+  - The maker-checker lookup (who drafted a pending branch) needs `audit.view`; the platform's
+    `created_by` isn't read yet (`docs/backend-gaps.md` BG-08). Activate is never disabled for an
+    unknown maker.
+  - A branch the selected branch context couldn't reach showed a guided "Switch to All branches"
+    state instead of a raw 404 (`docs/backend-gaps.md` BG-03). The platform no longer pins
+    branches, so tenant-wide holders now get the branch and branch-scoped ones a 403.
+  - No draft discard or return: the platform has both now, but the UI doesn't offer them yet, so
+    a draft created here can't be removed from the UI (`docs/backend-gaps.md` BG-01).
   - The directory's Type filter offers only the two platform types (`HEAD_OFFICE`, `OPERATIONS`);
     a tenant-defined type filters only through a hand-edited `?type=` URL.
   - The toolbar search commits on Enter or blur, not as you type.
-  - The Users tab resolves each visible assignment's user name with its own read, since assignment
-    rows carry no name (`docs/backend-gaps.md` BG-09).
+  - The Users tab resolves each visible assignment's user name with its own read, since the
+    contract's assignment rows carry no name; the platform's rows now do (`docs/backend-gaps.md`
+    BG-09).
 - Roles & permissions (`/admin/roles`, `modules/administration/roles/`) lists roles from
   `GET /tenant/roles`: code/name search, status and system/custom filters, and sortable
   Role/Code/Status headers. It creates and edits custom roles and activates or deactivates them.
@@ -511,8 +529,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   submit) and removes them after a confirmation. It also assigns or revokes the role
   institution-wide or at one branch. The record page renders Overview, Permissions, Assignments,
   and Audit tabs. Known limits:
-  - The directory shows only what role summaries carry: no description, created date, or counts
-    (`docs/backend-gaps.md` BG-09, BG-15). Its default order is newest first.
+  - The directory shows no description or created date, which role summaries don't carry
+    (`docs/backend-gaps.md` BG-09), and no counts, which they now do (BG-15). Its default order
+    is newest first.
   - The toolbar search commits on Enter or blur, not as you type.
   - Backend `validation_failed` violations aren't mapped onto form fields; the forms apply the same
     rules client-side (`docs/backend-gaps.md` BG-09).
@@ -525,15 +544,20 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - "Active assignments" counts assignments, not distinct users (BG-15).
   - A branch-scoped assignment needs the user's existing assignment at that branch, and a branch
     context offers only its own branch.
-  - Assigning is offered only for ACTIVE roles. There is no role delete or archive (BG-27).
-  - A description can be replaced but not removed (BG-34).
+  - Assigning is offered only for ACTIVE roles. There is no role archive in the UI, though the
+    platform added one (and still has no delete), and an archived role is still offered Activate,
+    which the platform refuses (BG-27).
+  - Clearing the description removes it, though the form's help text still says it can't be
+    removed (BG-34).
   - The Audit tab shows the role's own changes. Assignment changes are audited per assignment
     (BG-16).
 - Settings (`/admin/settings`, `modules/administration/settings/`) reads the catalogue and the
-  tenant's stored keys in one bounded read. Editing ships disabled behind `SETTINGS_EDIT_ENABLED`
-  because the platform can't save changes yet (`docs/backend-gaps.md` BG-04); reset to default
-  works. The two maker-checker switches and automatic advance are shown read-only with honest
-  labels (BG-12).
+  tenant's stored keys in one bounded read. Editing ships disabled behind `SETTINGS_EDIT_ENABLED`:
+  the platform saves changes since its fix (`docs/backend-gaps.md` BG-04), but `base_currency`,
+  now read-only there, must leave the editable keys before the flag is flipped. Reset to default
+  works, except on `base_currency`, which the platform refuses. The two maker-checker switches
+  and automatic advance are shown read-only and labelled as always on or unavailable, though the
+  platform now honours them (BG-12).
 - Users & access (`/admin/users`, `modules/administration/users/`) lists the tenant's users
   from `GET /tenant/users` (search, user status and membership status filters; newest first,
   no sort) and opens a record with the membership lifecycle (approve, reject and revoke,
@@ -555,9 +579,12 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     ceiling) and says so under the Role field when there are more (BG-09).
   - Approve is disabled, with the reason, for the user's inviter (when `audit.view` can show
     who that was) and for a blocked account, and withheld once approval ran. Other refusals are
-    explained: a 403 as permission or maker-checker (BG-08), a 500 by its likely causes, such as
-    a missing active role (BG-07). "Provisioning identity" can stay put with no resend (BG-11).
-  - Reject & revoke and Revoke are permanent: the email can't be invited again (BG-28).
+    explained by the contract's codes, which the platform has since changed: a maker-checker
+    refusal now has its own code and gets the generic permission message (BG-08), and a missing
+    prerequisite is a 409 rather than the 500 the UI explains by its likely causes (BG-07).
+    "Provisioning identity" offers no retry or resend, which the platform now has (BG-11).
+  - Reject & revoke and Revoke are presented as permanent, and the invite wizard refuses the
+    email, though the platform now re-invites a revoked member (BG-28).
     Suspend and Revoke are disabled on your own record (BG-35). Revoking your own branch
     assignment from the Branch assignments tab shows no self warning (layer 08's
     `RevokeAssignmentButton` has no `self` prop, unlike the Roles & access revoke); at the
@@ -567,59 +594,67 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     One branch choice lists only the branches it found, so others beyond the first 500 may be
     missing and nothing says so (`RoleScopeFields` shows its hint only while no branch is
     offered). Role assignment changes are audited per assignment and branch assignment changes on
-    the branch, so the Audit tab can't show them (BG-16).
+    the branch, so the Audit tab, which doesn't use the platform's `subject_user_id` filter yet,
+    can't show them (BG-16).
   - A count or list that couldn't be read says so rather than vanishing or reading as none: the
     Overview's role and branch counts show `Couldn't be loaded` (with the request reference) and
     leave a row out only when you may not read it; a capped scan that found nothing reads
     `None found (partial)`; the Branch assignments empty state names what could not be seen (a
     selected branch, a capped scan); and an empty role index (a failed read) reads "Roles couldn't
     be loaded", not "no active roles".
-  - No phone, member number, last activity, MFA or profile edit (BG-17).
+  - No phone, member number, last activity, MFA or profile edit. The platform now has the member
+    number, a membership edit and, in the platform context only, the phone and last sign-in
+    (BG-17).
   - The toolbar search commits on Enter or blur, and backend `validation_failed` violations
     aren't mapped onto form fields (BG-09).
   - The invite wizard offers the first 100 active roles and the first 100 active branches by
     name, and says so when there are more. Its Identity step checks the email against this
     institution's users (at most 500 search matches are read; any membership, a revoked one
-    included: such an email can never be invited again, BG-28; past the ceiling the platform's
-    own refusal is the backstop); a 403 from that check asks for a reload (a stale context, or a
-    branch-scoped `user.view`, BG-33). The invitation itself is posted first, and a taken email,
-    or a username a member here holds, is named only after that fails, so a retry with the same
-    idempotency key replays (BG-07). An account in another institution can't be seen: its email is
-    reused with its own name, username and phone, which the Review step says, and a username it
-    holds fails as a 500 named by its likely causes.
+    included, although the platform now re-invites a revoked member, BG-28; past the ceiling the
+    platform's own refusal is the backstop); a 403 from that check asks for a reload (a stale
+    context, or a branch-scoped `user.view`, BG-33). The invitation itself is posted first, and a
+    taken email, or a username a member here holds, is named only after that fails, so a retry
+    with the same idempotency key replays; the naming keys on a 500, and the platform now answers
+    409 `conflict`, so a generic error shows instead (BG-07). An account in another institution
+    can't be seen: its email is reused with its own name, username and phone, which the Review
+    step says, and a username it holds is refused (a 409 since the platform's fix).
   - The Invitation step starts from the contract's flag defaults (identity-provider invitation on,
     application invitation off), and either can be changed; whether the emails go out depends on
-    the platform (BG-25). The phone can't be viewed afterwards (BG-17). Nothing is kept across a
-    reload.
+    the platform (BG-25). The phone can't be viewed afterwards in this workspace (BG-17).
+    Nothing is kept across a reload.
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) manages SACCO institutions through
   `modules/platform-administration/tenants/`: the directory, the create-draft wizard, amend, the
   record's lifecycle (submit, approve, reject, suspend, reactivate, deprovision) and bootstrap
   retry. Times show in UTC.
   - The reserved platform organisation is hidden from the directory and its record URL shows the
-    not-found page (the layout's `notFound()` answers HTTP 200); a filtered count can read one
-    high (`docs/backend-gaps.md` BG-29). One check, `isInstitutionId` (a UUID that is not the
+    not-found page (the layout's `notFound()` answers HTTP 200). The platform now leaves it out of
+    the list itself, but the count still subtracts it, so an unfiltered count reads one low
+    (`docs/backend-gaps.md` BG-29). One check, `isInstitutionId` (a UUID that is not the
     platform organisation, in any letter case), guards the record and every route under it (its
     four tabs, amend, and the branch and user records and the branch draft), and every Server
     Action that takes an institution id.
-  - The create is posted first; a duplicate tenant code is a backend 500 (BG-07), so only after
-    that failure one lookup (one page of 100 matches) names the cause. A retry with the same
-    idempotency key replays.
-  - Approve stays on offer for its maker: the platform context can't read who created or
-    submitted a request, so a refusal is explained as permission or maker-checker (BG-08).
+  - The create is posted first, and only after a 500 does one lookup (one page of 100 matches)
+    name a duplicate tenant code; the platform now answers a duplicate with 409 `conflict`, so the
+    code isn't named (BG-07). A retry with the same idempotency key replays.
+  - Approve stays on offer for its maker: the UI doesn't read the platform's `requested_by` and
+    `submitted_by` yet, and a maker's refusal, which now has its own code, gets the generic
+    permission message (BG-08).
   - Amend re-asks the legal name, registration number and first administrator, which the
-    platform never returns (BG-14). There are no Settings or Audit tabs (BG-12, BG-06).
+    platform now returns but the UI doesn't read yet (BG-14). There are no Settings or Audit
+    tabs, though the platform now has both routes (BG-12, BG-06).
   - The toolbar search commits on Enter or blur, not as you type.
   - The record's Branches and Users tabs list an institution's branches and users; a branch record
     is read-only (no address, BG-13), and "Create branch draft" is offered for an active
-    institution with a warning: the platform refuses it unless you are also a member there with a
-    role that allows it (BG-18).
+    institution with a warning that the platform refuses it unless you are also a member there,
+    which it no longer does (BG-18).
   - A user's record (an institution's, or a platform user's) suspends, reactivates or deactivates
     their sign-in account on the whole platform. Deactivate asks for the username typed back and
     can't be undone; your own account can't be suspended or deactivated (BG-35).
-  - Platform users are the platform organisation's members: there is no cross-institution user
-    directory (BG-10).
-  - The overview counts institutions by lifecycle (leaving out the platform organisation, BG-29)
+  - Platform users are the platform organisation's members: the UI doesn't use the platform's
+    cross-institution user directory yet (BG-10).
+  - The overview counts institutions by lifecycle (subtracting the platform organisation, which
+    the platform already leaves out, so the active count reads one low, BG-29)
     and platform operators, one read each (`size=1`, or the total of a five-row preview, BG-15),
     and lists up to five institutions pending approval and five drafts. The bell counts
     institutions pending approval (BG-22).
