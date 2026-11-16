@@ -17,9 +17,9 @@ export default defineConfig({
   testIgnore: [/keycloak-smoke\.spec\.ts/, /[\\/]e2e[\\/]guard[\\/]/],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  // One retry on CI: it tells a flaky test from a hard failure and records a trace
-  // (`trace: 'on-first-retry'`), and a test that needed it fails the run — a flaky test is a
-  // failure to fix, never a pass.
+  // One retry on CI: it tells a flaky test from a hard failure and records a trace and a video
+  // (`'on-first-retry'`), and a test that needed it fails the run — a flaky test is a failure to
+  // fix, never a pass.
   retries: process.env.CI ? 1 : 0,
   failOnFlakyTests: !!process.env.CI,
   // One worker per logical CPU against the production build (2 on a 2-CPU machine, 4 on CI's
@@ -40,7 +40,13 @@ export default defineConfig({
     baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    // Video only on the retry: `retain-on-failure` records every test's video and discards the
+    // passing ones, encoding 500+ videos on the same CPUs the workers run on. A hard failure's
+    // retry fails again and is recorded with its trace. A flaky test's recorded retry is the run
+    // that passed: its failed first attempt keeps only the error, a screenshot and the page's ARIA
+    // snapshot (error-context.md), so reproduce it locally, e.g. with
+    // `--repeat-each=10 --retries=0 --trace retain-on-failure`.
+    video: 'on-first-retry',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
