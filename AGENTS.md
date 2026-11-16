@@ -167,7 +167,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - The e2e session bypass (`auth/e2e-test-mode.ts`) needs `FINAXIS_E2E_TEST_MODE=1` at runtime and,
   in a production build, the build-time `FINAXIS_E2E_BUILD` switch that `next.config.ts` inlines
   only into the `.next-e2e` build. Never widen that gate, never set `FINAXIS_E2E_BUILD` in a `.env*`
-  file, and keep `pnpm test:e2e:guard` (the normal build must send a bypass session to `/login`)
+  file, never enable `experimental.allowDevelopmentBuild` (it inlines a development `NODE_ENV`
+  into `next build`, the gate's other key), and keep `pnpm test:e2e:guard` (the normal build must send a bypass session to `/login`)
   after `pnpm build` in both workflows (`docs/authentication/security.md`).
 - Never disable Better Auth's CSRF or origin checks (`disableCSRFCheck`/`disableOriginCheck`).
 - Never use a wildcard trusted origin.

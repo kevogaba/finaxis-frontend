@@ -94,8 +94,9 @@ honours a dotted `color`.
   the run refuses to start; locally a fake API already on 3199 is reused. After an app change,
   `pnpm test:e2e` rebuilds; `pnpm exec playwright test` alone runs against the existing
   `.next-e2e/` (and says to run `pnpm build:e2e` when there is none). To write a spec against
-  `next dev` without rebuilding after each edit, run `E2E_DEV_SERVER=1 pnpm exec playwright test
-<spec>`; CI never does. The session bypass the specs sign in through, and the guard that keeps
+  `next dev` without rebuilding after each edit, run `E2E_DEV_SERVER=1 pnpm exec playwright test`
+  with the spec's path; CI never does. Never set `FINAXIS_E2E_BUILD` in a `.env*` file: every
+  `pnpm build` would become an e2e build. The session bypass the specs sign in through, and the guard that keeps
   it out of every normal build (`pnpm test:e2e:guard`), are described in
   `docs/authentication/security.md`. Tests that need
   a signed-in session call `authenticate(context, testInfo, scenario)` from

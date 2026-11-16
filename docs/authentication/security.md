@@ -169,13 +169,15 @@ running Keycloak instance.
 
 ### E2E tests (Playwright)
 
-The default `pnpm test:e2e` suite (`e2e/login.spec.ts`, `e2e/protected-routes.spec.ts`) is
-Keycloak-independent: it only exercises unauthenticated behavior — the root-to-`/login`
-redirect, login-page branding, the "Continue to Finaxis" action, generic error/status
-messaging for `authentication_failed` / `session_expired` / `logged_out` redirects,
-responsive layout, light/dark rendering, and accessibility (via `@axe-core/playwright`).
-Authenticated-shell behavior (route guard, session mapping, user menu, sign-out) is covered
-by the unit/component tests above and intentionally not duplicated at the E2E layer.
+The default `pnpm test:e2e` suite is Keycloak-independent. Its unauthenticated specs
+(`e2e/login.spec.ts`, `e2e/protected-routes.spec.ts`) exercise the root-to-`/login` redirect,
+login-page branding, the "Continue to Finaxis" action, generic error/status messaging for
+`authentication_failed` / `session_expired` / `logged_out` redirects, responsive layout,
+light/dark rendering, and accessibility (via `@axe-core/playwright`). Every authenticated spec
+signs in through the test-only session bypass described below, against the fake API, so a real
+Keycloak session — the route guard with a genuine session, session mapping, the user menu,
+sign-out — is covered by the unit/component tests above and the smoke test below, not by the
+default suite.
 `playwright.config.ts` explicitly `testIgnore`s `e2e/keycloak-smoke.spec.ts` so this default
 suite never depends on a running Keycloak instance.
 
@@ -209,13 +211,17 @@ other build the switch is an empty string literal: the minifier folds the gate t
 nothing that ships (`pnpm start`, the Dockerfile, the Release workflow) reads `.next-e2e/`.
 
 Never set `FINAXIS_E2E_BUILD` in a `.env*` file: Next loads those before `next.config.ts`, so
-every `pnpm build` would become an e2e build (it would then fail loudly, as `.next/standalone` would
-not exist).
+every `pnpm build` would become an e2e build, written to `.next-e2e/`. From a clean checkout (the
+Dockerfile, CI) that build then fails, as `.next/standalone` does not exist; on a machine with an
+older `.next/`, `pnpm start` and the guard would quietly run that older build instead.
 
 Both CI workflows run the **guard** after `pnpm build`: `pnpm test:e2e:guard`
 (`playwright.guard.config.ts`, `e2e/guard/`) starts the normal production build with every runtime
-e2e setting on, opens `/profile`, `/admin` and `/platform-admin` with the bypass's session cookie,
-and requires each to land on `/login`. Pointed at the e2e build (`GUARD_DIST_DIR=.next-e2e`), it
+e2e setting on (`FINAXIS_E2E_BUILD=1` included, as a plain environment variable), opens `/profile`,
+`/admin` and `/platform-admin` with the bypass's session cookie, and requires each to land on
+`/login` without ever passing through `/select-context`, where a live bypass is sent first. Its
+API URL is pinned to a closed loopback port, so a backend answering 401 cannot turn a live bypass
+into an apparent sign-in redirect. Pointed at the e2e build (`GUARD_DIST_DIR=.next-e2e`), it
 fails.
 
 ## Troubleshooting

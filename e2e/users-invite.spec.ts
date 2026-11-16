@@ -144,7 +144,8 @@ const bell = (page: Page, count: number) =>
     .getByRole('banner')
     .getByRole('button', { name: `Notifications: ${count} approvals waiting`, exact: true });
 
-// 16's two keyboard helpers (`e2e/platform-tenants.spec.ts`), kept in the spec as 16 keeps them.
+// 16's keyboard walk (`e2e/platform-tenants.spec.ts`), kept in the spec as 16 keeps it; the
+// clearance it measures (`focusClearance`) is shared from e2e/support/admin.ts.
 
 /** Tabs from a step's heading to the action bar, then Shift+Tabs back out of the form: every stop
  * clears both sticky bars, and the walk covers at least `minimum` stops. */
