@@ -42,7 +42,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
-    "@hookform/resolvers": "^6.0.0",
+    "@hookform/resolvers": "^7.0.6",
     "@playwright/test": "^1.65.1",
     "@tailwindcss/postcss": "^4.3.5",
     "@testing-library/jest-dom": "^7.0.1",
