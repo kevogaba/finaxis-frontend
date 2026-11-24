@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen } from '@testing-library/react';
+import { PhoneViewport } from '@/test/phone-viewport';
 import { renderWithProviders } from '@/test/test-utils';
 import type { FinaxisUser } from '@/auth/auth.types';
 import type { ApplicationContext } from '@/config/application-context';
@@ -32,8 +33,8 @@ const CONTEXT: ApplicationContext = {
   branch: { id: 'branch-1', name: 'Westlands Branch' },
 };
 
-function renderHeader(onOpenNavigation = vi.fn(), onOpenContextSwitcher = vi.fn()) {
-  renderWithProviders(
+function renderHeader(onOpenNavigation = vi.fn(), onOpenContextSwitcher = vi.fn(), phone = false) {
+  const header = (
     <ApplicationContextProvider value={CONTEXT}>
       <GlobalHeader
         user={USER}
@@ -41,8 +42,9 @@ function renderHeader(onOpenNavigation = vi.fn(), onOpenContextSwitcher = vi.fn(
         onOpenNavigation={onOpenNavigation}
         onOpenContextSwitcher={onOpenContextSwitcher}
       />
-    </ApplicationContextProvider>,
+    </ApplicationContextProvider>
   );
+  renderWithProviders(phone ? <PhoneViewport>{header}</PhoneViewport> : header);
   return onOpenNavigation;
 }
 
@@ -83,7 +85,8 @@ describe('GlobalHeader', () => {
 
   it('opens the mobile navigation', async () => {
     const user = userEvent.setup();
-    const onOpenNavigation = renderHeader();
+    // The button is phone-only (hidden from `md`).
+    const onOpenNavigation = renderHeader(vi.fn(), vi.fn(), true);
 
     await user.click(screen.getByRole('button', { name: 'Open navigation' }));
     expect(onOpenNavigation).toHaveBeenCalledTimes(1);

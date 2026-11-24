@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen } from '@testing-library/react';
+import { PhoneViewport } from '@/test/phone-viewport';
 import { renderWithProviders } from '@/test/test-utils';
 import type { FinaxisUser } from '@/auth/auth.types';
 import type { ApplicationContext } from '@/config/application-context';
@@ -115,15 +116,18 @@ describe('AppShell', () => {
 
   it('opens the mobile navigation drawer from the header button', async () => {
     const user = userEvent.setup();
+    // The header button and the temporary drawer are phone-only (hidden from `md`).
     renderWithProviders(
-      <AppShell
-        user={USER}
-        context={PLATFORM}
-        initialNavCollapsed={false}
-        platformOrganisationId="platform"
-      >
-        <div />
-      </AppShell>,
+      <PhoneViewport>
+        <AppShell
+          user={USER}
+          context={PLATFORM}
+          initialNavCollapsed={false}
+          platformOrganisationId="platform"
+        >
+          <div />
+        </AppShell>
+      </PhoneViewport>,
     );
 
     expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();

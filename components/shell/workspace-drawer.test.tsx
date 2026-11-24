@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { fireEvent, screen, within } from '@testing-library/react';
 import GroupOutlined from '@mui/icons-material/GroupOutlined';
 import HomeOutlined from '@mui/icons-material/HomeOutlined';
+import { PhoneViewport } from '@/test/phone-viewport';
 import { renderWithProviders } from '@/test/test-utils';
 import { WorkspaceDrawer } from './workspace-drawer';
 import type { WorkspaceNavigationItem } from './workspace-navigation';
@@ -17,7 +18,10 @@ const ITEMS: WorkspaceNavigationItem[] = [
   { href: '/admin/users', label: 'Users & access', icon: GroupOutlined },
 ];
 
-function renderDrawer(overrides: Partial<Parameters<typeof WorkspaceDrawer>[0]> = {}) {
+function renderDrawer(
+  overrides: Partial<Parameters<typeof WorkspaceDrawer>[0]> = {},
+  phone = false,
+) {
   const props = {
     items: ITEMS,
     navigationAriaLabel: 'Administration',
@@ -29,7 +33,8 @@ function renderDrawer(overrides: Partial<Parameters<typeof WorkspaceDrawer>[0]> 
     footerSubtitle: 'Westlands Branch',
     ...overrides,
   };
-  renderWithProviders(<WorkspaceDrawer {...props} />);
+  const drawer = <WorkspaceDrawer {...props} />;
+  renderWithProviders(phone ? <PhoneViewport>{drawer}</PhoneViewport> : drawer);
   return props;
 }
 
@@ -67,7 +72,8 @@ describe('WorkspaceDrawer', () => {
 
   it('closes the mobile drawer on Escape', async () => {
     const user = userEvent.setup();
-    const props = renderDrawer({ mobileOpen: true });
+    // The temporary drawer is phone-only (hidden from `md`), so lay it out as a phone would.
+    const props = renderDrawer({ mobileOpen: true }, true);
 
     await user.keyboard('{Escape}');
     expect(props.onMobileClose).toHaveBeenCalled();
