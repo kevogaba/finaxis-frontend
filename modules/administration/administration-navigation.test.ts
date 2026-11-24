@@ -15,7 +15,7 @@ describe('administrationNavigationItems', () => {
     ]);
     const queue = administrationNavigationItems[1];
     expect(queue?.label).toBe('Approval queue');
-    expect(queue?.requiresAny).toEqual(['user.approve', 'branch.activate']);
+    expect(queue?.requiresAny).toEqual(['user.approve', 'branch.approve']);
     const users = administrationNavigationItems[2];
     expect(users?.label).toBe('Users & access');
     expect(users?.requiresAny).toEqual(['user.view']);
@@ -23,7 +23,7 @@ describe('administrationNavigationItems', () => {
 
   it('shows the Approval queue to a holder of either decision, and only then', () => {
     expect(labels(['user.approve'])).toEqual(['Overview', 'Approval queue']);
-    expect(labels(['branch.activate', 'branch.view'])).toEqual([
+    expect(labels(['branch.approve', 'branch.view'])).toEqual([
       'Overview',
       'Approval queue',
       'Branches',

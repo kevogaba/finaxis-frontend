@@ -49,7 +49,7 @@ const EVERY_CODE = [
   'business_date.view',
   'user.approve',
   'user.view',
-  'branch.activate',
+  'branch.approve',
   'branch.view',
   'settings.view',
   'membership.view',
@@ -182,7 +182,7 @@ describe('AdminOverviewPage', () => {
   });
 
   it('omits a card the holder could never read or act on (Ruling 2)', async () => {
-    resolved(['branch.activate', 'branch.view', 'user.view']);
+    resolved(['branch.approve', 'branch.view', 'user.view']);
     await show();
 
     expect(cards()).toEqual(['Pending approvals card', 'Readiness card']);

@@ -60,7 +60,7 @@ const KEY = '0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
 
 function resolved(
   branch: { id: string; name: string } | null = null,
-  permissions: string[] = ['branch.activate', 'branch.view', 'audit.view'],
+  permissions: string[] = ['branch.approve', 'branch.view', 'audit.view'],
 ) {
   return {
     kind: 'resolved',
@@ -253,7 +253,7 @@ describe('activatePendingBranch', () => {
   it('refuses its drafter when the signed-in id is the upper-case one, before any write', async () => {
     getCurrentContextProfile.mockResolvedValue({
       ...resolved(),
-      profile: { user_id: ME.toUpperCase(), permissions: ['branch.activate', 'audit.view'] },
+      profile: { user_id: ME.toUpperCase(), permissions: ['branch.approve', 'audit.view'] },
     });
     getMakerEvent.mockResolvedValue({ actorUserId: ME, occurredAt: '2026-09-10T08:00:00Z' });
     await expect(activatePendingBranch(null, branchForm())).resolves.toMatchObject({
@@ -265,7 +265,7 @@ describe('activatePendingBranch', () => {
   });
 
   it('leaves maker-checker to the backend without audit.view (no maker read)', async () => {
-    getCurrentContextProfile.mockResolvedValue(resolved(null, ['branch.activate', 'branch.view']));
+    getCurrentContextProfile.mockResolvedValue(resolved(null, ['branch.approve', 'branch.view']));
     await expect(activatePendingBranch(null, branchForm())).resolves.toEqual({ ok: true });
     expect(getMakerEvent).not.toHaveBeenCalled();
     expect(apiPost).toHaveBeenCalledExactlyOnceWith(`/api/v1/branches/${BRANCH}/activate`, {}, KEY);

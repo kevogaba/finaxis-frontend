@@ -228,7 +228,7 @@ export const branchRoutes: Route[] = [
   transition('submit', 'branch.create', ['DRAFT'], 'PENDING_APPROVAL', 'branch.submit', false),
   transition(
     'activate',
-    'branch.activate',
+    'branch.approve',
     ['PENDING_APPROVAL'],
     'ACTIVE',
     'branch.activate',

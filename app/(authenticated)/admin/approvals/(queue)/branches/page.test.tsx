@@ -43,7 +43,7 @@ const { default: BranchActivationPage } = await import('./page');
 const KERICHO = 'c1000000-0000-4000-8000-0000000000c1';
 const WESTLANDS = 'd2000000-0000-4000-8000-0000000000d2';
 const HEAD_OFFICE = 'e3000000-0000-4000-8000-0000000000e3';
-const CODES = ['branch.activate', 'branch.view'];
+const CODES = ['branch.approve', 'branch.view'];
 
 function branches(totalItems: number, number = 0) {
   return {
@@ -198,7 +198,7 @@ describe('BranchActivationPage', () => {
     expect(screen.queryByRole('region', { name: 'Branches table' })).toBeNull();
   });
 
-  it.each([[['branch.activate']], [['branch.view']]])(
+  it.each([[['branch.approve']], [['branch.view']]])(
     'reads nothing with only %j, and says why',
     async (permissions) => {
       setup({ permissions });

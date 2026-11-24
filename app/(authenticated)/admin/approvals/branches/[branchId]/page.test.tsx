@@ -72,7 +72,7 @@ const KERICHO = 'b2000000-0000-4000-8000-0000000000bb';
 const VICTOR = 'c3000000-0000-4000-8000-0000000000cc';
 const HEAD_OFFICE = 'd4000000-0000-4000-8000-0000000000dd';
 const WESTLANDS = 'e5000000-0000-4000-8000-0000000000ee';
-const ALL_CODES = ['branch.activate', 'branch.view', 'audit.view'];
+const ALL_CODES = ['branch.approve', 'branch.view', 'audit.view'];
 
 interface Setup {
   permissions?: string[];
@@ -223,7 +223,7 @@ describe('BranchApprovalPage', () => {
   );
 
   it('reads no maker without audit.view', async () => {
-    setup({ permissions: ['branch.activate', 'branch.view'] });
+    setup({ permissions: ['branch.approve', 'branch.view'] });
     await show();
 
     expect(getMakerEvent).not.toHaveBeenCalled();
@@ -293,7 +293,7 @@ describe('BranchApprovalPage', () => {
 
   // Beyond the brief: each case holds every OTHER code, so a gate that checks only one of the two
   // codes still fails one case (7a's review, M1).
-  it.each(['branch.activate', 'branch.view'])(
+  it.each(['branch.approve', 'branch.view'])(
     'reads nothing past the profile without %s, and says why',
     async (missing) => {
       setup({ permissions: ALL_CODES.filter((code) => code !== missing) });
@@ -404,7 +404,7 @@ describe('BranchApprovalPage: the facts, the links and the bar’s ids', () => {
 
   it.each([
     ['with audit.view', ALL_CODES, true],
-    ['without audit.view', ['branch.activate', 'branch.view'], false],
+    ['without audit.view', ['branch.approve', 'branch.view'], false],
   ])('links the branch’s audit trail %s', async (_case, permissions, linked) => {
     setup({ permissions });
     await show();

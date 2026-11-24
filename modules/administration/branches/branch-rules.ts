@@ -18,7 +18,7 @@ const ACTIONS_BY_STATUS: Record<BranchStatus, readonly BranchLifecycleAction[]> 
 // Contract §E.3: submitting a draft is gated by `branch.create`, not a code of its own.
 const PERMISSION: Record<BranchLifecycleAction, string> = {
   submit: 'branch.create',
-  activate: 'branch.activate',
+  activate: 'branch.approve',
   suspend: 'branch.suspend',
   reactivate: 'branch.reactivate',
   close: 'branch.close',

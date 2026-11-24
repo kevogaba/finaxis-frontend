@@ -48,7 +48,8 @@ miscount things today.
    `modules/administration/approvals/approval-rules.ts`, the `activate` code in
    `modules/administration/branches/branch-rules.ts`, `administration-navigation.ts`), so the
    Branch activation tab, the Activate action, the bell's branch count and that navigation entry
-   are hidden for everyone. Gate on `branch.approve` (BG-01, BG-22).
+   are hidden for everyone. Gate on `branch.approve` (BG-01, BG-22). **Adopted** (frontend #107):
+   every gate reads `branch.approve`; the audit action stays `branch.activate`.
 2. **The platform organisation left `GET /platform/tenants`** (platform #283): the list and its
    `total_items` exclude it unless `include_platform=true`. `visibleTenantTotal`
    (`modules/platform-administration/tenants/tenant-rules.ts`) and `activeInstitutionCount`
@@ -207,7 +208,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
   **tenant-wide**, and a draft with an ACTIVE child branch or an active assignment is a plain 409
   `conflict`. A discarded draft ends CLOSED with `closed_on` set and `opened_on` null.
 - **To adopt:** Return/Withdraw and Discard on branches, Return on pending institutions with their
-  `status_reason`, an optional remark on Approve, and activation gated on `branch.approve`.
+  `status_reason`, and an optional remark on Approve. (Activation is gated on `branch.approve` since
+  frontend #107.)
 
 ### BG-02 — A tenant created through the API cannot onboard a second person · P0
 
@@ -796,7 +798,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
   membership's beneficiary and a branch's submitter or amenders are still counted, so each count is
   an upper bound (tenants exclude the requester and submitter).
 - **To adopt:** replace the bells' `size=1` reads with the count routes, keeping the provisioning
-  read if the bell should still leave those out; gate the branch count on `branch.approve`.
+  read if the bell should still leave those out. (The branch count is gated on `branch.approve`
+  since frontend #107.)
 
 ### BG-23 — Context discovery inconsistencies · P2
 

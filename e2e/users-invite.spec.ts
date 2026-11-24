@@ -313,7 +313,7 @@ test.describe('users invite: sending', () => {
     );
     await expect(page.getByRole('note')).toHaveText(REVIEW_NOTE);
     // Amina, Brian and Carol await approval (Daniel's approval already ran, BG-11); Jane holds
-    // user.approve and user.view but not branch.activate here, so Kisumu doesn't count.
+    // user.approve and user.view but not branch.approve here, so Kisumu doesn't count.
     await expect(bell(page, 3)).toBeVisible();
     await sendInvitation(page);
 

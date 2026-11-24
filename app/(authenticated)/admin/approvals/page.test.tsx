@@ -44,10 +44,10 @@ describe('ApprovalQueuePage', () => {
   it.each([
     [
       'both queues',
-      ['user.approve', 'user.view', 'branch.activate', 'branch.view'],
+      ['user.approve', 'user.view', 'branch.approve', 'branch.view'],
       USER_QUEUE_HREF,
     ],
-    ['branch activation only', ['branch.activate', 'branch.view'], BRANCH_QUEUE_HREF],
+    ['branch activation only', ['branch.approve', 'branch.view'], BRANCH_QUEUE_HREF],
     ['user onboarding only', ['user.approve', 'user.view'], USER_QUEUE_HREF],
   ])('opens the first tab the holder can see (%s)', async (_case, permissions, to) => {
     getCurrentContextProfile.mockResolvedValue(resolved(permissions));

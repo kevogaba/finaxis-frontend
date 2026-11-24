@@ -31,13 +31,13 @@ const APPROVER = {
 describe('the queue', () => {
   it.each([
     [
-      ['user.approve', 'user.view', 'branch.activate', 'branch.view'],
+      ['user.approve', 'user.view', 'branch.approve', 'branch.view'],
       ['User onboarding', 'Branch activation'],
     ],
     [['user.approve', 'user.view'], ['User onboarding']],
-    [['branch.activate', 'branch.view'], ['Branch activation']],
+    [['branch.approve', 'branch.view'], ['Branch activation']],
     // Each tab needs its read code too: a decision without its read-back lists nothing.
-    [['user.approve', 'branch.activate'], []],
+    [['user.approve', 'branch.approve'], []],
     // And the reverse: the read codes alone decide nothing.
     [['user.view', 'branch.view'], []],
     [[], []],
@@ -46,7 +46,7 @@ describe('the queue', () => {
   });
 
   it('counts a tab only when its count was read (spec §10.6), never a 0 it doesn’t know', () => {
-    const both = { permissions: ['user.approve', 'user.view', 'branch.activate', 'branch.view'] };
+    const both = { permissions: ['user.approve', 'user.view', 'branch.approve', 'branch.view'] };
     expect(approvalQueueTabs(both, { users: 8, branches: 0 }).map((tab) => tab.label)).toEqual([
       'User onboarding (8)',
       'Branch activation (0)',
@@ -158,13 +158,13 @@ describe('where a user approval stands', () => {
 });
 
 describe('where a branch activation stands', () => {
-  const ACTIVATOR = { permissions: ['branch.activate', 'branch.view'] };
+  const ACTIVATOR = { permissions: ['branch.approve', 'branch.view'] };
 
   it('offers Activate only while pending, and only with both codes', () => {
     expect(availableBranchDecisions('PENDING_APPROVAL', ACTIVATOR)).toEqual(['activate']);
     expect(availableBranchDecisions('ACTIVE', ACTIVATOR)).toEqual([]);
     expect(
-      availableBranchDecisions('PENDING_APPROVAL', { permissions: ['branch.activate'] }),
+      availableBranchDecisions('PENDING_APPROVAL', { permissions: ['branch.approve'] }),
     ).toEqual([]);
     expect(availableBranchDecisions('PENDING_APPROVAL', { permissions: ['branch.view'] })).toEqual(
       [],

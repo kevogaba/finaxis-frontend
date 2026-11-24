@@ -69,7 +69,7 @@ describe('which cards a holder sees (Ruling 2)', () => {
     'business_date.view',
     'user.approve',
     'user.view',
-    'branch.activate',
+    'branch.approve',
     'branch.view',
     'settings.view',
     'membership.view',
@@ -102,7 +102,7 @@ describe('which cards a holder sees (Ruling 2)', () => {
   it('offers each kind of request only with both of its codes', () => {
     expect(overviewCards({ permissions: ['user.approve', 'branch.view'] }).approvals).toBeNull();
     expect(
-      overviewCards({ permissions: ['branch.activate', 'branch.view', 'user.view'] }).approvals,
+      overviewCards({ permissions: ['branch.approve', 'branch.view', 'user.view'] }).approvals,
     ).toEqual({ users: false, branches: true });
   });
 
@@ -121,9 +121,9 @@ describe('which cards a holder sees (Ruling 2)', () => {
     for (const code of ['business_date.view', 'settings.view', 'audit.view']) {
       expect(noOverviewCards(overviewCards({ permissions: [code] })), code).toBe(false);
     }
-    expect(
-      noOverviewCards(overviewCards({ permissions: ['branch.activate', 'branch.view'] })),
-    ).toBe(false);
+    expect(noOverviewCards(overviewCards({ permissions: ['branch.approve', 'branch.view'] }))).toBe(
+      false,
+    );
   });
 });
 
