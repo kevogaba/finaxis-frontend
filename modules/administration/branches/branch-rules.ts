@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { can, canAll, type PermissionHolder } from '@/auth/permissions';
+import { can, canAll, canTenantWide, type PermissionHolder } from '@/auth/permissions';
+import { withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import { uuidSchema } from '@/lib/api/wire';
 import type { BranchStatus } from './branch-contract';
@@ -51,19 +52,18 @@ export function activateBlocked(makerId: string | null, userId: string | null): 
   return makerId !== null && makerId === userId;
 }
 
-/** Assigning needs an ACTIVE branch (else 409), the read-back permission (BG-31), and
- * `user.view` for the drawer's user search. */
+/** Assigning needs an ACTIVE branch (else 409) and the write's views (ADR 0030); the drawer's user
+ * search reads `/tenant/users`, which needs `user.view` tenant-wide (BG-33). */
 export function canAssignUsers(status: BranchStatus, holder: PermissionHolder): boolean {
   return (
     status === 'ACTIVE' &&
-    can(holder, 'user.assign_branch') &&
-    can(holder, 'branch_assignment.view') &&
-    can(holder, 'user.view')
+    canAll(holder, withViews(['user.assign_branch'])) &&
+    canTenantWide(holder, 'user.view')
   );
 }
 
 export function canRevokeAssignments(holder: PermissionHolder): boolean {
-  return can(holder, 'user.revoke_branch') && can(holder, 'branch_assignment.view');
+  return canAll(holder, withViews(['user.revoke_branch']));
 }
 
 /** `HEAD_OFFICE` → `Head office`; free text such as `Service centre` stays as typed. */

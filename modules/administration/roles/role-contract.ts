@@ -14,6 +14,13 @@ export type PermissionRiskLevel = (typeof PERMISSION_RISK_LEVELS)[number];
 export const PERMISSION_STATUSES = ['ACTIVE', 'DEPRECATED', 'DISABLED'] as const;
 export type PermissionStatus = (typeof PERMISSION_STATUSES)[number];
 
+/** VIEW reads, MUTATION changes state and needs its views, CONTEXT gates the caller's own session
+ * (ADR 0030, V22). */
+export const PERMISSION_KINDS = ['VIEW', 'MUTATION', 'CONTEXT'] as const;
+/** PLATFORM codes are only ever evaluated in the platform organisation: a tenant role holding one
+ * gains nothing. */
+export const PERMISSION_GRANT_SCOPES = ['TENANT', 'PLATFORM'] as const;
+
 /** TENANT applies at every branch and at institution level; BRANCH only while that branch is the
  * selected context (contract §F). */
 export const ROLE_SCOPE_TYPES = ['TENANT', 'BRANCH'] as const;
@@ -35,6 +42,7 @@ const roleSummarySchema = z
     role_name: z.string(),
     system_role: z.boolean(),
     status: z.enum(ROLE_STATUSES),
+    missing_view_permissions: z.array(z.string()),
   })
   .transform((role) => ({
     id: role.id,
@@ -42,9 +50,11 @@ const roleSummarySchema = z
     roleName: role.role_name,
     systemRole: role.system_role,
     status: role.status,
+    // The views its held ACTIVE mutations need and it lacks, sorted (ADR 0030); reported only.
+    missingViewPermissions: role.missing_view_permissions,
   }));
 
-/** Role summaries carry nothing else: no description, dates, or counts (D8, BG-09, BG-15). */
+/** Role summaries carry no description, dates, or counts (D8, BG-09, BG-15). */
 export type RoleSummary = z.output<typeof roleSummarySchema>;
 
 export const rolePageSchema = pageSchema(roleSummarySchema);
@@ -57,6 +67,7 @@ export const roleDetailSchema = z
     description: descriptionSchema,
     system_role: z.boolean(),
     status: z.enum(ROLE_STATUSES),
+    missing_view_permissions: z.array(z.string()),
     created_at: instantSchema,
     updated_at: instantSchema,
   })
@@ -67,6 +78,7 @@ export const roleDetailSchema = z
     description: role.description,
     systemRole: role.system_role,
     status: role.status,
+    missingViewPermissions: role.missing_view_permissions,
     createdAt: role.created_at,
     updatedAt: role.updated_at,
   }));
@@ -87,6 +99,10 @@ const permissionSchema = z
     module_code: z.string(),
     risk_level: z.enum(PERMISSION_RISK_LEVELS),
     status: z.enum(PERMISSION_STATUSES),
+    kind: z.enum(PERMISSION_KINDS),
+    grant_scope: z.enum(PERMISSION_GRANT_SCOPES),
+    // Sorted, and empty for a VIEW or CONTEXT code.
+    required_view_permissions: z.array(z.string()),
   })
   .transform((permission) => ({
     id: permission.id,
@@ -95,6 +111,9 @@ const permissionSchema = z
     module: permission.module_code,
     risk: permission.risk_level,
     status: permission.status,
+    kind: permission.kind,
+    grantScope: permission.grant_scope,
+    requiredViewPermissions: permission.required_view_permissions,
   }));
 
 export type Permission = z.output<typeof permissionSchema>;

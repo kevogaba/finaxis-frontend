@@ -3,6 +3,7 @@ import { objectBody, pageOf, problem, readBody, sendJson, stringField } from '..
 import {
   activeAssignmentRows,
   canSelectOrganisation,
+  permissionScopes,
   requireContext,
   requirePermission,
 } from '../access.mts';
@@ -14,26 +15,14 @@ function profileBranch(branch: FakeBranch) {
   return { id: branch.id, code: branch.code, name: branch.name, status: branch.status };
 }
 
-/** `/branches` (AvailableBranch) — always ACTIVE, so it reuses `activeAssignmentRows`'s filter. */
+/** The member's ACTIVE branches, each once, by code: `/branches`, `/me` and the assigned ids all
+ * list these (BG-23), so HOME and OPERATE at one branch are one branch. */
 function branchRows(state: RunState, userId: string, organisationId: string): FakeBranch[] {
-  return activeAssignmentRows(state, userId, organisationId)
-    .map((row) => state.branches.find((branch) => branch.id === row.branchId))
-    .filter((branch): branch is FakeBranch => branch !== undefined)
-    .sort((a, b) => a.code.localeCompare(b.code));
-}
-
-/**
- * Contract §C: `/me`'s `branches[]` is "per ACTIVE assignment ... may include SUSPENDED
- * branches" — unlike `branchRows`, only the assignment needs to be ACTIVE, not the branch.
- */
-function profileBranches(state: RunState, userId: string, organisationId: string): FakeBranch[] {
-  return state.branchAssignments
-    .filter(
-      (row) =>
-        row.userId === userId && row.organisationId === organisationId && row.status === 'ACTIVE',
-    )
-    .map((row) => state.branches.find((branch) => branch.id === row.branchId))
-    .filter((branch): branch is FakeBranch => branch !== undefined)
+  const ids = new Set(
+    activeAssignmentRows(state, userId, organisationId).map((row) => row.branchId),
+  );
+  return state.branches
+    .filter((branch) => ids.has(branch.id))
     .sort((a, b) => a.code.localeCompare(b.code));
 }
 
@@ -103,8 +92,8 @@ export const authRoutes: Route[] = [
     ) {
       throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
     }
-    const assigned = activeAssignmentRows(state, state.actorUserId, organisationId)
-      .map((row) => row.branchId)
+    const assigned = branchRows(state, state.actorUserId, organisationId)
+      .map((branch) => branch.id)
       .sort();
     const branchId = assigned.length === 1 ? (assigned[0] ?? null) : null;
     sendJson(res, 200, {
@@ -167,16 +156,21 @@ export const authRoutes: Route[] = [
     if (!user) {
       throw problem(404, 'resource_not_found', 'User not found.');
     }
-    const branches = profileBranches(state, user.id, access.organisation.id);
+    const branches = branchRows(state, user.id, access.organisation.id);
     const selected = state.branches.find((branch) => branch.id === access.claims.branchId);
-    const roles = state.roleAssignments
-      .filter(
-        (assignment) =>
-          assignment.userId === user.id &&
-          assignment.organisationId === access.organisation.id &&
-          assignment.status === 'ACTIVE',
-      )
-      .flatMap((assignment) => state.roles.filter((role) => role.id === assignment.roleId))
+    // BG-23: each ACTIVE role held through an ACTIVE assignment at any scope, once.
+    const roleIds = new Set(
+      state.roleAssignments
+        .filter(
+          (assignment) =>
+            assignment.userId === user.id &&
+            assignment.organisationId === access.organisation.id &&
+            assignment.status === 'ACTIVE',
+        )
+        .map((assignment) => assignment.roleId),
+    );
+    const roles = state.roles
+      .filter((role) => roleIds.has(role.id) && role.status === 'ACTIVE')
       .sort((a, b) => a.code.localeCompare(b.code))
       .map((role) => ({ id: role.id, code: role.code, name: role.name, status: role.status }));
     sendJson(context.res, 200, {
@@ -195,6 +189,7 @@ export const authRoutes: Route[] = [
       branches: branches.map(profileBranch),
       roles,
       permissions: [...access.permissions].sort(),
+      permission_scopes: permissionScopes(state, user.id, access.organisation.id),
     });
   }),
 ];

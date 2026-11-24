@@ -35,21 +35,18 @@ describe('account rules', () => {
     },
   );
 
-  it("needs each action's own code", () => {
-    expect(availableAccountActions('ACTIVE', { permissions: ['user.suspend'] })).toEqual([
-      'suspend',
-    ]);
-    expect(availableAccountActions('ACTIVE', { permissions: ['user.deactivate'] })).toEqual([
-      'deactivate',
-    ]);
-    expect(availableAccountActions('ACTIVE', { permissions: ['user.activate'] })).toEqual([]);
-    expect(
-      availableAccountActions('SUSPENDED', { permissions: ['user.suspend', 'user.deactivate'] }),
-    ).toEqual([]);
-    expect(availableAccountActions('SUSPENDED', { permissions: ['user.activate'] })).toEqual([
-      'reactivate',
-    ]);
-    expect(availableAccountActions('ACTIVE', { permissions: ['user.view'] })).toEqual([]);
+  it("needs each action's own code and user.view, which it implies (ADR 0030)", () => {
+    const holder = (...codes: string[]) => ({ permissions: ['user.view', ...codes] });
+    expect(availableAccountActions('ACTIVE', holder('user.suspend'))).toEqual(['suspend']);
+    expect(availableAccountActions('ACTIVE', holder('user.deactivate'))).toEqual(['deactivate']);
+    expect(availableAccountActions('ACTIVE', holder('user.activate'))).toEqual([]);
+    expect(availableAccountActions('SUSPENDED', holder('user.suspend', 'user.deactivate'))).toEqual(
+      [],
+    );
+    expect(availableAccountActions('SUSPENDED', holder('user.activate'))).toEqual(['reactivate']);
+    expect(availableAccountActions('ACTIVE', holder())).toEqual([]);
+    // The mutation without its view.
+    expect(availableAccountActions('ACTIVE', { permissions: ['user.suspend'] })).toEqual([]);
   });
 
   it('blocks Suspend and Deactivate on your own account only', () => {

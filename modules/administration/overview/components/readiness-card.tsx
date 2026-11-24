@@ -2,7 +2,7 @@ import Box from '@mui/material/Box';
 import LinearProgress from '@mui/material/LinearProgress';
 import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
-import { can } from '@/auth/permissions';
+import type { PermissionHolder } from '@/auth/permissions';
 import { SectionCard } from '@/components/data-display/section-card';
 import { StatusChip } from '@/components/data-display/status-chip';
 import NextLink from '@/components/navigation/next-link';
@@ -16,8 +16,8 @@ import { listSettings } from '@/modules/administration/settings/settings-service
 import { CARD_TITLES } from '../overview-rules';
 import { countActiveBranches, countActiveMemberships } from '../overview-service';
 import {
+  canCheckReadiness,
   operationalReadiness,
-  READINESS_CODES,
   READINESS_DESCRIPTION,
   READINESS_STATES,
   type ReadinessItemId,
@@ -96,13 +96,13 @@ export function ReadinessCard({ view }: { view: ReadinessView }) {
  * session or a stale context redirects, any other failure marks that item alone. The approval
  * counts and the business date are shared with the app bar per request (`cache()`). */
 export async function ReadinessSection({
-  permissions,
+  holder,
   organisationStatus,
 }: {
-  permissions: readonly string[];
+  holder: PermissionHolder;
   organisationStatus: string;
 }) {
-  const may = (id: ReadinessItemId) => can({ permissions }, READINESS_CODES[id]);
+  const may = (id: ReadinessItemId) => canCheckReadiness(holder, id);
   const [settings, activeBranches, pendingBranches, activeMembers, userApprovals, businessDate] =
     await Promise.all([
       may('institution') ? load(listSettings()) : null,
@@ -124,7 +124,7 @@ export async function ReadinessSection({
           userApprovals,
           businessDate,
         },
-        { permissions },
+        holder,
       )}
     />
   );

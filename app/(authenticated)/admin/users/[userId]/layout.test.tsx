@@ -12,6 +12,7 @@ import {
   USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
 import { renderWithProviders } from '@/test/test-utils';
+import { permissionScopes } from '@/test/permission-scopes';
 import type { SelectedContextProfile } from '@/auth/context-service';
 
 // A real SelectedContextProfile, checked by the type: the context could not be resolved.
@@ -100,7 +101,7 @@ function setup({
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions, user_id: signedInAs },
+    profile: { permissions, permission_scopes: permissionScopes(permissions), user_id: signedInAs },
     context: { organization: { id: ORG, name: 'Greenfield' }, branch: null },
   });
   getUser.mockResolvedValue({

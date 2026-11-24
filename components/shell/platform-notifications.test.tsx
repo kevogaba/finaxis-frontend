@@ -48,6 +48,7 @@ const PROFILE: BackendProfile = {
   branches: [],
   roles: [],
   permissions: [],
+  permission_scopes: [],
 };
 
 const MODULES = {

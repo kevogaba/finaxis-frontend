@@ -6,7 +6,7 @@ import Box from '@mui/material/Box';
 import Link from '@mui/material/Link';
 import Paper from '@mui/material/Paper';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can, canAll } from '@/auth/permissions';
+import { can, permissionHolder } from '@/auth/permissions';
 import { CopyIdButton } from '@/components/data-display/copy-id-button';
 import { DescriptionList } from '@/components/data-display/description-list';
 import { ErrorState } from '@/components/data-display/error-state';
@@ -42,8 +42,8 @@ import {
 import {
   availableUserDecisions,
   blockedUserDecisions,
+  canSeeUserApprovals,
   isSameUser,
-  USER_APPROVAL_CODES,
   USER_QUEUE_HREF,
   userApprovalState,
   userOutcomeNote,
@@ -92,14 +92,14 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
 
   const selected = await getCurrentContextProfile();
   const resolved = selected.kind === 'resolved' ? selected : null;
-  const holder = { permissions: resolved?.profile.permissions ?? [] };
+  const holder = resolved ? permissionHolder(resolved.profile) : { permissions: [] };
   const failure = (content: ReactNode) => (
     <>
       <PageHeader eyebrow={USER_APPROVAL_EYEBROW} title="User approval" />
       <Paper>{content}</Paper>
     </>
   );
-  if (!resolved || !canAll(holder, USER_APPROVAL_CODES)) {
+  if (!resolved || !canSeeUserApprovals(holder)) {
     return failure(<ForbiddenState description={USER_APPROVAL_FORBIDDEN} />);
   }
 

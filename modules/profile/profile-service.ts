@@ -15,8 +15,8 @@ import { pageMetadataSchema, type Page } from '@/lib/api/wire';
 import type { ProfileUser } from './profile-rules';
 
 /**
- * The shell's user (unchanged `profileToFinaxisUser`) plus the profile's display fields.
- * `profileSchema` already de-duplicated the repeated branches and roles (contract §C, BG-23).
+ * The shell's user (unchanged `profileToFinaxisUser`) plus the profile's display fields. The
+ * platform lists each ACTIVE branch and role once (contract §C, BG-23).
  */
 export function toProfileUser(
   profile: BackendProfile,

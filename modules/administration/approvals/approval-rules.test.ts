@@ -6,6 +6,7 @@ import {
 } from '@/modules/administration/users/user-rules';
 import {
   approvalQueueTabs,
+  canSeeUserApprovals,
   availableBranchDecisions,
   availableUserDecisions,
   blockedBranchDecisions,
@@ -24,9 +25,9 @@ import {
 const ME = 'a1000000-0000-4000-8000-0000000000aa';
 const VICTOR = 'b2000000-0000-4000-8000-0000000000bb';
 
-const APPROVER = {
-  permissions: ['user.approve', 'user.view', 'membership.view', 'membership.revoke'],
-};
+/** Every code held tenant-wide. */
+const wide = (permissions: readonly string[]) => ({ permissions, tenantPermissions: permissions });
+const APPROVER = wide(['user.approve', 'user.view', 'membership.view', 'membership.revoke']);
 
 describe('the queue', () => {
   it.each([
@@ -42,11 +43,23 @@ describe('the queue', () => {
     [['user.view', 'branch.view'], []],
     [[], []],
   ])('offers the tabs %j allows: %j', (permissions, labels) => {
-    expect(approvalQueueTabs({ permissions }).map((tab) => tab.label)).toEqual(labels);
+    expect(
+      approvalQueueTabs({ permissions, tenantPermissions: permissions }).map((tab) => tab.label),
+    ).toEqual(labels);
+  });
+
+  // GET /tenant/users checks user.view tenant-wide (BG-33).
+  it('offers no User onboarding tab while user.view is held only at branch scope', () => {
+    const permissions = ['user.approve', 'user.view', 'branch.approve', 'branch.view'];
+    const holder = { permissions, tenantPermissions: ['user.approve', 'branch.view'] };
+    expect(approvalQueueTabs(holder).map((tab) => tab.label)).toEqual(['Branch activation']);
+    expect(canSeeUserApprovals(holder)).toBe(false);
+    expect(canSeeUserApprovals({ ...holder, tenantPermissions: ['user.view'] })).toBe(true);
   });
 
   it('counts a tab only when its count was read (spec §10.6), never a 0 it doesn’t know', () => {
-    const both = { permissions: ['user.approve', 'user.view', 'branch.approve', 'branch.view'] };
+    const codes = ['user.approve', 'user.view', 'branch.approve', 'branch.view'];
+    const both = { permissions: codes, tenantPermissions: codes };
     expect(approvalQueueTabs(both, { users: 8, branches: 0 }).map((tab) => tab.label)).toEqual([
       'User onboarding (8)',
       'Branch activation (0)',
@@ -58,7 +71,8 @@ describe('the queue', () => {
   });
 
   it('builds every href from one root', () => {
-    expect(approvalQueueTabs({ permissions: ['user.approve', 'user.view'] })[0]?.href).toBe(
+    const codes = ['user.approve', 'user.view'];
+    expect(approvalQueueTabs({ permissions: codes, tenantPermissions: codes })[0]?.href).toBe(
       '/admin/approvals/users',
     );
     expect(USER_QUEUE_HREF).toBe('/admin/approvals/users');
@@ -92,19 +106,32 @@ describe('where a user approval stands', () => {
   it('offers Approve and Reject & revoke while it waits, each by its own code', () => {
     expect(availableUserDecisions('awaiting', APPROVER)).toEqual(['approve', 'reject']);
     expect(availableUserDecisions('blocked', APPROVER)).toEqual(['approve', 'reject']);
+    expect(availableUserDecisions('awaiting', wide(['user.approve', 'membership.view']))).toEqual([
+      'approve',
+    ]);
     expect(
-      availableUserDecisions('awaiting', { permissions: ['user.approve', 'membership.view'] }),
-    ).toEqual(['approve']);
-    expect(
-      availableUserDecisions('awaiting', { permissions: ['membership.revoke', 'membership.view'] }),
+      availableUserDecisions('awaiting', wide(['membership.revoke', 'membership.view'])),
     ).toEqual(['reject']);
+  });
+
+  // Review Focus 3: approving and revoking are checked tenant-wide, with membership.view (BG-33).
+  it('offers no decision held, or whose view is held, only at branch scope', () => {
+    const codes = APPROVER.permissions;
+    const held = (tenantWide: readonly string[]) => ({
+      permissions: codes,
+      tenantPermissions: tenantWide,
+    });
+    expect(
+      availableUserDecisions('awaiting', held(['membership.view', 'membership.revoke'])),
+    ).toEqual(['reject']);
+    expect(availableUserDecisions('awaiting', held(['user.approve', 'membership.revoke']))).toEqual(
+      [],
+    );
   });
 
   it('offers nothing without membership.view (BG-31), and nothing once decided or provisioning', () => {
     expect(
-      availableUserDecisions('awaiting', {
-        permissions: ['user.approve', 'user.view', 'membership.revoke'],
-      }),
+      availableUserDecisions('awaiting', wide(['user.approve', 'user.view', 'membership.revoke'])),
     ).toEqual([]);
     expect(availableUserDecisions('provisioning', APPROVER)).toEqual([]);
     expect(availableUserDecisions('decided', APPROVER)).toEqual([]);

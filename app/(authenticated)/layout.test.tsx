@@ -14,6 +14,7 @@ const { profileToFinaxisUser, renderedShell } = vi.hoisted(() => ({
       name: profile.full_name,
       organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
       permissions: (profile.permissions as string[] | undefined) ?? [],
+      tenantPermissions: (profile.tenantPermissions as string[] | undefined) ?? [],
       roles: ['Branch Teller'],
       username: undefined,
     };
@@ -146,6 +147,7 @@ describe('AuthenticatedLayout', () => {
         name: 'Jane Backend',
         organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
         permissions: [],
+        tenantPermissions: [],
         roles: ['Branch Teller'],
         username: undefined,
       },
@@ -159,39 +161,45 @@ describe('AuthenticatedLayout', () => {
   });
 
   it.each([
-    ['administration', ['business_date.view'], true],
-    ['administration', [], false],
-    ['platform-administration', ['business_date.view'], false],
-  ])('module %s with %j shows the business date: %s', async (moduleId, permissions, shown) => {
-    getAuthenticatedUser.mockResolvedValueOnce({
-      id: 'user-1',
-      name: 'Jane Muthoni',
-      email: 'jane.muthoni@finaxis.test',
-      roles: [],
-      branches: [],
-    });
-    getCurrentContextProfile.mockResolvedValueOnce({
-      kind: 'resolved',
-      context: {
-        branch: null,
-        module: { id: moduleId, name: 'Workspace' },
-        organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
-      },
-      profile: {
-        user_id: 'u',
-        full_name: 'Jane',
-        email: 'j@x',
-        branches: [],
+    ['administration', ['business_date.view'], ['business_date.view'], true],
+    ['administration', [], [], false],
+    // The read is checked tenant-wide (BG-33).
+    ['administration', ['business_date.view'], [], false],
+    ['platform-administration', ['business_date.view'], ['business_date.view'], false],
+  ])(
+    'module %s with %j (tenant-wide %j) shows the business date: %s',
+    async (moduleId, permissions, tenantPermissions, shown) => {
+      getAuthenticatedUser.mockResolvedValueOnce({
+        id: 'user-1',
+        name: 'Jane Muthoni',
+        email: 'jane.muthoni@finaxis.test',
         roles: [],
-        permissions,
-      },
-    });
+        branches: [],
+      });
+      getCurrentContextProfile.mockResolvedValueOnce({
+        kind: 'resolved',
+        context: {
+          branch: null,
+          module: { id: moduleId, name: 'Workspace' },
+          organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
+        },
+        profile: {
+          user_id: 'u',
+          full_name: 'Jane',
+          email: 'j@x',
+          branches: [],
+          roles: [],
+          permissions,
+          tenantPermissions,
+        },
+      });
 
-    render(await AuthenticatedLayout({ children: <div /> }));
+      render(await AuthenticatedLayout({ children: <div /> }));
 
-    const props = renderedShell.mock.calls[0]?.[0] as { businessDate: unknown };
-    expect(props.businessDate !== null).toBe(shown);
-  });
+      const props = renderedShell.mock.calls[0]?.[0] as { businessDate: unknown };
+      expect(props.businessDate !== null).toBe(shown);
+    },
+  );
 
   it('redirects to /login with reason=session_expired when there is no session', async () => {
     getAuthenticatedUser.mockResolvedValueOnce(null);

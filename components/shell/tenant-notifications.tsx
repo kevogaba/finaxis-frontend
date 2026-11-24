@@ -1,12 +1,12 @@
 import { Suspense } from 'react';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { canAll } from '@/auth/permissions';
+import { canAll, permissionHolder } from '@/auth/permissions';
 import { load } from '@/lib/api/load';
 import { administrationModule } from '@/modules/administration/administration-module';
 import { approvalNotifications } from '@/modules/administration/approvals/approval-notifications';
 import {
   BRANCH_ACTIVATION_CODES,
-  USER_APPROVAL_CODES,
+  canSeeUserApprovals,
 } from '@/modules/administration/approvals/approval-rules';
 import {
   countBranchActivations,
@@ -21,8 +21,8 @@ export async function PendingApprovalNotifications() {
   const selected = await getCurrentContextProfile();
   if (selected.kind !== 'resolved') return null;
   if (selected.context.module.id !== administrationModule.id) return null;
-  const holder = { permissions: selected.profile.permissions };
-  const users = canAll(holder, USER_APPROVAL_CODES);
+  const holder = permissionHolder(selected.profile);
+  const users = canSeeUserApprovals(holder);
   const branches = canAll(holder, BRANCH_ACTIVATION_CODES);
   if (!users && !branches) return null;
   // BG-22: no feed; three `size=1` reads, each settled by load() as the platform bell's is (rule

@@ -453,11 +453,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     offers no decision (BG-11). Missing prerequisites (a role, a branch) are explained after the
     platform refuses (BG-07).
   - Activation needs All branches; with a branch selected the queue says so, though the platform
-    no longer requires it (BG-03). The queue gates on `branch.activate`, which the platform
-    deprecated for `branch.approve`, so Branch activation is currently hidden from everyone
-    (`docs/backend-gaps.md`, "Backend changes that affect the current UI"). The UI doesn't read
-    `/auth/me`'s permission scopes yet, so a holder at branch scope only is told to switch to All
-    branches, where they don't hold the code (BG-33; contract §E.4).
+    no longer requires it (BG-03). The queue gates on `branch.approve`, which replaced the
+    deprecated `branch.activate` (V21). The queue doesn't use `/auth/me`'s permission scopes for
+    branch activation, so a holder at branch scope only is told to switch to All branches, where
+    they don't hold the code (contract §E.4).
   - The requested roles show one page of 100 and say so when there are more; branch assignments
     come from the bounded scan (BG-09). The bell has no push updates (BG-22).
 - Business date (`/admin/business-date`, `modules/administration/business-date/`) reads
@@ -540,7 +539,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - A grant submit carries up to 25 permissions. Each is its own write, with an idempotency key
     derived from the drawer's key, so a partial failure shows what landed and a retry replays
     it.
-  - The catalogue (80 codes) and a role's granted set are each one bounded read of 100.
+  - The catalogue (86 codes) and a role's granted set are each one bounded read of 100.
+  - A mutation needs the views the platform pairs with it (`auth/permission-views.ts`, BG-31). The
+    grant drawer adds them ("Also grants …") and posts them first, Remove is disabled on a view a
+    granted mutation needs ("Needed by …"), and platform-scope codes aren't offered.
   - "Active assignments" counts assignments, not distinct users (BG-15).
   - A branch-scoped assignment needs the user's existing assignment at that branch, and a branch
     context offers only its own branch.
@@ -564,8 +566,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   suspend, reactivate, revoke) and Overview, Roles & access, Branch assignments and Audit tabs.
   The Audit tab offers up to four views: User record, Account, Membership (once the membership
   is found) and Performed by. "Invite user" (`/admin/users/new`) is a four-step wizard
-  (Identity, Access, Invitation, Review), open to a holder of `user.invite`, `user.assign_branch`,
-  `user.view`, `role.view` and `branch.view`; it posts one invitation, which a different
+  (Identity, Access, Invitation, Review), open to a holder of `user.invite`, `membership.view` and
+  `user.view` institution-wide, and of `user.assign_branch`, `branch_assignment.view`, `role.view`
+  and `branch.view`; it posts one invitation, which a different
   administrator must approve, and opens the new user's record (or the directory when the reply has
   no readable id). Known limits:
   - The directory shows only what user summaries carry, and the onboarding state is derived

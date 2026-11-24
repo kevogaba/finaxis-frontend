@@ -78,7 +78,7 @@ describe('which cards a holder sees (Ruling 2)', () => {
   ];
 
   it('shows every card to a holder of every code', () => {
-    const cards = overviewCards({ permissions: ALL });
+    const cards = overviewCards({ permissions: ALL, tenantPermissions: ALL });
     expect(cards).toEqual({
       businessDate: true,
       approvals: { users: true, branches: true },
@@ -89,14 +89,34 @@ describe('which cards a holder sees (Ruling 2)', () => {
   });
 
   it('reads the actors and the timezone only with their own codes (rule 5)', () => {
-    expect(overviewCards({ permissions: ['audit.view'] }).activity).toEqual({
+    expect(
+      overviewCards({ permissions: ['audit.view'], tenantPermissions: ['audit.view'] }).activity,
+    ).toEqual({
       names: false,
       timeZone: false,
     });
-    expect(overviewCards({ permissions: ['audit.view', 'user.view'] }).activity).toEqual({
+    const reader = ['audit.view', 'user.view'];
+    expect(overviewCards({ permissions: reader, tenantPermissions: reader }).activity).toEqual({
       names: true,
       timeZone: false,
     });
+  });
+
+  // GET /tenant/users and /tenant/users/{id} check user.view tenant-wide (BG-33).
+  it('reads no names and no user requests while user.view is held only at branch scope', () => {
+    const cards = overviewCards({
+      permissions: ALL,
+      tenantPermissions: ['audit.view', 'tenant.view'],
+    });
+    expect(cards.activity).toEqual({ names: false, timeZone: true });
+    expect(cards.approvals).toEqual({ users: false, branches: true });
+  });
+
+  // The business date, audit and institution reads are checked tenant-wide too (BG-33).
+  it('omits the business date and activity cards while their reads are held only at branch scope', () => {
+    const cards = overviewCards({ permissions: ALL, tenantPermissions: [] });
+    expect(cards.businessDate).toBe(false);
+    expect(cards.activity).toBeNull();
   });
 
   it('offers each kind of request only with both of its codes', () => {
@@ -119,7 +139,8 @@ describe('which cards a holder sees (Ruling 2)', () => {
   it('knows when no card applies, so the page can say so once', () => {
     expect(noOverviewCards(overviewCards({ permissions: ['iam.profile.read'] }))).toBe(true);
     for (const code of ['business_date.view', 'settings.view', 'audit.view']) {
-      expect(noOverviewCards(overviewCards({ permissions: [code] })), code).toBe(false);
+      const holder = { permissions: [code], tenantPermissions: [code] };
+      expect(noOverviewCards(overviewCards(holder)), code).toBe(false);
     }
     expect(noOverviewCards(overviewCards({ permissions: ['branch.approve', 'branch.view'] }))).toBe(
       false,

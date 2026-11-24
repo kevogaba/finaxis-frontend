@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { canAll } from '@/auth/permissions';
+import { permissionHolder } from '@/auth/permissions';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -17,7 +17,7 @@ import {
   USER_QUEUE_DESCRIPTION,
 } from '@/modules/administration/approvals/approval-copy';
 import {
-  USER_APPROVAL_CODES,
+  canSeeUserApprovals,
   USER_QUEUE_HREF,
   USER_QUEUE_LABEL,
 } from '@/modules/administration/approvals/approval-rules';
@@ -37,7 +37,8 @@ interface UserOnboardingPageProps {
 export default async function UserOnboardingPage({ searchParams }: UserOnboardingPageProps) {
   const params = toSearchParams(await searchParams);
   const selected = await getCurrentContextProfile();
-  const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
+  const holder =
+    selected.kind === 'resolved' ? permissionHolder(selected.profile) : { permissions: [] };
   // The description names a list and its count, so a card that can't show them leaves it out.
   const card = (content: ReactNode, description?: string) => (
     <SectionCard title={USER_QUEUE_LABEL} description={description}>
@@ -45,7 +46,7 @@ export default async function UserOnboardingPage({ searchParams }: UserOnboardin
     </SectionCard>
   );
   // A typed URL without the codes: the tab isn't offered, and nothing is read.
-  if (!canAll(holder, USER_APPROVAL_CODES)) {
+  if (!canSeeUserApprovals(holder)) {
     return card(<ForbiddenState description={USER_APPROVAL_FORBIDDEN} />);
   }
 

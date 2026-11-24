@@ -6,6 +6,7 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import EventOutlined from '@mui/icons-material/EventOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { permissionHolder } from '@/auth/permissions';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { SectionCard } from '@/components/data-display/section-card';
@@ -67,7 +68,7 @@ export default async function BusinessDatePage({ searchParams }: BusinessDatePag
     }
   }
 
-  const permissions = selected.kind === 'resolved' ? selected.profile.permissions : [];
+  const holder = permissionHolder(selected.kind === 'resolved' ? selected.profile : undefined);
   // I2: lets a Server Action refuse a stale submit if the user switched organisation elsewhere.
   const contextOrganisationId =
     selected.kind === 'resolved' ? selected.context.organization.id : undefined;
@@ -90,7 +91,7 @@ export default async function BusinessDatePage({ searchParams }: BusinessDatePag
             title="Current business date"
             actions={
               <BusinessDateActions
-                actions={availableBusinessDateActions(current.value.status, { permissions })}
+                actions={availableBusinessDateActions(current.value.status, holder)}
                 currentDate={current.value.date}
                 contextOrganisationId={contextOrganisationId}
               />

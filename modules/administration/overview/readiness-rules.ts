@@ -1,4 +1,10 @@
-import { canAll, type PermissionHolder } from '@/auth/permissions';
+import {
+  can,
+  canAll,
+  canAllTenantWide,
+  canTenantWide,
+  type PermissionHolder,
+} from '@/auth/permissions';
 import { humanizeEnum, type StatusTone } from '@/components/data-display/status-chip';
 import { formatBusinessDate } from '@/lib/format';
 import {
@@ -36,6 +42,13 @@ export const READINESS_CODES: Record<ReadinessItemId, string> = {
   onboarding: 'user.view',
   businessDate: 'business_date.view',
 };
+
+/** Whether an item's read can be made: every read but the target-aware branch counts is checked
+ * tenant-wide (BG-33). */
+export function canCheckReadiness(holder: PermissionHolder, id: ReadinessItemId): boolean {
+  const code = READINESS_CODES[id];
+  return id === 'branches' ? can(holder, code) : canTenantWide(holder, code);
+}
 
 export const READINESS_LABELS: Record<ReadinessItemId, string> = {
   institution: 'Institution profile',
@@ -202,20 +215,36 @@ export interface ReadinessLink {
 
 /** Where each item is dealt with (Ruling 12), and the codes that page needs: the navigation item's
  * code for Settings, Branches, Users & access and Business date, both of 12's user-onboarding
- * codes for that tab. A link the holder couldn't open is never offered. No name holds "audit
- * trail" (rule 9). */
+ * codes for that tab, and `tenantWide` the ones its read checks tenant-wide, as the navigation does
+ * (BG-33). A link the holder couldn't open is never offered. No name holds "audit trail" (rule 9). */
 export const READINESS_LINKS: Record<
   ReadinessItemId,
-  ReadinessLink & { codes: readonly string[] }
+  ReadinessLink & { codes: readonly string[]; tenantWide?: readonly string[] }
 > = {
-  institution: { href: '/admin/settings', label: 'Open settings', codes: ['settings.view'] },
+  institution: {
+    href: '/admin/settings',
+    label: 'Open settings',
+    codes: ['settings.view'],
+    tenantWide: ['settings.view'],
+  },
   branches: { href: '/admin/branches', label: 'Open branches', codes: ['branch.view'] },
-  people: { href: USERS_HREF, label: 'Open users & access', codes: ['user.view'] },
-  onboarding: { href: USER_QUEUE_HREF, label: 'Open user onboarding', codes: USER_APPROVAL_CODES },
+  people: {
+    href: USERS_HREF,
+    label: 'Open users & access',
+    codes: ['user.view'],
+    tenantWide: ['user.view'],
+  },
+  onboarding: {
+    href: USER_QUEUE_HREF,
+    label: 'Open user onboarding',
+    codes: USER_APPROVAL_CODES,
+    tenantWide: ['user.view'],
+  },
   businessDate: {
     href: '/admin/business-date',
     label: 'Open business date',
     codes: ['business_date.view'],
+    tenantWide: ['business_date.view'],
   },
 };
 
@@ -257,8 +286,9 @@ export function operationalReadiness(
     businessDateItem(reads.businessDate),
   ];
   const items = checks.map((check): ReadinessItem => {
-    const { href, label, codes } = READINESS_LINKS[check.id];
-    return { ...check, link: canAll(holder, codes) ? { href, label } : null };
+    const { href, label, codes, tenantWide = [] } = READINESS_LINKS[check.id];
+    const open = canAll(holder, codes) && canAllTenantWide(holder, tenantWide);
+    return { ...check, link: open ? { href, label } : null };
   });
   const ready = items.filter((entry) => entry.state === 'ready').length;
   const unchecked = items.filter(

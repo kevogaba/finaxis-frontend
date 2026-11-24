@@ -11,7 +11,9 @@ import type { WorkspaceNavigationItem } from '@/components/shell/workspace-navig
 /**
  * Tenant Administration navigation, in spec §8's order: Overview, Approval queue, Users & access,
  * Branches, Roles & permissions, Settings, Business date, Audit trail. Each stack layer inserts its
- * page at its place when it ships, with `requiresAny` set to the page's read permission.
+ * page at its place when it ships, with `requiresAny` set to the page's read permission, and
+ * `tenantWide` when the platform checks that read tenant-wide (BG-33): every page here except the
+ * target-aware Branches.
  */
 export const administrationNavigationItems: readonly WorkspaceNavigationItem[] = [
   { href: '/admin', label: 'Overview', icon: HomeOutlined },
@@ -27,6 +29,7 @@ export const administrationNavigationItems: readonly WorkspaceNavigationItem[] =
     label: 'Users & access',
     icon: GroupOutlined,
     requiresAny: ['user.view'],
+    tenantWide: true,
   },
   {
     href: '/admin/branches',
@@ -39,23 +42,27 @@ export const administrationNavigationItems: readonly WorkspaceNavigationItem[] =
     label: 'Roles & permissions',
     icon: VerifiedUserOutlined,
     requiresAny: ['role.view'],
+    tenantWide: true,
   },
   {
     href: '/admin/settings',
     label: 'Settings',
     icon: SettingsOutlined,
     requiresAny: ['settings.view'],
+    tenantWide: true,
   },
   {
     href: '/admin/business-date',
     label: 'Business date',
     icon: EventOutlined,
     requiresAny: ['business_date.view'],
+    tenantWide: true,
   },
   {
     href: '/admin/audit',
     label: 'Audit trail',
     icon: Inventory2Outlined,
     requiresAny: ['audit.view'],
+    tenantWide: true,
   },
 ];

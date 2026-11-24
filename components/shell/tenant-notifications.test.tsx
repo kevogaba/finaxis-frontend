@@ -11,6 +11,7 @@ import {
   type UserApprovalCounts,
 } from '@/modules/administration/approvals/approval-notifications';
 import { renderWithProviders } from '@/test/test-utils';
+import { permissionScopes } from '@/test/permission-scopes';
 
 const { countBranchActivations, countUserApprovals, getCurrentContextProfile } = vi.hoisted(() => ({
   countBranchActivations: vi.fn<() => Promise<number>>(),
@@ -46,6 +47,7 @@ const PROFILE: BackendProfile = {
   branches: [],
   roles: [],
   permissions: [],
+  permission_scopes: [],
 };
 
 const MODULES = {
@@ -69,6 +71,7 @@ function resolved(
     profile: {
       ...PROFILE,
       permissions,
+      permission_scopes: permissionScopes(permissions),
       branches: Array.from({ length: options.activeBranches ?? 2 }, (_entry, index) => ({
         ...ACTIVE_BRANCH,
         id: `5b000000-0000-4000-8000-00000000000${String(index)}`,

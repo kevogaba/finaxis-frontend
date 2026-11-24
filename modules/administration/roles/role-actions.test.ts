@@ -168,9 +168,10 @@ describe('role actions', () => {
       permissionCodes: 'cob.start, business_date.view,cob.start',
     };
     await actions.grantPermissions(null, form(fields));
+    // The view cob.start needs goes first (ADR 0030).
     expect(apiPost.mock.calls.map(([path, body]) => [path, body])).toEqual([
-      [`/api/v1/tenant/roles/${ROLE}/permissions`, { permission_code: 'cob.start' }],
       [`/api/v1/tenant/roles/${ROLE}/permissions`, { permission_code: 'business_date.view' }],
+      [`/api/v1/tenant/roles/${ROLE}/permissions`, { permission_code: 'cob.start' }],
     ]);
     const keys = keysSent();
     expect(keys[0]).toMatch(CANONICAL);
@@ -232,6 +233,81 @@ describe('role actions', () => {
     expect(result).toMatchObject({
       ok: false,
       formError: '1 of 3 permissions were granted before this failed. generic Retrying is safe.',
+    });
+  });
+
+  it('posts the views the mutations need before the mutations (ADR 0030)', async () => {
+    await actions.grantPermissions(
+      null,
+      form({
+        idempotencyKey: KEY,
+        roleId: ROLE,
+        permissionCodes: 'user.invite,role.view,user.view,membership.view,cob.start',
+      }),
+    );
+    expect(apiPost.mock.calls.map(([, body]) => body.permission_code)).toEqual([
+      'user.view',
+      'membership.view',
+      'user.invite',
+      'role.view',
+      'cob.start',
+    ]);
+  });
+
+  describe('a composition refusal (400 validation_failed from the platform)', () => {
+    const refusedBy = (failAt: 'post' | 'delete') => {
+      runServerAction.mockImplementationOnce(settle);
+      const error = new BackendApiError(400, { code: 'validation_failed', requestId: 'req-2' });
+      (failAt === 'post' ? apiPost : apiDelete).mockRejectedValueOnce(error);
+    };
+
+    it('asks to refresh on a grant, keeping the reference', async () => {
+      refusedBy('post');
+      const result = await actions.grantPermissions(
+        null,
+        form({ idempotencyKey: KEY, roleId: ROLE, permissionCodes: 'cob.start' }),
+      );
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'validation_failed',
+        requestId: 'req-2',
+        formError:
+          'These permissions need their view permissions granted first. Refresh and try again.',
+      });
+    });
+
+    it('names the dependant on a removal', async () => {
+      refusedBy('delete');
+      const result = await actions.removePermission(
+        null,
+        form({ idempotencyKey: KEY, roleId: ROLE, grantId: GRANT }),
+      );
+      expect(result).toMatchObject({
+        ok: false,
+        formError: 'Another permission on this role needs this one. Remove that one first.',
+      });
+    });
+
+    // The real runServerAction refuses the form's own fields before any backend call, with the same
+    // code: only a 400 that came back from the platform is a composition refusal.
+    it("leaves the form's own validation failure alone", async () => {
+      const LOCAL = 'Check the highlighted fields and try again.';
+      const validating = async (schema: z.ZodType, formData: FormData, run: Run) =>
+        schema.safeParse(Object.fromEntries(formData)).success
+          ? settle(schema, formData, run)
+          : { ...failure('validation_failed'), formError: LOCAL, requestId: null };
+      runServerAction.mockImplementation(validating);
+
+      const grant = await actions.grantPermissions(
+        null,
+        form({ idempotencyKey: KEY, roleId: ROLE, permissionCodes: '' }),
+      );
+      const remove = await actions.removePermission(null, form({ roleId: ROLE }));
+
+      expect(grant).toMatchObject({ code: 'validation_failed', formError: LOCAL });
+      expect(remove).toMatchObject({ code: 'validation_failed', formError: LOCAL });
+      expect(apiPost).not.toHaveBeenCalled();
+      expect(apiDelete).not.toHaveBeenCalled();
     });
   });
 

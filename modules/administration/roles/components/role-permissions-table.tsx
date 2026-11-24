@@ -20,6 +20,8 @@ export interface RolePermissionRow {
   risk: PermissionRiskLevel | null;
   /** Already formatted in the organisation's timezone. */
   grantedAt: string;
+  /** The granted ACTIVE mutations that need this view, by name: it can't be removed (ADR 0030). */
+  neededBy: readonly string[];
 }
 
 interface RolePermissionsTableProps {
@@ -77,6 +79,7 @@ export function RolePermissionsTable({
                     // An unknown risk (catalogue unreadable) confirms as critical (Ruling 7).
                     critical={row.risk === 'CRITICAL' || row.risk === null}
                     riskUnknown={row.risk === null}
+                    neededBy={row.neededBy}
                     contextOrganisationId={contextOrganisationId}
                   />
                 </TableCell>

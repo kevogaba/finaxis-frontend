@@ -22,7 +22,7 @@ describe('platformAdministrationNavigationItems', () => {
 
   it('shows Platform users only to a holder of user.view', () => {
     const labels = (permissions: string[]) =>
-      visibleNavigationItems(platformAdministrationNavigationItems, permissions).map(
+      visibleNavigationItems(platformAdministrationNavigationItems, { permissions }).map(
         (item) => item.label,
       );
 

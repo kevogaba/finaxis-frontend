@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { can, canAll, type PermissionHolder } from '@/auth/permissions';
+import { canAll, canAllTenantWide, canTenantWide, type PermissionHolder } from '@/auth/permissions';
+import { requiredViews, withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import type { Permission, RoleScopeType, RoleStatus } from './role-contract';
 
@@ -17,9 +18,13 @@ export const SYSTEM_ROLE_NOTE =
 
 export type RoleLifecycleAction = 'activate' | 'deactivate';
 
-/** Every role mutation reads the role back, so it also needs `role.view` (BG-31). */
+/** RoleManagementService checks each role mutation, and the `role.view` it implies (ADR 0030),
+ * tenant-wide (BG-33). */
+const holdsRoleMutation = (holder: PermissionHolder, code: string) =>
+  canAllTenantWide(holder, withViews([code]));
+
 export function canCreateRole(holder: PermissionHolder): boolean {
-  return canAll(holder, ['role.create', 'role.view']);
+  return holdsRoleMutation(holder, 'role.create');
 }
 
 /** The one status toggle on offer — custom roles only, since a system role answers 409 (contract
@@ -28,34 +33,71 @@ export function roleStatusAction(
   role: RoleShape,
   holder: PermissionHolder,
 ): RoleLifecycleAction | null {
-  if (role.systemRole || !can(holder, 'role.view')) return null;
-  if (role.status === 'ACTIVE') return can(holder, 'role.deactivate') ? 'deactivate' : null;
-  return can(holder, 'role.activate') ? 'activate' : null;
+  if (role.systemRole) return null;
+  const action = role.status === 'ACTIVE' ? 'deactivate' : 'activate';
+  return holdsRoleMutation(holder, `role.${action}`) ? action : null;
 }
 
 export function canEditRole(role: RoleShape, holder: PermissionHolder): boolean {
-  return !role.systemRole && canAll(holder, ['role.update', 'role.view']);
+  return !role.systemRole && holdsRoleMutation(holder, 'role.update');
 }
 
-/** The drawer browses the catalogue, so granting also needs `permission.view`. */
+/** The drawer browses the catalogue, so granting also needs `permission.view`, which the catalogue
+ * route also checks tenant-wide. */
 export function canGrantPermissions(role: RoleShape, holder: PermissionHolder): boolean {
   return (
-    !role.systemRole && canAll(holder, ['role.assign_permission', 'role.view', 'permission.view'])
+    !role.systemRole &&
+    canAllTenantWide(holder, [...withViews(['role.assign_permission']), 'permission.view'])
   );
 }
 
 export function canRemovePermissions(role: RoleShape, holder: PermissionHolder): boolean {
-  return !role.systemRole && canAll(holder, ['role.remove_permission', 'role.view']);
+  return !role.systemRole && holdsRoleMutation(holder, 'role.remove_permission');
 }
 
-/** Only an ACTIVE role: a DISABLED one grants nothing (BG-27). The drawer's user search needs
- * `user.view`. System roles are assignable. */
+/** Only an ACTIVE role: a DISABLED one grants nothing (BG-27). The write needs its views (ADR
+ * 0030); the drawer's user search reads `/tenant/users`, which needs `user.view` tenant-wide
+ * (BG-33). System roles are assignable. */
 export function canAssignRole(role: Pick<RoleShape, 'status'>, holder: PermissionHolder): boolean {
-  return role.status === 'ACTIVE' && canAll(holder, ['user.assign_role', 'user.view']);
+  return (
+    role.status === 'ACTIVE' &&
+    canAll(holder, [...withViews(['user.assign_role']), 'role.view']) &&
+    canTenantWide(holder, 'user.view')
+  );
+}
+
+/** The grant drawer's options: ACTIVE catalogue codes the role lacks. A PLATFORM code grants
+ * nothing to a tenant role, and a code that isn't ACTIVE grants nothing at all (V22). */
+export function grantableOptions(
+  catalogue: readonly Permission[],
+  granted: ReadonlySet<string>,
+): Permission[] {
+  return catalogue.filter(
+    (permission) =>
+      permission.status === 'ACTIVE' &&
+      permission.grantScope === 'TENANT' &&
+      !granted.has(permission.code),
+  );
+}
+
+/** The granted mutations, by name, that need `code`: Remove is refused while one is ACTIVE (ADR
+ * 0030). Without a catalogue entry a mutation is assumed ACTIVE and named by its code: the
+ * platform decides, and a wrongly disabled Remove beats a 400. */
+export function neededByNames(
+  code: string,
+  granted: Iterable<string>,
+  byCode: ReadonlyMap<string, Permission>,
+): string[] {
+  return [...granted]
+    .filter(
+      (held) =>
+        requiredViews(held).includes(code) && (byCode.get(held)?.status ?? 'ACTIVE') === 'ACTIVE',
+    )
+    .map((held) => byCode.get(held)?.name ?? held);
 }
 
 export function canRevokeRoleAssignments(holder: PermissionHolder): boolean {
-  return canAll(holder, ['user.revoke_role', 'role_assignment.view']);
+  return canAll(holder, withViews(['user.revoke_role']));
 }
 
 /** From a branch-selected context, revoking a BRANCH assignment at another branch is a 404

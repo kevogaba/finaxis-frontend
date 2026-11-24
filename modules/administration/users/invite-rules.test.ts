@@ -19,20 +19,34 @@ import {
 
 describe('who may invite (Ruling 4)', () => {
   it('needs every code the wizard uses, and only those', () => {
+    // user.invite implies membership.view and user.view, and each invited branch is assigned
+    // through user.assign_branch, which implies branch_assignment.view (ADR 0030).
     expect(INVITE_CODES).toEqual([
       'user.invite',
       'user.assign_branch',
+      'membership.view',
       'user.view',
+      'branch_assignment.view',
       'role.view',
       'branch.view',
     ]);
-    expect(canInviteUsers({ permissions: [...INVITE_CODES] })).toBe(true);
+    const all = { permissions: INVITE_CODES, tenantPermissions: INVITE_CODES };
+    expect(canInviteUsers(all)).toBe(true);
     for (const missing of INVITE_CODES) {
-      expect(
-        canInviteUsers({ permissions: INVITE_CODES.filter((code) => code !== missing) }),
-        missing,
-      ).toBe(false);
+      const rest = INVITE_CODES.filter((code) => code !== missing);
+      expect(canInviteUsers({ permissions: rest, tenantPermissions: rest }), missing).toBe(false);
     }
+  });
+
+  // Review Focus 3: POST /tenant/users checks user.invite and its views tenant-wide (BG-33); each
+  // branch assignment is checked on its own branch, so a branch-scoped user.assign_branch counts.
+  it.each([
+    ['user.view held only at branch scope', false, ['user.invite', 'membership.view']],
+    ['user.invite held only at branch scope', false, ['membership.view', 'user.view']],
+    ['the invite and its views tenant-wide', true, ['user.invite', 'membership.view', 'user.view']],
+  ] as const)('%s → %s', (_case, expected, tenantWide) => {
+    const holder = { permissions: INVITE_CODES, tenantPermissions: tenantWide };
+    expect(canInviteUsers(holder)).toBe(expected);
   });
 
   it('builds every href from the directory', () => {

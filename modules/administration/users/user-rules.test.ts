@@ -55,6 +55,8 @@ const LIFECYCLE = [
   'membership.revoke',
 ];
 const FULL = ['Done', 'Done', 'Done', 'Done'];
+/** Every code held tenant-wide. */
+const wide = (permissions: readonly string[]) => ({ permissions, tenantPermissions: permissions });
 
 describe('onboardingState', () => {
   it.each([
@@ -304,7 +306,7 @@ describe('availableMembershipActions', () => {
   const pending = { membershipStatus: 'PENDING_APPROVAL', userStatus: 'DRAFT' } as const;
 
   it('offers nothing without membership.view, whatever the status and other codes', () => {
-    const holder = { permissions: ALL.filter((code) => code !== 'membership.view') };
+    const holder = wide(ALL.filter((code) => code !== 'membership.view'));
     expect(availableMembershipActions(pending, holder)).toEqual([]);
     for (const membershipStatus of MEMBERSHIP_STATUSES) {
       expect(
@@ -320,13 +322,13 @@ describe('availableMembershipActions', () => {
     ['SUSPENDED', 'ACTIVE', ['reactivate', 'revoke']],
     ['REVOKED', 'ACTIVE', []],
   ] as const)('%s + %s offers %j', (membershipStatus, userStatus, actions) => {
-    expect(
-      availableMembershipActions({ membershipStatus, userStatus }, { permissions: ALL }),
-    ).toEqual(actions);
+    expect(availableMembershipActions({ membershipStatus, userStatus }, wide(ALL))).toEqual(
+      actions,
+    );
   });
 
   it("needs each action's own code; Reject & revoke needs membership.revoke", () => {
-    const only = (...codes: string[]) => ({ permissions: ['membership.view', ...codes] });
+    const only = (...codes: string[]) => wide(['membership.view', ...codes]);
     expect(availableMembershipActions(pending, only('membership.revoke'))).toEqual(['reject']);
     expect(availableMembershipActions(pending, only('user.approve'))).toEqual(['approve']);
   });
@@ -359,7 +361,7 @@ describe('availableMembershipActions', () => {
   it.each(SINGLE_CODE)(
     '%s with membership.view and %j offers %j',
     (membershipStatus, codes, expected) => {
-      const holder = { permissions: ['membership.view', ...codes] };
+      const holder = wide(['membership.view', ...codes]);
       expect(
         availableMembershipActions({ membershipStatus, userStatus: 'ACTIVE' }, holder),
       ).toEqual(expected);
@@ -367,7 +369,7 @@ describe('availableMembershipActions', () => {
   );
 
   it('offers nothing for a code that belongs to a different status', () => {
-    const holder = { permissions: ['membership.view', 'membership.suspend'] };
+    const holder = wide(['membership.view', 'membership.suspend']);
     expect(availableMembershipActions(pending, holder)).toEqual([]);
     expect(
       availableMembershipActions({ membershipStatus: 'REVOKED', userStatus: 'ACTIVE' }, holder),
@@ -378,9 +380,21 @@ describe('availableMembershipActions', () => {
     expect(
       availableMembershipActions(
         { membershipStatus: 'PENDING_APPROVAL', userStatus: 'LOCKED' },
-        { permissions: ALL },
+        wide(ALL),
       ),
     ).toEqual(['approve', 'reject']);
+  });
+
+  // Review Focus 3: UserProvisioningService checks each membership decision, and the
+  // membership.view it implies, tenant-wide (BG-33).
+  it.each([
+    ['the mutation', 'membership.suspend'],
+    ['its view', 'membership.view'],
+  ])('offers no Suspend while %s is held only at branch scope', (_case, branchOnly) => {
+    const holder = { permissions: ALL, tenantPermissions: ALL.filter((c) => c !== branchOnly) };
+    const active = { membershipStatus: 'ACTIVE', userStatus: 'ACTIVE' } as const;
+    expect(availableMembershipActions(active, holder)).not.toContain('suspend');
+    expect(availableMembershipActions(active, wide(ALL))).toContain('suspend');
   });
 });
 
@@ -501,10 +515,16 @@ describe('branchContextNote', () => {
 
 describe('role and branch assignment gates', () => {
   it('refuses a role assignment on a revoked membership or without role.view', () => {
-    const holder = { permissions: ['user.assign_role', 'role.view'] };
+    const holder = { permissions: ['user.assign_role', 'role_assignment.view', 'role.view'] };
     expect(canAssignUserRole('REVOKED', holder)).toBe(false);
-    expect(canAssignUserRole('ACTIVE', { permissions: ['user.assign_role'] })).toBe(false);
+    expect(
+      canAssignUserRole('ACTIVE', { permissions: ['user.assign_role', 'role_assignment.view'] }),
+    ).toBe(false);
     expect(canAssignUserRole('ACTIVE', { permissions: ['role.view'] })).toBe(false);
+    // Review Focus 3: user.assign_role implies role_assignment.view (ADR 0030).
+    expect(canAssignUserRole('ACTIVE', { permissions: ['user.assign_role', 'role.view'] })).toBe(
+      false,
+    );
     expect(canAssignUserRole('SUSPENDED', holder)).toBe(true);
     expect(canAssignUserRole('PENDING_APPROVAL', holder)).toBe(true);
   });
@@ -544,7 +564,7 @@ describe('plain data', () => {
         const progress = onboardingProgress(membershipStatus, userStatus);
         expect(roundTrip(progress), label).toEqual(progress);
         const subject = { membershipStatus, userStatus, self: true, invitedByMe: true };
-        const actions = availableMembershipActions(subject, { permissions: ALL });
+        const actions = availableMembershipActions(subject, wide(ALL));
         expect(roundTrip(actions), label).toEqual(actions);
         const blocked = blockedMembershipActions(actions, subject);
         expect(roundTrip(blocked), label).toEqual(blocked);

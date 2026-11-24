@@ -7,6 +7,7 @@ import {
   USER_QUEUE_HREF,
 } from '@/modules/administration/approvals/approval-rules';
 import { renderWithProviders } from '@/test/test-utils';
+import { permissionScopes } from '@/test/permission-scopes';
 
 const CONTEXT_NOT_SELECTED = {
   kind: 'redirect-to-context-selection',
@@ -29,7 +30,7 @@ const { default: ApprovalQueuePage } = await import('./page');
 
 const resolved = (permissions: string[]) => ({
   kind: 'resolved',
-  profile: { permissions },
+  profile: { permissions, permission_scopes: permissionScopes(permissions) },
   context: { organization: { id: 'org-1', name: 'Greenfield' }, branch: null },
 });
 

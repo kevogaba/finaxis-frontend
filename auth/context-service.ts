@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { BackendApiError, backendApi } from '@/auth/backend-api';
 import { readContextToken } from '@/auth/context-cookie';
 import type { FinaxisUser } from '@/auth/auth.types';
+import { permissionHolder } from '@/auth/permissions';
 import {
   resolveApplicationContextModule,
   type ApplicationContext,
@@ -160,7 +161,7 @@ export function profileToFinaxisUser(
     organization: profile.organisation
       ? { id: profile.organisation.id, name: profile.organisation.name }
       : undefined,
-    permissions: profile.permissions,
+    ...permissionHolder(profile),
     roles: profile.roles.map((role) => role.code),
     selectedBranch: profile.selected_branch
       ? { id: profile.selected_branch.id, name: profile.selected_branch.name }

@@ -27,6 +27,8 @@ export interface FinaxisUser {
   image?: string;
   roles: readonly string[];
   permissions: readonly string[];
+  /** The codes held tenant-wide (BG-33), for the routes the platform checks tenant-wide. */
+  tenantPermissions?: readonly string[];
   branches: readonly AssignedBranch[];
   selectedBranch?: AssignedBranch;
   organization?: OrganizationSummary;

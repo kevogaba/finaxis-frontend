@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { permissionHolder } from '@/auth/permissions';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -37,7 +38,8 @@ export default async function BranchUsersPage({ params, searchParams }: BranchUs
   ]);
   if (!branch.ok) return null; // the layout renders the failure or the guided state
   const record = branch.value;
-  const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
+  const holder =
+    selected.kind === 'resolved' ? permissionHolder(selected.profile) : { permissions: [] };
   const canAssign = canAssignUsers(record.status, holder);
   // I2: the organisation this page rendered with, carried by every mutation surface below.
   const contextOrganisationId =

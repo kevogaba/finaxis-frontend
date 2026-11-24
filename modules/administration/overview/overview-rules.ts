@@ -1,4 +1,4 @@
-import { can, canAll, canAny, type PermissionHolder } from '@/auth/permissions';
+import { canAll, canAny, canTenantWide, type PermissionHolder } from '@/auth/permissions';
 import type { NotificationEntry } from '@/components/shell/notifications-menu';
 import { formatInstant, shortId } from '@/lib/format';
 import type { Page } from '@/lib/api/wire';
@@ -10,7 +10,7 @@ import {
   BRANCH_ACTIVATION_CODES,
   BRANCH_QUEUE_LABEL,
   branchApprovalHref,
-  USER_APPROVAL_CODES,
+  canSeeUserApprovals,
   USER_QUEUE_LABEL,
   userApprovalHref,
 } from '@/modules/administration/approvals/approval-rules';
@@ -59,14 +59,18 @@ export interface OverviewCards {
 /** Ruling 2: a card the holder could never read or act on is omitted, decided before any read.
  * Readiness shows while at least one of its items can be checked. */
 export function overviewCards(holder: PermissionHolder): OverviewCards {
-  const users = canAll(holder, USER_APPROVAL_CODES);
+  const users = canSeeUserApprovals(holder);
   const branches = canAll(holder, BRANCH_ACTIVATION_CODES);
   return {
-    businessDate: can(holder, 'business_date.view'),
+    // Every read here but the branch counts is checked tenant-wide (BG-33).
+    businessDate: canTenantWide(holder, 'business_date.view'),
     approvals: users || branches ? { users, branches } : null,
     readiness: canAny(holder, Object.values(READINESS_CODES)),
-    activity: can(holder, 'audit.view')
-      ? { names: can(holder, 'user.view'), timeZone: can(holder, 'tenant.view') }
+    activity: canTenantWide(holder, 'audit.view')
+      ? {
+          names: canTenantWide(holder, 'user.view'),
+          timeZone: canTenantWide(holder, 'tenant.view'),
+        }
       : null,
   };
 }

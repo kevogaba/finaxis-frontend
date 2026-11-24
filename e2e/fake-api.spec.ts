@@ -186,9 +186,8 @@ test.describe('fake API', () => {
     expect(await response.json()).toMatchObject({ code: 'invalid_parameter', violations: null });
   });
 
-  // Contract §C: /me's branches[] is "per ACTIVE assignment ... may include SUSPENDED branches",
-  // unlike /branches (AvailableBranch, always ACTIVE) — the two routes intentionally disagree.
-  test('lists a SUSPENDED branch on /me but excludes it from /branches', async ({ request }) => {
+  // BG-23: /me and /branches both list ACTIVE branches only, each once.
+  test('leaves a SUSPENDED branch off /me and /branches', async ({ request }) => {
     const headers = bearer('suspended-branch');
     const selection = await request.post(`${FAKE_API_URL}/api/v1/auth/select-organisation`, {
       headers,
@@ -202,14 +201,28 @@ test.describe('fake API', () => {
     });
     expect(await branches.json()).toMatchObject({
       items: [{ branch_code: 'HEAD_OFFICE', branch_status: 'ACTIVE' }],
+      page: { total_items: 1 },
     });
 
     const profile = await request.get(`${FAKE_API_URL}/api/v1/auth/me`, {
       headers: contextHeaders,
     });
     const body = (await profile.json()) as { branches: { code: string; status: string }[] };
-    expect(body.branches.map((item) => item.code)).toEqual(['HEAD_OFFICE', 'WESTLANDS']);
-    expect(body.branches.find((item) => item.code === 'WESTLANDS')?.status).toBe('SUSPENDED');
+    expect(body.branches.map((item) => item.code)).toEqual(['HEAD_OFFICE']);
+  });
+
+  // BG-23: HOME and OPERATE at one branch are one assigned branch, so selection pins it.
+  test('auto-selects a branch held through two assignment types', async ({ request }) => {
+    const headers = bearer('duplicate-assignments');
+    const selection = await request.post(`${FAKE_API_URL}/api/v1/auth/select-organisation`, {
+      headers,
+      data: { organisation_id: '11111111-1111-4111-8111-111111111111' },
+    });
+    expect(await selection.json()).toMatchObject({
+      branch_id: '22222222-2222-4222-8222-222222222222',
+      requires_branch_selection: false,
+      assigned_branch_ids: ['22222222-2222-4222-8222-222222222222'],
+    });
   });
 
   // Contract §A/§C: created_from/created_to on /platform/tenants are instants, compared by time

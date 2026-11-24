@@ -1,3 +1,4 @@
+import { isActivePermission, viewsRequiredBy } from './catalogue.mts';
 import { decodeContext } from './context-token.mts';
 import type { ContextClaims } from './context-token.mts';
 import { problem } from './http.mts';
@@ -62,12 +63,57 @@ function effectivePermissions(
     if (role?.status !== 'ACTIVE') {
       continue;
     }
-    for (const code of role.permissions) {
+    // Runtime honours only ACTIVE codes (V21): a DEPRECATED grant confers nothing.
+    for (const code of role.permissions.filter(isActivePermission)) {
       all.add(code);
       if (assignment.scopeType === 'TENANT') tenant.add(code);
     }
   }
   return { all, tenant };
+}
+
+export interface PermissionScopeEntry {
+  code: string;
+  scope: 'TENANT' | 'BRANCH';
+  branch_ids?: string[];
+}
+
+/** `/auth/me`'s `permission_scopes` (BG-33): every ACTIVE code the member holds through an ACTIVE
+ * role, over every ACTIVE branch rather than only the selected one, sorted by code. A code held
+ * tenant-wide is one TENANT entry, with no `branch_ids`. */
+export function permissionScopes(
+  state: RunState,
+  userId: string,
+  organisationId: string,
+): PermissionScopeEntry[] {
+  const tenant = new Set<string>();
+  const branches = new Map<string, Set<string>>();
+  for (const assignment of state.roleAssignments) {
+    const role = state.roles.find((candidate) => candidate.id === assignment.roleId);
+    const branchActive =
+      assignment.scopeType === 'TENANT' ||
+      state.branches.some((row) => row.id === assignment.branchId && row.status === 'ACTIVE');
+    if (
+      assignment.userId !== userId ||
+      assignment.organisationId !== organisationId ||
+      assignment.status !== 'ACTIVE' ||
+      role?.status !== 'ACTIVE' ||
+      !branchActive
+    ) {
+      continue;
+    }
+    for (const code of role.permissions.filter(isActivePermission)) {
+      if (assignment.scopeType === 'TENANT') tenant.add(code);
+      else branches.set(code, (branches.get(code) ?? new Set()).add(assignment.branchId ?? ''));
+    }
+  }
+  return [...new Set([...tenant, ...branches.keys()])]
+    .sort()
+    .map((code) =>
+      tenant.has(code)
+        ? { code, scope: 'TENANT' }
+        : { code, scope: 'BRANCH', branch_ids: [...(branches.get(code) ?? [])].sort() },
+    );
 }
 
 /**
@@ -136,14 +182,17 @@ export function requireContext({ req, state }: RouteContext): AccessContext {
   };
 }
 
+/** A mutation also needs each view the catalogue pairs with it, at the same scope, before any
+ * lookup or write (ADR 0030); the 403 names the first missing code in its detail. */
 export function requirePermission(
   access: AccessContext,
   code: string,
   scope: PermissionScope = 'tenant',
 ): void {
   const held = scope === 'branch' ? access.permissions : access.tenantPermissions;
-  if (!held.has(code)) {
-    throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
+  const missing = [code, ...viewsRequiredBy(code)].find((candidate) => !held.has(candidate));
+  if (missing !== undefined) {
+    throw problem(403, 'forbidden', `Missing permission: ${missing}.`);
   }
 }
 

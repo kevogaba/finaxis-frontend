@@ -32,15 +32,15 @@ test.describe('working context', () => {
     await expect(page.getByRole('banner').getByText('All branches')).toBeVisible();
   });
 
-  test('pins a single distinct branch even when the backend lists it twice', async ({
+  test('pins the one branch a member holds through two assignment types', async ({
     context,
     page,
   }, testInfo) => {
     await authenticate(context, testInfo, 'duplicate-assignments');
     await goToAdminAsGreenfield(page);
 
-    // The backend lists Head Office twice (HOME + OPERATE); the client de-dupes to the one
-    // distinct branch and auto-pins it — no branch combobox is ever shown for this user.
+    // HOME and OPERATE at Head Office are one assigned branch (BG-23), so selection pins it — no
+    // branch combobox is ever shown for this user.
     await expect(page).toHaveURL(/\/admin$/);
     await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible();
   });

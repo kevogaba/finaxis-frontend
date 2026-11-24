@@ -96,7 +96,7 @@ test.describe('profile', () => {
     await expect(branches.getByRole('row', { name: /Head Office/ })).not.toContainText('Current');
   });
 
-  test('contexts: one row per branch even when the backend repeats it', async ({
+  test('contexts: one row for a branch held through two assignment types', async ({
     context,
     page,
   }, testInfo) => {
@@ -108,21 +108,17 @@ test.describe('profile', () => {
     await expect(branches.getByRole('row', { name: /Head Office/ })).toHaveCount(1);
   });
 
-  test('contexts: a suspended branch assignment is listed as suspended', async ({
-    context,
-    page,
-  }, testInfo) => {
+  test('contexts: a suspended branch is left off (BG-23)', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'suspended-branch');
     // Westlands is SUSPENDED, so Head Office is the only selectable branch and gets auto-pinned.
     await enterAdmin(page, '/profile/contexts', { heading: 'My profile', branch: null });
 
     const branches = main(page).getByRole('table', { name: 'Branches' });
-    await expect(branches.getByRole('row', { name: /Westlands Branch/ })).toContainText(
-      'Suspended',
-    );
+    await expect(branches.getByRole('row', { name: /Head Office/ })).toHaveCount(1);
+    await expect(page.getByRole('row', { name: /Westlands Branch/ })).toHaveCount(0);
   });
 
-  test('roles & permissions: one row per role, a disabled role, and permissions grouped by prefix', async ({
+  test('roles & permissions: one row per ACTIVE role, and permissions grouped by prefix', async ({
     context,
     page,
   }, testInfo) => {
@@ -131,7 +127,8 @@ test.describe('profile', () => {
 
     const roles = main(page).getByRole('table', { name: 'Roles' });
     await expect(roles.getByRole('row', { name: /Tenant admin/ })).toHaveCount(1);
-    await expect(roles.getByRole('row', { name: /Legacy teller/ })).toContainText('Disabled');
+    // BG-23: a DISABLED role grants nothing, and /auth/me no longer lists it.
+    await expect(page.getByRole('row', { name: /Legacy teller/ })).toHaveCount(0);
 
     // Presence only: later layers grow TENANT_ADMIN_PERMISSIONS, so never count codes or groups.
     const permissions = main(page).getByRole('region', { name: 'Effective permissions' });

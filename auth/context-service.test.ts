@@ -76,6 +76,7 @@ const profile = {
     status: 'ACTIVE',
   },
   permissions: [],
+  permission_scopes: [],
   roles: [],
   selected_branch: {
     code: 'HQ',
@@ -295,6 +296,10 @@ describe('context service', () => {
     const result = profileToFinaxisUser({
       ...profile,
       permissions: ['iam.profile.read', 'iam.user.invite'],
+      permission_scopes: [
+        { code: 'iam.profile.read', scope: 'TENANT' },
+        { code: 'iam.user.invite', scope: 'BRANCH', branch_ids: [branchId] },
+      ],
       roles: [
         { code: 'BRANCH_TELLER', id: 'role-1', name: 'Branch Teller', status: 'ACTIVE' },
         { code: 'TENANT_ADMIN', id: 'role-2', name: 'Tenant Administrator', status: 'ACTIVE' },
@@ -309,6 +314,7 @@ describe('context service', () => {
       name: 'Jane Muthoni',
       organization: { id: platformOrganisationId, name: 'Finaxis Holdings' },
       permissions: ['iam.profile.read', 'iam.user.invite'],
+      tenantPermissions: ['iam.profile.read'],
       roles: ['BRANCH_TELLER', 'TENANT_ADMIN'],
       selectedBranch: { id: branchId, name: 'Headquarters' },
       username: undefined,
@@ -336,6 +342,7 @@ describe('context service', () => {
       name: 'fallback@finaxis.test',
       organization: undefined,
       permissions: [],
+      tenantPermissions: [],
       roles: [],
       selectedBranch: undefined,
       username: undefined,

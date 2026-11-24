@@ -17,7 +17,7 @@ const ALL_BRANCHES = /All branches \(institution level\)/;
 // The app's copy, repeated here: Playwright can't resolve the app's `@/` imports. Each string is
 // asserted verbatim, so a reworded message fails here.
 const INVITE_FORBIDDEN =
-  'Inviting someone needs permission to invite users and assign branches, and to view users, roles and branches. Ask an administrator if you need access.';
+  'Inviting someone needs permission for the whole institution to invite users and to view users and memberships, and permission to assign branches and to view branch assignments, roles and branches. Ask an administrator if you need access.';
 const ACTIVE_EMAIL = 'This email already belongs to a member of this institution.';
 const REVOKED_EMAIL =
   "This email's membership here was revoked, so it can't be invited to this institution again.";

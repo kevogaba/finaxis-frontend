@@ -46,10 +46,11 @@ const PROFILE: BackendProfile = {
   selected_branch: null,
   branches: [
     { id: 'b-1', code: 'HEAD_OFFICE', name: 'Head Office', status: 'ACTIVE' },
-    { id: 'b-2', code: 'WESTLANDS', name: 'Westlands Branch', status: 'SUSPENDED' },
+    { id: 'b-2', code: 'WESTLANDS', name: 'Westlands Branch', status: 'ACTIVE' },
   ],
-  roles: [{ id: 'r-1', code: 'LEGACY_TELLER', name: 'Legacy teller', status: 'DISABLED' }],
+  roles: [{ id: 'r-1', code: 'TELLER', name: 'Teller', status: 'ACTIVE' }],
   permissions: ['audit.view'],
+  permission_scopes: [],
 };
 const SESSION_USER: FinaxisUser = {
   id: 'session-user',
@@ -79,12 +80,10 @@ describe('profile service', () => {
       organization: { id: 'org-1', name: 'Greenfield SACCO', code: 'greenfield', status: 'ACTIVE' },
       branches: [
         { id: 'b-1', code: 'HEAD_OFFICE', name: 'Head Office', status: 'ACTIVE' },
-        { id: 'b-2', code: 'WESTLANDS', name: 'Westlands Branch', status: 'SUSPENDED' },
+        { id: 'b-2', code: 'WESTLANDS', name: 'Westlands Branch', status: 'ACTIVE' },
       ],
       membershipStatus: 'ACTIVE',
-      assignedRoles: [
-        { id: 'r-1', code: 'LEGACY_TELLER', name: 'Legacy teller', status: 'DISABLED' },
-      ],
+      assignedRoles: [{ id: 'r-1', code: 'TELLER', name: 'Teller', status: 'ACTIVE' }],
       permissions: ['audit.view'],
     });
     expect(JSON.stringify(user)).not.toContain('kc-subject-never-rendered');

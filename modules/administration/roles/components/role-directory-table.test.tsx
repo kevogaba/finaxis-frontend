@@ -8,13 +8,21 @@ const TELLER = '09000000-0000-4000-8000-000000000007';
 const LONG =
   'Compliance, risk and internal audit reviewer for member savings and credit operations';
 const ROLES: RoleSummary[] = [
-  { id: TELLER, roleCode: 'TELLER', roleName: 'Teller', systemRole: false, status: 'DISABLED' },
+  {
+    id: TELLER,
+    roleCode: 'TELLER',
+    roleName: 'Teller',
+    systemRole: false,
+    status: 'DISABLED',
+    missingViewPermissions: [],
+  },
   {
     id: '66666666-6666-4666-8666-666666666666',
     roleCode: 'TENANT_ADMIN',
     roleName: LONG,
     systemRole: true,
     status: 'ACTIVE',
+    missingViewPermissions: [],
   },
 ];
 

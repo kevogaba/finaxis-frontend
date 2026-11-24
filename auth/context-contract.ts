@@ -10,21 +10,9 @@ import type {
 
 /**
  * Runtime validation for the `/api/v1/auth/*` wire shapes (contract §C). Outputs keep the
- * snake_case server-only types in auth/context.types.ts. The backend returns one row per
- * assignment, so branches/roles/assigned ids are de-duplicated here.
+ * snake_case server-only types in auth/context.types.ts. The platform lists distinct, ACTIVE
+ * branches, roles and assigned ids (BG-23), so they pass through as sent.
  */
-function uniqueBy<T>(items: readonly T[], key: (item: T) => string): T[] {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const value = key(item);
-    if (seen.has(value)) {
-      return false;
-    }
-    seen.add(value);
-    return true;
-  });
-}
-
 const pageMetadata = z.object({
   number: z.number().int(),
   size: z.number().int(),
@@ -69,7 +57,7 @@ export const organisationPageSchema: z.ZodType<Page<BackendOrganisation>> = z.ob
 });
 
 export const branchPageSchema: z.ZodType<Page<BackendBranch>> = z.object({
-  items: z.array(branch).transform((items) => uniqueBy(items, (item) => item.branch_id)),
+  items: z.array(branch),
   page: pageMetadata,
 });
 
@@ -80,7 +68,7 @@ export const selectOrganisationResponseSchema: z.ZodType<SelectOrganisationRespo
   context_header: z.string(),
   branch_id: z.string().nullable(),
   requires_branch_selection: z.boolean(),
-  assigned_branch_ids: z.array(z.string()).transform((ids) => [...new Set(ids)]),
+  assigned_branch_ids: z.array(z.string()),
 });
 
 export const selectBranchResponseSchema: z.ZodType<SelectBranchResponse> = z.object({
@@ -99,7 +87,14 @@ export const profileSchema: z.ZodType<BackendProfile> = z.object({
   organisation: profileBranch.nullable(),
   membership: z.object({ id: z.string(), status: z.string() }),
   selected_branch: profileBranch.nullable(),
-  branches: z.array(profileBranch).transform((items) => uniqueBy(items, (item) => item.id)),
-  roles: z.array(profileRole).transform((items) => uniqueBy(items, (item) => item.id)),
+  branches: z.array(profileBranch),
+  roles: z.array(profileRole),
   permissions: z.array(z.string()),
+  permission_scopes: z.array(
+    z.object({
+      code: z.string(),
+      scope: z.enum(['TENANT', 'BRANCH']),
+      branch_ids: z.array(z.string()).optional(),
+    }),
+  ),
 });

@@ -1,4 +1,5 @@
-import { can, type PermissionHolder } from '@/auth/permissions';
+import { canAllTenantWide, type PermissionHolder } from '@/auth/permissions';
+import { withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import type { BusinessDateStatus } from './business-date-contract';
 
@@ -12,13 +13,15 @@ const ACTIONS_BY_STATUS: Record<BusinessDateStatus, readonly BusinessDateAction[
   CLOSED: ['business_date.reopen'],
 };
 
-/** Mutations also need `business_date.view`: the backend reads the result back (BG-31). */
+/** Each action with the `business_date.view` it implies, tenant-wide, as BusinessDateService
+ * checks them (ADR 0030, BG-33). */
 export function availableBusinessDateActions(
   status: BusinessDateStatus,
   holder: PermissionHolder,
 ): BusinessDateAction[] {
-  if (!can(holder, 'business_date.view')) return [];
-  return ACTIONS_BY_STATUS[status].filter((action) => can(holder, action));
+  return ACTIONS_BY_STATUS[status].filter((action) =>
+    canAllTenantWide(holder, withViews([action])),
+  );
 }
 
 const EVENT_LABELS: Record<string, string> = {

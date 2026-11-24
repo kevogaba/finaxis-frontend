@@ -28,6 +28,7 @@ const grant = (risk: RolePermissionRow['risk']): RolePermissionRow => ({
   module: risk ? 'settings' : null,
   risk,
   grantedAt: '12 Aug 2026 · 09:30',
+  neededBy: [],
 });
 
 describe('RolePermissionsTable', () => {
@@ -82,6 +83,28 @@ describe('RolePermissionsTable', () => {
     });
     const formData = removePermission.mock.calls[0]?.[1] as FormData;
     expect(formData.get('contextOrganisationId')).toBe(ORG);
+  });
+
+  it('disables Remove on a view a granted mutation needs (ADR 0030)', () => {
+    renderWithProviders(
+      <RolePermissionsTable
+        rows={[
+          {
+            ...grant('LOW'),
+            code: 'business_date.view',
+            name: 'View business date',
+            neededBy: [NAME],
+          },
+        ]}
+        roleId={ROLE}
+        canRemove
+        timeZone="Africa/Nairobi"
+      />,
+    );
+
+    const remove = screen.getByRole('button', { name: 'Remove View business date' });
+    expect(remove).toBeDisabled();
+    expect(remove).toHaveAccessibleDescription(`Needed by ${NAME}`);
   });
 
   it('has no Remove button or Actions column without removal rights', () => {

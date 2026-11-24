@@ -234,7 +234,13 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
     await expectProblem(await (await signIn(request, 'users')).invite(BODY), 403, 'forbidden');
     // `users-invite-limited` holds user.invite but no user.assign_branch.
     const limited = await signIn(request, 'users-invite-limited');
-    await expectProblem(await limited.invite(BODY), 403, 'forbidden');
+    const refused = await limited.invite(BODY);
+    expect(refused.status()).toBe(403);
+    // The paired views are checked with it (ADR 0030), and the refusal names the missing code.
+    expect(await refused.json()).toMatchObject({
+      code: 'forbidden',
+      detail: 'Missing permission: user.assign_branch.',
+    });
     const auditor = { ...BODY, membership_type: 'AUDITOR', branch_assignments: [] };
     expect((await limited.invite({ ...auditor, primary_branch_id: null })).status()).toBe(201);
   });

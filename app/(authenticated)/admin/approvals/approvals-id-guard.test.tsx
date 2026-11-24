@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendApiError } from '@/auth/backend-api';
+import { permissionScopes } from '@/test/permission-scopes';
 
 // Every read either detail route can make, so "before any read" is checked against all of them: a
 // read someone adds later and forgets to guard still has to be listed here.
@@ -95,6 +96,7 @@ describe.each(Object.entries(routes))('%s', (_name, route) => {
       profile: {
         user_id: 'b2000000-0000-4000-8000-0000000000bb',
         permissions: ['user.approve', 'user.view', 'branch.approve', 'branch.view'],
+        permission_scopes: permissionScopes(['user.view']),
         branches: [],
       },
       context: { organization: { id: 'org-1', name: 'Greenfield' }, branch: null },

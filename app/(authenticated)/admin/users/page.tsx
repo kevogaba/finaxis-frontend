@@ -4,6 +4,7 @@ import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import PersonAddAltOutlined from '@mui/icons-material/PersonAddAltOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { can, canTenantWide, permissionHolder } from '@/auth/permissions';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -24,7 +25,7 @@ import { UserDirectoryTable } from '@/modules/administration/users/components/us
 import { canInviteUsers, INVITE_HREF } from '@/modules/administration/users/invite-rules';
 import { MEMBERSHIP_STATUSES, USER_STATUSES } from '@/modules/administration/users/user-contract';
 import { hasUserFilters, parseUserListQuery } from '@/modules/administration/users/user-query';
-import { userStatusLabel } from '@/modules/administration/users/user-rules';
+import { USERS_BRANCH_SCOPED, userStatusLabel } from '@/modules/administration/users/user-rules';
 import { listUsers } from '@/modules/administration/users/user-service';
 
 export const metadata: Metadata = { title: 'Users & access' };
@@ -56,8 +57,9 @@ interface UsersPageProps {
 export default async function UsersPage({ searchParams }: UsersPageProps) {
   const params = toSearchParams(await searchParams);
   const query = parseUserListQuery(params);
-  const [users, selected] = await Promise.all([load(listUsers(query)), getCurrentContextProfile()]);
-  const permissions = selected.kind === 'resolved' ? selected.profile.permissions : [];
+  const selected = await getCurrentContextProfile();
+  const holder =
+    selected.kind === 'resolved' ? permissionHolder(selected.profile) : { permissions: [] };
 
   const header = (
     <PageHeader
@@ -66,7 +68,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
       description="Everyone with a membership in this institution: their onboarding, status and access."
       actions={
         // Ruling 4: offered only with every code the wizard needs.
-        canInviteUsers({ permissions }) ? (
+        canInviteUsers(holder) ? (
           <Button
             component={NextLink}
             href={INVITE_HREF}
@@ -80,6 +82,21 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
     />
   );
 
+  // GET /tenant/users checks user.view tenant-wide (BG-33): no read the platform would refuse.
+  if (!canTenantWide(holder, 'user.view')) {
+    return (
+      <>
+        {header}
+        <Paper>
+          <ForbiddenState
+            description={can(holder, 'user.view') ? USERS_BRANCH_SCOPED : undefined}
+          />
+        </Paper>
+      </>
+    );
+  }
+
+  const users = await load(listUsers(query));
   if (!users.ok) {
     return (
       <>

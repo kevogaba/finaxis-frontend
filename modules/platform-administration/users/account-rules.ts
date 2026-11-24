@@ -1,4 +1,5 @@
-import { can, canAny, type PermissionHolder } from '@/auth/permissions';
+import { canAll, canAny, type PermissionHolder } from '@/auth/permissions';
+import { withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import type { MembershipStatus, UserStatus } from '@/modules/administration/users/user-contract';
 import { userStatusLabel } from '@/modules/administration/users/user-rules';
@@ -20,13 +21,15 @@ const PERMISSION: Record<AccountAction, string> = {
 
 const ACCOUNT_CODES = Object.values(PERMISSION);
 
-/** No `.view` read-back is documented for the platform's user actions (contract §E.2), so each
- * action needs only its own code; the record itself needs `user.view` to render. */
+/** Each platform user action pairs with `user.view` (ADR 0030, V22), checked with it in the platform
+ * organisation; the record itself needs `user.view` to render. */
 export function availableAccountActions(
   status: UserStatus,
   holder: PermissionHolder,
 ): AccountAction[] {
-  return (ACTIONS_BY_STATUS[status] ?? []).filter((action) => can(holder, PERMISSION[action]));
+  return (ACTIONS_BY_STATUS[status] ?? []).filter((action) =>
+    canAll(holder, withViews([PERMISSION[action]])),
+  );
 }
 
 export const OWN_ACCOUNT =

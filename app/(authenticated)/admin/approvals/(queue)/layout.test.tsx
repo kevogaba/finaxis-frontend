@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
 import { renderWithProviders } from '@/test/test-utils';
+import { permissionScopes } from '@/test/permission-scopes';
 
 const { countBranchActivations, countUserApprovals, getCurrentContextProfile, redirect } =
   vi.hoisted(() => ({
@@ -30,7 +31,7 @@ const { default: ApprovalQueueLayout } = await import('./layout');
 const BOTH = ['user.approve', 'user.view', 'branch.approve', 'branch.view'];
 const resolved = (permissions: string[]) => ({
   kind: 'resolved',
-  profile: { permissions },
+  profile: { permissions, permission_scopes: permissionScopes(permissions) },
   context: { organization: { id: 'org-1', name: 'Greenfield' }, branch: null },
 });
 const show = async (children: ReactNode = null) =>

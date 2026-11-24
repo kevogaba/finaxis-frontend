@@ -5,6 +5,7 @@ import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { permissionHolder } from '@/auth/permissions';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import NextLink from '@/components/navigation/next-link';
@@ -59,7 +60,7 @@ export default async function InviteUserPage() {
   );
 
   // Ruling 4: every code the wizard needs, before any read; no half-working wizard.
-  if (!canInviteUsers({ permissions: resolved?.profile.permissions ?? [] })) {
+  if (!canInviteUsers(resolved ? permissionHolder(resolved.profile) : { permissions: [] })) {
     return withHeader(<ForbiddenState description={INVITE_FORBIDDEN} />);
   }
 

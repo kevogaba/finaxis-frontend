@@ -430,8 +430,7 @@ function multiOrg(): RunState {
 
 function duplicateAssignments(): RunState {
   const state = greenfieldTenant();
-  // HOME and OPERATE at Head Office only: the backend lists the branch twice and doesn't
-  // auto-select (it only auto-selects when exactly one row comes back).
+  // HOME and OPERATE at Head Office only: one assigned branch, so selection pins it (BG-23).
   return {
     ...state,
     branchAssignments: [
@@ -481,9 +480,9 @@ const PROFILE_IDS = {
 } as const;
 
 /**
- * Contract §C: `/auth/me` lists roles per ACTIVE assignment at any scope — so a DISABLED role
- * (which grants nothing) and TENANT_ADMIN a second time, through a BRANCH grant. Spreads
- * `greenfieldTenant()` so collections later layers add still carry over.
+ * A DISABLED role (which grants nothing) and TENANT_ADMIN a second time, through a BRANCH grant:
+ * `/auth/me` lists each ACTIVE role once, so neither shows (BG-23). Spreads `greenfieldTenant()`
+ * so collections later layers add still carry over.
  */
 function profileRoles(): RunState {
   const state = greenfieldTenant();
@@ -1860,8 +1859,8 @@ const BUILDERS = {
   'duplicate-assignments': duplicateAssignments,
   'no-branches': noBranches,
   // Keeps westlands' branch assignment ACTIVE while the branch itself is SUSPENDED, so a route
-  // can prove it lists a SUSPENDED branch (or correctly excludes one) without a branch-lifecycle
-  // route to reach that state at runtime.
+  // can prove it excludes a SUSPENDED branch without a branch-lifecycle route to reach that state
+  // at runtime.
   'suspended-branch': () => {
     const state = greenfieldTenant();
     return {

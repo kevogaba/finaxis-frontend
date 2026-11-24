@@ -3,6 +3,7 @@ import { type ComponentProps, Suspense, type ReactNode } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { permissionHolder } from '@/auth/permissions';
 import { PageHeader } from '@/components/shell/page-header';
 import { administrationModule } from '@/modules/administration/administration-module';
 import { BusinessDateSection } from '@/modules/administration/overview/components/business-date-card';
@@ -63,8 +64,9 @@ export default async function AdminOverviewPage() {
   ) {
     return header;
   }
-  const { permissions, organisation } = selected.profile;
-  const cards = overviewCards({ permissions });
+  const { organisation } = selected.profile;
+  const holder = permissionHolder(selected.profile);
+  const cards = overviewCards(holder);
   if (noOverviewCards(cards)) {
     return (
       <>
@@ -122,7 +124,7 @@ export default async function AdminOverviewPage() {
               shape: 'readiness',
               rows: 5,
             },
-            <ReadinessSection permissions={permissions} organisationStatus={organisation.status} />,
+            <ReadinessSection holder={holder} organisationStatus={organisation.status} />,
           )}
         {cards.activity &&
           card(

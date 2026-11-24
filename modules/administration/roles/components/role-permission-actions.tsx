@@ -31,6 +31,13 @@ import { MAX_GRANTS_PER_SUBMIT, groupByModule } from '../role-rules';
 const riskColor = (risk: PermissionRiskLevel) =>
   risk === 'CRITICAL' || risk === 'HIGH' ? 'error' : 'textSecondary';
 
+/** "A", "A and B", "A, B and C". */
+const listNames = (names: readonly string[]) =>
+  new Intl.ListFormat('en-GB', { type: 'conjunction' }).format(names);
+
+/** Why a view can't be unticked or removed: granted mutations need it (ADR 0030). */
+const neededByNote = (names: readonly string[]) => `Needed by ${listNames(names)}`;
+
 interface PermissionChecklistProps {
   /** Grantable entries: the ACTIVE catalogue codes the role doesn't hold yet. */
   permissions: readonly Permission[];
@@ -43,14 +50,30 @@ interface PermissionChecklistProps {
  * The grant drawer's body (spec §10.4): search and a risk filter over the catalogue, grouped by
  * module, with one hidden comma-joined `permissionCodes` field (Ruling 5). The option list is
  * captured once per opening, so a partial-failure `refresh()` never drops a checked row before
- * the retry (Ruling 6).
+ * the retry (Ruling 6). A ticked mutation brings the views it needs that the role lacks (ADR 0030:
+ * the platform refuses it without them), held ticked until no ticked mutation needs them.
  */
 export function PermissionChecklist({ permissions, truncated, error }: PermissionChecklistProps) {
   const errorId = useId();
+  const noteId = useId();
   const [options] = useState(permissions);
   const [search, setSearch] = useState('');
   const [risk, setRisk] = useState<PermissionRiskLevel | ''>('');
-  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  // What the user ticked; the views it needs are derived, so unticking a mutation releases them.
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
+  const offered = new Set(options.map((permission) => permission.code));
+  const viewsOf = (permission: Permission) =>
+    permission.requiredViewPermissions.filter((code) => offered.has(code));
+  const neededBy = new Map<string, string[]>();
+  for (const permission of options.filter((option) => picked.has(option.code))) {
+    for (const view of viewsOf(permission)) {
+      neededBy.set(view, [...(neededBy.get(view) ?? []), permission.name]);
+    }
+  }
+  const selected = options
+    .filter((permission) => picked.has(permission.code) || neededBy.has(permission.code))
+    .map((permission) => permission.code);
+  const nameOf = (code: string) => options.find((option) => option.code === code)?.name ?? code;
   const needle = search.trim().toLowerCase();
   const groups = groupByModule(
     options.filter(
@@ -61,9 +84,9 @@ export function PermissionChecklist({ permissions, truncated, error }: Permissio
           permission.name.toLowerCase().includes(needle)),
     ),
   );
-  const full = selected.size >= MAX_GRANTS_PER_SUBMIT;
+  const room = MAX_GRANTS_PER_SUBMIT - selected.length;
   const toggle = (code: string) => {
-    setSelected((current) => {
+    setPicked((current) => {
       const next = new Set(current);
       if (!next.delete(code)) next.add(code);
       return next;
@@ -72,7 +95,7 @@ export function PermissionChecklist({ permissions, truncated, error }: Permissio
 
   return (
     <Box sx={{ display: 'grid', gap: 3 }}>
-      <input type="hidden" name="permissionCodes" value={[...selected].join(',')} />
+      <input type="hidden" name="permissionCodes" value={selected.join(',')} />
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
         <TextField
           type="search"
@@ -116,8 +139,8 @@ export function PermissionChecklist({ permissions, truncated, error }: Permissio
         </TextField>
       </Box>
       <Typography variant="caption" role="status" sx={{ color: 'text.secondary' }}>
-        {selected.size} selected
-        {full ? ` — up to ${MAX_GRANTS_PER_SUBMIT} at a time` : ''}
+        {selected.length} selected
+        {room <= 0 ? ` — up to ${MAX_GRANTS_PER_SUBMIT} at a time` : ''}
       </Typography>
       {error && (
         <FormHelperText id={errorId} error>
@@ -145,48 +168,74 @@ export function PermissionChecklist({ permissions, truncated, error }: Permissio
             <FormLabel component="legend">{group.label}</FormLabel>
             <FormGroup>
               {group.permissions.map((permission) => {
-                const checked = selected.has(permission.code);
+                const checked = selected.includes(permission.code);
+                const heldFor = neededBy.get(permission.code);
+                const adds = picked.has(permission.code)
+                  ? viewsOf(permission).filter((view) => !picked.has(view))
+                  : [];
+                const fits =
+                  1 + viewsOf(permission).filter((view) => !selected.includes(view)).length <= room;
+                // Visible text, not a tooltip: a disabled checkbox can't take focus to show one.
+                const note = heldFor
+                  ? neededByNote(heldFor)
+                  : adds.length > 0
+                    ? `Also grants ${listNames(adds.map(nameOf))}, which ${permission.name} needs.`
+                    : null;
+                const describedBy = note ? `${noteId}-${permission.code}` : undefined;
                 return (
-                  <FormControlLabel
-                    key={permission.code}
-                    control={
-                      <Checkbox
-                        checked={checked}
-                        disabled={!checked && full}
-                        onChange={() => {
-                          toggle(permission.code);
-                        }}
-                      />
-                    }
-                    label={
-                      // The spaces keep the accessible name readable: "View roles role.view Low".
-                      <Box
-                        component="span"
-                        sx={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          alignItems: 'baseline',
-                          columnGap: 1.5,
-                        }}
+                  <Box key={permission.code}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={checked}
+                          disabled={heldFor !== undefined || (!checked && !fits)}
+                          slotProps={{ input: { 'aria-describedby': describedBy } }}
+                          onChange={() => {
+                            toggle(permission.code);
+                          }}
+                        />
+                      }
+                      label={
+                        // The spaces keep the accessible name readable: "View roles role.view Low".
+                        <Box
+                          component="span"
+                          sx={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            alignItems: 'baseline',
+                            columnGap: 1.5,
+                          }}
+                        >
+                          <span>{permission.name}</span>{' '}
+                          <Typography
+                            component="span"
+                            variant="caption"
+                            sx={{ fontFamily: 'monospace' }}
+                          >
+                            {permission.code}
+                          </Typography>{' '}
+                          <Typography
+                            component="span"
+                            variant="caption"
+                            color={riskColor(permission.risk)}
+                          >
+                            {humanizeEnum(permission.risk)}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                    {note && (
+                      <Typography
+                        id={describedBy}
+                        variant="caption"
+                        component="p"
+                        // Under the label: the 42 px checkbox less the label's -11 px margin.
+                        sx={{ color: 'text.secondary', pl: '31px', mt: -0.5, mb: 1 }}
                       >
-                        <span>{permission.name}</span>{' '}
-                        <Typography
-                          component="span"
-                          variant="caption"
-                          sx={{ fontFamily: 'monospace' }}
-                        >
-                          {permission.code}
-                        </Typography>{' '}
-                        <Typography
-                          component="span"
-                          variant="caption"
-                          color={riskColor(permission.risk)}
-                        >
-                          {humanizeEnum(permission.risk)}
-                        </Typography>
-                      </Box>
-                    }
-                  />
+                        {note}
+                      </Typography>
+                    )}
+                  </Box>
                 );
               })}
             </FormGroup>
@@ -266,6 +315,9 @@ interface RemovePermissionButtonProps {
   critical: boolean;
   /** The catalogue couldn't say how risky this is: the copy must not call it critical. */
   riskUnknown?: boolean;
+  /** Names of the granted ACTIVE mutations that need this view: the platform refuses removing it
+   * (ADR 0030), so Remove is disabled and says why. */
+  neededBy?: readonly string[];
   /** I2: forwarded to `ConfirmDialog` as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -276,9 +328,11 @@ export function RemovePermissionButton({
   label,
   critical,
   riskUnknown = false,
+  neededBy = [],
   contextOrganisationId,
 }: RemovePermissionButtonProps) {
   const notify = useToast();
+  const captionId = useId();
   const [open, setOpen] = useState(false);
   // I3: a successful removal drops this row — and this button — so focus falls back to the
   // record title from the unmount cleanup (08's RevokeAssignmentButton pattern).
@@ -293,6 +347,31 @@ export function RemovePermissionButton({
   const criticalLead = riskUnknown
     ? "Its risk can't be confirmed, so treat it as critical."
     : `${label} is a critical permission.`;
+
+  if (neededBy.length > 0) {
+    // Visible text, not a tooltip: a disabled button can't take focus to show one.
+    return (
+      <Box sx={{ display: 'inline-grid', justifyItems: 'end', gap: 0.5, maxWidth: 240 }}>
+        <Button
+          size="small"
+          variant="outlined"
+          color="error"
+          disabled
+          aria-label={`Remove ${label}`}
+          aria-describedby={captionId}
+        >
+          Remove
+        </Button>
+        <Typography
+          id={captionId}
+          variant="caption"
+          sx={{ color: 'text.secondary', textAlign: 'right', textWrap: 'pretty' }}
+        >
+          {neededByNote(neededBy)}
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <>
