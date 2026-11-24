@@ -145,4 +145,24 @@ describe('RoleForm', () => {
     });
     expect(createRole).not.toHaveBeenCalled();
   });
+
+  // BG-34: a blank description is sent as null, which now clears it.
+  it('lets an edit clear the description', async () => {
+    const user = userEvent.setup();
+    updateRole.mockResolvedValueOnce({ ok: true });
+    renderWithProviders(
+      <RoleForm
+        role={{ id: ROLE, roleCode: 'TELLER', roleName: 'Teller', description: 'Front desk.' }}
+      />,
+    );
+
+    expect(field('Description')).toHaveAccessibleDescription('Optional.');
+    await user.clear(field('Description'));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => {
+      expect(updateRole).toHaveBeenCalledTimes(1);
+    });
+    expect(sent(updateRole, 0)?.get('description')).toBe('');
+  });
 });

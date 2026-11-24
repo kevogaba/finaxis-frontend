@@ -149,10 +149,7 @@ export function RoleForm({ role, contextOrganisationId }: RoleFormProps) {
         minRows={2}
         {...register('description')}
         error={Boolean(errors.description)}
-        helperText={
-          errors.description?.message ??
-          (role ? 'Optional. A description can be replaced but not removed.' : 'Optional.')
-        }
+        helperText={errors.description?.message ?? 'Optional.'}
         slotProps={{ htmlInput: { maxLength: 500 } }}
       />
       <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 2 }}>

@@ -33,6 +33,8 @@ interface ConfirmDialogProps<Result extends ConfirmOutcome> {
   confirmLabel: string;
   /** `error` for destructive or irreversible actions. */
   tone?: 'primary' | 'error';
+  /** A precondition is unmet: only Cancel is on offer, and `children` say why. */
+  confirmDisabled?: boolean;
   /** A Server Action; receives `idempotencyKey` plus any inputs rendered in `children`. */
   action: (previous: Result | null, formData: FormData) => Promise<Result>;
   onClose: () => void;
@@ -91,6 +93,7 @@ function ConfirmForm<Result extends ConfirmOutcome>({
   description,
   confirmLabel,
   tone = 'primary',
+  confirmDisabled = false,
   action,
   onClose,
   onSuccess,
@@ -165,7 +168,14 @@ function ConfirmForm<Result extends ConfirmOutcome>({
         <Button variant="outlined" onClick={onClose} disabled={pending}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" color={tone} loading={pending} ref={submitRef}>
+        <Button
+          type="submit"
+          variant="contained"
+          color={tone}
+          loading={pending}
+          disabled={confirmDisabled}
+          ref={submitRef}
+        >
           {confirmLabel}
         </Button>
       </DialogActions>

@@ -551,11 +551,11 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - "Active assignments" counts assignments, not distinct users (BG-15).
   - A branch-scoped assignment needs the user's existing assignment at that branch, and a branch
     context offers only its own branch.
-  - Assigning is offered only for ACTIVE roles. There is no role archive in the UI, though the
-    platform added one (and still has no delete), and an archived role is still offered Activate,
-    which the platform refuses (BG-27).
-  - Clearing the description removes it, though the form's help text still says it can't be
-    removed (BG-34).
+  - Assigning is offered only for ACTIVE roles. Administrators can archive a custom role once it
+    has no active assignments; archiving is final, keeps the code, and leaves the role out of the
+    directory unless Status is Archived. An archived role offers no Edit, status or permission
+    changes. There is no delete (BG-27).
+  - Clearing the description removes it (BG-34).
   - The Audit tab shows the role's own changes. Assignment changes are audited per assignment
     (BG-16).
 - Settings (`/admin/settings`, `modules/administration/settings/`) reads the catalogue and the

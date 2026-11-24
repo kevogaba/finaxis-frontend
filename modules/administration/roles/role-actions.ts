@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import { refresh } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-import { BackendApiError } from '@/auth/backend-api';
 import { requiredViews } from '@/auth/permission-views';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
@@ -12,13 +11,13 @@ import { apiDelete, apiPatch, apiPost } from '@/lib/api/tenant-api';
 import { UUID_PATTERN, uuidSchema } from '@/lib/api/wire';
 import { ROLE_SCOPE_TYPES, roleCreatedSchema } from './role-contract';
 import { MAX_GRANTS_PER_SUBMIT, roleDraftSchema } from './role-rules';
-import { getRole } from './role-service';
 
 const idempotencyKey = z.uuid();
 
-// 409 = a system role (immutable) OR an optimistic-lock race (contract §I): never assert which.
+// 409 = a system role (immutable), an archived one (final, ADR 0035), a status it already left, or
+// an optimistic-lock race (contract §I): never assert which.
 const IMMUTABLE =
-  "This role can't be changed: system roles are immutable. It may also have changed — refresh and check.";
+  "This role can't be changed: system roles are immutable and archived roles are final. It may also have changed — refresh and check.";
 
 export async function createRole(
   _previous: ActionResult | null,
@@ -44,13 +43,14 @@ export async function createRole(
       redirect(`/admin/roles/${role.roleId}/permissions`);
     },
   );
-  // 409 = a duplicate code (contract §E.3) or a race: hedge, and point at the code.
+  // 409 = a duplicate code (contract §E.3) or a race: hedge, and point at the code. An archived
+  // role keeps its code (ADR 0035) and is hidden from the default list, so say where to look.
   return explain(
     result,
     'conflict',
-    "The role couldn't be created. Its code may already be in use.",
+    "The role couldn't be created. Its code may already be in use, possibly by an archived role (filter the directory's Status by Archived).",
     {
-      roleCode: 'This code may already be in use.',
+      roleCode: 'This code may already be in use, possibly by an archived role.',
     },
   );
 }
@@ -66,8 +66,7 @@ export async function updateRole(
   const result = await runServerAction(updateInput, formData, async (input) => {
     await apiPatch(
       `/api/v1/tenant/roles/${input.roleId}`,
-      // `null` keeps the current description: it can be replaced, never removed (contract §D).
-      // Source f74e44b shows `""` would clear it (BG-34), so a blank field never sends `""`.
+      // A blank field clears the description with `null`; a blank string would be a 400 (BG-34).
       { role_name: input.roleName, description: input.description || null },
       input.idempotencyKey,
     );
@@ -83,8 +82,11 @@ export async function updateRole(
 
 const statusInput = z.object({ idempotencyKey, roleId: uuidSchema });
 
-/** Activate and deactivate take no input (contract §E.3), so the body is `{}`. */
-function setStatus(path: 'activate' | 'deactivate', formData: FormData): Promise<ActionResult> {
+/** Activate, deactivate and archive take no input (contract §E.3), so the body is `{}`. */
+function setStatus(
+  path: 'activate' | 'deactivate' | 'archive',
+  formData: FormData,
+): Promise<ActionResult> {
   return runServerAction(statusInput, formData, (input) =>
     apiPost(`/api/v1/tenant/roles/${input.roleId}/${path}`, {}, input.idempotencyKey),
   );
@@ -102,6 +104,18 @@ export async function deactivateRole(
   formData: FormData,
 ): Promise<ActionResult> {
   return explain(await setStatus('deactivate', formData), 'conflict', IMMUTABLE);
+}
+
+/** Final (ADR 0035). Its 409 detail names the active-assignment count: never echoed. */
+export async function archiveRole(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  return explain(
+    await setStatus('archive', formData),
+    'conflict',
+    "This role still has active assignments, or it can't be archived. Refresh and check.",
+  );
 }
 
 const PERMISSION_CODE = /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/;
@@ -225,25 +239,12 @@ const assignInput = z
     path: ['branchId'],
   });
 
-/** A frontend-only problem code: the role is no longer ACTIVE (BG-27). */
-const ROLE_INACTIVE = 'role_inactive';
-
 export async function assignRole(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const read = { failed: false };
-  const result = await runServerAction(assignInput, formData, async (input) => {
-    // BG-27: a role deactivated since the drawer opened is named before sending; the backend
-    // closes the race with a 422 (explained below). Fail closed: a role that can't be read isn't
-    // assigned. The original error propagates, so a lost session still redirects and the support
-    // reference survives.
-    const role = await getRole(input.roleId).catch((error: unknown) => {
-      read.failed = true;
-      throw error;
-    });
-    if (role.status !== 'ACTIVE') throw new BackendApiError(409, { code: ROLE_INACTIVE });
-    return apiPost(
+  const result = await runServerAction(assignInput, formData, (input) =>
+    apiPost(
       '/api/v1/tenant/role-assignments',
       {
         user_id: input.userId,
@@ -253,20 +254,12 @@ export async function assignRole(
         branch_id: input.scopeType === 'BRANCH' ? (input.branchId ?? null) : null,
       },
       input.idempotencyKey,
-    );
-  });
-  if (read.failed && !result.ok) {
-    return { ...result, formError: "Couldn't check the role's status. Try again." };
-  }
-  const named = explain(
-    result,
-    ROLE_INACTIVE,
-    "This role is no longer active, so it can't be assigned. Refresh the page and check its status.",
+    ),
   );
-  // BG-27: a 422 is a role that stopped being ACTIVE after the read above (contract §D's TENANT
-  // scope with a branch is never sent).
+  // BG-27: the platform refuses a new assignment of a DISABLED or ARCHIVED role with 422, under the
+  // role lock (TENANT scope with a branch, its other 422, is never sent).
   const inactive = explain(
-    named,
+    result,
     'invalid_operation',
     "This role is no longer active, so it can't be assigned.",
   );

@@ -99,7 +99,8 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
                 kind: 'select',
                 name: 'status',
                 label: 'Status',
-                allLabel: 'All statuses',
+                // The platform leaves ARCHIVED roles out unless asked (ADR 0035).
+                allLabel: 'Active and disabled',
                 options: ROLE_STATUSES.map((status) => ({
                   value: status,
                   label: humanizeEnum(status),

@@ -1,15 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import { RoleLifecycleActions } from './role-lifecycle-actions';
 
-const { activateRole, deactivateRole } = vi.hoisted(() => ({
+const { activateRole, archiveRole, deactivateRole } = vi.hoisted(() => ({
   activateRole: vi.fn(),
+  archiveRole: vi.fn(),
   deactivateRole: vi.fn(),
 }));
 vi.mock('../role-actions', () => ({
   activateRole: (...args: unknown[]) => activateRole(...args) as unknown,
+  archiveRole: (...args: unknown[]) => archiveRole(...args) as unknown,
   deactivateRole: (...args: unknown[]) => deactivateRole(...args) as unknown,
 }));
 
@@ -201,5 +203,97 @@ describe('RoleLifecycleActions', () => {
 
     rerender(actions('activate'));
     expect(screen.queryByText('Activate Teller?')).not.toBeInTheDocument();
+  });
+
+  describe('Archive (ADR 0035)', () => {
+    beforeEach(() => {
+      archiveRole.mockClear();
+    });
+    const FINAL =
+      "Archiving is final. The role can't be edited, activated or assigned again, and its code TELLER stays reserved.";
+    const hero = (activeAssignments: number | null) => (
+      <main>
+        <h1>Teller</h1>
+        <RoleLifecycleActions
+          roleId={ROLE}
+          roleName="Teller"
+          action="deactivate"
+          archive={{ roleCode: 'TELLER', activeAssignments }}
+          heldByMe={false}
+          contextOrganisationId={ORG}
+        />
+      </main>
+    );
+
+    it('archives after the status toggle, then focuses the record title (I3)', async () => {
+      const user = userEvent.setup();
+      archiveRole.mockResolvedValueOnce({ ok: true });
+      const { rerender } = renderWithProviders(hero(0));
+
+      const buttons = screen.getAllByRole('button').map((button) => button.textContent);
+      expect(buttons).toEqual(['Deactivate', 'Archive']);
+      expect(screen.getByRole('button', { name: 'Archive' })).toHaveClass(
+        'MuiButton-outlined',
+        'MuiButton-colorError',
+      );
+      await user.click(screen.getByRole('button', { name: 'Archive' }));
+      const dialog = screen.getByRole('alertdialog', { name: 'Archive Teller?' });
+      expect(dialog).toHaveAccessibleDescription(FINAL);
+      await user.click(within(dialog).getByRole('button', { name: 'Archive' }));
+
+      await waitFor(() => {
+        expect(archiveRole).toHaveBeenCalledTimes(1);
+      });
+      const formData = archiveRole.mock.calls[0]?.[1] as FormData;
+      expect(formData.get('roleId')).toBe(ROLE);
+      expect(formData.get('contextOrganisationId')).toBe(ORG);
+      expect(await screen.findByRole('alert')).toHaveTextContent('Role archived');
+
+      // An archived role offers nothing, so the layout drops the actions.
+      rerender(
+        <main>
+          <h1>Teller</h1>
+        </main>,
+      );
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Teller' })).toHaveFocus();
+      });
+    });
+
+    it.each([
+      [1, 'This role still has 1 active assignment. Revoke it first.'],
+      [3, 'This role still has 3 active assignments. Revoke them first.'],
+    ])('with %i active assignment(s), says so and offers only Cancel', async (count, warning) => {
+      const user = userEvent.setup();
+      renderWithProviders(hero(count));
+
+      await user.click(screen.getByRole('button', { name: 'Archive' }));
+      const dialog = screen.getByRole('alertdialog', { name: 'Archive Teller?' });
+      expect(dialog).toHaveTextContent(warning);
+      expect(within(dialog).getByRole('button', { name: 'Archive' })).toBeDisabled();
+      const view = within(dialog).getByRole('link', { name: 'View assignments' });
+      expect(view).toHaveAttribute('href', `/admin/roles/${ROLE}/assignments`);
+
+      // The layout stays mounted across tabs, so following the link closes the dialog. (jsdom
+      // can't navigate, so the click goes no further.)
+      view.addEventListener('click', (event) => {
+        event.preventDefault();
+      });
+      await user.click(view);
+      await waitFor(() => {
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      });
+      expect(archiveRole).not.toHaveBeenCalled();
+    });
+
+    it('leaves the platform to refuse when the count is unknown', async () => {
+      const user = userEvent.setup();
+      renderWithProviders(hero(null));
+
+      await user.click(screen.getByRole('button', { name: 'Archive' }));
+      const dialog = screen.getByRole('alertdialog', { name: 'Archive Teller?' });
+      expect(dialog).not.toHaveTextContent('still has');
+      expect(within(dialog).getByRole('button', { name: 'Archive' })).toBeEnabled();
+    });
   });
 });

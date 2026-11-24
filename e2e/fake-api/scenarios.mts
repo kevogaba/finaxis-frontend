@@ -683,6 +683,8 @@ export const ROLE_SCENARIO_IDS = {
   tomTeller: '09000000-0000-4000-8000-00000000000d',
   janeCompliance: '09000000-0000-4000-8000-00000000000e',
   janeLoansOfficer: '09000000-0000-4000-8000-00000000000f',
+  cashDesk: '09000000-0000-4000-8000-000000000010',
+  tomCashDesk: '09000000-0000-4000-8000-000000000011',
 } as const;
 
 /** Real TENANT_ADMIN codes (contract §J), granted only in this scenario so `default` stays the
@@ -692,6 +694,7 @@ const ROLE_ADMIN_CODES = [
   'role.update',
   'role.activate',
   'role.deactivate',
+  'role.archive',
   'role.assign_permission',
   'role.remove_permission',
   'user.assign_role',
@@ -700,9 +703,10 @@ const ROLE_ADMIN_CODES = [
 
 /**
  * Layer 09: a copy of `default` plus two staff members (Grace HOME at Westlands, Tom HOME at Head
- * Office), a second system role, and four custom roles (one DISABLED, one long-named). Grace holds
- * Teller at Westlands only and Tom holds it institution-wide. Jane holds the long-named role, so
- * she can revoke her own assignment and keep her access through TENANT_ADMIN.
+ * Office), a second system role, and four custom roles (one DISABLED, one long-named), plus an
+ * ARCHIVED one Tom once held (ADR 0035). Grace holds Teller at Westlands only and Tom holds it
+ * institution-wide. Jane holds the long-named role, so she can revoke her own assignment and keep
+ * her access through TENANT_ADMIN.
  */
 function rolesScenario(): RunState {
   const state = greenfieldTenant();
@@ -800,9 +804,17 @@ function rolesScenario(): RunState {
         ['audit.view'],
         '2026-08-20T08:00:00Z',
       ),
+      // Archived roles leave the default list; their assignments were revoked first.
+      custom(ids.cashDesk, 'CASH_DESK', 'Cash desk', ['branch.view'], '2026-06-01T08:00:00Z', {
+        status: 'ARCHIVED',
+      }),
     ],
     roleAssignments: [
       ...state.roleAssignments,
+      {
+        ...tenantRoleAssignment(ids.tomCashDesk, IDS.greenfield, ids.tom, ids.cashDesk),
+        status: 'REVOKED',
+      },
       {
         ...tenantRoleAssignment(ids.graceTellerAtWestlands, IDS.greenfield, ids.grace, ids.teller),
         scopeType: 'BRANCH',

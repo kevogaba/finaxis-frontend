@@ -91,7 +91,9 @@ miscount things today.
 9. **Roles can be archived, and status changes only from the named state** (platform #289, #302):
    `roleStatusAction` offers Activate for an `ARCHIVED` role, which is a 409 explained as a system
    role, and the default role list leaves archived roles out, so their names on old assignments fall
-   back to the short id (BG-27).
+   back to the short id (BG-27). **Adopted** (frontend #112): each toggle is offered only from its
+   named state, an archived role offers nothing, administrators can archive, and the 409 copy names
+   archived roles. No screen lists an assignment that can name an archived role (see BG-27).
 10. **Audit rows changed shape going forward** (ADR 0031, platform #268, #286): user transitions
     write `user_account.<transition>` on `USER_ACCOUNT`; `membership.suspend` and
     `membership.reactivate` are keyed `MEMBERSHIP` (the audit vocabulary files them under `USER`);
@@ -126,10 +128,12 @@ miscount things today.
 14. **A blank role description now removes it** (platform #343, BG-34). `updateRole` sends `null`
     for a blank description field. That used to keep the description and now clears it, so the
     edit form's help text ("can be replaced but not removed") and the action's comment are wrong.
+    **Adopted** (frontend #112): the help text reads "Optional." and the comment says `null`
+    clears it.
 
 ## Summary
 
-16 backend fixed · 8 partly fixed · 0 open · 1 adopted · 10 closed.
+14 backend fixed · 8 partly fixed · 0 open · 1 adopted · 12 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -159,14 +163,14 @@ miscount things today.
 | BG-24 | P2       | Closed        | Bootstrap status can flip COMPLETED → FAILED from unrelated invitee failures                       |
 | BG-25 | P2       | Partly fixed  | Identity and email delivery defaults (Keycloak admin off, email off, no password step)             |
 | BG-26 | P2       | Closed        | Ignored or dangerous sort parameters                                                               |
-| BG-27 | P2       | Backend fixed | Role lifecycle gaps (no delete; DISABLED roles assignable; ARCHIVED unused)                        |
+| BG-27 | P2       | Closed        | Role lifecycle gaps (no delete; DISABLED roles assignable; ARCHIVED unused)                        |
 | BG-28 | P2       | Partly fixed  | Terminal states without recovery (rejected tenant code stays taken; revoked member can't return)   |
 | BG-29 | P2       | Closed        | PLATFORM organisation included in tenant search results                                            |
 | BG-30 | P2       | Closed        | Wrong-context 403s put a sentence in `code`; invalid JWT 401 has no body                           |
 | BG-31 | P2       | Closed        | Mutations silently require the matching `.view` permission                                         |
 | BG-32 | P2       | Closed        | Documentation drift in the platform repository                                                     |
 | BG-33 | P2       | Closed        | Permission codes in /auth/me carry no scope                                                        |
-| BG-34 | P2       | Backend fixed | Role update accepts a blank name; an empty description clears it                                   |
+| BG-34 | P2       | Closed        | Role update accepts a blank name; an empty description clears it                                   |
 | BG-35 | P2       | Closed        | No documented self-lockout guard: a user may suspend, revoke or deactivate themselves              |
 
 ## Details
@@ -904,8 +908,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-27 — Role lifecycle · P2
 
-- **Status:** Backend fixed. Platform #171, #297 (ADR 0035), with archive instead of delete by
-  decision.
+- **Status:** Closed (frontend #112). Platform #171, #297 (ADR 0035), with archive instead of
+  delete by decision.
 - **Gap:** no role delete; `ARCHIVED` is never written; activate/deactivate work from any state; a
   DISABLED role can be assigned (it grants nothing).
 - **Frontend handling:** the roles page offers assignment only for ACTIVE roles and has no delete.
@@ -919,9 +923,21 @@ the same bullets): the first is the gap as found, the second what the UI still d
   Archived roles are left out of the default list (`status=ARCHIVED` lists them) and keep their
   code.
 - **Still open:** no hard delete (ADR 0035).
-- **To adopt:** an Archive action; no Activate or Edit for an archived role; explain the assignment
-  422 as a role that is no longer active; resolve archived roles' names on old assignments with
-  `status=ARCHIVED`.
+- **To adopt:** done in frontend #112.
+  - `roleStatusAction` offers Deactivate only from ACTIVE and Activate only from DISABLED, and
+    nothing for an archived role, which also offers no Edit, grant or remove.
+  - Archive (`role.archive` + `role.view` tenant-wide, custom roles) is an error-tone confirmation.
+    When the page holds `role_assignment.view` tenant-wide it reads the active-assignment count,
+    and a non-zero count disables the confirm and links to the Assignments tab. Its 409 is
+    explained without echoing the count.
+  - An archived record says it is kept for history. The directory's default status option reads
+    "Active and disabled", and Archived lists archived roles.
+  - The assign action no longer re-reads the role; it explains the platform's 422.
+  - Archived names on old assignments: not needed. Every screen that lists role assignments
+    (the role's Assignments tab, the user record's Roles & access, the approval's Requested access)
+    reads ACTIVE ones only, and the platform never leaves an ACTIVE assignment on an archived role
+    (archive is refused while one exists, and assigning one is 422), so the role index reads no
+    `status=ARCHIVED` page.
 
 ### BG-28 — Terminal states without recovery · P2
 
@@ -1092,7 +1108,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-34 — Role update accepts a blank name; an empty description clears it · P2
 
-- **Status:** Backend fixed. Platform #340 (PR #343).
+- **Status:** Closed (frontend #112). Platform #340 (PR #343).
 - **Gap:** `UpdateRoleRequest` has no `@NotBlank` (`iam/adapter/inbound/web/dto/RoleApiDtos.kt`),
   and `updateRole` sets every non-null field (`JooqIamAdministrationPersistence.kt`). So a blank
   `role_name` is stored and `""` replaces the description, while `null` keeps either field.
@@ -1107,10 +1123,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
     string is 400 `validation_failed`.
   - An empty body is a no-op that still writes its `role.update` audit row.
 - **Still open:** nothing.
-- **To adopt:** the form already sends `null` for a blank description, which now removes it. Drop
-  the "can be replaced but not removed" help text (`role-form.tsx`) and the comment in
-  `role-actions.ts`'s `updateRole`, and correct the contract's UpdateRole row, which still says the
-  description can't be cleared.
+- **To adopt:** done in frontend #112: the form sends `null` for a blank description, which now
+  removes it; the help text reads "Optional.", the `updateRole` comment says so, and the contract's
+  UpdateRole row says `null` clears it. The e2e fake API's PATCH keeps an absent field, clears a
+  `null` description and answers a blank name or description with 400 `validation_failed`.
 
 ### BG-35 — No documented self-lockout guard on memberships and accounts · P2
 

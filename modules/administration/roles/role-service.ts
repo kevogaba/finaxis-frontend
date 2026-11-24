@@ -87,15 +87,15 @@ export async function listRoleAssignments(filter: RoleAssignmentFilter, paging: 
 }
 
 /** BG-15: one `size=1` read; null when unreadable. It counts assignments, not distinct users
- * (Ruling 11). */
-export async function countActiveRoleAssignments(roleId: string): Promise<number | null> {
+ * (Ruling 11). Cached: the record layout (Archive) and its Overview share it. */
+export const countActiveRoleAssignments = cache(async (roleId: string): Promise<number | null> => {
   try {
     const page = await listRoleAssignments({ roleId, status: 'ACTIVE' }, { page: 0, size: 1 });
     return page.page.totalItems;
   } catch {
     return null;
   }
-}
+});
 
 /** Whether `userId` holds the role through an ACTIVE assignment at any scope, as the platform's
  * own-access check counts it (#342): one `size=1` read, which needs `role_assignment.view`. False

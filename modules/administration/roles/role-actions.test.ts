@@ -16,9 +16,6 @@ const { apiDelete, apiPatch, apiPost, redirect, refresh, runServerAction } = vi.
   refresh: vi.fn(),
   runServerAction: vi.fn(),
 }));
-const { getRole } = vi.hoisted(() => ({
-  getRole: vi.fn((_roleId: string) => Promise.resolve<unknown>({ status: 'ACTIVE' })),
-}));
 vi.mock('next/navigation', () => ({ redirect: (to: string) => redirect(to) as unknown }));
 vi.mock('next/cache', () => ({
   refresh: () => {
@@ -33,7 +30,6 @@ vi.mock('@/lib/api/tenant-api', () => ({
 vi.mock('@/lib/api/action-result', () => ({
   runServerAction: (...args: unknown[]) => runServerAction(...args) as unknown,
 }));
-vi.mock('./role-service', () => ({ getRole: (roleId: string) => getRole(roleId) }));
 
 const actions = await import('./role-actions');
 
@@ -116,12 +112,12 @@ describe('role actions', () => {
     expect(await actions.createRole(null, form({}))).toMatchObject({
       code: 'conflict',
       requestId: 'req-1',
-      fieldErrors: { roleCode: 'This code may already be in use.' },
+      fieldErrors: { roleCode: 'This code may already be in use, possibly by an archived role.' },
       formError: expect.stringContaining('may already be in use') as unknown,
     });
   });
 
-  it('updates the name, keeps a blank description (null), and returns to the record', async () => {
+  it('updates the name, clears a blank description (null, BG-34), and returns to the record', async () => {
     await expect(
       actions.updateRole(
         null,
@@ -140,21 +136,59 @@ describe('role actions', () => {
   it.each([
     ['activateRole', 'activate'],
     ['deactivateRole', 'deactivate'],
+    ['archiveRole', 'archive'],
   ] as const)('%s posts {} with the client key', async (name, path) => {
     await actions[name](null, form({ idempotencyKey: KEY, roleId: ROLE }));
     expect(apiPost).toHaveBeenCalledWith(`/api/v1/tenant/roles/${ROLE}/${path}`, {}, KEY);
   });
 
+  describe('archiving (ADR 0035)', () => {
+    const archive = () => actions.archiveRole(null, form({ idempotencyKey: KEY, roleId: ROLE }));
+
+    // Review Focus 2: a retry after a failure replays the same write.
+    it('reuses the minted key on retry', async () => {
+      runServerAction.mockImplementationOnce(settle);
+      apiPost.mockRejectedValueOnce(new Error('network'));
+      expect(await archive()).toMatchObject({ ok: false });
+      await archive();
+      expect(keysSent()).toEqual([KEY, KEY]);
+    });
+
+    // The platform's detail names the count; BackendApiError never carries it (Global Constraints).
+    it('explains the 409, keeping the reference', async () => {
+      runServerAction.mockImplementationOnce(settle);
+      apiPost.mockRejectedValueOnce(
+        new BackendApiError(409, { code: 'conflict', requestId: 'req-7' }),
+      );
+      expect(await archive()).toEqual({
+        ok: false,
+        formError:
+          "This role still has active assignments, or it can't be archived. Refresh and check.",
+        fieldErrors: {},
+        code: 'conflict',
+        requestId: 'req-7',
+      });
+    });
+
+    it('leaves other failures alone', async () => {
+      runServerAction.mockResolvedValueOnce(failure('forbidden'));
+      expect(await archive()).toMatchObject({ formError: 'generic' });
+    });
+  });
+
   it('explains a 409 as an immutable role and leaves other failures alone', async () => {
     for (const action of [
       actions.updateRole,
+      actions.activateRole,
       actions.deactivateRole,
       actions.removePermission,
       actions.grantPermissions,
     ]) {
       runServerAction.mockResolvedValueOnce(failure('conflict'));
+      // Review Focus 1: a role archived elsewhere answers 409 too, so the copy names it.
       expect(await action(null, form({}))).toMatchObject({
-        formError: expect.stringContaining('system roles are immutable') as unknown,
+        formError:
+          "This role can't be changed: system roles are immutable and archived roles are final. It may also have changed — refresh and check.",
       });
     }
     runServerAction.mockResolvedValueOnce(failure('forbidden'));
@@ -391,19 +425,16 @@ describe('role actions', () => {
     expect(apiDelete).toHaveBeenCalledWith(`/api/v1/tenant/role-assignments/${ASSIGNMENT}`, KEY);
   });
 
-  describe('assigning re-reads the role first (BG-27)', () => {
+  describe('assigning a role that is no longer ACTIVE (BG-27)', () => {
     const assign = () =>
       actions.assignRole(
         null,
         form({ idempotencyKey: KEY, roleId: ROLE, userId: USER, scopeType: 'TENANT' }),
       );
-    const NOT_ACTIVE =
-      "This role is no longer active, so it can't be assigned. Refresh the page and check its status.";
 
-    it('posts the same body and key for an ACTIVE role', async () => {
+    it('posts once, reading nothing first', async () => {
       runServerAction.mockImplementationOnce(settle);
       expect(await assign()).toEqual({ ok: true });
-      expect(getRole).toHaveBeenCalledWith(ROLE);
       expect(apiPost).toHaveBeenCalledTimes(1);
       expect(apiPost).toHaveBeenCalledWith(
         '/api/v1/tenant/role-assignments',
@@ -412,7 +443,7 @@ describe('role actions', () => {
       );
     });
 
-    it('names a role the platform found inactive after the read (422, BG-27)', async () => {
+    it('names the 422 the platform answers for a DISABLED or ARCHIVED role', async () => {
       runServerAction.mockImplementationOnce(settle);
       apiPost.mockRejectedValueOnce(
         new BackendApiError(422, { code: 'invalid_operation', requestId: 'req-5' }),
@@ -424,57 +455,6 @@ describe('role actions', () => {
         code: 'invalid_operation',
         requestId: 'req-5',
       });
-    });
-
-    it.each(['DISABLED', 'ARCHIVED'])('does not post for a %s role', async (status) => {
-      runServerAction.mockImplementationOnce(settle);
-      getRole.mockResolvedValueOnce({ status });
-      expect(await assign()).toMatchObject({ ok: false, formError: NOT_ACTIVE });
-      expect(apiPost).not.toHaveBeenCalled();
-    });
-
-    it('fails closed without posting or echoing backend text when the read fails', async () => {
-      for (const error of [
-        new BackendApiError(404, { requestId: 'req-9' }),
-        new Error('secret backend text'),
-      ]) {
-        runServerAction.mockImplementationOnce(settle);
-        getRole.mockRejectedValueOnce(error);
-        const result = await assign();
-        expect(result).toMatchObject({
-          ok: false,
-          formError: "Couldn't check the role's status. Try again.",
-        });
-        expect(JSON.stringify(result)).not.toContain('secret');
-      }
-      expect(apiPost).not.toHaveBeenCalled();
-    });
-
-    it('keeps the error reference of a failed read', async () => {
-      runServerAction.mockImplementationOnce(settle);
-      getRole.mockRejectedValueOnce(new BackendApiError(500, { requestId: 'req-9' }));
-      expect(await assign()).toMatchObject({ ok: false, requestId: 'req-9' });
-    });
-
-    it('lets the original read error through, so a lost session still redirects', async () => {
-      const lost = new BackendApiError(401);
-      getRole.mockRejectedValueOnce(lost);
-      await expect(assign()).rejects.toBe(lost);
-      expect(apiPost).not.toHaveBeenCalled();
-    });
-
-    it('reads nothing and posts nothing when the organisation changed (context_changed)', async () => {
-      runServerAction.mockResolvedValueOnce(failure('context_changed'));
-      expect(await assign()).toMatchObject({ code: 'context_changed' });
-      expect(getRole).not.toHaveBeenCalled();
-      expect(apiPost).not.toHaveBeenCalled();
-    });
-
-    it('reads nothing when the input is refused', async () => {
-      await expect(
-        actions.assignRole(null, form({ idempotencyKey: KEY, roleId: ROLE, scopeType: 'TENANT' })),
-      ).rejects.toThrow();
-      expect(getRole).not.toHaveBeenCalled();
     });
   });
 });

@@ -71,7 +71,7 @@ test.describe('fake API roles (contract §E.3)', () => {
     expect(system.status()).toBe(409);
     const edited = await request.patch(api(`/tenant/roles/${ROLE_SCENARIO_IDS.teller}`), {
       headers,
-      data: { role_name: 'Senior teller', description: null },
+      data: { role_name: 'Senior teller' },
     });
     expect(await edited.json()).toMatchObject({
       role_name: 'Senior teller',
@@ -82,6 +82,132 @@ test.describe('fake API roles (contract §E.3)', () => {
       { headers, data: {} },
     );
     expect(await disabled.json()).toMatchObject({ status: 'DISABLED' });
+  });
+
+  // BG-34 (platform #343): absent keeps, null clears, a blank value is refused.
+  test('keeps, clears or refuses a role name and description on PATCH', async ({ request }) => {
+    const headers = await contextFor(request, 'roles', null);
+    const patch = (data: Record<string, unknown>) =>
+      request.patch(api(`/tenant/roles/${ROLE_SCENARIO_IDS.teller}`), { headers, data });
+
+    expect(await (await patch({})).json()).toMatchObject({
+      role_name: 'Teller',
+      description: 'Front-desk cash and member service.',
+    });
+    const blankName = await patch({ role_name: '  ' });
+    expect(blankName.status()).toBe(400);
+    expect(await blankName.json()).toMatchObject({
+      code: 'validation_failed',
+      violations: [{ field: 'role_name', code: 'Pattern', message: 'must not be blank' }],
+    });
+    const blankDescription = await patch({ description: ' ' });
+    expect(blankDescription.status()).toBe(400);
+    expect(await blankDescription.json()).toMatchObject({
+      code: 'validation_failed',
+      violations: null,
+    });
+    expect(await (await patch({ role_name: null, description: null })).json()).toMatchObject({
+      role_name: 'Teller',
+      description: null,
+    });
+    expect(await (await patch({ description: 'Cash desk.' })).json()).toMatchObject({
+      description: 'Cash desk.',
+    });
+  });
+
+  // ADR 0035: ACTIVE ⇄ DISABLED, either → ARCHIVED, which is final and keeps the code.
+  test('moves a role only from its named state', async ({ request }) => {
+    const headers = await contextFor(request, 'roles', null);
+    const status = async (path: string) =>
+      (
+        await request.post(api(`/tenant/roles/${ROLE_SCENARIO_IDS.teller}/${path}`), {
+          headers,
+          data: {},
+        })
+      ).status();
+
+    expect(await status('activate')).toBe(409);
+    expect(await status('deactivate')).toBe(200);
+    expect(await status('deactivate')).toBe(409);
+    expect(await status('activate')).toBe(200);
+  });
+
+  test('archives a custom role without active assignments, for good', async ({ request }) => {
+    const headers = await contextFor(request, 'roles', null);
+    const role = (id: string) => api(`/tenant/roles/${id}`);
+    const archive = (id: string) => request.post(`${role(id)}/archive`, { headers, data: {} });
+
+    // Teller has two ACTIVE assignments: the detail names them (the UI never echoes it).
+    const held = await archive(ROLE_SCENARIO_IDS.teller);
+    expect(held.status()).toBe(409);
+    expect(await held.json()).toMatchObject({
+      code: 'conflict',
+      detail:
+        "The role has 2 active assignments; revoke them before archiving it. Archiving is final and the role's code stays reserved.",
+    });
+    expect((await archive(IDS.tenantAdminRole)).status()).toBe(409);
+
+    // From ACTIVE, and from DISABLED.
+    const archived = await archive(ROLE_SCENARIO_IDS.opsSupervisor);
+    expect(await archived.json()).toMatchObject({
+      status: 'ARCHIVED',
+      role_code: 'OPS_SUPERVISOR',
+    });
+    expect(await (await archive(ROLE_SCENARIO_IDS.loansOfficer)).json()).toMatchObject({
+      status: 'ARCHIVED',
+    });
+
+    // Nothing leaves ARCHIVED, and nothing changes it.
+    const ops = ROLE_SCENARIO_IDS.opsSupervisor;
+    for (const path of ['archive', 'activate', 'deactivate']) {
+      expect((await request.post(`${role(ops)}/${path}`, { headers, data: {} })).status()).toBe(
+        409,
+      );
+    }
+    expect((await request.patch(role(ops), { headers, data: { role_name: 'X' } })).status()).toBe(
+      409,
+    );
+    const grants = `${role(ops)}/permissions`;
+    expect(
+      (await request.post(grants, { headers, data: { permission_code: 'branch.view' } })).status(),
+    ).toBe(409);
+    const granted = (await (await request.get(grants, { headers })).json()) as {
+      items: { id: string }[];
+    };
+    expect(
+      (await request.delete(`${grants}/${granted.items[0]?.id ?? ''}`, { headers })).status(),
+    ).toBe(409);
+    const assign = await request.post(api('/tenant/role-assignments'), {
+      headers,
+      data: { user_id: ROLE_SCENARIO_IDS.tom, role_id: ops, scope_type: 'TENANT', branch_id: null },
+    });
+    expect(assign.status()).toBe(422);
+    // Its code stays reserved.
+    const reuse = await request.post(api('/tenant/roles'), {
+      headers,
+      data: { role_code: 'OPS_SUPERVISOR', role_name: 'Ops' },
+    });
+    expect(reuse.status()).toBe(409);
+
+    // The default list leaves archived roles out; status=ARCHIVED lists them.
+    const listed = async (query: string) =>
+      (
+        (await (await request.get(api(`/tenant/roles${query}`), { headers })).json()) as {
+          items: { role_code: string }[];
+        }
+      ).items.map((item) => item.role_code);
+    expect(await listed('?size=100')).not.toContain('OPS_SUPERVISOR');
+    expect(await listed('?status=ARCHIVED&sort_by=roleCode&sort_dir=ASC')).toEqual([
+      'CASH_DESK',
+      'LOANS_OFFICER',
+      'OPS_SUPERVISOR',
+    ]);
+
+    // One role.archive audit row on the role.
+    const audit = await request.get(api(`/tenant/audit-events?entity_type=ROLE&entity_id=${ops}`), {
+      headers,
+    });
+    expect(await audit.json()).toMatchObject({ items: [{ action: 'role.archive' }] });
   });
 
   test('grants idempotently, lists newest first, and removes by grant id', async ({ request }) => {
