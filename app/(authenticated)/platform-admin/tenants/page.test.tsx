@@ -77,10 +77,9 @@ describe('TenantDirectoryPage', () => {
     ).toEqual(['DE']);
   });
 
-  it('words the empty state by the visible total when a page holds only the platform row (BG-29)', async () => {
-    // 11 backend items: the oldest, the platform organisation, sits alone on the second page.
+  it("counts the platform's total as returned: the list leaves out the platform organisation (BG-29)", async () => {
     listTenants.mockResolvedValue(
-      tenantPage([{ id: PLATFORM, tenantCode: 'platform' }], {
+      tenantPage([{ id: 'b1c2d3e4-0000-4000-8000-000000000011', tenantCode: 'umoja' }], {
         number: 1,
         totalItems: 11,
         totalPages: 2,
@@ -91,17 +90,23 @@ describe('TenantDirectoryPage', () => {
       await TenantDirectoryPage({ searchParams: Promise.resolve({ page: '1' }) }),
     );
 
-    expect(screen.getByText('10 institutions')).toBeInTheDocument();
-    expect(screen.getByText('No institutions on this page.')).toBeInTheDocument();
-    expect(screen.queryByText(/have been created yet/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/match these filters/)).not.toBeInTheDocument();
+    expect(screen.getByText('11 institutions')).toBeInTheDocument();
   });
 
-  it('says none have been created when only the platform organisation exists', async () => {
+  it('counts a filtered result as returned', async () => {
     listTenants.mockResolvedValue(
-      tenantPage([{ id: PLATFORM, tenantCode: 'platform' }], { totalItems: 1, totalPages: 1 }),
+      tenantPage([{ id: 'b1c2d3e4-0000-4000-8000-000000000012', tenantCode: 'umoja' }], {
+        totalItems: 1,
+        totalPages: 1,
+      }),
     );
 
+    renderWithProviders(await TenantDirectoryPage({ searchParams: Promise.resolve({ q: 'um' }) }));
+
+    expect(screen.getByText('1 institution')).toBeInTheDocument();
+  });
+
+  it('says none have been created when the list is empty', async () => {
     renderWithProviders(await TenantDirectoryPage({ searchParams: Promise.resolve({}) }));
 
     expect(screen.getByText('0 institutions')).toBeInTheDocument();

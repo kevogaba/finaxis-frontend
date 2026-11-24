@@ -150,20 +150,6 @@ export function provisioningTimeline(
   });
 }
 
-/**
- * BG-29: `GET /platform/tenants` includes the reserved platform organisation, which the directory
- * hides. An unfiltered result always holds it; a filtered one is known to only when its row is on
- * the page in view. ponytail: a filtered count can read one high on pages without that row, and the
- * pagination footer keeps the backend's rows so that no page is stranded — exact once BG-29 closes.
- */
-export function visibleTenantTotal(
-  totalItems: number,
-  filtered: boolean,
-  platformOnPage: boolean,
-): number {
-  return Math.max(0, totalItems - (!filtered || platformOnPage ? 1 : 0));
-}
-
 export interface TenantOption {
   value: string;
   label: string;

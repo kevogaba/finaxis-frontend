@@ -13,7 +13,6 @@ import {
   tenantDraftBody,
   tenantDraftSchema,
   tenantFormOptions,
-  visibleTenantTotal,
   type TenantDraftValues,
 } from './tenant-rules';
 
@@ -123,19 +122,6 @@ describe('bootstrapStatusLabel', () => {
       'Completed',
       'Failed',
     ]);
-  });
-});
-
-describe('visibleTenantTotal (BG-29)', () => {
-  it('always leaves the platform organisation out of an unfiltered count', () => {
-    expect(visibleTenantTotal(8, false, false)).toBe(7);
-    expect(visibleTenantTotal(8, false, true)).toBe(7);
-  });
-
-  it('leaves it out of a filtered count only when its row is on the page in view', () => {
-    expect(visibleTenantTotal(3, true, true)).toBe(2);
-    expect(visibleTenantTotal(3, true, false)).toBe(3);
-    expect(visibleTenantTotal(0, false, false)).toBe(0);
   });
 });
 

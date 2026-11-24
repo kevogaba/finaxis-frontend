@@ -5,15 +5,6 @@ import type { TenantSummary } from '../tenants/tenant-contract';
 /** The Needs attention table shows at most this many institutions per status (Ruling 10). */
 export const ATTENTION_PREVIEW_SIZE = 5;
 
-/**
- * BG-29: `status=ACTIVE` counts the reserved platform organisation. It is always ACTIVE while anyone
- * works in the platform context (contract §A re-validates the organisation on every request), so
- * that count holds it exactly once, and no other status ever holds it.
- */
-export function activeInstitutionCount(activeTotal: number): number {
-  return Math.max(0, activeTotal - 1);
-}
-
 /** A settled read, structurally `Loaded<Page<TenantSummary>>` (lib/api/load.ts is server-only). */
 export type AttentionRead =
   { ok: true; value: Page<TenantSummary> } | { ok: false; problem: { requestId: string | null } };
@@ -36,13 +27,8 @@ export const DRAFTS_HREF = `${DIRECTORY}?status=DRAFT&sortBy=createdAt&sortDir=A
 const reference = (requestId: string | null) => (requestId ? ` Reference: ${requestId}` : '');
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
-export function attentionView(
-  pending: AttentionRead,
-  drafts: AttentionRead,
-  isPlatform: (id: string) => boolean,
-): AttentionView {
-  const visible = (read: AttentionRead) =>
-    read.ok ? read.value.items.filter((tenant) => !isPlatform(tenant.id)) : [];
+export function attentionView(pending: AttentionRead, drafts: AttentionRead): AttentionView {
+  const visible = (read: AttentionRead) => (read.ok ? read.value.items : []);
   const pendingRows = visible(pending);
   const draftRows = visible(drafts);
   const failures = [

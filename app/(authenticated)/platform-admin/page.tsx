@@ -13,11 +13,9 @@ import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { KpiTile } from '@/components/data-display/kpi-tile';
 import type { StatusTone } from '@/components/data-display/status-chip';
 import { PageHeader } from '@/components/shell/page-header';
-import { isPlatformOrganisation } from '@/config/application-context';
 import { load, type Loaded } from '@/lib/api/load';
 import { AttentionCard } from '@/modules/platform-administration/overview/components/attention-card';
 import {
-  activeInstitutionCount,
   ATTENTION_PREVIEW_SIZE,
   attentionView,
   KPI,
@@ -110,7 +108,7 @@ export default async function PlatformOverviewPage() {
         {active &&
           tile(
             'active',
-            tileValue(active, activeInstitutionCount),
+            tileValue(active, (count) => count),
             'success',
             <CheckCircleOutlined />,
           )}
@@ -132,9 +130,7 @@ export default async function PlatformOverviewPage() {
             <AdminPanelSettingsOutlined />,
           )}
       </Box>
-      {pending && drafts && (
-        <AttentionCard view={attentionView(pending, drafts, isPlatformOrganisation)} />
-      )}
+      {pending && drafts && <AttentionCard view={attentionView(pending, drafts)} />}
     </>
   );
 }

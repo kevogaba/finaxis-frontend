@@ -54,7 +54,8 @@ miscount things today.
    `total_items` exclude it unless `include_platform=true`. `visibleTenantTotal`
    (`modules/platform-administration/tenants/tenant-rules.ts`) and `activeInstitutionCount`
    (`modules/platform-administration/overview/overview-rules.ts`) still subtract it, so the
-   directory's unfiltered count and the overview's active count read one low (BG-29).
+   directory's unfiltered count and the overview's active count read one low (BG-29). **Adopted**
+   (frontend #108): both counts are the platform's totals as returned.
 3. **Maker-checker refusals have their own codes** (platform #280, #245): 403
    `lifecycle.approver_is_*` and 409 `lifecycle.platform_checker_closed` (BG-08). The membership,
    approval, branch and tenant actions explain only `forbidden`, so a maker now gets the generic
@@ -115,7 +116,7 @@ miscount things today.
 
 ## Summary
 
-23 backend fixed · 9 partly fixed · 0 open · 0 adopted · 3 closed.
+22 backend fixed · 9 partly fixed · 0 open · 0 adopted · 4 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -147,7 +148,7 @@ miscount things today.
 | BG-26 | P2       | Backend fixed | Ignored or dangerous sort parameters                                                               |
 | BG-27 | P2       | Backend fixed | Role lifecycle gaps (no delete; DISABLED roles assignable; ARCHIVED unused)                        |
 | BG-28 | P2       | Partly fixed  | Terminal states without recovery (rejected tenant code stays taken; revoked member can't return)   |
-| BG-29 | P2       | Backend fixed | PLATFORM organisation included in tenant search results                                            |
+| BG-29 | P2       | Closed        | PLATFORM organisation included in tenant search results                                            |
 | BG-30 | P2       | Backend fixed | Wrong-context 403s put a sentence in `code`; invalid JWT 401 has no body                           |
 | BG-31 | P2       | Backend fixed | Mutations silently require the matching `.view` permission                                         |
 | BG-32 | P2       | Closed        | Documentation drift in the platform repository                                                     |
@@ -921,7 +922,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-29 — PLATFORM organisation in tenant search · P2
 
-- **Status:** Backend fixed. Platform #160.
+- **Status:** Closed (frontend #108). Platform #160, #283.
 - **Gap:** `GET /platform/tenants` includes the reserved PLATFORM organisation.
 - **Frontend handling:** the frontend filters it out, so a page can show one fewer row. The result
   count subtracts it whenever it is known to be included (always when unfiltered, and when its row
@@ -931,9 +932,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Backend resolution:** `GET /platform/tenants` and its `total_items` leave out the platform
   organisation unless `include_platform=true`; reading it by id is unchanged.
 - **Still open:** nothing.
-- **To adopt:** now, since the counts read one low (see "Backend changes that affect the current
-  UI"): stop subtracting it in `visibleTenantTotal` and `activeInstitutionCount`. Keep
-  `isInstitutionId` for the record URLs.
+- **To adopt:** done in frontend #108: the directory and the overview show the platform's totals
+  as returned (`visibleTenantTotal` and `activeInstitutionCount` are gone), and the e2e fake API
+  leaves the platform organisation out unless `include_platform=true`. `isInstitutionId` stays for
+  the record URLs.
 
 ### BG-30 — Error envelope inconsistencies · P2
 

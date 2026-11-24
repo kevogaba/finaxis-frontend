@@ -18,7 +18,6 @@ import { humanizeEnum } from '@/components/data-display/status-chip';
 import { TablePaginationBar } from '@/components/data-display/table-pagination-bar';
 import NextLink from '@/components/navigation/next-link';
 import { PageHeader } from '@/components/shell/page-header';
-import { isPlatformOrganisation } from '@/config/application-context';
 import { load } from '@/lib/api/load';
 import { lastPageIfPastEnd } from '@/lib/api/paging';
 import { hrefWith, toSearchParams } from '@/lib/api/query-string';
@@ -30,7 +29,6 @@ import {
 } from '@/modules/platform-administration/tenants/tenant-query';
 import {
   countryOptions,
-  visibleTenantTotal,
   withCurrent,
 } from '@/modules/platform-administration/tenants/tenant-rules';
 import { listTenants } from '@/modules/platform-administration/tenants/tenant-service';
@@ -98,14 +96,10 @@ export default async function TenantDirectoryPage({ searchParams }: TenantDirect
     redirect(hrefWith(PATH, params, { page: redirectPage === 0 ? null : String(redirectPage) }));
   }
 
-  // BG-29: the list includes the reserved platform organisation, which is no institution.
-  const rows = tenants.value.items.filter((tenant) => !isPlatformOrganisation(tenant.id));
+  // BG-29 (closed): the list and its total leave out the reserved platform organisation.
+  const rows = tenants.value.items;
   const filtered = hasTenantFilters(query);
-  const total = visibleTenantTotal(
-    tenants.value.page.totalItems,
-    filtered,
-    rows.length < tenants.value.items.length,
-  );
+  const total = tenants.value.page.totalItems;
   // A country from the URL is applied, so it must stay selectable (not render as "All"); a
   // non-canonical one (DD) is labelled by its code, not as the country it aliases.
   const countries = withCurrent(countryOptions(), query.country);
