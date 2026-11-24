@@ -82,8 +82,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   `components/context/pagination-controls.tsx` (the pre-shell organisation/branch selection
   lists in `/select-context`, which have no URL to hold state). The profile's assigned-branches
   table (`app/(authenticated)/profile/contexts/page.tsx`) is a second, named exception: it lists
-  only the signed-in user's own branch assignments from `/auth/me`, which has no paging and
-  includes SUSPENDED branches that the paginated `/auth/branches` omits — bounded by one user's
+  only the signed-in user's own branch assignments from `/auth/me`, which has no paging (it also
+  listed SUSPENDED branches, which the paginated `/auth/branches` omits, until platform #170 made
+  it list ACTIVE ones only, `docs/backend-gaps.md` BG-23) — bounded by one user's
   assignments, so it is no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-09-27-admin-parity-15-profile.md`).
   The settings catalogue (`modules/administration/settings`) is a third, named exception: it is a
@@ -98,7 +99,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   `docs/superpowers/plans/2026-10-01-admin-parity-09-roles.md`, Ruling 6).
   The user record's Branch assignments tab (`modules/administration/users`'s
   `listUserBranchAssignments`: a bounded scan of at most 5 × 100 ACTIVE assignments, because the
-  backend can't filter branch assignments by user, BG-09), its Assign-branch drawer's options
+  contract had no `user_id` filter on branch assignments; the platform has one now, BG-09, and
+  adopting it retires the scan), its Assign-branch drawer's options
   (one page of 100 ACTIVE branches, saying so when there are more) and its Assign-role drawer's
   options (the role index's first 500 roles by name, saying so when there are more) are a fifth,
   named exception: the tab pages what the scan found with the URL holding page and size and says
@@ -166,9 +168,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   content in the DOM, page-wide `getByText`/`getByLabel`/`locator` match hidden elements too, and a
   strict assertion then sees two. `getByRole` skips hidden elements. Absence checks
   (`toHaveCount(0)`) stay page-wide, where they are stricter.
-- The backend's wire format is snake_case and differs from the published OpenAPI casing; never
-  generate a client from the OpenAPI as-is. Follow
-  `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`.
+- The backend's wire format is snake_case. The published OpenAPI matches it since platform #151
+  (`docs/backend-gaps.md` BG-05), but the wire schemas stay hand-written per domain: don't generate
+  a client from the OpenAPI without deciding to replace them. Follow
+  `docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`, and where
+  `docs/backend-gaps.md` records a gap as fixed, its **Backend resolution**.
 - `/auth/*` responses are parsed by the zod schemas in `auth/context-contract.ts` — never trust an
   unparsed backend body.
 - `ApplicationContext.branch` is nullable: `null` means All branches (institution level), not "no
