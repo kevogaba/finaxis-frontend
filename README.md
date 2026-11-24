@@ -410,9 +410,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - Readiness is five fixed rules over live reads (spec §10.8), not the platform's
     close-of-business readiness check, which the UI doesn't read yet (`docs/backend-gaps.md`
     BG-21); its counts are `size=1` reads (BG-15).
-  - Institution profile reads the stored `default_timezone` and `base_currency` settings: a tenant
-    created without them shows Needs attention and says settings can't be saved yet, since the
-    UI's editing is still off (BG-04).
+  - Institution profile is ready while the institution is active and its settings read: an unset
+    `default_timezone` isn't missing (a new branch takes the institution's zone) and
+    `base_currency` always reads the institution's currency (BG-04, BG-12).
   - People needs two active members, so someone other than the requester can approve. It doesn't
     count the platform's onboarding checker or the institution's maker-checker switches (BG-02).
   - Identities still provisioning are noted apart and never listed as waiting (BG-11): the users
@@ -559,12 +559,15 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - The Audit tab shows the role's own changes. Assignment changes are audited per assignment
     (BG-16).
 - Settings (`/admin/settings`, `modules/administration/settings/`) reads the catalogue and the
-  tenant's stored keys in one bounded read. Editing ships disabled behind `SETTINGS_EDIT_ENABLED`:
-  the platform saves changes since its fix (`docs/backend-gaps.md` BG-04), but `base_currency`,
-  now read-only there, must leave the editable keys before the flag is flipped. Reset to default
-  works, except on `base_currency`, which the platform refuses. The two maker-checker switches
-  and automatic advance are shown read-only and labelled as always on or unavailable, though the
-  platform now honours them (BG-12).
+  tenant's stored keys in one bounded read, and files them under the platform's own groups
+  (General, Approvals, Business date, Audit) with its labels and descriptions; keys outside the
+  catalogue stay in a collapsed "Other stored settings". A holder of `settings.update` (and its
+  view) tenant-wide edits the default time zone (an IANA zone) and flips the two maker-checker
+  switches and automatic advance, each after a confirmation; turning a maker-checker switch off
+  needs a reason, and turning automatic advance on also needs `business_date.advance`, so the
+  switch says so instead. Reset to default is offered once a value is stored (`is_default`).
+  Base currency (the institution's own currency) and audit retention (the platform's) are
+  read-only (`docs/backend-gaps.md` BG-04, BG-12).
 - Users & access (`/admin/users`, `modules/administration/users/`) lists the tenant's users
   from `GET /tenant/users` (search, user status and membership status filters; newest first,
   no sort) and opens a record with the membership lifecycle (approve, reject and revoke,

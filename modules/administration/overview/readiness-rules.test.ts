@@ -17,7 +17,6 @@ import {
   READINESS_LINKS,
   READINESS_STATES,
   type ReadinessReads,
-  type SettingFact,
 } from './readiness-rules';
 
 const ok = <T>(value: T) => ({ ok: true as const, value });
@@ -26,18 +25,8 @@ const failed = (requestId: string | null = '14a00000-0000-4000-8000-0000000000aa
   problem: { requestId },
 });
 
-const setting = (key: string, value: string | null, redacted = false): SettingFact => ({
-  key,
-  value,
-  redacted,
-});
-const PROFILE_SET = {
-  items: [
-    setting('default_timezone', 'Africa/Nairobi'),
-    setting('base_currency', 'KES'),
-    setting('audit_retention_days', null, true),
-  ],
-};
+// The settings read only has to succeed: every key it could lack has a fallback now.
+const SETTINGS_READ = { items: [{ key: 'default_timezone', value: null }] };
 
 describe('who can check what (Ruling 3)', () => {
   it('needs one read code per item, and none for the organisation status', () => {
@@ -61,38 +50,13 @@ describe('who can check what (Ruling 3)', () => {
 });
 
 describe('Institution profile', () => {
-  it('is ready when the organisation is active and both keys are set', () => {
-    expect(institutionItem('ACTIVE', ok(PROFILE_SET))).toEqual({
+  it('is ready when the organisation is active and its settings read', () => {
+    expect(institutionItem('ACTIVE', ok(SETTINGS_READ))).toEqual({
       id: 'institution',
       label: 'Institution profile',
       state: 'ready',
-      detail: 'Active, with a default timezone and a base currency.',
+      detail: 'The institution is active.',
     });
-  });
-
-  it.each([
-    [[setting('base_currency', 'KES')], "Not set: default timezone. Settings can't be saved yet."],
-    [
-      [setting('default_timezone', 'Africa/Nairobi')],
-      "Not set: base currency. Settings can't be saved yet.",
-    ],
-    [
-      [setting('default_timezone', null), setting('base_currency', null)],
-      "Not set: default timezone and base currency. Settings can't be saved yet.",
-    ],
-  ])(
-    'needs attention while a key is unset, and says it cannot be saved yet (%#)',
-    (items, detail) => {
-      expect(institutionItem('ACTIVE', ok({ items }))).toMatchObject({
-        state: 'attention',
-        detail,
-      });
-    },
-  );
-
-  it('counts a masked value as set, never as absent', () => {
-    const items = [setting('default_timezone', null, true), setting('base_currency', 'KES')];
-    expect(institutionItem('ACTIVE', ok({ items })).state).toBe('ready');
   });
 
   it('names an organisation that is not active, whatever the settings', () => {
@@ -215,7 +179,7 @@ describe('Business date', () => {
 describe('the whole card', () => {
   const READY: ReadinessReads = {
     organisationStatus: 'ACTIVE',
-    settings: ok(PROFILE_SET),
+    settings: ok(SETTINGS_READ),
     activeBranches: ok(2),
     pendingBranches: ok(0),
     activeMembers: ok(2),

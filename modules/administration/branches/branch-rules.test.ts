@@ -7,6 +7,8 @@ import {
   canAssignUsers,
   canCreateBranch,
   canRevokeAssignments,
+  isTimeZone,
+  timeZones,
 } from './branch-rules';
 
 const ALL = [
@@ -98,5 +100,45 @@ describe('branch rules', () => {
     expect(branchDraftSchema.safeParse({ ...DRAFT, parentBranchId: 'not-a-uuid' }).success).toBe(
       false,
     );
+  });
+
+  it.each(['Africa/Nairobi', 'UTC', 'Etc/UTC', 'Etc/GMT-3', 'Etc/GMT+12', 'America/New_York'])(
+    'accepts the IANA id %s',
+    (zone) => {
+      expect(isTimeZone(zone)).toBe(true);
+    },
+  );
+
+  // The platform refuses a raw offset (TimeZoneRule, #276), though Intl formats with one.
+  it.each([
+    '+03:00',
+    '-05:00',
+    'UTC+3',
+    'GMT+3',
+    'Mars/Olympus',
+    'africa/nairobi',
+    'AFRICA/NAIROBI',
+    'Utc',
+    'ETC/GMT-3',
+    'EST',
+    'HST',
+    'ROC',
+    'GMT+0',
+    'US/Pacific-New',
+    'Etc/GMT+13',
+    '',
+  ])('refuses %j', (zone) => {
+    expect(isTimeZone(zone)).toBe(false);
+  });
+
+  it('lists the runtime zones with both UTC spellings, sorted, a current one it lacks first', () => {
+    const zones = timeZones();
+    expect(zones).toContain('Africa/Nairobi');
+    expect(zones).toContain('UTC');
+    expect(zones).toContain('Etc/UTC');
+    expect(zones).toEqual([...zones].sort());
+    expect(new Set(zones).size).toBe(zones.length);
+    expect(timeZones('Etc/GMT-3')[0]).toBe('Etc/GMT-3');
+    expect(timeZones('UTC')).toEqual(zones);
   });
 });

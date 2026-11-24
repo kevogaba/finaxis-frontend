@@ -18,6 +18,10 @@ export function recordAuditEvent(
     action: string;
     reason: string | null;
     organisationId?: string;
+    /** `INFO` unless the platform raises it (a maker-checker switch is `HIGH`). */
+    severity?: string;
+    beforeJson?: string;
+    afterJson?: string;
   },
 ): void {
   state.auditEvents.push({
@@ -31,10 +35,10 @@ export function recordAuditEvent(
     entityId: event.entityId,
     action: event.action,
     outcome: 'SUCCESS',
-    severity: 'INFO',
+    severity: event.severity ?? 'INFO',
     reason: event.reason,
-    beforeJson: null,
-    afterJson: null,
+    beforeJson: event.beforeJson ?? null,
+    afterJson: event.afterJson ?? null,
     metadataJson: '{}',
   });
 }

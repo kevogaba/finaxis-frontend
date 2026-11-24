@@ -2,11 +2,11 @@ import { z } from 'zod';
 import { can, type PermissionHolder } from '@/auth/permissions';
 import type { StatusTone } from '@/components/data-display/status-chip';
 import { isoToBusinessDate } from '@/lib/business-date';
-import { isTimeZone } from '@/modules/administration/branches/branch-rules';
-import { settingOptions } from '@/modules/administration/settings/settings-rules';
+import { isTimeZone, timeZones } from '@/modules/administration/branches/branch-rules';
+import { currencyLabel } from '@/modules/administration/settings/settings-rules';
 import type { BootstrapStatus, TenantDetail, TenantStatus } from './tenant-contract';
 
-export { currencyLabel } from '@/modules/administration/settings/settings-rules';
+export { currencyLabel };
 
 export type TenantLifecycleAction =
   'amend' | 'submit' | 'approve' | 'reject' | 'suspend' | 'reactivate' | 'deprovision';
@@ -214,14 +214,10 @@ export function withCurrent(options: TenantOption[], value: string | undefined):
     : options;
 }
 
-/** `Intl` lists neither UTC alias, though `isTimeZone` and the backend's ZoneId accept both. */
-const UTC_ZONES = ['UTC', 'Etc/UTC'];
-
-/** The runtime's zones plus the UTC aliases it omits, sorted and unique. */
-function timeZoneOptions(current: string | undefined): TenantOption[] {
-  const zones = new Set([...Intl.supportedValuesOf('timeZone'), ...UTC_ZONES]);
+/** The runtime's ISO 4217 codes, labelled with their names; a stored code it lacks goes first. */
+function currencyOptions(current: string | undefined): TenantOption[] {
   return withCurrent(
-    [...zones].sort().map((value) => ({ value, label: value })),
+    Intl.supportedValuesOf('currency').map((value) => ({ value, label: currencyLabel(value) })),
     current,
   );
 }
@@ -231,8 +227,8 @@ export function tenantFormOptions(
 ): TenantFormOptions {
   return {
     countries: withCurrent(countryOptions(), current?.countryCode),
-    currencies: settingOptions('base_currency', current?.baseCurrencyCode ?? null),
-    timeZones: timeZoneOptions(current?.timezone),
+    currencies: currencyOptions(current?.baseCurrencyCode),
+    timeZones: timeZones(current?.timezone).map((value) => ({ value, label: value })),
   };
 }
 
@@ -285,11 +281,15 @@ export const tenantDraftSchema = tenantAmendSchema.extend({
   defaultTimezoneSetting: z
     .string()
     .refine((value) => value === '' || isTimeZone(value), 'Choose a timezone.'),
-  baseCurrencySetting: z.string().regex(/^([A-Z]{3})?$/, 'Choose a currency.'),
+  // TenantSettingCatalog's bounds (#278): at least seven years, at most a century.
   auditRetentionDays: z
     .string()
     .trim()
-    .regex(/^(\d{1,5})?$/, 'Enter a whole number of days.'),
+    .refine(
+      (value) =>
+        value === '' || (/^\d+$/.test(value) && Number(value) >= 2555 && Number(value) <= 36500),
+      'Enter 2555 to 36500 days.',
+    ),
 });
 
 export type TenantAmendValues = z.infer<typeof tenantAmendSchema>;
@@ -310,7 +310,6 @@ export const EMPTY_TENANT_DRAFT: TenantDraftValues = {
   adminPhone: '',
   adminSendApplicationInvite: 'false',
   defaultTimezoneSetting: '',
-  baseCurrencySetting: '',
   auditRetentionDays: '',
 };
 
@@ -335,11 +334,11 @@ export function tenantDraftBody(values: TenantAmendValues): Record<string, unkno
   };
 }
 
-/** Catalogue keys only (contract §H), and only those filled in. The map is never re-keyed. */
+/** Catalogue keys only (contract §H), and only those filled in. The map is never re-keyed. Never
+ * `base_currency`: it mirrors `base_currency_code`, and any other value is refused (422). */
 export function initialSettings(values: TenantDraftValues): Record<string, string> {
   const settings: Record<string, string> = {};
   if (values.defaultTimezoneSetting) settings.default_timezone = values.defaultTimezoneSetting;
-  if (values.baseCurrencySetting) settings.base_currency = values.baseCurrencySetting;
   if (values.auditRetentionDays) {
     settings.audit_retention_days = String(Number(values.auditRetentionDays));
   }

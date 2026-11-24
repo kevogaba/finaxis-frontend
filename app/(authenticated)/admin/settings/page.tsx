@@ -7,11 +7,6 @@ import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { PageHeader } from '@/components/shell/page-header';
 import { load } from '@/lib/api/load';
 import { SettingsCatalogue } from '@/modules/administration/settings/components/settings-catalogue';
-import { SETTINGS_EDIT_ENABLED } from '@/modules/administration/settings/settings-flags';
-import {
-  canUpdateSettings,
-  EDIT_UNAVAILABLE,
-} from '@/modules/administration/settings/settings-rules';
 import { listSettings } from '@/modules/administration/settings/settings-service';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -27,7 +22,7 @@ export default async function SettingsPage() {
     <PageHeader
       eyebrow="Administration"
       title="Settings"
-      description="Institution-wide operating defaults. Changes keep an optional reason in the audit trail."
+      description="Institution-wide operating defaults. Every change is recorded in the audit trail, with its reason."
     />
   );
 
@@ -52,8 +47,7 @@ export default async function SettingsPage() {
         <SettingsCatalogue
           settings={settings.value.items}
           truncated={settings.value.page.hasNext}
-          canUpdate={canUpdateSettings(holder)}
-          editBlocked={SETTINGS_EDIT_ENABLED ? null : EDIT_UNAVAILABLE}
+          holder={holder}
           contextOrganisationId={contextOrganisationId}
         />
       ) : (

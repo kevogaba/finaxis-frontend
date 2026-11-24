@@ -53,7 +53,6 @@ const FIELDS = {
   adminPhone: '+254712000140',
   adminSendApplicationInvite: 'false',
   defaultTimezoneSetting: '',
-  baseCurrencySetting: '',
   auditRetentionDays: '',
 };
 const INSTITUTION = {
@@ -136,7 +135,7 @@ describe('tenant actions', () => {
           ...FIELDS,
           idempotencyKey: KEY,
           businessDate: '2026-10-05',
-          auditRetentionDays: '365',
+          auditRetentionDays: '3650',
         }),
       ),
     ).rejects.toThrow(`NEXT_REDIRECT:/platform-admin/tenants/${TENANT}`);
@@ -145,7 +144,7 @@ describe('tenant actions', () => {
       '/api/v1/platform/tenants',
       {
         ...INSTITUTION,
-        initial_settings: { audit_retention_days: '365' },
+        initial_settings: { audit_retention_days: '3650' },
         business_date: '05-10-2026',
       },
       KEY,
@@ -233,8 +232,7 @@ describe('tenant actions', () => {
     ).toMatchObject({
       code: 'accounting.currency_invalid',
       requestId: 'req-2',
-      formError:
-        "The platform can't settle in this currency. Choose another base currency, or clear the base currency setting.",
+      formError: "The platform can't settle in this currency. Choose another base currency.",
       fieldErrors: { baseCurrencyCode: "The platform can't settle in this currency." },
     });
 
@@ -270,38 +268,27 @@ describe('tenant actions', () => {
     const refused = () =>
       new BackendApiError(422, { code: 'accounting.currency_invalid', requestId: 'req-2' });
 
-    it('marks both currency fields on create when an initial currency setting was sent', async () => {
-      apiPost.mockRejectedValueOnce(refused());
-      const result = await actions.createTenantDraft(
-        null,
-        form({ ...FIELDS, idempotencyKey: KEY, baseCurrencySetting: 'USD' }),
-      );
-      expect(result).toMatchObject({
-        code: 'accounting.currency_invalid',
-        requestId: 'req-2',
-        formError:
-          "The platform can't settle in this currency. Choose another base currency, or clear the base currency setting.",
-      });
-      expect(result).toHaveProperty('fieldErrors', {
-        baseCurrencyCode: REFUSED,
-        baseCurrencySetting: REFUSED,
-      });
-    });
-
-    it('marks only the institution currency on create when no setting was sent', async () => {
+    // No base currency setting is ever sent (it mirrors base_currency_code), so only the
+    // institution's currency can be the one refused.
+    it('marks the institution currency on create', async () => {
       apiPost.mockRejectedValueOnce(refused());
       const result = await actions.createTenantDraft(
         null,
         form({ ...FIELDS, idempotencyKey: KEY, defaultTimezoneSetting: 'UTC' }),
       );
+      expect(result).toMatchObject({
+        code: 'accounting.currency_invalid',
+        requestId: 'req-2',
+        formError: "The platform can't settle in this currency. Choose another base currency.",
+      });
       expect(result).toHaveProperty('fieldErrors', { baseCurrencyCode: REFUSED });
     });
 
-    it('marks only the institution currency on amend, which sends no settings', async () => {
+    it('marks the institution currency on amend', async () => {
       apiPatch.mockRejectedValueOnce(refused());
       const result = await actions.amendTenantDraft(
         null,
-        form({ ...FIELDS, idempotencyKey: KEY, tenantId: TENANT, baseCurrencySetting: 'USD' }),
+        form({ ...FIELDS, idempotencyKey: KEY, tenantId: TENANT }),
       );
       expect(result).toHaveProperty('fieldErrors', { baseCurrencyCode: REFUSED });
     });

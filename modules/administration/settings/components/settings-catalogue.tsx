@@ -2,38 +2,37 @@ import { useId, type ReactNode } from 'react';
 import Accordion from '@mui/material/Accordion';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
-import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined';
+import type { PermissionHolder } from '@/auth/permissions';
 import { SectionCard } from '@/components/data-display/section-card';
 import { TruncatedText } from '@/components/data-display/truncated-text';
 import type { TenantSetting } from '../settings-contract';
 import {
-  SETTING_GROUPS,
+  groupSettings,
   isEditableKey,
-  otherSettings,
   settingActions,
+  settingNote,
   settingValueLabel,
 } from '../settings-rules';
-import { SettingActions } from './setting-actions';
+import { SettingActions, SettingSwitch } from './setting-actions';
 
 interface SettingsCatalogueProps {
   settings: readonly TenantSetting[];
   /** More than one page came back (see settings-service). */
   truncated: boolean;
-  canUpdate: boolean;
-  /** Why Edit is disabled (BG-04), or null when editing ships. */
-  editBlocked: string | null;
+  holder: PermissionHolder;
   /** I2: the organisation the page rendered for, passed through to every row's actions. */
   contextOrganisationId?: string;
 }
 
 interface SettingRowProps {
   label: string;
-  note?: string;
-  value: string;
+  note?: string | null;
+  value: ReactNode;
   actions?: ReactNode;
 }
 
@@ -41,8 +40,8 @@ interface SettingRowProps {
  * One setting (prototype `.settings-list` row). It is a group named by its label, so every row's
  * "Edit" and "Reset to default" stay distinguishable. `useId`, not the key: a stored key can hold
  * whitespace, which would split `aria-labelledby` into IDREFs that don't exist. `tabIndex={-1}`
- * (I3): programmatically focusable, never in the tab order, so a successful Reset that leaves
- * Edit disabled has somewhere to land focus instead of <body>.
+ * (I3): programmatically focusable, never in the tab order, so a successful Reset on a row without
+ * Edit has somewhere to land focus instead of <body>.
  */
 function SettingRow({ label, note, value, actions }: SettingRowProps) {
   const labelId = useId();
@@ -80,60 +79,69 @@ function SettingRow({ label, note, value, actions }: SettingRowProps) {
           </Typography>
         )}
       </Box>
-      <TruncatedText value={value} maxWidth="100%" variant="body1" />
-      {actions && (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifySelf: { md: 'end' } }}>
-          {actions}
-        </Box>
-      )}
+      {value}
+      {actions && <Box sx={{ justifySelf: { md: 'end' } }}>{actions}</Box>}
     </Box>
   );
+}
+
+function CatalogueRow({
+  setting,
+  holder,
+  contextOrganisationId,
+}: { setting: TenantSetting } & Pick<SettingsCatalogueProps, 'holder' | 'contextOrganisationId'>) {
+  const label = setting.label ?? setting.key;
+  const allowed = settingActions(setting, holder);
+  const value =
+    setting.valueType === 'BOOLEAN' ? (
+      <SettingSwitch
+        settingKey={setting.key}
+        label={label}
+        checked={setting.value === 'true'}
+        edit={allowed.edit}
+        blocked={allowed.blocked}
+        contextOrganisationId={contextOrganisationId}
+      />
+    ) : (
+      <TruncatedText value={settingValueLabel(setting)} maxWidth="100%" variant="body1" />
+    );
+  let actions: ReactNode = null;
+  if (setting.key === 'base_currency') {
+    actions = <Chip size="small" label="Read-only" />;
+  } else if (allowed.edit && isEditableKey(setting.key)) {
+    actions = (
+      <SettingActions
+        settingKey={setting.key}
+        label={label}
+        value={setting.value}
+        reset={allowed.reset}
+        contextOrganisationId={contextOrganisationId}
+      />
+    );
+  }
+  return <SettingRow label={label} note={settingNote(setting)} value={value} actions={actions} />;
 }
 
 export function SettingsCatalogue({
   settings,
   truncated,
-  canUpdate,
-  editBlocked,
+  holder,
   contextOrganisationId,
 }: SettingsCatalogueProps) {
-  const byKey = new Map(settings.map((setting) => [setting.key, setting]));
-  const others = otherSettings(settings);
+  const others = settings.filter((setting) => setting.group === null);
 
   return (
     <Stack spacing={5}>
-      {SETTING_GROUPS.map((group) => (
-        <SectionCard key={group.title} title={group.title} description={group.description}>
-          {canUpdate && editBlocked && group.entries.some((entry) => isEditableKey(entry.key)) && (
-            // The disabled Edit buttons can't take focus, so a tooltip alone would hide the reason
-            // from keyboard and screen-reader users. role="note": a static notice, not an alert
-            // announced on every page load (and not confused with the toast's alert).
-            <Alert severity="info" role="note" sx={{ mx: 4.5, mt: 3, mb: 1 }}>
-              {editBlocked}
-            </Alert>
-          )}
-          {group.entries.map((entry) => {
-            const setting = byKey.get(entry.key);
-            const allowed = settingActions(setting, canUpdate);
-            return (
-              <SettingRow
-                key={entry.key}
-                label={entry.label}
-                note={entry.note}
-                value={entry.effective ?? settingValueLabel(entry.kind, setting)}
-                actions={
-                  allowed && (
-                    <SettingActions
-                      {...allowed}
-                      label={entry.label}
-                      editBlocked={editBlocked}
-                      contextOrganisationId={contextOrganisationId}
-                    />
-                  )
-                }
-              />
-            );
-          })}
+      {groupSettings(settings).map(({ group, settings: entries }) => (
+        <SectionCard key={group} title={group}>
+          {entries.map((setting) => (
+            <CatalogueRow
+              key={setting.key}
+              setting={setting}
+              holder={holder}
+              contextOrganisationId={contextOrganisationId}
+            />
+          ))}
         </SectionCard>
       ))}
       {others.length > 0 && (
@@ -152,7 +160,13 @@ export function SettingsCatalogue({
               <SettingRow
                 key={setting.key}
                 label={setting.key}
-                value={settingValueLabel(null, setting)}
+                value={
+                  <TruncatedText
+                    value={settingValueLabel(setting)}
+                    maxWidth="100%"
+                    variant="body1"
+                  />
+                }
               />
             ))}
           </AccordionDetails>

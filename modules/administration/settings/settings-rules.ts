@@ -1,107 +1,65 @@
 import { canAllTenantWide, type PermissionHolder } from '@/auth/permissions';
 import { withViews } from '@/auth/permission-views';
-import type { ActionResult } from '@/lib/api/action-result';
 import type { TenantSetting } from './settings-contract';
 
-/** How a catalogue value renders (contract §H types). */
-export type SettingKind = 'timezone' | 'currency' | 'switch' | 'retention';
+/** The platform's groups (TenantSettingCatalog), in page order; the list itself is sorted by key. */
+export const SETTING_GROUP_ORDER = ['General', 'Approvals', 'Business date', 'Audit'] as const;
 
-export interface SettingEntry {
-  key: string;
-  label: string;
-  /** Under the label: what the setting is, or why it is read-only (spec §10.7, D10). */
-  note: string;
-  kind: SettingKind;
-  /**
-   * What the platform actually does, shown instead of the stored value when the two would
-   * otherwise contradict each other (e.g. a stored "Off" next to "always applies").
-   */
-  effective?: string;
-}
-
-export interface SettingGroup {
-  title: string;
-  description: string;
-  entries: readonly SettingEntry[];
-}
-
-/** The only keys this page changes (D10). Both default to null (contract §H). */
-export const EDITABLE_KEYS = ['default_timezone', 'base_currency'] as const;
+/** The only keys this page changes: base_currency mirrors the organisation's currency and the
+ * retention period is the platform's (both refused here with 422 or 403). */
+export const EDITABLE_KEYS = [
+  'default_timezone',
+  'require_maker_checker_for_user_invites',
+  'require_maker_checker_for_branch_creation',
+  'business_date_auto_advance_enabled',
+] as const;
 export type EditableKey = (typeof EDITABLE_KEYS)[number];
 
-export const EDIT_UNAVAILABLE =
-  "Editing isn't available yet: the platform can't save setting changes. Reset to default still works.";
-
-export const SETTING_GROUPS: readonly SettingGroup[] = [
-  {
-    title: 'Locale & currency',
-    description: 'Stored configuration for this institution.',
-    entries: [
-      {
-        key: 'default_timezone',
-        label: 'Default timezone',
-        note: 'IANA timezone, for example Africa/Nairobi.',
-        kind: 'timezone',
-      },
-      {
-        key: 'base_currency',
-        label: 'Base currency',
-        note: "ISO 4217 code. It can't change once the institution has posted journals.",
-        kind: 'currency',
-      },
-    ],
-  },
-  {
-    title: 'Controls',
-    description: 'Shown for reference. The platform applies these rules itself.',
-    entries: [
-      {
-        key: 'require_maker_checker_for_user_invites',
-        label: 'Maker-checker for user invites',
-        note: 'Maker-checker always applies',
-        kind: 'switch',
-        effective: 'Always on (enforced)',
-      },
-      {
-        key: 'require_maker_checker_for_branch_creation',
-        label: 'Maker-checker for branch creation',
-        note: 'Maker-checker always applies',
-        kind: 'switch',
-        effective: 'Always on (enforced)',
-      },
-      {
-        key: 'business_date_auto_advance_enabled',
-        label: 'Automatic business date advance',
-        note: 'Automatic advance is not available yet',
-        kind: 'switch',
-      },
-    ],
-  },
-  {
-    title: 'Retention',
-    description: 'Set by the platform operator.',
-    entries: [
-      {
-        key: 'audit_retention_days',
-        label: 'Audit retention',
-        note: 'Managed by the platform',
-        kind: 'retention',
-      },
-    ],
-  },
+export const AUTO_ADVANCE_KEY = 'business_date_auto_advance_enabled';
+export const MAKER_CHECKER_KEYS: readonly string[] = [
+  'require_maker_checker_for_user_invites',
+  'require_maker_checker_for_branch_creation',
 ];
 
-const CATALOGUE_KEYS: ReadonlySet<string> = new Set(
-  SETTING_GROUPS.flatMap((group) => group.entries.map((entry) => entry.key)),
-);
+export const BASE_CURRENCY_NOTE = "Set from the institution's currency. It can't be changed here.";
+export const RETENTION_NOTE = 'Managed by the platform';
+/** Storing `true` also needs `business_date.advance` (TenantSettingsService, #277). */
+export const AUTO_ADVANCE_NEEDS_PERMISSION =
+  'Turning on automatic advance needs permission to advance the business date.';
+export const INVALID_VALUE = "This value isn't valid for this setting.";
 
 export function isEditableKey(key: string): key is EditableKey {
   return EDITABLE_KEYS.some((editable) => editable === key);
 }
 
-/** Stored keys outside the catalogue (contract §H), listed read-only. */
-export function otherSettings(settings: readonly TenantSetting[]): TenantSetting[] {
-  return settings.filter((setting) => !CATALOGUE_KEYS.has(setting.key));
+export interface SettingGroup {
+  group: string;
+  settings: TenantSetting[];
+}
+
+/** The catalogue keys under their groups, in `SETTING_GROUP_ORDER` (a group the platform adds later
+ * goes last). Keys outside the catalogue (`group` null) are left for "Other stored settings". */
+export function groupSettings(settings: readonly TenantSetting[]): SettingGroup[] {
+  const groups = new Map<string, TenantSetting[]>();
+  for (const setting of settings) {
+    if (setting.group !== null) {
+      groups.set(setting.group, [...(groups.get(setting.group) ?? []), setting]);
+    }
+  }
+  const rank = (group: string) => {
+    const index = SETTING_GROUP_ORDER.findIndex((known) => known === group);
+    return index === -1 ? SETTING_GROUP_ORDER.length : index;
+  };
+  return [...groups]
+    .sort(([a], [b]) => rank(a) - rank(b))
+    .map(([group, entries]) => ({ group, settings: entries }));
+}
+
+/** Under the label: the read-only keys' own note, otherwise the platform's description. */
+export function settingNote(setting: TenantSetting): string | null {
+  if (setting.key === 'base_currency') return BASE_CURRENCY_NOTE;
+  if (setting.key === 'audit_retention_days') return RETENTION_NOTE;
+  return setting.description;
 }
 
 const CURRENCY_NAMES = new Intl.DisplayNames(['en'], { type: 'currency' });
@@ -117,25 +75,23 @@ export function currencyLabel(code: string): string {
   }
 }
 
-export function settingValueLabel(
-  kind: SettingKind | null,
-  setting: TenantSetting | undefined,
-): string {
-  if (!setting) return 'Not available';
+/** A value line (the switches render their own On/Off). */
+export function settingValueLabel(setting: TenantSetting): string {
   if (setting.redacted) return 'Hidden';
   const { value } = setting;
   if (value === null) return 'Not set';
-  if (kind === 'switch') return value === 'true' ? 'On' : value === 'false' ? 'Off' : value;
-  if (kind === 'currency') return currencyLabel(value);
-  if (kind === 'retention') return `${value} days`;
+  if (setting.valueType === 'CURRENCY') return currencyLabel(value);
+  if (setting.key === 'audit_retention_days') return `${value} days`;
   return value;
 }
 
 export interface AllowedSettingActions {
-  settingKey: EditableKey;
-  value: string | null;
-  /** Both editable keys default to null, so a value means one is stored (no is_default: BG-12). */
+  /** Edit the time zone, or flip a switch. */
+  edit: boolean;
+  /** Only while a value is stored (`is_default` false). */
   reset: boolean;
+  /** Why the switch can't be turned on here, shown beside it. */
+  blocked: string | null;
 }
 
 /** TenantSettingsService checks `settings.update`, and the `settings.view` it implies, tenant-wide
@@ -144,75 +100,63 @@ export function canUpdateSettings(holder: PermissionHolder): boolean {
   return canAllTenantWide(holder, withViews(['settings.update']));
 }
 
-/** Editable keys only, with `settings.update`, never on a masked or platform-only value. */
+/** The platform checks `settings.update` (and its view) tenant-wide, on an editable key only. */
 export function settingActions(
-  setting: TenantSetting | undefined,
-  canUpdate: boolean,
-): AllowedSettingActions | null {
-  if (!setting || !canUpdate || setting.redacted || setting.platformAdminOnly) return null;
-  const { key, value } = setting;
-  return isEditableKey(key) ? { settingKey: key, value, reset: value !== null } : null;
+  setting: TenantSetting,
+  holder: PermissionHolder,
+): AllowedSettingActions {
+  const edit = isEditableKey(setting.key) && canUpdateSettings(holder);
+  const blocked =
+    edit &&
+    setting.key === AUTO_ADVANCE_KEY &&
+    setting.value !== 'true' &&
+    !canAllTenantWide(holder, withViews(['business_date.advance']))
+      ? AUTO_ADVANCE_NEEDS_PERMISSION
+      : null;
+  return { edit, reset: edit && !setting.isDefault, blocked };
 }
 
-export interface SettingOption {
-  value: string;
-  label: string;
+/** The confirmation a switch shows before it changes. */
+export interface SwitchChange {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  reason: 'optional' | 'required';
+  /** The toast once it changed. */
+  done: string;
 }
 
-/**
- * The runtime's IANA zones or ISO 4217 codes. The current value goes first when the list lacks it
- * (an alias such as `UTC`), so the select still shows it.
- */
-export function settingOptions(key: EditableKey, current: string | null): SettingOption[] {
-  const values = Intl.supportedValuesOf(key === 'default_timezone' ? 'timeZone' : 'currency');
-  const all = current !== null && !values.includes(current) ? [current, ...values] : values;
-  return all.map((value) => ({
-    value,
-    label: key === 'base_currency' ? currencyLabel(value) : value,
-  }));
-}
+const HIGH_SEVERITY =
+  "Each such approval is recorded as a high-severity event. The platform's own checks still apply.";
 
-/**
- * Remedies for the settings codes (contract §I). Kept local because lib/api/problem.ts belongs to
- * 07. `onValue` also puts the message on the Edit dialog's value field.
- */
-const SETTING_PROBLEMS = new Map<string, { message: string; onValue: boolean }>([
-  // TenantSettingsService runs the freeze on createOrUpdate *and* deactivate, so Reset hits it too.
-  [
-    'accounting.functional_currency_frozen',
-    {
-      message: "The base currency can't change: this institution has already posted journals.",
-      onValue: false,
-    },
-  ],
-  [
-    'accounting.functional_currency_lock_timeout',
-    { message: 'Another currency change is in progress. Try again in a moment.', onValue: false },
-  ],
-  [
-    'accounting.currency_invalid',
-    { message: "This currency can't be used for settlement. Choose another.", onValue: true },
-  ],
-  ['invalid_operation', { message: "This value isn't valid for this setting.", onValue: true }],
-]);
+const SWITCHES: Record<string, { name: string; on: string; off: string }> = {
+  require_maker_checker_for_user_invites: {
+    name: 'maker-checker for user invitations',
+    on: "The person who invites someone won't be able to approve them, and the invited person won't be able to approve their own membership.",
+    off: `The person who invites someone will be able to approve them, and the invited person will be able to approve their own membership. ${HIGH_SEVERITY}`,
+  },
+  require_maker_checker_for_branch_creation: {
+    name: 'maker-checker for branch creation',
+    on: "The person who drafts or edits a branch won't be able to activate it.",
+    off: `The person who drafts or edits a branch will be able to activate it. ${HIGH_SEVERITY}`,
+  },
+  [AUTO_ADVANCE_KEY]: {
+    name: 'automatic business date advance',
+    on: "The platform will advance an open business date one day at a time until it reaches today in the institution's time zone, once the platform operator has switched scheduled advances on.",
+    off: 'The business date will advance only when someone advances it.',
+  },
+};
 
-/**
- * `path`: reset never sends a `value`, so a value-specific code (`onValue`, e.g.
- * `invalid_operation`) has nothing to attach to and is left for `describeProblem`'s generic
- * message instead of the update-only text.
- */
-export function withSettingProblem(
-  result: ActionResult,
-  path: 'update' | 'reset' = 'update',
-): ActionResult {
-  if (result.ok || result.code === null) return result;
-  const known = SETTING_PROBLEMS.get(result.code);
-  if (!known || (known.onValue && path === 'reset')) return result;
+/** Turning a maker-checker switch off relaxes a control, so it needs a reason (spec §8, 07). */
+export function switchChange(key: string, on: boolean): SwitchChange | null {
+  const copy = SWITCHES[key];
+  if (!copy) return null;
+  const direction = on ? 'on' : 'off';
   return {
-    ...result,
-    formError: known.message,
-    fieldErrors: known.onValue
-      ? { ...result.fieldErrors, value: known.message }
-      : result.fieldErrors,
+    title: `Turn ${direction} ${copy.name}?`,
+    description: on ? copy.on : copy.off,
+    confirmLabel: `Turn ${direction}`,
+    reason: !on && MAKER_CHECKER_KEYS.includes(key) ? 'required' : 'optional',
+    done: `${copy.name.charAt(0).toUpperCase()}${copy.name.slice(1)} turned ${direction}`,
   };
 }

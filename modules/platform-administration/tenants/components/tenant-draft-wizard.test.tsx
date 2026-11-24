@@ -201,9 +201,9 @@ describe('TenantDraftWizard', () => {
     await next(user, 'Initial settings');
     await next(user, 'Review');
 
-    // Legal name, registration number, and the three optional settings.
+    // Legal name, registration number, and the two optional settings.
     const unset = screen.getAllByText('Not set');
-    expect(unset).toHaveLength(5);
+    expect(unset).toHaveLength(4);
     for (const element of unset) {
       expect(ownStyle(element, 'color')).toContain('--finaxis-palette-text-secondary');
       expect(ownStyle(element, 'font-weight')).toBe('400');
@@ -244,7 +244,7 @@ describe('TenantDraftWizard', () => {
     await fillAdministrator(user);
     await user.click(screen.getByRole('checkbox', { name: 'Send application invite' }));
     await next(user, 'Initial settings');
-    await user.type(screen.getByRole('textbox', { name: 'Audit retention (days)' }), '365');
+    await user.type(screen.getByRole('textbox', { name: 'Audit retention (days)' }), '3650');
     await next(user, 'Review');
     expect(screen.getByRole('region', { name: 'Institution' })).toHaveTextContent('Kenya');
     await user.click(screen.getByRole('button', { name: 'Create draft' }));
@@ -272,8 +272,7 @@ describe('TenantDraftWizard', () => {
       adminPhone: '+254712000140',
       adminSendApplicationInvite: 'true',
       defaultTimezoneSetting: '',
-      baseCurrencySetting: '',
-      auditRetentionDays: '365',
+      auditRetentionDays: '3650',
     });
 
     await user.clear(code);
@@ -294,13 +293,13 @@ describe('TenantDraftWizard', () => {
     expect(second?.get('tenantCode')).toBe('tujenge-traders');
   });
 
-  it('returns to the institution after a currency refusal, where the settings step still shows its own', async () => {
+  it('returns to the institution after a currency refusal', async () => {
     const user = userEvent.setup();
     const refused = "The platform can't settle in this currency.";
     createTenantDraft.mockResolvedValueOnce({
       ok: false,
-      formError: `${refused} Choose another base currency, or clear the base currency setting.`,
-      fieldErrors: { baseCurrencyCode: refused, baseCurrencySetting: refused },
+      formError: `${refused} Choose another base currency.`,
+      fieldErrors: { baseCurrencyCode: refused },
       code: 'accounting.currency_invalid',
       requestId: null,
     });
@@ -317,7 +316,6 @@ describe('TenantDraftWizard', () => {
           adminUsername: 'amina.otieno',
           adminDisplayName: 'Amina Otieno',
           adminPhone: '+254712000140',
-          baseCurrencySetting: 'KES',
         }}
         options={OPTIONS}
       />,
@@ -335,13 +333,45 @@ describe('TenantDraftWizard', () => {
         refused,
       );
     });
+  });
 
-    // Moving on keeps the other mark, so the administrator sees which value to clear.
+  it("asks for no base currency setting (it follows the institution's) and bounds retention", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <TenantDraftWizard
+        defaults={{
+          ...EMPTY_TENANT_DRAFT,
+          tenantCode: 'acme',
+          displayName: 'Tujenge Traders SACCO',
+          countryCode: 'KE',
+          baseCurrencyCode: 'KES',
+          timezone: 'Africa/Nairobi',
+          adminEmail: 'amina@tujenge.example',
+          adminUsername: 'amina.otieno',
+          adminDisplayName: 'Amina Otieno',
+          adminPhone: '+254712000140',
+        }}
+        options={OPTIONS}
+      />,
+    );
+
     await next(user, 'First administrator');
     await next(user, 'Initial settings');
+    expect(screen.queryByRole('combobox', { name: /Base currency/ })).toBeNull();
+    const retention = screen.getByRole('textbox', { name: 'Audit retention (days)' });
+    await user.type(retention, '365');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(
-      screen.getByRole('combobox', { name: 'Base currency setting' }),
-    ).toHaveAccessibleDescription(refused);
+      await screen.findByText('Check these fields: Audit retention (days).'),
+    ).toBeInTheDocument();
+    expect(retention).toHaveAccessibleDescription('Enter 2555 to 36500 days.');
+
+    await user.clear(retention);
+    await user.type(retention, '2555');
+    await next(user, 'Review');
+    expect(screen.getByRole('region', { name: 'Initial settings' })).not.toHaveTextContent(
+      'Base currency',
+    );
   });
 
   it('focuses a refused choice field, and Edit on the review returns to its step with the answers kept', async () => {

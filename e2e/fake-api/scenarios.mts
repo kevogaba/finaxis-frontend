@@ -270,11 +270,12 @@ function seedTenantSettings(organisationId: string): FakeTenantSetting[] {
   });
   return [
     row('default_timezone', 'Africa/Nairobi', 'TIMEZONE'),
-    row('base_currency', 'KES', 'CURRENCY'),
-    // Stored keys outside the catalogue, as on dev (contract §H); one long value for 375 px.
-    row('business-date.timezone', 'Africa/Nairobi', 'STRING'),
+    // The platform's own marker row (OrganisationProvisioningService.DEFAULT_SETTINGS): stored for
+    // every tenant, never listed.
+    row('settings.operational', 'true', 'STRING'),
+    // A key stored before a catalogue change, which the list still shows; long, for 375 px.
     row(
-      'settings.operational',
+      'legacy.operational_profile',
       '{"cash_limit_per_teller":"250000","end_of_day_cutoff":"17:30","statement_numbering":"GF-{branch}-{yyyy}-{seq}"}',
       'STRING',
     ),
@@ -333,7 +334,6 @@ function greenfieldTenant(): RunState {
     idempotency: new Map(),
     lockTimeoutsRemaining: 0,
     tenantSettings: seedTenantSettings(IDS.greenfield),
-    baseCurrencyFrozen: false,
   };
 }
 
@@ -393,7 +393,6 @@ function platformOperator(): RunState {
     idempotency: new Map(),
     lockTimeoutsRemaining: 0,
     tenantSettings: [],
-    baseCurrencyFrozen: false,
   };
 }
 
@@ -1724,7 +1723,7 @@ function overviewBase(): RunState {
 }
 
 /** Layer 14, `overview-ready`: Peter is the second active member, so every readiness item is met
- * (settings set, two active branches and none pending, the date open) and nothing waits. */
+ * (two active branches and none pending, the date open) and nothing waits. */
 function overviewReadyScenario(): RunState {
   const state = overviewBase();
   const ids = OVERVIEW_SCENARIO_IDS;
@@ -1749,11 +1748,11 @@ function overviewReadyScenario(): RunState {
 }
 
 /**
- * Layer 14, `overview-attention`: every readiness item needs attention. Four memberships wait
- * (newest first: Wanjiku, Baraka, whose identity is provisioning, Nyokabi, with the long name and
- * email, then Halima), three branches wait for activation (newest first: Malindi, with the long
- * name, Nyeri, then Kakamega past the five-row preview), Jane is the only active member, neither
- * catalogue key is set, and the business date is closed.
+ * Layer 14, `overview-attention`: every readiness item but the institution's needs attention. Four
+ * memberships wait (newest first: Wanjiku, Baraka, whose identity is provisioning, Nyokabi, with the
+ * long name and email, then Halima), three branches wait for activation (newest first: Malindi,
+ * with the long name, Nyeri, then Kakamega past the five-row preview), Jane is the only active
+ * member, and the business date is closed.
  */
 function overviewAttentionScenario(): RunState {
   const state = overviewBase();
@@ -1806,9 +1805,6 @@ function overviewAttentionScenario(): RunState {
       submitted(ids.nyeri, 'NYERI', 'Nyeri Branch', '2026-09-15T08:00:00Z'),
       submitted(ids.malindi, 'MALINDI', OVERVIEW_SCENARIO_TEXT.longBranch, '2026-09-16T08:00:00Z'),
     ],
-    tenantSettings: state.tenantSettings.filter(
-      (row) => row.key !== 'default_timezone' && row.key !== 'base_currency',
-    ),
     businessDates: state.businessDates.map((row) => ({ ...row, status: 'CLOSED' as const })),
   };
 }
@@ -1912,7 +1908,6 @@ const BUILDERS = {
   },
   branches: branchesScenario,
   'settings-read-only': () => withoutPermission(greenfieldTenant(), 'settings.update'),
-  'settings-currency-frozen': () => ({ ...greenfieldTenant(), baseCurrencyFrozen: true }),
   'no-settings-permission': () =>
     withoutPermission(greenfieldTenant(), 'settings.view', 'settings.update'),
   // Layer 09 (roles). `roles-limited` is the same data without the update, activate,

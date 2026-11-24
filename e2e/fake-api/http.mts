@@ -166,6 +166,34 @@ export function reasonField(body: Record<string, unknown>, required: boolean): s
   return reason;
 }
 
+/**
+ * TimeZoneRule (#276): an IANA id, spelled exactly; a raw offset (`+03:00`) is refused although
+ * `Intl` formats with it. ponytail: the runtime's list (through a link such as `Asia/Kolkata`), UTC
+ * and the `Etc/GMT` offsets stand in for the JDK's zone list.
+ */
+export function isIanaZone(value: string): boolean {
+  let zone: string;
+  try {
+    zone = new Intl.DateTimeFormat('en-GB', { timeZone: value }).resolvedOptions().timeZone;
+  } catch {
+    return false;
+  }
+  // TimeZoneRule matches the JDK's ids exactly: a wrong-case spelling and the few ids the JDK
+  // leaves out are refused, though the runtime resolves them.
+  if (
+    ['EST', 'MST', 'HST', 'ROC', 'GMT+0', 'GMT-0', 'US/Pacific-New'].includes(value) ||
+    (value !== zone && value.toLowerCase() === zone.toLowerCase())
+  ) {
+    return false;
+  }
+  return (
+    /^[A-Z]/.test(value) &&
+    (zone === 'UTC' ||
+      /^Etc\/GMT[+-]\d{1,2}$/.test(zone) ||
+      Intl.supportedValuesOf('timeZone').includes(zone))
+  );
+}
+
 function intParam(
   query: URLSearchParams,
   name: string,

@@ -67,19 +67,9 @@ test.describe('fake API: the overview scenarios (layer 14)', () => {
     ).toBe(2);
   });
 
-  test('overview-attention: one active member, no locale settings, the date closed', async ({
-    request,
-  }) => {
+  test('overview-attention: one active member, the date closed', async ({ request }) => {
     const get = await signIn(request, 'overview-attention');
     expect(await total(await get('/tenant/memberships?membership_status=ACTIVE&size=1'))).toBe(1);
-    const settings = await read<Paged<{ key: string; value: string | null }>>(
-      await get('/tenant/settings?size=100'),
-    );
-    expect(
-      settings.items
-        .filter((row) => row.key === 'default_timezone' || row.key === 'base_currency')
-        .map((row) => row.value),
-    ).toEqual([null, null]);
     expect(await read<{ status: string }>(await get('/tenant/business-date'))).toMatchObject({
       current_business_date: '07-09-2026',
       status: 'CLOSED',
