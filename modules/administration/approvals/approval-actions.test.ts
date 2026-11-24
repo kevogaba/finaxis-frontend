@@ -3,14 +3,13 @@ import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
 import {
   accountBlockedNote,
+  APPROVE_CONFLICT,
+  APPROVE_FORBIDDEN,
+  APPROVE_NOT_FOUND,
+  REVOKE_CONFLICT,
   USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
-import {
-  APPROVAL_CHANGED,
-  APPROVE_FAILED,
-  APPROVE_FORBIDDEN,
-  REJECT_FAILED,
-} from './approval-copy';
+import { APPROVAL_CHANGED } from './approval-copy';
 
 const {
   apiPost,
@@ -223,7 +222,10 @@ describe('the user decisions', () => {
       'reads a refused POST from %s as changed, not as a failed approval',
       async (_case, membership, user) => {
         pending(membership, user);
-        apiPost.mockRejectedValueOnce(new BackendApiError(500, { requestId: 'req-x' }));
+        // BG-07: someone else's approval of an ACTIVE membership is a 409.
+        apiPost.mockRejectedValueOnce(
+          new BackendApiError(409, { code: 'conflict', requestId: 'req-x' }),
+        );
         await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
           ok: false,
           code: 'approval_changed',
@@ -377,15 +379,62 @@ describe('the user decisions', () => {
       expect(apiPost).not.toHaveBeenCalled();
     });
 
-    it('explains a 500 with the likely causes, keeping the reference', async () => {
+    it.each([
+      [404, 'resource_not_found', APPROVE_NOT_FOUND],
+      [409, 'conflict', APPROVE_CONFLICT],
+    ])(
+      'explains a %i %s by its code, keeping the reference (BG-07)',
+      async (status, code, copy) => {
+        apiPost.mockRejectedValueOnce(new BackendApiError(status, { code, requestId: 'req-3' }));
+        await expect(actions.approveUser(null, membershipForm())).resolves.toEqual({
+          ok: false,
+          formError: copy,
+          fieldErrors: {},
+          code,
+          requestId: 'req-3',
+        });
+      },
+    );
+
+    it.each([
+      [
+        'lifecycle.approver_is_membership_maker',
+        'You invited this person, so someone else must approve them.',
+      ],
+      ['lifecycle.approver_is_membership_beneficiary', "You can't approve your own membership."],
+    ])(
+      'names the platform’s %s refusal by its code, not as a permission (BG-08)',
+      async (code, copy) => {
+        // No audit.view, so the page couldn't name the inviter: the platform's refusal is the
+        // guard.
+        getCurrentContextProfile.mockResolvedValue(
+          resolved(ALL_CODES.filter((held) => held !== 'audit.view')),
+        );
+        apiPost.mockRejectedValueOnce(new BackendApiError(403, { code, requestId: 'req-m' }));
+        await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
+          ok: false,
+          code,
+          formError: copy,
+          requestId: 'req-m',
+        });
+      },
+    );
+
+    // Review Focus 1: a request decided elsewhere while the dialog was open.
+    it('explains a membership decided elsewhere with the 409 copy, and a retry reuses the minted key', async () => {
       apiPost.mockRejectedValueOnce(
-        new BackendApiError(500, { code: 'internal_error', requestId: 'req-3' }),
+        new BackendApiError(409, { code: 'conflict', requestId: 'req-d' }),
       );
-      await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
-        ok: false,
-        formError: APPROVE_FAILED,
-        requestId: 'req-3',
-      });
+      const first = await actions.approveUser(null, membershipForm());
+      // A failure, never a thrown error: the dialog stays open with its own state.
+      expect(first).toMatchObject({ ok: false, formError: APPROVE_CONFLICT, requestId: 'req-d' });
+      expect(refresh).not.toHaveBeenCalled();
+
+      // The dialog resubmits the same form, so the retry carries the key it minted on open.
+      // The action only forwards the form's key; that the dialog keeps it across a failed submit
+      // is pinned in components/data-display/confirm-dialog.test.tsx.
+      await actions.approveUser(null, membershipForm());
+      expect(apiPost.mock.calls.map(([, , key]) => key)).toEqual([KEY, KEY]);
     });
 
     it('refuses a submit after an organisation switch, before any read', async () => {
@@ -511,13 +560,13 @@ describe('the user decisions', () => {
       expect(getMembership).not.toHaveBeenCalled();
     });
 
-    it('explains a 500 as possibly already revoked, keeping the reference', async () => {
+    it('explains a 409 as already revoked, keeping the reference (BG-07)', async () => {
       apiPost.mockRejectedValueOnce(
-        new BackendApiError(500, { code: 'internal_error', requestId: 'req-4' }),
+        new BackendApiError(409, { code: 'conflict', requestId: 'req-4' }),
       );
       await expect(
         actions.rejectUser(null, membershipForm({ reason: 'Duplicate invitation' })),
-      ).resolves.toMatchObject({ ok: false, formError: REJECT_FAILED, requestId: 'req-4' });
+      ).resolves.toMatchObject({ ok: false, formError: REVOKE_CONFLICT, requestId: 'req-4' });
     });
   });
 

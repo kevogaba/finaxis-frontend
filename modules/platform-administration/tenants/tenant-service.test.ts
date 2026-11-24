@@ -38,7 +38,10 @@ describe('tenant service', () => {
 
   it('finds a taken tenant code among up to 100 substring matches, ignoring case (BG-07)', async () => {
     apiGet.mockResolvedValueOnce({
-      items: [{ tenantCode: 'acme-2' }, { tenantCode: 'ACME' }],
+      items: [
+        { id: '77777777-7777-4777-8777-777777777777', tenantCode: 'acme-2' },
+        { id: ACME, tenantCode: 'ACME' },
+      ],
       page: {},
     });
     await expect(service.tenantCodeTaken('acme')).resolves.toBe(true);
@@ -46,7 +49,29 @@ describe('tenant service', () => {
       '/api/v1/platform/tenants?q=acme&page=0&size=100',
       expect.anything(),
     );
-    apiGet.mockResolvedValueOnce({ items: [{ tenantCode: 'acme-2' }], page: {} });
+    apiGet.mockResolvedValueOnce({
+      items: [{ id: '77777777-7777-4777-8777-777777777777', tenantCode: 'acme-2' }],
+      page: {},
+    });
     await expect(service.tenantCodeTaken('acme')).resolves.toBe(false);
+  });
+
+  it('ignores the amended draft itself, whose unchanged code matches its own record', async () => {
+    const OTHER = '88888888-8888-4888-8888-888888888888';
+    apiGet.mockResolvedValueOnce({ items: [{ id: ACME, tenantCode: 'acme' }], page: {} });
+    await expect(service.tenantCodeTaken('acme', ACME)).resolves.toBe(false);
+
+    // Any letter case of the id: the backend's UUID binding ignores it.
+    apiGet.mockResolvedValueOnce({ items: [{ id: ACME, tenantCode: 'acme' }], page: {} });
+    await expect(service.tenantCodeTaken('acme', ACME.toUpperCase())).resolves.toBe(false);
+
+    apiGet.mockResolvedValueOnce({
+      items: [
+        { id: ACME, tenantCode: 'acme' },
+        { id: OTHER, tenantCode: 'ACME' },
+      ],
+      page: {},
+    });
+    await expect(service.tenantCodeTaken('acme', ACME)).resolves.toBe(true);
   });
 });

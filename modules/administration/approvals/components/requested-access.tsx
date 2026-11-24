@@ -172,6 +172,7 @@ export function RequestedAccess({
           ) : (
             <UserBranchAssignmentsTable
               userName={userName}
+              self={false}
               canRevoke={false}
               rows={scan.value.items.map((row) => {
                 const branch = branchIndex.get(row.branchId);

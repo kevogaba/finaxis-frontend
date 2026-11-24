@@ -8,6 +8,10 @@ import { uuidSchema } from '@/lib/api/wire';
 import type { UserStatus } from '@/modules/administration/users/user-contract';
 import {
   accountBlockedNote,
+  APPROVE_CONFLICT,
+  APPROVE_FORBIDDEN,
+  APPROVE_NOT_FOUND,
+  REVOKE_CONFLICT,
   USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
 import { getMembership, getUser } from '@/modules/administration/users/user-service';
@@ -17,10 +21,7 @@ import {
   APPROVAL_CHANGED,
   APPROVAL_CHANGED_CODE,
   approvalOutcome,
-  APPROVE_FAILED,
-  APPROVE_FORBIDDEN,
   MAKER_CHECKER_CODE,
-  REJECT_FAILED,
   type ApprovalOutcome,
   type ApproveResult,
 } from './approval-copy';
@@ -52,7 +53,8 @@ function explainApproval(result: ActionResult, blocked: UserStatus | null): Acti
   if (blocked) explained = explain(explained, ACCOUNT_BLOCKED_CODE, accountBlockedNote(blocked));
   explained = explain(explained, MAKER_CHECKER_CODE, USER_MAKER_CHECKER_BLOCKED);
   explained = explain(explained, 'forbidden', APPROVE_FORBIDDEN);
-  return explain(explained, 'internal_error', APPROVE_FAILED);
+  explained = explain(explained, 'resource_not_found', APPROVE_NOT_FOUND);
+  return explain(explained, 'conflict', APPROVE_CONFLICT);
 }
 
 /** Ruling 5: Approve is refused before any write wherever the page wouldn't offer it: a blocked
@@ -77,9 +79,10 @@ export async function approveUser(
     }
     // The approval's own end states reach the endpoint with the form's key: a 200 leaves the
     // membership ACTIVE, a 202 leaves it PENDING_APPROVAL with the user provisioning, so a retry
-    // whose first response was lost replays the stored answer. Anyone else's approval fails there
-    // (BG-07: a repeat is a 500), which postFromEndState reads as "changed". Any other status
-    // (revoked, suspended...) is still refused.
+    // whose first response was lost replays the stored answer. Anyone else's approval of an ACTIVE
+    // membership fails there (BG-07: a 409), which postFromEndState reads as "changed"; one still
+    // provisioning is requeued (a 202, BG-11). Any other status (revoked, suspended...) is still
+    // refused.
     const endState =
       state === 'provisioning' || (state === 'decided' && membership.status === 'ACTIVE');
     if (state !== 'awaiting' && !endState) throw refuse(409, APPROVAL_CHANGED_CODE);
@@ -119,7 +122,7 @@ export async function rejectUser(
       await decider();
       const { membership, state } = await membershipState(input.membershipId);
       // REVOKED is the revoke's own end state: maybe this key's earlier revoke whose response was
-      // lost, which the backend replays; anyone else's revoke answers 500 (REJECT_FAILED).
+      // lost, which the backend replays; anyone else's revoke answers 409 (REVOKE_CONFLICT).
       if (state !== 'awaiting' && state !== 'blocked' && membership.status !== 'REVOKED') {
         throw refuse(409, APPROVAL_CHANGED_CODE);
       }
@@ -132,7 +135,7 @@ export async function rejectUser(
   );
   return explain(
     explain(result, APPROVAL_CHANGED_CODE, APPROVAL_CHANGED),
-    'internal_error',
-    REJECT_FAILED,
+    'conflict',
+    REVOKE_CONFLICT,
   );
 }

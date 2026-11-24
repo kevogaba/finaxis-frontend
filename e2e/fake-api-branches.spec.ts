@@ -52,7 +52,23 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
     ).toBe(200);
     const own = await request.post(api(`/branches/${branchId}/activate`), { headers, data: {} });
     expect(own.status()).toBe(403);
-    expect(await own.json()).toMatchObject({ code: 'forbidden' });
+    // BG-08: its own code, never the `forbidden` of a missing permission.
+    expect(await own.json()).toMatchObject({ code: 'lifecycle.approver_is_branch_maker' });
+    // Before the state: the drafter's DRAFT, which alone would be a 409, is refused by name too.
+    const draft = await request.post(api('/branches'), {
+      headers,
+      data: {
+        branch_code: 'NAIROBI_CBD_2',
+        branch_name: 'Nairobi CBD Annex',
+        branch_type: 'OPERATIONS',
+        parent_branch_id: null,
+        timezone: 'Africa/Nairobi',
+      },
+    });
+    const { branch_id: draftId } = (await draft.json()) as { branch_id: string };
+    const early = await request.post(api(`/branches/${draftId}/activate`), { headers, data: {} });
+    expect(early.status()).toBe(403);
+    expect(await early.json()).toMatchObject({ code: 'lifecycle.approver_is_branch_maker' });
 
     const drafts = await request.get(
       api(
@@ -96,17 +112,40 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
     expect(await revoked.json()).toMatchObject({ status: 'REVOKED' });
   });
 
-  test('answers an off-list branch sort_by as a 500, including names every object inherits', async ({
+  test('answers an off-list branch sort_by as a 400, including names every object inherits', async ({
     request,
   }) => {
     const headers = await contextFor(request, 'default', null);
-    // BG-07: only the five camelCase keys sort; a name from Object.prototype is no key.
+    // BG-26: only the five camelCase keys sort; a name from Object.prototype is no key.
     for (const sortBy of ['branch_code', 'toString', 'constructor', '__proto__']) {
       const refused = await request.get(api(`/branches?sort_by=${sortBy}`), { headers });
-      expect(refused.status(), sortBy).toBe(500);
+      expect(refused.status(), sortBy).toBe(400);
+      expect(await refused.json()).toMatchObject({
+        code: 'invalid_parameter',
+        violations: [
+          {
+            field: 'sort_by',
+            message:
+              'Sort field must be one of: branchCode, branchName, branchType, createdAt, status.',
+          },
+        ],
+      });
     }
+    const sideways = await request.get(api('/branches?sort_dir=up'), { headers });
+    expect(sideways.status()).toBe(400);
+    expect(await sideways.json()).toMatchObject({ violations: [{ field: 'sort_dir' }] });
     const sorted = await request.get(api('/branches?sort_by=branchCode&sort_dir=ASC'), { headers });
     expect(sorted.status()).toBe(200);
+
+    // The route has no endpoint gate, and FoundationQueryService.searchBranches checks the sort
+    // before branch.view: a caller who can't list (the 403 is the control) meets the 400 first.
+    const cannotList = await contextFor(request, 'overview-branch-scoped', IDS.headOffice);
+    expect((await request.get(api('/branches'), { headers: cannotList })).status()).toBe(403);
+    const refusedFirst = await request.get(api('/branches?sort_by=branch_code'), {
+      headers: cannotList,
+    });
+    expect(refusedFirst.status()).toBe(400);
+    expect(await refusedFirst.json()).toMatchObject({ violations: [{ field: 'sort_by' }] });
   });
 
   test('refuses a malformed parent_branch_id as invalid_json, accepting any case of a real one', async ({

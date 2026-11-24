@@ -135,6 +135,8 @@ interface Setup {
   activeHasNext?: boolean;
   activeError?: Error;
   index?: [string, { name: string; code: string }][];
+  /** The signed-in user's id: FELIX makes the record your own. */
+  signedInAs?: string;
 }
 
 /** Programs every service the page reads. A test names only what it varies. */
@@ -161,10 +163,11 @@ function setup({
     [WESTLANDS, { name: 'Westlands Branch', code: 'WESTLANDS' }],
     [KISUMU, { name: 'Kisumu', code: 'KISUMU' }],
   ],
+  signedInAs = 'someone-else',
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions, user_id: 'someone-else', branches: profileBranches },
+    profile: { permissions, user_id: signedInAs, branches: profileBranches },
     context: { organization: { id: ORG, name: 'Greenfield' }, branch: selectedBranch },
   });
   if (userError) getUser.mockRejectedValue(userError);
@@ -448,6 +451,25 @@ describe('UserBranchesPage: the rows', () => {
     });
     expectScoped(dialog);
     expect(hidden('assignmentId', dialog)).toBe(assignment.id);
+  });
+
+  it('warns before you revoke your own branch assignment on your own record (BG-35)', async () => {
+    const user = userEvent.setup();
+    setup({ rows: [row(1, WESTLANDS, 'HOME')], signedInAs: FELIX });
+    await show();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: "Revoke Felix Omondi's Home assignment at Westlands Branch",
+      }),
+    );
+
+    const dialog = await screen.findByRole('alertdialog', {
+      name: 'Revoke your own Westlands Branch assignment?',
+    });
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      "This is your own access. If Westlands Branch is your selected branch, you'll be asked to choose your context again.",
+    );
   });
 
   it('offers a revoke only with user.revoke_branch', async () => {

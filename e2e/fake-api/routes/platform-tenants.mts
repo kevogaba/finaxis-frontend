@@ -13,6 +13,7 @@ import {
   problem,
   readBody,
   sendJson,
+  sortKey,
   stringField,
 } from '../http.mts';
 import type { Violation } from '../http.mts';
@@ -60,25 +61,15 @@ const BUSINESS_DATE = /^\d{2}-\d{2}-\d{4}$/;
 
 const invalidJson = () => problem(400, 'invalid_json', 'Malformed request body.');
 const invalidOperation = () => problem(422, 'invalid_operation', 'The operation is not valid.');
-// BG-07: a duplicate tenant code, an unknown sort, and an unknown tenant on reject or suspend all
-// surface as a 500.
-const internalError = () => problem(500, 'internal_error', 'An unexpected error occurred.');
+// BG-07 (TenantCodeUniqueness): a tenant code another organisation holds is the generic 409.
+const codeTaken = () => problem(409, 'conflict', 'A tenant with that tenant code already exists.');
 const tenantNotFound = () => problem(404, 'resource_not_found', 'Tenant not found.');
 
-/**
- * Mirrors FoundationQueryService.validateSort: unknown sort → 500 internal_error. `sort_by` is
- * user-controlled, so the allow-list is read with `Object.hasOwn`: `toString` must not resolve to
- * an `Object.prototype` member.
- */
+/** Mirrors FoundationQueryService's `requireValidSort` (BG-26): an off-list sort is a 400. */
 function sortTenants(tenants: FakeOrganisation[], query: URLSearchParams): FakeOrganisation[] {
-  const sortBy = query.get('sort_by') ?? 'createdAt';
-  const direction = (query.get('sort_dir') ?? 'DESC').toUpperCase();
-  const key = Object.hasOwn(SORTS, sortBy) ? SORTS[sortBy] : undefined;
-  if (!key || (direction !== 'ASC' && direction !== 'DESC')) {
-    throw internalError();
-  }
+  const { key, descending } = sortKey(query, SORTS, { by: 'createdAt', dir: 'DESC' });
   const sorted = [...tenants].sort((a, b) => key(a).localeCompare(key(b)));
-  return direction === 'DESC' ? sorted.reverse() : sorted;
+  return descending ? sorted.reverse() : sorted;
 }
 
 function summary(tenant: FakeOrganisation) {
@@ -243,8 +234,9 @@ interface TransitionOptions {
   /** `none`: the endpoint has no body, and never reads one (contract §E.2). */
   reason: 'none' | 'optional' | 'required';
   status?: number;
-  /** BG-07: reject and suspend answer an unknown tenant with a 500, not a 404. */
-  unknownIs500?: boolean;
+  /** A checker decision (BG-08, TenantCheckerRule): its requester or submitter is refused by name,
+   * before the state check. The fake keeps no amenders or first administrator to refuse. */
+  checker?: boolean;
 }
 
 function transition(
@@ -258,12 +250,7 @@ function transition(
     const access = platformAccess(context);
     requirePermission(access, permission);
     requirePermission(access, 'tenant.view'); // read-back (BG-31)
-    const tenant = context.state.organisations.find(
-      (candidate) => candidate.id === context.params.tenant_id,
-    );
-    if (!tenant) {
-      throw options.unknownIs500 ? internalError() : tenantNotFound();
-    }
+    const tenant = findTenant(context);
     let body: Record<string, unknown> = {};
     if (options.reason !== 'none') {
       const raw = await readBody(context.req);
@@ -282,6 +269,14 @@ function transition(
       context,
       body,
       () => {
+        const actor = access.claims.userId;
+        if (options.checker && (tenant.createdBy === actor || tenant.submittedBy === actor)) {
+          throw problem(
+            403,
+            'lifecycle.approver_is_tenant_maker',
+            "The checker cannot be the tenant's requester or submitter.",
+          );
+        }
         if (!allowed(tenant)) {
           throw problem(409, 'conflict', `This transition isn't allowed from ${tenant.status}.`);
         }
@@ -338,9 +333,7 @@ export const platformTenantRoutes: Route[] = [
       body,
       () => {
         const { organisations } = context.state;
-        if (organisations.some((candidate) => candidate.code === draft.code)) {
-          throw internalError();
-        }
+        if (organisations.some((candidate) => candidate.code === draft.code)) throw codeTaken();
         const now = new Date().toISOString();
         const created: FakeOrganisation = {
           id: randomUUID(),
@@ -379,7 +372,7 @@ export const platformTenantRoutes: Route[] = [
         draft.code !== tenant.code &&
         organisations.some((candidate) => candidate.code === draft.code)
       ) {
-        throw internalError();
+        throw codeTaken();
       }
       // Replaces every field (contract §D); the legal name, registration and admin stay write-only.
       tenant.code = draft.code;
@@ -407,18 +400,12 @@ export const platformTenantRoutes: Route[] = [
     'approve',
     'tenant.approve',
     (tenant) => tenant.status === 'PENDING_APPROVAL',
-    (tenant, access) => {
-      // Maker-checker (contract §E.2): never the creator or the submitter, with the same 403 as a
-      // missing permission (BG-08).
-      const actor = access.claims.userId;
-      if (tenant.createdBy === actor || tenant.submittedBy === actor) {
-        throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
-      }
+    (tenant) => {
       // ACTIVE in the same transaction (via PROVISIONING); the first administrator is queued.
       tenant.status = 'ACTIVE';
       tenant.bootstrapStatus = 'QUEUED';
     },
-    { reason: 'none', status: 202 },
+    { reason: 'none', status: 202, checker: true },
   ),
   transition(
     'reject',
@@ -428,7 +415,7 @@ export const platformTenantRoutes: Route[] = [
       tenant.status = 'REJECTED';
       tenant.bootstrapStatus = 'DRAFT';
     },
-    { reason: 'required', unknownIs500: true },
+    { reason: 'required', checker: true },
   ),
   transition(
     'suspend',
@@ -437,7 +424,7 @@ export const platformTenantRoutes: Route[] = [
     (tenant) => {
       tenant.status = 'SUSPENDED';
     },
-    { reason: 'required', unknownIs500: true },
+    { reason: 'required' },
   ),
   transition(
     'reactivate',

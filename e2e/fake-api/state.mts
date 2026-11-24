@@ -1,4 +1,4 @@
-import { problem } from './http.mts';
+import { ProblemError } from './http.mts';
 import { seedScenario, SCENARIOS } from './scenarios.mts';
 
 export interface FakeOrganisation {
@@ -169,13 +169,22 @@ const TOKEN_PATTERN = /^e2e\.([a-z0-9-]+)\.([A-Za-z0-9-]+)$/;
 
 /**
  * Resolves (and on first use seeds) the state for a bearer token. An unknown shape or scenario
- * behaves like an invalid JWT: 401 with an empty body (contract §A "Auth").
+ * behaves like an invalid JWT (ApiBearerTokenEntryPoint, BG-30): a 401 problem body with its
+ * request id and the RFC 6750 `invalid_token` challenge, as `BearerTokenErrors.invalidToken` builds
+ * it with the platform's fixed description.
  */
 export function stateForToken(token: string): RunState {
   const match = TOKEN_PATTERN.exec(token);
   const scenario = match?.[1];
   if (!match || scenario === undefined || !SCENARIOS.includes(scenario)) {
-    throw problem(401, 'invalid_token', '');
+    throw new ProblemError({
+      status: 401,
+      code: 'authentication_required',
+      detail: 'Authentication is required.',
+      challenge:
+        'error="invalid_token", error_description="The access token is invalid or has expired.", ' +
+        'error_uri="https://tools.ietf.org/html/rfc6750#section-3.1"',
+    });
   }
   const existing = runs.get(token);
   if (existing) {

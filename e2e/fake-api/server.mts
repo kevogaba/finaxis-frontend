@@ -56,7 +56,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       path: url.pathname,
     });
   } catch (error) {
-    respondToError(res, url.pathname, error);
+    // The origin the request reached, as Spring builds the challenge's metadata URL from it.
+    respondToError(res, url.pathname, error, `http://${req.headers.host ?? 'fake-api.local'}`);
   }
 }
 

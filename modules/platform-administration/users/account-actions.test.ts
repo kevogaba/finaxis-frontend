@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
+import { BackendApiError } from '@/auth/backend-api';
 import type * as ActionResultModule from '@/lib/api/action-result';
 import {
   ACCOUNT_CHANGED,
@@ -387,6 +388,23 @@ describe('account actions', () => {
       ).rejects.toThrow('NEXT_REDIRECT:/select-context');
       expect(apiPost).not.toHaveBeenCalled();
     });
+
+    it.each(['suspendAccount', 'deactivateAccount'] as const)(
+      "%s names the platform's own-account refusal by its code, not as a change (BG-35)",
+      async (name) => {
+        // The page's own guard missed it (a stale profile): the platform's 403 says why.
+        apiPost.mockRejectedValueOnce(
+          new BackendApiError(403, { code: 'lifecycle.self_account_change', requestId: 'req-s' }),
+        );
+        expect(await actions[name](null, form(VALID))).toEqual({
+          ok: false,
+          formError: "You can't suspend or deactivate your own account.",
+          fieldErrors: {},
+          code: 'lifecycle.self_account_change',
+          requestId: 'req-s',
+        });
+      },
+    );
 
     it("does not refuse someone else's account", async () => {
       const result = await actions.suspendAccount(

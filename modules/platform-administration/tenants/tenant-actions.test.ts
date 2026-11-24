@@ -13,7 +13,7 @@ const { apiPatch, apiPost, redirect, runServerAction, tenantCodeTaken } = vi.hoi
     throw new Error(`NEXT_REDIRECT:${to}`);
   }),
   runServerAction: vi.fn(),
-  tenantCodeTaken: vi.fn((_code: string) => Promise.resolve(false)),
+  tenantCodeTaken: vi.fn((_code: string, _exceptTenantId?: string) => Promise.resolve(false)),
 }));
 vi.mock('next/navigation', () => ({ redirect: (to: string) => redirect(to) as unknown }));
 vi.mock('@/lib/api/tenant-api', () => ({
@@ -24,7 +24,7 @@ vi.mock('@/lib/api/action-result', () => ({
   runServerAction: (...args: unknown[]) => runServerAction(...args) as unknown,
 }));
 vi.mock('./tenant-service', () => ({
-  tenantCodeTaken: (code: string) => tenantCodeTaken(code),
+  tenantCodeTaken: (code: string, exceptTenantId?: string) => tenantCodeTaken(code, exceptTenantId),
 }));
 // The reserved platform organisation (BG-29), by the id the tests below use for it. The real
 // isPlatformOrganisation runs against this env, so the case-insensitive comparison is exercised.
@@ -154,9 +154,8 @@ describe('tenant actions', () => {
 
   describe('a duplicate tenant code (BG-07)', () => {
     const create = () => actions.createTenantDraft(null, form({ ...FIELDS, idempotencyKey: KEY }));
-    // The backend's answer to a duplicate code: a 500 with the generic code, as any bug would be.
-    const duplicate = () =>
-      new BackendApiError(500, { code: 'internal_error', requestId: 'req-3' });
+    // The backend's answer to a duplicate code: a 409 with the generic `conflict` code (BG-07).
+    const duplicate = () => new BackendApiError(409, { code: 'conflict', requestId: 'req-3' });
 
     afterEach(() => {
       tenantCodeTaken.mockReset();
@@ -186,7 +185,8 @@ describe('tenant actions', () => {
         fieldErrors: { tenantCode: 'This code is already in use.' },
       });
       expect(apiPost).toHaveBeenCalledWith('/api/v1/platform/tenants', expect.anything(), KEY);
-      expect(tenantCodeTaken).toHaveBeenCalledWith('tujenge-traders');
+      // A create has no record of its own to except.
+      expect(tenantCodeTaken).toHaveBeenCalledWith('tujenge-traders', undefined);
     });
 
     it.each([
@@ -203,16 +203,17 @@ describe('tenant actions', () => {
         ok: false,
         formError: 'generic',
         fieldErrors: {},
-        code: 'internal_error',
+        code: 'conflict',
         requestId: 'req-3',
       });
     });
 
     it.each([
       [422, 'invalid_operation'],
-      [409, 'conflict'],
+      [409, 'IDEMPOTENCY_KEY_REUSED'],
       [403, 'forbidden'],
-      [500, 'something_else'],
+      // No duplicate is a 500 any more (BG-07).
+      [500, 'internal_error'],
       [500, null],
       [502, null],
     ])('does not look at the directory for a %s (%s)', async (status, code) => {
@@ -338,12 +339,64 @@ describe('tenant actions', () => {
       KEY,
     );
     expect(tenantCodeTaken).not.toHaveBeenCalled();
+  });
 
-    runServerAction.mockResolvedValueOnce(failure('conflict'));
-    expect(await actions.amendTenantDraft(null, form({}))).toMatchObject({
-      code: 'conflict',
-      formError:
-        'Only a draft can be amended. It may already have been submitted. Refresh and check.',
+  describe('an amend 409 (BG-07: no longer a draft, or a code another institution holds)', () => {
+    const amend = () =>
+      actions.amendTenantDraft(null, form({ ...FIELDS, idempotencyKey: KEY, tenantId: TENANT }));
+    const conflict = () => new BackendApiError(409, { code: 'conflict', requestId: 'req-4' });
+
+    afterEach(() => {
+      tenantCodeTaken.mockReset();
+    });
+
+    it('names a code another institution holds, on the code field, excepting the draft itself', async () => {
+      apiPatch.mockRejectedValueOnce(conflict());
+      tenantCodeTaken.mockResolvedValueOnce(true);
+
+      expect(await amend()).toMatchObject({
+        ok: false,
+        code: 'tenant_code_taken',
+        formError: 'This tenant code is already in use. Choose another.',
+        fieldErrors: { tenantCode: 'This code is already in use.' },
+      });
+      // The draft's own (unchanged) code matches its own record, so the lookup excepts its id.
+      expect(tenantCodeTaken).toHaveBeenCalledWith('tujenge-traders', TENANT);
+      expect(apiPatch).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['no other institution holds the code', () => tenantCodeTaken.mockResolvedValueOnce(false)],
+      [
+        'the directory cannot be read',
+        () => tenantCodeTaken.mockRejectedValueOnce(new Error('socket hang up')),
+      ],
+    ])(
+      'keeps only the form-level message when %s: the code field is not marked',
+      async (_name, arrange) => {
+        apiPatch.mockRejectedValueOnce(conflict());
+        arrange();
+
+        expect(await amend()).toEqual({
+          ok: false,
+          code: 'conflict',
+          requestId: 'req-4',
+          formError:
+            "This draft couldn't be amended. Its tenant code may already be in use, or it may already have been submitted. Refresh and check.",
+          fieldErrors: {},
+        });
+      },
+    );
+
+    it.each([
+      [422, 'invalid_operation'],
+      [403, 'forbidden'],
+      [404, 'resource_not_found'],
+    ])('does not look at the directory for a %s (%s)', async (status, code) => {
+      apiPatch.mockRejectedValueOnce(new BackendApiError(status, { code }));
+
+      expect(await amend()).toMatchObject({ ok: false, code });
+      expect(tenantCodeTaken).not.toHaveBeenCalled();
     });
   });
 
@@ -356,15 +409,23 @@ describe('tenant actions', () => {
     expect(apiPost).toHaveBeenCalledWith(`/api/v1/platform/tenants/${TENANT}/${path}`, {}, KEY);
   });
 
-  it('explains an approve 403 as permission or maker-checker (BG-08)', async () => {
+  it('explains an approve 403 as a missing permission only (BG-08)', async () => {
     runServerAction.mockResolvedValueOnce(failure('forbidden'));
-    expect(await actions.approveTenant(null, form({}))).toMatchObject({
-      code: 'forbidden',
-      requestId: 'req-1',
-      formError: expect.stringContaining(
-        'a different platform administrator must approve it',
-      ) as unknown,
+    expect(await actions.approveTenant(null, form({}))).toEqual({
+      ...failure('forbidden'),
+      formError: "You can't approve this institution. Your role doesn't allow it.",
     });
+  });
+
+  it.each([
+    ['approveTenant', 'lifecycle.approver_is_tenant_maker'],
+    ['approveTenant', 'lifecycle.approver_is_tenant_modifier'],
+    ['approveTenant', 'lifecycle.approver_is_initial_administrator'],
+    ['rejectTenant', 'lifecycle.approver_is_tenant_maker'],
+    ['rejectTenant', 'lifecycle.approver_is_tenant_modifier'],
+  ] as const)('%s leaves the named %s refusal to its own words (BG-08)', async (name, code) => {
+    runServerAction.mockResolvedValueOnce(failure(code));
+    expect(await actions[name](null, form({}))).toEqual(failure(code));
   });
 
   it.each([

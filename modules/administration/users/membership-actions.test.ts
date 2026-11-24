@@ -44,12 +44,11 @@ const MEMBERSHIP = '20000000-0000-4000-8000-000000000001';
 const ORGANISATION = '11111111-1111-4111-8111-111111111111';
 const OTHER_ORGANISATION = '22222222-2222-4222-8222-222222222222';
 
-const APPROVE_FORBIDDEN =
-  "You can't approve this user. Your role may not allow it, or you invited them — a different administrator must approve them.";
-const APPROVE_FAILED =
-  "The approval couldn't complete. They may still need an active role and, for staff and admin members, an active branch assignment, or approval may already have run. Refresh and check.";
-const REVOKE_FAILED =
-  "This membership couldn't be revoked. It may already be revoked — refresh and check.";
+const APPROVE_FORBIDDEN = "You can't approve this user. Your role doesn't allow it.";
+const APPROVE_NOT_FOUND = 'This request no longer exists. Refresh the page.';
+const APPROVE_CONFLICT =
+  'This request was already decided, or the person has no active role or branch yet. Refresh and check.';
+const REVOKE_CONFLICT = 'This membership was already revoked. Refresh and check.';
 
 const ACTION_NAMES = [
   'approveMembership',
@@ -127,24 +126,27 @@ describe('membership actions', () => {
       expect(apiPost).toHaveBeenCalledWith(expect.any(String), {}, KEY);
     });
 
-    it('explains a 403 as permission or maker-checker, keeping the reference', async () => {
-      runServerAction.mockResolvedValueOnce(failure('forbidden'));
+    it.each([
+      // A missing permission only: the maker and the member have their own codes (BG-08).
+      ['forbidden', APPROVE_FORBIDDEN],
+      // BG-07: an unknown membership is a 404, one already decided or lacking access a 409.
+      ['resource_not_found', APPROVE_NOT_FOUND],
+      ['conflict', APPROVE_CONFLICT],
+    ])('explains %s by its code, keeping the reference', async (code, formError) => {
+      runServerAction.mockResolvedValueOnce(failure(code));
       expect(await actions.approveMembership(null, form({}))).toEqual({
-        ...failure('forbidden'),
-        formError: APPROVE_FORBIDDEN,
+        ...failure(code),
+        formError,
       });
     });
 
-    it('explains a 500 with the likely causes, keeping the reference', async () => {
-      runServerAction.mockResolvedValueOnce(failure('internal_error'));
-      expect(await actions.approveMembership(null, form({}))).toEqual({
-        ...failure('internal_error'),
-        formError: APPROVE_FAILED,
-      });
-    });
-
-    it('leaves other failure codes alone', async () => {
-      for (const code of ['conflict', 'not_found', 'context_changed']) {
+    it('leaves other failure codes alone, the named maker-checker refusals included', async () => {
+      for (const code of [
+        'internal_error',
+        'context_changed',
+        'lifecycle.approver_is_membership_maker',
+        'lifecycle.approver_is_membership_beneficiary',
+      ]) {
         runServerAction.mockResolvedValueOnce(failure(code));
         expect(await actions.approveMembership(null, form({}))).toEqual(failure(code));
       }
@@ -164,9 +166,11 @@ describe('membership actions', () => {
       );
     });
 
-    it('leaves other failure codes alone', async () => {
-      runServerAction.mockResolvedValueOnce(failure('conflict'));
-      expect(await actions.suspendMembership(null, form({}))).toEqual(failure('conflict'));
+    it('leaves failure codes alone, your own membership included (BG-35)', async () => {
+      for (const code of ['conflict', 'lifecycle.self_membership_change']) {
+        runServerAction.mockResolvedValueOnce(failure(code));
+        expect(await actions.suspendMembership(null, form({}))).toEqual(failure(code));
+      }
     });
   });
 
@@ -211,16 +215,16 @@ describe('membership actions', () => {
       );
     });
 
-    it('explains a 500 as possibly already revoked, keeping the reference', async () => {
-      runServerAction.mockResolvedValueOnce(failure('internal_error'));
+    it('explains a 409 as already revoked, keeping the reference (BG-07)', async () => {
+      runServerAction.mockResolvedValueOnce(failure('conflict'));
       expect(await actions.revokeMembership(null, form({}))).toEqual({
-        ...failure('internal_error'),
-        formError: REVOKE_FAILED,
+        ...failure('conflict'),
+        formError: REVOKE_CONFLICT,
       });
     });
 
-    it('leaves other failure codes alone', async () => {
-      for (const code of ['conflict', 'forbidden']) {
+    it('leaves other failure codes alone, your own membership included (BG-35)', async () => {
+      for (const code of ['internal_error', 'forbidden', 'lifecycle.self_membership_change']) {
         runServerAction.mockResolvedValueOnce(failure(code));
         expect(await actions.revokeMembership(null, form({}))).toEqual(failure(code));
       }

@@ -47,7 +47,7 @@ describe('TenantDirectoryTable', () => {
     ] as const) {
       expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', `/sort/${field}`);
     }
-    // Status isn't in the sort allow-list, and an unknown sort_by is a backend 500 (BG-07).
+    // Status isn't in the sort allow-list, and an unknown sort_by is a backend 400 (BG-26).
     expect(
       within(screen.getByRole('columnheader', { name: 'Lifecycle' })).queryByRole('link'),
     ).toBeNull();

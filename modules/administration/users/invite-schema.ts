@@ -72,9 +72,10 @@ interface AccessValues {
   roleAssignments: readonly RoleRow[];
 }
 
-/** The rules the backend answers with a 500 (BG-07), checked before anything is sent: STAFF and
- * ADMIN need a branch; at least one role; a branch-scoped role's branch must be one they are
- * assigned to; no row twice. Roles and branches are ACTIVE because only ACTIVE ones are offered. */
+/** The access rules, checked before anything is sent: STAFF and ADMIN need a branch and everyone a
+ * role (the platform's 400s, BG-07); a branch-scoped role's branch must be one they are assigned
+ * to; no row twice. Roles and branches are ACTIVE (else a 422) because only ACTIVE ones are
+ * offered. */
 export function checkInviteAccess(values: AccessValues, ctx: z.RefinementCtx): void {
   const issue = (path: (string | number)[], message: string) => {
     ctx.addIssue({ code: 'custom', path, message });

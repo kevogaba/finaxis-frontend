@@ -75,6 +75,90 @@ describe('describeProblem', () => {
     ])('gives %s its own message', (code, title) => {
       expect(describeProblem(new BackendApiError(409, { code })).title).toBe(title);
     });
+
+    // The platform's named refusals (BG-08 item 3, BG-30, BG-35): each explained by its code,
+    // never by the backend's detail, and the request id kept as the support reference.
+    it.each([
+      [
+        403,
+        'lifecycle.approver_is_membership_maker',
+        'Someone else must approve',
+        'You invited this person, so someone else must approve them.',
+      ],
+      [
+        403,
+        'lifecycle.approver_is_membership_beneficiary',
+        'Someone else must decide',
+        "You can't approve your own membership.",
+      ],
+      [
+        403,
+        'lifecycle.approver_is_branch_maker',
+        'Someone else must decide',
+        'You drafted or submitted this branch, so someone else must activate it.',
+      ],
+      [
+        403,
+        'lifecycle.approver_is_branch_modifier',
+        'Someone else must decide',
+        'You edited this branch, so someone else must activate it.',
+      ],
+      [
+        403,
+        'lifecycle.approver_is_tenant_maker',
+        'Someone else must decide',
+        'You requested or submitted this institution, so another platform administrator must decide it.',
+      ],
+      [
+        403,
+        'lifecycle.approver_is_tenant_modifier',
+        'Someone else must decide',
+        'You amended this draft, so another platform administrator must decide it.',
+      ],
+      [
+        403,
+        'lifecycle.approver_is_initial_administrator',
+        'Someone else must decide',
+        "You're named as this institution's first administrator, so you can't approve it.",
+      ],
+      [
+        409,
+        'lifecycle.platform_checker_closed',
+        'Someone else must decide',
+        'This institution now has its own approvers. The platform can no longer approve here.',
+      ],
+      [
+        403,
+        'lifecycle.self_membership_change',
+        'Not allowed on your own access',
+        "You can't suspend or revoke your own membership.",
+      ],
+      [
+        403,
+        'lifecycle.self_account_change',
+        'Not allowed on your own access',
+        "You can't suspend or deactivate your own account.",
+      ],
+      [
+        403,
+        'platform_context_required',
+        'Wrong workspace',
+        'This page belongs to the platform workspace. Switch workspace to open it.',
+      ],
+      [
+        403,
+        'tenant_context_required',
+        'Wrong workspace',
+        'This page belongs to an institution workspace. Switch workspace to open it.',
+      ],
+    ])('explains %i %s by its code', (status, code, title, message) => {
+      expect(describeProblem(new BackendApiError(status, { code, requestId: 'req-5' }))).toEqual({
+        title,
+        message,
+        code,
+        requestId: 'req-5',
+      });
+    });
   });
 
   it('never exposes an arbitrary error message, and still mints a support reference and logs it', () => {

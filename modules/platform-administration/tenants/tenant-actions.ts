@@ -22,7 +22,8 @@ const idempotencyKey = z.uuid();
 /** BG-29: the reserved platform organisation is no institution, so no action can target it (in any
  * letter case: isInstitutionId). A malformed id gets the same refusal. */
 const tenantId = z.string().refine(isInstitutionId, 'Choose an institution.');
-/** A frontend-only problem code for a duplicate tenant code (BG-07: the backend's answer is a 500). */
+/** A frontend-only problem code for a duplicate tenant code (BG-07: the backend's answer is the
+ * generic 409 `conflict`, so the directory confirms it). */
 const TENANT_CODE_TAKEN = 'tenant_code_taken';
 
 // No `|| null` transform: `reasoned()` tests the value, and a trimmed '' is falsy, so a blank
@@ -77,10 +78,12 @@ function explainDraft(
 }
 
 const isDuplicateCodeFailure = (error: unknown) =>
-  error instanceof BackendApiError && error.status === 500 && error.code === 'internal_error';
+  error instanceof BackendApiError && error.status === 409 && error.code === 'conflict';
 
-/** The lookup only disambiguates a failure, so an unreadable directory leaves the original error. */
-const codeTaken = (code: string) => tenantCodeTaken(code).catch(() => false);
+/** The lookup only disambiguates a failure, so an unreadable directory leaves the original error.
+ * An amend excepts its own draft, whose unchanged code the directory holds. */
+const codeTaken = (code: string, exceptTenantId?: string) =>
+  tenantCodeTaken(code, exceptTenantId).catch(() => false);
 
 export async function createTenantDraft(
   _previous: ActionResult | null,
@@ -105,8 +108,8 @@ export async function createTenantDraft(
           input.idempotencyKey,
         );
       } catch (error) {
-        // BG-07: a duplicate code is a 500 `internal_error`, which any bug is too, so the directory
-        // tells them apart, and only after the create failed: a retry that replays a create whose
+        // BG-07: a duplicate code is a 409 `conflict`, whose detail is never read, so the directory
+        // names it, and only after the create failed: a retry that replays a create whose
         // response was lost (same key) must reach the POST, not meet its own draft in the
         // directory. A failed mutation rolls back its idempotency key (the contract), so a retry
         // with the same key after this failure is safe.
@@ -133,15 +136,25 @@ export async function amendTenantDraft(
     tenantAmendSchema.extend({ idempotencyKey, tenantId }),
     formData,
     async (input) => {
-      // A full replacement (contract §D). Settings and the business date are ignored, so not sent.
-      await apiPatch(`${BASE}/${input.tenantId}`, tenantDraftBody(input), input.idempotencyKey);
+      try {
+        // A full replacement (contract §D). Settings and the business date are ignored: unsent.
+        await apiPatch(`${BASE}/${input.tenantId}`, tenantDraftBody(input), input.idempotencyKey);
+      } catch (error) {
+        // BG-07: a 409 `conflict` is a draft no longer a draft OR a code another institution holds.
+        // As on create, only the directory names the code, and only after the amend failed.
+        if (isDuplicateCodeFailure(error) && (await codeTaken(input.tenantCode, input.tenantId))) {
+          throw new BackendApiError(409, { code: TENANT_CODE_TAKEN });
+        }
+        throw error;
+      }
       redirect(`/platform-admin/tenants/${input.tenantId}`);
     },
   );
+  // A 409 the directory couldn't pin on the code: never assert which cause, nor mark the code.
   return explain(
     explainDraft(result, false),
     'conflict',
-    'Only a draft can be amended. It may already have been submitted. Refresh and check.',
+    "This draft couldn't be amended. Its tenant code may already be in use, or it may already have been submitted. Refresh and check.",
   );
 }
 
@@ -196,11 +209,12 @@ export async function approveTenant(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  // BG-08: a maker-checker refusal is the same 403 as a missing permission.
+  // A missing permission only: the maker, an amender and the first administrator have their own
+  // codes, explained by `describeProblem` (BG-08).
   return explain(
     await command('approve', formData),
     'forbidden',
-    "You can't approve this institution. Your role may not allow it, or you created or submitted the request: a different platform administrator must approve it.",
+    "You can't approve this institution. Your role doesn't allow it.",
   );
 }
 

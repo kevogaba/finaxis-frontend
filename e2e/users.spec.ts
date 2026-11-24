@@ -718,6 +718,35 @@ test.describe('users: access and audit', () => {
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(2);
   });
 
+  test('warns before you revoke your own branch assignment, then revokes it (BG-35)', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users');
+    await enterUser(page, IDS.jane, 'Backend Jane Manager');
+    await openTab(page, 'Branch assignments');
+    // The header row, then Head Office and Westlands.
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(3);
+
+    await press(
+      page.getByRole('button', {
+        name: "Revoke Backend Jane Manager's Operate assignment at Westlands Branch",
+      }),
+    );
+    const dialog = page.getByRole('alertdialog', {
+      name: 'Revoke your own Westlands Branch assignment?',
+    });
+    await expect(dialog.getByRole('alert')).toHaveText(
+      "This is your own access. If Westlands Branch is your selected branch, you'll be asked to choose your context again.",
+    );
+    // All branches is selected, so Jane's context survives: she can revoke and keep working.
+    await dialog.getByRole('button', { name: 'Revoke' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(toast(page, 'Assignment revoked')).toBeVisible();
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2);
+    await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Head Office');
+  });
+
   test('assigns a branch and explains the last-assignment refusal', async ({
     context,
     page,

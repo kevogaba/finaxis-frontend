@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
@@ -89,6 +90,8 @@ interface RevokeAssignmentButtonProps {
    * (WCAG 2.4.6), so the Users tab passes it. Without it every string is as the branch page had it.
    */
   branchLabel?: string;
+  /** The signed-in user's own assignment: revoking it may end their selected context (BG-35). */
+  self?: boolean;
   /** I2: the organisation the page rendered for; forwarded to `ConfirmDialog` as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -98,10 +101,12 @@ export function RevokeAssignmentButton({
   userLabel,
   typeLabel,
   branchLabel,
+  self = false,
   contextOrganisationId,
 }: RevokeAssignmentButtonProps) {
   const notify = useToast();
   const at = branchLabel ? ` at ${branchLabel}` : '';
+  const branch = branchLabel ?? 'this branch';
   const [open, setOpen] = useState(false);
   // I3 (PF6): a successful revoke removes this row — and this component — on the next render, so
   // the fallback always runs from the unmount cleanup. See branch-lifecycle-actions.tsx's own
@@ -132,8 +137,14 @@ export function RevokeAssignmentButton({
       <ConfirmDialog
         open={open}
         tone="error"
-        title={`Revoke ${userLabel}'s assignment${at}?`}
-        description={`${userLabel} loses the ${typeLabel} assignment at ${branchLabel ?? 'this branch'} immediately.`}
+        title={
+          self
+            ? branchLabel
+              ? `Revoke your own ${branchLabel} assignment?`
+              : 'Revoke your own assignment at this branch?'
+            : `Revoke ${userLabel}'s assignment${at}?`
+        }
+        description={`${userLabel} loses the ${typeLabel} assignment at ${branch} immediately.`}
         confirmLabel="Revoke"
         action={revokeBranchAssignment}
         contextOrganisationId={contextOrganisationId}
@@ -146,6 +157,11 @@ export function RevokeAssignmentButton({
           notify('Assignment revoked');
         }}
       >
+        {self && (
+          <Alert severity="warning">
+            {`This is your own access. If ${branch} is your selected branch, you'll be asked to choose your context again.`}
+          </Alert>
+        )}
         <input type="hidden" name="assignmentId" value={assignmentId} />
       </ConfirmDialog>
     </>

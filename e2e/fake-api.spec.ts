@@ -23,6 +23,10 @@ test.describe('fake API', () => {
     const response = await request.get(`${FAKE_API_URL}/api/v1/auth/organisations`);
     expect(response.status()).toBe(401);
     expect(response.headers()['content-type']).toContain('application/problem+json');
+    // A bare challenge with no error code (the platform's ApiAuthenticationEntryPoint).
+    expect(response.headers()['www-authenticate']).toBe(
+      `Bearer resource_metadata="${FAKE_API_URL}/.well-known/oauth-protected-resource"`,
+    );
     expect(await response.json()).toMatchObject({
       code: 'authentication_required',
       status: 401,
@@ -30,14 +34,29 @@ test.describe('fake API', () => {
     });
   });
 
-  test('rejects an unknown scenario token with an empty 401 like an invalid JWT', async ({
+  test('rejects an unknown scenario token with a problem 401 like an invalid JWT (BG-30)', async ({
     request,
   }) => {
     const response = await request.get(`${FAKE_API_URL}/api/v1/auth/organisations`, {
       headers: { Authorization: 'Bearer not-a-fake-token' },
     });
     expect(response.status()).toBe(401);
-    expect(await response.text()).toBe('');
+    expect(response.headers()['content-type']).toContain('application/problem+json');
+    // Spring's BearerTokenErrors.invalidToken with the platform's fixed description, then the
+    // resource metadata URL BearerTokenAuthenticationEntryPoint appends.
+    expect(response.headers()['www-authenticate']).toBe(
+      'Bearer error="invalid_token", ' +
+        'error_description="The access token is invalid or has expired.", ' +
+        'error_uri="https://tools.ietf.org/html/rfc6750#section-3.1", ' +
+        `resource_metadata="${FAKE_API_URL}/.well-known/oauth-protected-resource"`,
+    );
+    const requestId = response.headers()['x-request-id'];
+    expect(requestId).toEqual(expect.any(String));
+    expect(await response.json()).toMatchObject({
+      code: 'authentication_required',
+      status: 401,
+      request_id: requestId,
+    });
   });
 
   test('returns resource_not_found for unknown routes', async ({ request }) => {

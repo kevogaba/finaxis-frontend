@@ -16,7 +16,7 @@ describe('institution branch query', () => {
     );
   });
 
-  it('never sends an off-list sort or an unknown status (an unknown sort_by is a backend 500)', () => {
+  it('never sends an off-list sort or an unknown status (an unknown sort_by is a backend 400)', () => {
     const query = parseBranchListQuery(new URLSearchParams('sortBy=toString&status=BOGUS'));
     expect(institutionBranchListApiPath(ID, query)).toBe(
       `/api/v1/platform/tenants/${ID}/branches?sort_by=createdAt&sort_dir=DESC&page=0&size=10`,

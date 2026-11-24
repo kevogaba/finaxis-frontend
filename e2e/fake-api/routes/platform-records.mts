@@ -70,6 +70,15 @@ function accountTransition(
   return route('POST', `/api/v1/platform/users/:user_id/${path}`, async (context) => {
     const access = platformAccess(context);
     requirePermission(access, permission);
+    // BG-35 (UserProvisioningService): your own account, after the permission and before the
+    // lookup. Reactivating your own stays allowed.
+    if (path !== 'reactivate' && context.params.user_id === access.claims.userId) {
+      throw problem(
+        403,
+        'lifecycle.self_account_change',
+        'A user cannot suspend or deactivate their own account.',
+      );
+    }
     const user = findUser(context.state, context.params.user_id ?? '');
     const body = objectBody(await readBody(context.req), ['reason']);
     const reason = reasonField(body, reasonRequired);

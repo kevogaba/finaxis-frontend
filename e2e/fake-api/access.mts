@@ -147,29 +147,24 @@ export function requirePermission(
   }
 }
 
-/**
- * The `code` argument below is a full sentence, not a snake_case slug — that's not a mistake.
- * Mirrors ForbiddenOperationException's "sentence codes" (contract §I): the backend's `detail` for
- * every one of these wrong-context 403s is the same generic "not permitted" text (its default
- * `safeDetail`); only `code` carries the specific, human-readable reason.
- */
+/** Mirrors `WrongContext` (BG-30): a stable code, with the sentence in the detail. */
 export function requirePlatformContext(access: AccessContext): void {
   if (access.organisation.id !== PLATFORM_ORGANISATION_ID) {
     throw problem(
       403,
+      'platform_context_required',
       'Reserved platform organisation context is required for this route.',
-      'You are not permitted to perform this action.',
     );
   }
 }
 
-/** See `requirePlatformContext`'s note on the backend's "sentence codes". */
+/** See `requirePlatformContext`: the platform organisation is no tenant context. */
 export function requireTenantContext(access: AccessContext): void {
   if (access.organisation.id === PLATFORM_ORGANISATION_ID) {
     throw problem(
       403,
-      'Branch operations are restricted to non-platform tenant context.',
-      'You are not permitted to perform this action.',
+      'tenant_context_required',
+      'This route is restricted to non-platform tenant context.',
     );
   }
 }

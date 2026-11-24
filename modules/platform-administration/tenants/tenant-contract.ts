@@ -27,7 +27,8 @@ export const BOOTSTRAP_STATUSES = [
 ] as const;
 export type BootstrapStatus = (typeof BOOTSTRAP_STATUSES)[number];
 
-/** `sort_by` allow-list for `GET /platform/tenants` (contract §E.2); anything else is a 500. */
+/** `sort_by` allow-list for `GET /platform/tenants` (contract §E.2); anything else is a 400
+ * (BG-26). */
 export const TENANT_SORT_FIELDS = [
   'displayName',
   'tenantCode',

@@ -81,12 +81,13 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
       violations: [{ field: 'admin.phone_e164', code: 'NotBlank' }],
     });
 
-    // BG-07: the backend answers a taken code with a 500, so the app looks it up after a failed create.
+    // BG-07: a taken code is the generic 409, so the app looks it up after a failed create.
     const taken = await request.post(api('/platform/tenants'), {
       headers,
       data: { ...DRAFT, tenant_code: 'acme' },
     });
-    expect(taken.status()).toBe(500);
+    expect(taken.status()).toBe(409);
+    expect(await taken.json()).toMatchObject({ code: 'conflict' });
   });
 
   test('refuses the approval to its maker and to its submitter, and approves a request another operator submitted with a replayable 202', async ({
@@ -100,18 +101,26 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
       status: 'PENDING_APPROVAL',
       bootstrap_status: 'PENDING_ACTIVATION',
     });
-    // Jane drafted and submitted Umoja, so she can't approve it (maker-checker; the same 403 as a
-    // missing permission, BG-08).
+    // Jane drafted and submitted Umoja, so she can't approve it (maker-checker, its own code:
+    // BG-08).
+    const maker = 'lifecycle.approver_is_tenant_maker';
     const own = await request.post(api(`${umoja}/approve`), { headers, data: {} });
     expect(own.status()).toBe(403);
-    expect(await own.json()).toMatchObject({ code: 'forbidden' });
+    expect(await own.json()).toMatchObject({ code: maker });
+    // Nor reject it.
+    const ownReject = await request.post(api(`${umoja}/reject`), {
+      headers,
+      data: { reason: 'Changed my mind' },
+    });
+    expect(ownReject.status()).toBe(403);
+    expect(await ownReject.json()).toMatchObject({ code: maker });
     // Another operator drafted Mwangaza, but Jane submitted it: the submitter alone is refused too.
     const submittedOnly = await request.post(
       api(`/platform/tenants/${TENANT_SCENARIO_IDS.mwangaza}/approve`),
       { headers, data: {} },
     );
     expect(submittedOnly.status()).toBe(403);
-    expect(await submittedOnly.json()).toMatchObject({ code: 'forbidden' });
+    expect(await submittedOnly.json()).toMatchObject({ code: maker });
 
     const once = { ...headers, 'Idempotency-Key': randomUUID() };
     const harambee = api(`/platform/tenants/${TENANT_SCENARIO_IDS.harambee}/approve`);
@@ -141,12 +150,13 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
       data: { reason: 'Not pending' },
     });
     expect(notPending.status()).toBe(409);
-    // BG-07: an unknown tenant on reject is a 500, not a 404.
+    // BG-07: an unknown tenant on reject is a 404.
     const unknown = await request.post(api(`/platform/tenants/${randomUUID()}/reject`), {
       headers,
       data: { reason: 'Unknown tenant' },
     });
-    expect(unknown.status()).toBe(500);
+    expect(unknown.status()).toBe(404);
+    expect(await unknown.json()).toMatchObject({ code: 'resource_not_found' });
 
     const notDraft = await request.patch(api(acme), {
       headers,
@@ -166,6 +176,13 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
       display_name: 'Umoja Teachers Co-operative SACCO',
       status: 'DRAFT',
     });
+    // BG-07: another institution's code is the generic 409 on amend too.
+    const takenOnAmend = await request.patch(
+      api(`/platform/tenants/${TENANT_SCENARIO_IDS.umoja}`),
+      { headers, data: { ...DRAFT, tenant_code: 'acme' } },
+    );
+    expect(takenOnAmend.status()).toBe(409);
+    expect(await takenOnAmend.json()).toMatchObject({ code: 'conflict' });
 
     const notFailed = await request.post(api(`${acme}/bootstrap/retry`), { headers, data: {} });
     expect(notFailed.status()).toBe(409);
@@ -236,15 +253,27 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
     expect(withIt.page.total_items).toBe(without.page.total_items + 1);
   });
 
-  test('answers an off-list sort_by as a 500, including names every object inherits', async ({
+  test('answers an off-list sort_by or sort_dir as a 400, including names every object inherits', async ({
     request,
   }) => {
     const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
-    // BG-07: only the four camelCase keys sort; a name from Object.prototype is no key.
+    // BG-26: only the four camelCase keys sort; a name from Object.prototype is no key.
     for (const sortBy of ['tenant_code', 'toString', 'constructor', '__proto__']) {
       const refused = await request.get(api(`/platform/tenants?sort_by=${sortBy}`), { headers });
-      expect(refused.status(), sortBy).toBe(500);
+      expect(refused.status(), sortBy).toBe(400);
+      expect(await refused.json()).toMatchObject({
+        code: 'invalid_parameter',
+        violations: [
+          {
+            field: 'sort_by',
+            message: 'Sort field must be one of: countryCode, createdAt, displayName, tenantCode.',
+          },
+        ],
+      });
     }
+    const sideways = await request.get(api('/platform/tenants?sort_dir=sideways'), { headers });
+    expect(sideways.status()).toBe(400);
+    expect(await sideways.json()).toMatchObject({ violations: [{ field: 'sort_dir' }] });
     const sorted = await request.get(api('/platform/tenants?sort_by=tenantCode&sort_dir=ASC'), {
       headers,
     });
@@ -258,8 +287,10 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
       data: DRAFT,
     });
     expect(wrongContext.status()).toBe(403);
+    // BG-30: a stable code, with the sentence in the detail.
     expect(await wrongContext.json()).toMatchObject({
-      code: 'Reserved platform organisation context is required for this route.',
+      code: 'platform_context_required',
+      detail: 'Reserved platform organisation context is required for this route.',
     });
 
     // `platform-operator` holds tenant.view only: the read-only gating scenario.
@@ -272,25 +303,25 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
     expect(await refused.json()).toMatchObject({ code: 'forbidden' });
   });
 
-  test("answers an unknown tenant's suspend and a rejected tenant's code with a 500 (BG-07, BG-28)", async ({
+  test("answers an unknown tenant's suspend with a 404 and a rejected tenant's code with a 409 (BG-07, BG-28)", async ({
     request,
   }) => {
     const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
 
-    // BG-07: suspend, like reject, answers an unknown tenant with a 500 rather than a 404.
+    // BG-07: suspend, like reject, answers an unknown tenant with a 404.
     const unknown = await request.post(
       api('/platform/tenants/00000000-0000-4000-8000-0000000000ff/suspend'),
       { headers, data: { reason: 'Compliance review' } },
     );
-    expect(unknown.status()).toBe(500);
-    expect(await unknown.json()).toMatchObject({ code: 'internal_error' });
+    expect(unknown.status()).toBe(404);
+    expect(await unknown.json()).toMatchObject({ code: 'resource_not_found' });
 
-    // BG-28: a rejected tenant keeps its code, so a new draft under it is a 500 too (BG-07).
+    // BG-28: a rejected tenant keeps its code, so a new draft under it is a 409 too (BG-07).
     const taken = await request.post(api('/platform/tenants'), {
       headers,
       data: { ...DRAFT, tenant_code: 'nairobi-metro-teachers' },
     });
-    expect(taken.status()).toBe(500);
-    expect(await taken.json()).toMatchObject({ code: 'internal_error' });
+    expect(taken.status()).toBe(409);
+    expect(await taken.json()).toMatchObject({ code: 'conflict' });
   });
 });

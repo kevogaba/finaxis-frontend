@@ -136,7 +136,7 @@ describe('revokeMembership with an expected status', () => {
 
   it('lets a revoked membership through, so a same-key retry replays its success', async () => {
     // REVOKED is the revoke's own end state: maybe this key's earlier revoke whose response was
-    // lost, which the backend replays; anyone else's revoke answers 500 (REVOKE_FAILED).
+    // lost, which the backend replays; anyone else's revoke answers 409 (REVOKE_CONFLICT).
     getMembership.mockResolvedValue({ id: MEMBERSHIP, userId: USER, status: 'REVOKED' });
     await expect(
       revokeMembership(null, reject({ expectedStatus: 'PENDING_APPROVAL' })),

@@ -138,15 +138,24 @@ describe('branch actions', () => {
     },
   );
 
-  it('explains an activation 403 as permission or maker-checker (BG-08) and leaves others alone', async () => {
+  it('explains an activation `forbidden` as a missing permission only (BG-08) and leaves others alone', async () => {
     runServerAction.mockResolvedValueOnce(failure('forbidden'));
     expect(await actions.activateBranch(null, form({}))).toMatchObject({
       code: 'forbidden',
-      formError: expect.stringContaining('you drafted it') as unknown,
+      formError: "You can't activate this branch. Your role doesn't allow it.",
     });
 
-    runServerAction.mockResolvedValueOnce(failure('conflict'));
-    expect(await actions.activateBranch(null, form({}))).toMatchObject({ formError: 'generic' });
+    // The maker and the editors have their own codes, explained by describeProblem.
+    for (const code of [
+      'conflict',
+      'lifecycle.approver_is_branch_maker',
+      'lifecycle.approver_is_branch_modifier',
+    ]) {
+      runServerAction.mockResolvedValueOnce(failure(code));
+      expect(await actions.activateBranch(null, form({}))).toMatchObject({
+        formError: 'generic',
+      });
+    }
   });
 
   it('explains a blocked close', async () => {

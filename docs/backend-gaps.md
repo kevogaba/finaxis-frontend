@@ -59,11 +59,14 @@ miscount things today.
 3. **Maker-checker refusals have their own codes** (platform #280, #245): 403
    `lifecycle.approver_is_*` and 409 `lifecycle.platform_checker_closed` (BG-08). The membership,
    approval, branch and tenant actions explain only `forbidden`, so a maker now gets the generic
-   permission message.
+   permission message. **Adopted** (frontend #109): `describeProblem` names every code, and each
+   action's `forbidden` copy now names a missing permission only.
 4. **Business-rule failures are 4xx, not 500** (platform #152): a taken email or username and a
    duplicate tenant code are 409 `conflict`; approving or revoking a membership in the wrong state
    is 404 or 409 (BG-07). The invite's `isRuleFailure`, the `TENANT_CODE_TAKEN` field error and the
    `APPROVE_FAILED`/`REVOKE_FAILED` copy key on 500 `internal_error`, so they no longer fire.
+   **Adopted** (frontend #109): the invite, tenant-create, approve and revoke explanations key on
+   the 4xx statuses, and the post-failure lookups run on 409 `conflict`.
 5. **`base_currency` is a read-only mirror of the organisation's currency** (platform #282): `PUT`
    and `DELETE` answer 422 `invalid_operation`. `settingActions` offers Reset whenever a value is
    set, which it now always is, so Reset is offered and fails; the key is also still in
@@ -116,7 +119,7 @@ miscount things today.
 
 ## Summary
 
-22 backend fixed · 9 partly fixed · 0 open · 0 adopted · 4 closed.
+19 backend fixed · 8 partly fixed · 0 open · 1 adopted · 7 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -126,7 +129,7 @@ miscount things today.
 | BG-04 | P0       | Backend fixed | Tenant settings `PUT` fails with 500 and rolls back (per source reading)                           |
 | BG-05 | P0       | Closed        | Published OpenAPI casing is wrong and list-item schemas are missing                                |
 | BG-06 | P0       | Backend fixed | No platform audit endpoint; tenant audit is 403 in the platform context                            |
-| BG-07 | P1       | Partly fixed  | Business-rule failures return 500 instead of 4xx                                                   |
+| BG-07 | P1       | Adopted       | Business-rule failures return 500 instead of 4xx                                                   |
 | BG-08 | P1       | Backend fixed | Maker identity not exposed; maker-checker 403 indistinguishable from missing permission            |
 | BG-09 | P1       | Partly fixed  | No `user_id` filters on branch assignments / memberships; thin list items                          |
 | BG-10 | P1       | Backend fixed | No global user directory or global user read                                                       |
@@ -145,16 +148,16 @@ miscount things today.
 | BG-23 | P2       | Backend fixed | Context discovery inconsistencies (`total_items` overcount, duplicate branch IDs)                  |
 | BG-24 | P2       | Closed        | Bootstrap status can flip COMPLETED → FAILED from unrelated invitee failures                       |
 | BG-25 | P2       | Partly fixed  | Identity and email delivery defaults (Keycloak admin off, email off, no password step)             |
-| BG-26 | P2       | Backend fixed | Ignored or dangerous sort parameters                                                               |
+| BG-26 | P2       | Closed        | Ignored or dangerous sort parameters                                                               |
 | BG-27 | P2       | Backend fixed | Role lifecycle gaps (no delete; DISABLED roles assignable; ARCHIVED unused)                        |
 | BG-28 | P2       | Partly fixed  | Terminal states without recovery (rejected tenant code stays taken; revoked member can't return)   |
 | BG-29 | P2       | Closed        | PLATFORM organisation included in tenant search results                                            |
-| BG-30 | P2       | Backend fixed | Wrong-context 403s put a sentence in `code`; invalid JWT 401 has no body                           |
+| BG-30 | P2       | Closed        | Wrong-context 403s put a sentence in `code`; invalid JWT 401 has no body                           |
 | BG-31 | P2       | Backend fixed | Mutations silently require the matching `.view` permission                                         |
 | BG-32 | P2       | Closed        | Documentation drift in the platform repository                                                     |
 | BG-33 | P2       | Backend fixed | Permission codes in /auth/me carry no scope                                                        |
 | BG-34 | P2       | Backend fixed | Role update accepts a blank name; an empty description clears it                                   |
-| BG-35 | P2       | Backend fixed | No documented self-lockout guard: a user may suspend, revoke or deactivate themselves              |
+| BG-35 | P2       | Closed        | No documented self-lockout guard: a user may suspend, revoke or deactivate themselves              |
 
 ## Details
 
@@ -352,8 +355,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-07 — Business-rule failures return 500 · P1
 
-- **Status:** Partly fixed. Platform #152. No listed case returns 500 any more, but most share a
-  generic code.
+- **Status:** Adopted (frontend #109). Platform #152. No listed case returns 500 any more, but
+  most share a generic code.
 - **Gap:** `require`, `requireNotNull`, `error`, and unique-constraint violations fall through to the
   generic handler as `internal_error` (`common/web/api/ApiExceptionHandler.kt:243-258`). Hits:
   invite validation (organisation not ACTIVE, inactive branch, missing/non-ACTIVE role, scope/branch
@@ -367,12 +370,15 @@ the same bullets): the first is the gap as found, the second what the UI still d
   the contract's 409 is from 7a7f4c3).
 - **Frontend handling:** pre-validation of every known trigger (e.g. the invite wizard checks the
   email against the institution's users on its Identity step and every rule it can see on its Access
-  step; sort allow-lists), a tenant-code lookup after a failed create to name a duplicate (the
+  step; sort allow-lists), a tenant-code lookup after a create's 409 to name a duplicate (the
   create goes first, so a replayed create is never turned away; the invitation likewise names a
-  taken email, or a username a member here holds, only after a failed post), and a generic error
-  showing `request_id`. A username taken by an account in another institution can't be checked from
-  the tenant context, so the invitation's 500 names it among the likely causes. The user record
-  withholds Approve once approval ran and names the likely causes of the other approval 500s.
+  taken email, or a username a member here holds, only after its 409), and a generic error showing
+  `request_id`. A username taken by an account in another institution can't be checked from the
+  tenant context, so the invitation's 409 then names every cause a 409 can have; its 422 says a
+  role or branch went stale, and the platform's own 400 says the details weren't accepted. Approve
+  explains 404 (gone) and 409 (decided, or no active role or branch), revoke 409 (already revoked),
+  assign role 422 (no longer active), and amend's 409 hedges between a taken code and a draft no
+  longer a draft (frontend #109). The user record still withholds Approve once approval ran.
 - **Backend resolution:**
   - Invite: an organisation that isn't ACTIVE is 409 `conflict`. An invalid email, a blank username
     or display name, STAFF/ADMIN without a branch, no role, or a BRANCH role without a branch is 400
@@ -391,9 +397,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
   inactive organisation and a missing prerequisite can't be told apart. Service-level 400s carry no
   `violations`. Unclassified `IllegalArgument`/`IllegalState` failures stay 500 on purpose (internal
   invariants). Suggested: specific codes for the invite and approve refusals.
-- **To adopt:** key the invite, tenant-create and approve/revoke explanations on the new statuses
-  instead of 500 `internal_error`, and keep the post-failure lookups that name a cause, since the
-  codes don't.
+- **To adopt:** done in frontend #109: the invite, tenant-create and approve/revoke explanations
+  key on the new statuses instead of 500 `internal_error`, the post-failure lookups that name a
+  cause run on 409 `conflict` (the codes don't name one), and the e2e fake API answers each rule
+  with the platform's status.
 
 ### BG-08 — Maker not exposed; ambiguous 403 · P1
 
@@ -430,8 +437,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
   answers the `approver_is_tenant_*` codes. `/tenant/users` items and detail also carry
   `membership_id`, `membership_type`, `created_at` (the account's) and `membership_created_at`.
 - **To adopt:** read the maker from `created_by`, `submitted_by` and `requested_by` instead of the
-  audit log (no `audit.view` needed, and it works from the platform context), and explain each code.
-  A re-invited membership's maker is its `created_by`, not the `user.invite` actor (BG-28).
+  audit log (no `audit.view` needed, and it works from the platform context). A re-invited
+  membership's maker is its `created_by`, not the `user.invite` actor (BG-28). Each code is
+  explained since frontend #109 (`describeProblem`), and the `forbidden` copy names a missing
+  permission only.
 
 ### BG-09 — Missing filters; thin list items · P1
 
@@ -854,7 +863,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-26 — Sort parameters · P2
 
-- **Status:** Backend fixed. Platform #151, #152, #190.
+- **Status:** Closed (frontend #109). Platform #151, #152, #190.
 - **Gap:** `sort_by` values are camelCase and anything outside the allow-list returns 500 (BG-07);
   memberships and branch assignments accept and ignore sort.
 - **Frontend handling:** sort allow-lists (BG-07).
@@ -876,8 +885,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
   `sort_by` is ignored on memberships, branch assignments, tenant users and platform users but sets
   the default key's direction elsewhere. `/platform/tenants/{id}/users`, role assignments,
   business-date history and settings take no sort.
-- **To adopt:** nothing required, since everything the UI sends is still accepted. The users,
-  memberships and branch-assignment lists can now offer sortable columns.
+- **To adopt:** done in frontend #109: nothing the UI sends changed (only allow-listed values are
+  sent), its comments now say an off-list sort is a 400, and the e2e fake API answers one with the
+  400 and its violation. The users, memberships and branch-assignment lists can now offer sortable
+  columns; that is an option, not a gap.
 
 ### BG-27 — Role lifecycle · P2
 
@@ -939,7 +950,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-30 — Error envelope inconsistencies · P2
 
-- **Status:** Backend fixed. Platform #173, #235, #253.
+- **Status:** Closed (frontend #109). Platform #173, #235, #253.
 - **Gap:** wrong-context 403s pass a message as the `code` (`CallerContextResolver.kt:61-87`), e.g.
   "Branch operations are restricted to non-platform tenant context.", also embedded in `type`. An
   invalid or expired JWT returns 401 with an empty body and no `X-Request-Id`.
@@ -950,7 +961,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
   `WWW-Authenticate: Bearer error="invalid_token"` challenge. An incoming `X-Request-Id` is kept only
   when it is 8–64 characters of `[A-Za-z0-9._-]`.
 - **Still open:** nothing.
-- **To adopt:** name the wrong-context case by its code.
+- **To adopt:** done in frontend #109: `describeProblem` names both wrong-context codes ("Wrong
+  workspace"), and the e2e fake API answers them, and an invalid token's 401, as the platform does.
 
 ### BG-31 — Hidden `.view` requirement on mutations · P2
 
@@ -1059,7 +1071,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-35 — No documented self-lockout guard on memberships and accounts · P2
 
-- **Status:** Backend fixed. Platform #341 (PR #344, ADR 0043).
+- **Status:** Closed (frontend #109). Platform #341 (PR #344, ADR 0043).
 - **Gap:** The contract documents no guard against a caller suspending or revoking their own
   membership, or revoking their own role assignments (§E.3 names none; source 7a7f4c3). Nor is one
   documented for `POST /platform/users/{id}/suspend` or `/deactivate` (§E.2), where a
@@ -1068,11 +1080,11 @@ the same bullets): the first is the gap as found, the second what the UI still d
   permanent (BG-28). Not probed live: the probe itself would be irreversible.
 - **Frontend handling:** the user record shows Suspend and Revoke disabled on the signed-in user's
   own record, with the reason; revoking your own role assignment warns in its confirmation
-  (layer 09). Revoking your own branch assignment from the user record's Branch assignments tab
-  shows no such warning (layer 08's `RevokeAssignmentButton` has no `self` prop); at the selected
-  branch it invalidates your context (§E.4). The platform user record shows Suspend account and
-  Deactivate account disabled on your own account, and their Server Actions refuse it before any
-  call (layer 17).
+  (layer 09), and so does revoking your own branch assignment, from the user record's Branch
+  assignments tab or the branch record's Users tab, since at the selected branch it invalidates
+  your context (§E.4; frontend #109).
+  The platform user record shows Suspend account and Deactivate account disabled on your own
+  account, and their Server Actions refuse it before any call (layer 17).
 - **Backend resolution:**
   - Suspending or revoking your own membership is 403 `lifecycle.self_membership_change`. The
     check runs after the permission check and the lookup, so a missing permission is still 403
@@ -1086,7 +1098,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
     stay allowed.
 - **Still open:** nothing. Revoking your own role or branch assignment stays allowed on purpose
   (ADR 0043).
-- **To adopt:** keep the UI's own guards, and name the two codes in the membership and platform-user
-  actions, so a refusal the UI didn't predict (a stale page) isn't explained as a missing
-  permission. The Branch assignments tab's self-revoke still lacks the warning the Roles & access
-  revoke has.
+- **To adopt:** done in frontend #109: the UI's own guards stay, `describeProblem` names the two
+  codes, so a refusal the UI didn't predict (a stale page) isn't explained as a missing permission,
+  and a self-revoke from the Branch assignments tab or a branch's Users tab warns as the Roles &
+  access revoke does.

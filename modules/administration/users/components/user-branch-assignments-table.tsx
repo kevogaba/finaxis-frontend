@@ -20,6 +20,8 @@ export interface UserBranchAssignmentRow {
 interface UserBranchAssignmentsTableProps {
   rows: readonly UserBranchAssignmentRow[];
   userName: string;
+  /** The signed-in user's own record: each revoke warns first (BG-35), as the role revoke does. */
+  self: boolean;
   canRevoke: boolean;
   /** I2: the organisation the page rendered for; forwarded to each row's revoke confirmation. */
   contextOrganisationId?: string;
@@ -30,6 +32,7 @@ interface UserBranchAssignmentsTableProps {
 export function UserBranchAssignmentsTable({
   rows,
   userName,
+  self,
   canRevoke,
   contextOrganisationId,
 }: UserBranchAssignmentsTableProps) {
@@ -70,6 +73,7 @@ export function UserBranchAssignmentsTable({
                     userLabel={userName}
                     typeLabel={humanizeEnum(row.assignmentType)}
                     branchLabel={row.branchName}
+                    self={self}
                     contextOrganisationId={contextOrganisationId}
                   />
                 </TableCell>

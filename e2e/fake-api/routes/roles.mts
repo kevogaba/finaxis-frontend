@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { requireContext, requirePermission, requireTenantContext } from '../access.mts';
 import type { AccessContext } from '../access.mts';
 import { recordAuditEvent } from '../audit-log.mts';
-import { objectBody, pageOf, problem, readBody, sendJson, stringField } from '../http.mts';
+import { objectBody, pageOf, problem, readBody, sendJson, sortKey, stringField } from '../http.mts';
 import type { Violation } from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
 import { route } from '../router.mts';
@@ -180,23 +180,16 @@ function grantsOf(role: FakeRole) {
     );
 }
 
-/** Mirrors the backend's sort parsing: an off-list `sort_by` or `sort_dir` is a 500 (BG-07).
- * `sort_by` is user-controlled, so the allow-list is read with `Object.hasOwn`: `toString` must not
- * resolve to an `Object.prototype` member. */
+/** Sorts by the query's allow-listed key; an off-list sort is a 400 (`sortKey`, BG-26). */
 function orderBy<T>(
   rows: T[],
   keys: Partial<Record<string, (row: T) => string>>,
   query: URLSearchParams,
-  fallback: { by: string; dir: string },
+  fallback: { by: string; dir: 'ASC' | 'DESC' },
 ): T[] {
-  const sortBy = query.get('sort_by') ?? fallback.by;
-  const key = Object.hasOwn(keys, sortBy) ? keys[sortBy] : undefined;
-  const direction = (query.get('sort_dir') ?? fallback.dir).toUpperCase();
-  if (!key || (direction !== 'ASC' && direction !== 'DESC')) {
-    throw problem(500, 'internal_error', 'An unexpected error occurred.');
-  }
+  const { key, descending } = sortKey(query, keys, fallback);
   const ordered = rows.sort((a, b) => key(a).localeCompare(key(b)));
-  return direction === 'DESC' ? ordered.reverse() : ordered;
+  return descending ? ordered.reverse() : ordered;
 }
 
 const ROLE_SORTS: Partial<Record<string, (role: FakeRole) => string>> = {
@@ -466,8 +459,16 @@ export const roleRoutes: Route[] = [
       throw problem(400, 'invalid_json', 'Malformed request body.');
     }
     if (scope === 'BRANCH') {
-      // Source f74e44b: `requireNotNull(branchId)` runs before the service's 409 (BG-07).
-      if (branchId === null) throw problem(500, 'internal_error', 'An unexpected error occurred.');
+      // @BranchScopeRequiresBranch: the request's own 400, before the service (BG-07).
+      if (branchId === null) {
+        throw problem(400, 'validation_failed', 'One or more request fields are invalid.', [
+          {
+            field: 'branch_id',
+            code: 'BranchScopeRequiresBranch',
+            message: 'A branch is required when the scope type is BRANCH.',
+          },
+        ]);
+      }
       // Contract §E.4: another branch while a branch is selected is a 404.
       if (access.claims.branchId !== null && access.claims.branchId !== branchId) {
         throw assignmentNotFound();
@@ -487,9 +488,10 @@ export const roleRoutes: Route[] = [
         if (member.status === 'REVOKED') {
           throw problem(409, 'conflict', 'The membership does not allow assignments.');
         }
-        if (!state.roles.some((r) => r.id === roleId && r.organisationId === organisationId)) {
-          throw roleNotFound();
-        }
+        const role = state.roles.find(
+          (r) => r.id === roleId && r.organisationId === organisationId,
+        );
+        if (!role) throw roleNotFound();
         if (scope === 'TENANT' && branchId !== null) {
           throw problem(422, 'invalid_operation', 'Invalid operation.');
         }
@@ -513,6 +515,14 @@ export const roleRoutes: Route[] = [
             row.status === 'ACTIVE',
         );
         if (existing) return assignmentWire(existing);
+        // Only a new assignment needs an ACTIVE role (RoleManagementService, BG-27).
+        if (role.status !== 'ACTIVE') {
+          throw problem(
+            422,
+            'invalid_operation',
+            'The request cannot be processed in its current state.',
+          );
+        }
         const created: FakeRoleAssignment = {
           id: randomUUID(),
           organisationId,

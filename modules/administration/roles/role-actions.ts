@@ -201,7 +201,7 @@ const assignInput = z
     // Rendered only for BRANCH scope (RoleScopeFields).
     branchId: z.union([z.literal(''), uuidSchema]).optional(),
   })
-  // BRANCH without a branch is a 500 at source f74e44b (`requireNotNull`, BG-07): never send it.
+  // BRANCH without a branch is a 400 `validation_failed` (BG-07, a 500 before): never send it.
   .refine((input) => input.scopeType === 'TENANT' || Boolean(input.branchId), {
     error: 'Choose a branch.',
     path: ['branchId'],
@@ -216,10 +216,10 @@ export async function assignRole(
 ): Promise<ActionResult> {
   const read = { failed: false };
   const result = await runServerAction(assignInput, formData, async (input) => {
-    // BG-27: the backend doesn't check the role's status, so a role deactivated since the drawer
-    // opened would still get an ACTIVE assignment. Re-reading narrows that race; only the backend
-    // can close it. Fail closed: a role that can't be read isn't assigned. The original error
-    // propagates, so a lost session still redirects and the support reference survives.
+    // BG-27: a role deactivated since the drawer opened is named before sending; the backend
+    // closes the race with a 422 (explained below). Fail closed: a role that can't be read isn't
+    // assigned. The original error propagates, so a lost session still redirects and the support
+    // reference survives.
     const role = await getRole(input.roleId).catch((error: unknown) => {
       read.failed = true;
       throw error;
@@ -245,9 +245,16 @@ export async function assignRole(
     ROLE_INACTIVE,
     "This role is no longer active, so it can't be assigned. Refresh the page and check its status.",
   );
+  // BG-27: a 422 is a role that stopped being ACTIVE after the read above (contract §D's TENANT
+  // scope with a branch is never sent).
+  const inactive = explain(
+    named,
+    'invalid_operation',
+    "This role is no longer active, so it can't be assigned.",
+  );
   // 409 = this guard OR a revoked membership, an inactive institution or a race: hedge.
   return explain(
-    named,
+    inactive,
     'conflict',
     "This user can't be given the role here. For one branch, they must already be assigned to that branch — assign them under Branches first. Their membership may also be revoked; refresh and check.",
   );

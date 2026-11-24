@@ -42,6 +42,8 @@ export default async function BranchUsersPage({ params, searchParams }: BranchUs
   // I2: the organisation this page rendered with, carried by every mutation surface below.
   const contextOrganisationId =
     selected.kind === 'resolved' ? selected.context.organization.id : undefined;
+  // BG-35: a revoke of the signed-in user's own assignment warns first.
+  const signedInUserId = selected.kind === 'resolved' ? selected.profile.user_id : null;
 
   const card = (content: ReactNode) => (
     <SectionCard
@@ -105,6 +107,7 @@ export default async function BranchUsersPage({ params, searchParams }: BranchUs
             name: byId.get(row.userId)?.displayName ?? shortId(row.userId),
             email: byId.get(row.userId)?.email ?? null,
             assignmentType: row.assignmentType,
+            self: row.userId === signedInUserId,
           }))}
           contextOrganisationId={contextOrganisationId}
         />

@@ -82,16 +82,6 @@ export const BRANCH_CHANGED =
   'This branch changed since the page loaded. Refresh to see where it stands.';
 export const BRANCH_CONTEXT_REFUSAL =
   'Branches are activated with All branches selected. Switch to All branches and try again.';
-/** BG-08: a maker-checker refusal is the same 403 as a missing permission: never assert which. */
-export const APPROVE_FORBIDDEN =
-  "You can't approve this user. Your role may not allow it, or you invited them: a different administrator must approve them.";
-/** BG-07: missing prerequisites are 500s. */
-export const APPROVE_FAILED =
-  "The approval couldn't complete. They may still need an active role and, for staff and admin members, an active branch assignment. Refresh and check.";
-export const REJECT_FAILED =
-  "This membership couldn't be revoked. It may already be revoked: refresh and check.";
-export const ACTIVATE_FORBIDDEN =
-  "You can't activate this branch. Your role may not allow it, or you drafted it: a different administrator must activate it.";
 
 // ── Page copy ────────────────────────────────────────────────────────────────────────────────────
 

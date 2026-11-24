@@ -18,7 +18,7 @@ export const BRANCH_TYPE_SUGGESTIONS = ['HEAD_OFFICE', 'OPERATIONS'] as const;
 export const BRANCH_ASSIGNMENT_TYPES = ['HOME', 'OPERATE', 'APPROVE', 'VIEW'] as const;
 export type BranchAssignmentType = (typeof BRANCH_ASSIGNMENT_TYPES)[number];
 
-/** `sort_by` allow-list for `GET /branches` (contract §E.3); anything else is a backend 500. */
+/** `sort_by` allow-list for `GET /branches` (contract §E.3); anything else is a 400 (BG-26). */
 export const BRANCH_SORT_FIELDS = [
   'branchName',
   'branchCode',

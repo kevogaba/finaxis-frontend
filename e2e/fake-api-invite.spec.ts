@@ -283,7 +283,7 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
 });
 
 test.describe("fake API invitations: the backend's rules (BG-07)", () => {
-  test('answers each invite rule failure with a 500, storing nothing (BG-07)', async ({
+  test('answers each invite rule with its own 4xx, storing nothing (BG-07)', async ({
     request,
   }) => {
     const { get, invite } = await signIn(request);
@@ -291,38 +291,81 @@ test.describe("fake API invitations: the backend's rules (BG-07)", () => {
       ...BODY,
       role_assignments: [{ role_id: USERS.supervisor, scope_type: 'BRANCH', branch_id: branchId }],
     });
-    const failures: Record<string, unknown>[] = [
-      { ...BODY, role_assignments: [] },
-      // Westlands stays the primary branch, so only the need-a-branch rule fails (BG-07).
-      { ...BODY, branch_assignments: [] },
-      { ...BODY, membership_type: 'ADMIN', branch_assignments: [], primary_branch_id: null },
-      { ...BODY, role_assignments: [{ role_id: USERS.loansOfficer, scope_type: 'TENANT' }] },
-      { ...BODY, branch_assignments: [{ branch_id: INVITE.kisumu, assignment_type: 'HOME' }] },
-      { ...BODY, primary_branch_id: INVITE.kisumu },
-      {
-        ...BODY,
-        role_assignments: [
-          { role_id: USERS.teller, scope_type: 'TENANT', branch_id: IDS.westlands },
-        ],
-      },
-      branchRole(null),
-      branchRole(IDS.headOffice),
+    const refusals: [Record<string, unknown>, number, string][] = [
+      // The service's own 400s carry no violations.
+      [{ ...BODY, role_assignments: [] }, 400, 'validation_failed'],
+      // Westlands stays the primary branch, so only the need-a-branch rule fails.
+      [{ ...BODY, branch_assignments: [] }, 400, 'validation_failed'],
+      [
+        { ...BODY, membership_type: 'ADMIN', branch_assignments: [], primary_branch_id: null },
+        400,
+        'validation_failed',
+      ],
+      // An unusable role or branch, or a TENANT role with a branch, is a 422.
+      [
+        { ...BODY, role_assignments: [{ role_id: USERS.loansOfficer, scope_type: 'TENANT' }] },
+        422,
+        'invalid_operation',
+      ],
+      [
+        { ...BODY, branch_assignments: [{ branch_id: INVITE.kisumu, assignment_type: 'HOME' }] },
+        422,
+        'invalid_operation',
+      ],
+      [{ ...BODY, primary_branch_id: INVITE.kisumu }, 422, 'invalid_operation'],
+      [
+        {
+          ...BODY,
+          role_assignments: [
+            { role_id: USERS.teller, scope_type: 'TENANT', branch_id: IDS.westlands },
+          ],
+        },
+        422,
+        'invalid_operation',
+      ],
+      [branchRole(INVITE.kisumu), 422, 'invalid_operation'],
       // Existing memberships here, in any status (BG-28): Esther is ACTIVE, Amina pending,
-      // Gladys SUSPENDED, Hassan REVOKED.
-      { ...BODY, email: 'esther.njoki@greenfield.example' },
-      { ...BODY, email: 'amina.odhiambo@greenfield.example' },
-      { ...BODY, email: 'gladys.chebet@greenfield.example' },
-      { ...BODY, email: 'Hassan.Ali@greenfield.example' },
+      // Gladys SUSPENDED, Hassan REVOKED (the platform re-invites a revoked member; the fake
+      // does from 18).
+      [{ ...BODY, email: 'esther.njoki@greenfield.example' }, 409, 'conflict'],
+      [{ ...BODY, email: 'amina.odhiambo@greenfield.example' }, 409, 'conflict'],
+      [{ ...BODY, email: 'gladys.chebet@greenfield.example' }, 409, 'conflict'],
+      [{ ...BODY, email: 'Hassan.Ali@greenfield.example' }, 409, 'conflict'],
       // A username another account holds, with a new email.
-      { ...BODY, username: TEXT.takenUsername },
+      [{ ...BODY, username: TEXT.takenUsername }, 409, 'conflict'],
     ];
-    for (const body of failures) {
-      await expectProblem(await invite(body), 500, 'internal_error');
+    for (const [body, status, code] of refusals) {
+      const refused = await invite(body);
+      await expectProblem(refused, status, code);
+      expect((await read<ProblemBody>(refused)).violations).toBeNull();
     }
-    // Control: the same body succeeds once the rule holds, and the failures stored nothing.
+    // A BRANCH role with no branch is the request's own 400, naming the row's branch_id.
+    const noBranch = await invite(branchRole(null));
+    await expectProblem(noBranch, 400, 'validation_failed');
+    expect((await read<ProblemBody>(noBranch)).violations).toEqual([
+      expect.objectContaining({
+        field: 'role_assignments[0].branch_id',
+        code: 'BranchScopeRequiresBranch',
+      }),
+    ]);
+    // Control: the same body succeeds once the rule holds, and the refusals stored nothing.
     expect((await invite(branchRole(IDS.westlands))).status()).toBe(201);
     const users = await read<Paged<UserRow>>(await get('/tenant/users?q=neema'));
     expect(users.page.total_items).toBe(1);
+  });
+
+  test("takes a branch-scoped role at any ACTIVE branch, assigned or not (the platform's rule)", async ({
+    request,
+  }) => {
+    const { invite } = await signIn(request);
+    // Neema is assigned at Westlands only; the wizard refuses Head Office before sending.
+    const created = await invite({
+      ...BODY,
+      role_assignments: [
+        { role_id: USERS.supervisor, scope_type: 'BRANCH', branch_id: IDS.headOffice },
+      ],
+    });
+    expect(created.status()).toBe(201);
   });
 
   test('lets an auditor or a system member in with no branch', async ({ request }) => {

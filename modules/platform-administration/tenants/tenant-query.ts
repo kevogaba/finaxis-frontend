@@ -30,7 +30,7 @@ function instantParam(params: URLSearchParams, name: string): string | undefined
 }
 
 /** URL → validated directory query. Unknown statuses, countries, dates and sort fields are dropped,
- * never sent: an unknown `sort_by` is a backend 500, and an unknown filter value an empty page. */
+ * never sent: an unknown `sort_by` is a backend 400, and an unknown filter value an empty page. */
 export function parseTenantListQuery(params: URLSearchParams): TenantListQuery {
   const query: TenantListQuery = {
     ...parsePaging(params, DEFAULT_TENANT_PAGE_SIZE),

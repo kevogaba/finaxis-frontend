@@ -6,7 +6,7 @@ import {
   EMAIL_CHECK_REFUSED,
   emailCheckSchema,
   INVITE_CODES,
-  INVITE_FAILED,
+  INVITE_CONFLICT,
   INVITE_HREF,
   memberEmailMessage,
   MEMBERSHIP_TYPE_OPTIONS,
@@ -105,9 +105,9 @@ describe('an email already in use here (BG-28)', () => {
 });
 
 describe('copy that promises no more than the platform does', () => {
-  it('blames no one institution for a taken username, and says what approval decides (Ruling 3)', () => {
-    expect(INVITE_FAILED).toContain(
-      'may already belong to another account, here or in another institution',
+  it('names every cause a 409 can have, and says what approval decides (Ruling 3, BG-07)', () => {
+    expect(INVITE_CONFLICT).toContain(
+      "conflicts with an existing member or username, or the institution isn't active",
     );
     expect(REVIEW_NOTE).toContain('must approve it before they can use this institution.');
   });

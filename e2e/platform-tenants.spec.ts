@@ -257,8 +257,8 @@ test.describe('platform tenants', () => {
     await next(page, 'Review');
     await page.getByRole('button', { name: 'Create draft' }).click();
 
-    // BG-07: the create fails with the 500, the directory confirms the code, and the wizard
-    // returns to its step.
+    // BG-07: the create fails with the generic 409, the directory confirms the code, and the
+    // wizard returns to its step.
     await expect(page.getByRole('heading', { level: 2, name: 'Institution' })).toBeVisible();
     await expect(mainText(page, 'This code is already in use.')).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Tenant code' })).toBeFocused();
@@ -276,9 +276,11 @@ test.describe('platform tenants', () => {
 
     await expect(await act(page, 'Submit for approval')).toBeHidden();
     await expect(statusChip(page, 'Pending approval')).toBeVisible();
-    // Jane created and submitted it, so the platform refuses her approval (BG-08).
+    // Jane created and submitted it, so the platform refuses her approval by name (BG-08).
     const refused = await act(page, 'Approve');
-    await expect(refused.getByRole('alert')).toContainText('created or submitted the request');
+    await expect(refused.getByRole('alert')).toContainText(
+      'You requested or submitted this institution, so another platform administrator must decide it.',
+    );
   });
 
   test('approves a request another administrator submitted, and shows provisioning queued', async ({
@@ -310,15 +312,37 @@ test.describe('platform tenants', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'platform-tenants');
     await openDirectory(page);
-    await openRecord(page, 'Institutions', 'Mwangaza Savings SACCO');
+    // Another operator requested and submitted Harambee, so Jane may decide it.
+    await openRecord(page, 'Institutions', 'Harambee Farmers SACCO');
 
     await expect(await act(page, 'Reject', 'Duplicate of another request')).toBeHidden();
     // REJECTED offers nothing, so the actions unmount and their cleanup focuses the title.
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Mwangaza Savings SACCO' }),
+      page.getByRole('heading', { level: 1, name: 'Harambee Farmers SACCO' }),
     ).toBeFocused();
     await expect(statusChip(page, 'Rejected')).toBeVisible();
     await expect(page.getByRole('button', { name: /^(Approve|Reject)$/ })).toHaveCount(0);
+  });
+
+  test("names the platform's refusal of its submitter's reject, keeping the typed reason (BG-08)", async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'platform-tenants');
+    await openDirectory(page);
+    // Jane submitted Mwangaza, so the platform refuses her decision by name.
+    await openRecord(page, 'Institutions', 'Mwangaza Savings SACCO');
+
+    const dialog = await act(page, 'Reject', 'Duplicate of another request');
+    await expect(dialog.getByRole('alert')).toContainText(
+      'You requested or submitted this institution, so another platform administrator must decide it.',
+    );
+    await expect(dialog.getByRole('textbox', { name: /^Reason/ })).toHaveValue(
+      'Duplicate of another request',
+    );
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(statusChip(page, 'Pending approval')).toBeVisible();
   });
 
   test('suspends an institution with a reason and reactivates it', async ({
