@@ -28,6 +28,7 @@ const MEMBERSHIP_UNAVAILABLE =
   "This user's membership couldn't be loaded, so its actions aren't available. Refresh to try again.";
 const OWN_MEMBERSHIP =
   "You can't suspend or revoke your own membership. Ask another administrator.";
+const OWN_ACCESS = "You can't add to your own access. A tenant administrator can.";
 const USER_MAKER_CHECKER_BLOCKED =
   'You invited this user, so another administrator must approve them.';
 const MEMBERSHIP_CHANGED =
@@ -537,6 +538,52 @@ test.describe('users: directory and lifecycle', () => {
       await expect(button).toHaveAccessibleDescription(OWN_MEMBERSHIP);
     }
     await expect(mainText(page, OWN_MEMBERSHIP)).toBeVisible();
+  });
+
+  // #342: `users-self` is Jane without user.assign_self (an IAM_ADMIN shape) on her own record.
+  test('disables Assign role and Assign branch on your own record, and says why', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users-self');
+    await enterUser(page, IDS.jane, 'Backend Jane Manager');
+
+    await openTab(page, 'Roles & access');
+    const role = page.getByRole('button', { name: 'Assign role' });
+    await expect(role).toBeDisabled();
+    await expect(role).toHaveAccessibleDescription(OWN_ACCESS);
+    await openTab(page, 'Branch assignments');
+    const branch = page.getByRole('button', { name: 'Assign branch' });
+    await expect(branch).toBeDisabled();
+    await expect(branch).toHaveAccessibleDescription(OWN_ACCESS);
+
+    // Someone else's record offers both (the control).
+    await openUser(page, USERS.felix, 'Felix Omondi');
+    await openTab(page, 'Branch assignments');
+    await expect(page.getByRole('button', { name: 'Assign branch' })).toBeEnabled();
+  });
+
+  test('leaves you out of the branch Assign user search when you cannot assign yourself', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users-self');
+    await enterAdmin(page, `/admin/branches/${IDS.westlands}/users`, {
+      heading: 'Westlands Branch',
+      branch: ALL_BRANCHES,
+    });
+
+    await press(page.getByRole('button', { name: 'Assign user' }));
+    const user = page.getByRole('dialog', { name: 'Assign a user' }).getByRole('combobox', {
+      name: /^User/,
+    });
+    await user.fill('felix');
+    await expect(page.getByRole('option', { name: /Felix Omondi/ })).toBeVisible();
+    // The search matches Jane (the audit actor filter picks her the same way), but she is left out.
+    await user.fill('Backend Jane');
+    await expect(
+      page.locator('.MuiAutocomplete-popper').getByText('No matching users', { exact: true }),
+    ).toBeVisible();
   });
 
   test("shows each user's own membership facts, even when emails nest", async ({
@@ -1355,6 +1402,25 @@ test.describe('users: accessibility', () => {
       ] as const) {
         await openTab(page, tab);
         await expect(rowsOf(page, table)).toHaveCount(2);
+        await expectA11yCaseApplied(page, a11yCase);
+        await expectNoSeriousOrCriticalViolations(page);
+      }
+    });
+
+    // #342: the disabled Assign role and Assign branch with their reasons, on your own record.
+    test(`has no serious or critical accessibility violations where your own access is blocked (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
+      context,
+      page,
+    }, testInfo) => {
+      await applyA11yCase(page, a11yCase);
+      await authenticate(context, testInfo, 'users-self');
+      await enterUser(page, IDS.jane, 'Backend Jane Manager');
+      for (const [tab, label] of [
+        ['Roles & access', 'Assign role'],
+        ['Branch assignments', 'Assign branch'],
+      ] as const) {
+        await openTab(page, tab);
+        await expect(page.getByRole('button', { name: label })).toBeDisabled();
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);
       }

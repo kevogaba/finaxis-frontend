@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { requireContext, requirePermission, requireTenantContext } from '../access.mts';
+import {
+  requireAssignSelf,
+  requireContext,
+  requirePermission,
+  requireTenantContext,
+} from '../access.mts';
 import type { AccessContext } from '../access.mts';
 import { recordAuditEvent } from '../audit-log.mts';
 import {
@@ -298,6 +303,9 @@ export const branchRoutes: Route[] = [
       access,
       stringField(body, 'branch_id', { required: true }) ?? '',
     );
+    // #342: after the route's own check (the branch's existence is part of it), before the user,
+    // organisation and membership lookups.
+    requireAssignSelf(access, userId === access.claims.userId);
     sendIdempotent(
       context,
       body,

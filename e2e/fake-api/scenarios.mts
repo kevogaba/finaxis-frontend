@@ -49,6 +49,8 @@ export const TENANT_ADMIN_PERMISSIONS = [
   'cob.start',
   'cob.complete',
   'settings.update',
+  // Only the seeded administrators hold it (V39, #342): it lets them add to their own access.
+  'user.assign_self',
 ];
 
 export const PLATFORM_ADMIN_PERMISSIONS = [
@@ -680,6 +682,7 @@ export const ROLE_SCENARIO_IDS = {
   graceTellerAtWestlands: '09000000-0000-4000-8000-00000000000c',
   tomTeller: '09000000-0000-4000-8000-00000000000d',
   janeCompliance: '09000000-0000-4000-8000-00000000000e',
+  janeLoansOfficer: '09000000-0000-4000-8000-00000000000f',
 } as const;
 
 /** Real TENANT_ADMIN codes (contract §J), granted only in this scenario so `default` stays the
@@ -1911,6 +1914,20 @@ const BUILDERS = {
       'role_assignment.view',
       'audit.view',
     ),
+  // #342: Jane as an IAM_ADMIN-shaped member, the role codes without user.assign_self, who also
+  // holds the DISABLED Loans officer: she can't add to her own access.
+  'roles-self': () => {
+    const state = withoutPermission(rolesScenario(), 'user.assign_self');
+    state.roleAssignments.push(
+      tenantRoleAssignment(
+        ROLE_SCENARIO_IDS.janeLoansOfficer,
+        IDS.greenfield,
+        IDS.jane,
+        ROLE_SCENARIO_IDS.loansOfficer,
+      ),
+    );
+    return state;
+  },
   // Layer 16 (platform tenants).
   'platform-tenants': platformTenantsScenario,
   // Layer 10 (users). `users-limited` lacks the membership read and audit; `users-read-only` lacks
@@ -1918,6 +1935,8 @@ const BUILDERS = {
   users: usersScenario,
   'users-limited': () => withoutPermission(usersScenario(), 'membership.view', 'audit.view'),
   'users-read-only': () => withoutPermission(usersScenario(), ...USER_ADMIN_CODES),
+  // #342: the same, with Jane IAM_ADMIN-shaped (no user.assign_self) on her own record.
+  'users-self': () => withoutPermission(usersScenario(), 'user.assign_self'),
   // 500 ACTIVE filler rows appended after the seeds (the fake pages in insertion order): Felix's row
   // is on page 0 and page 4 still has more, so the scan is truncated (Ruling 8's partial marker).
   'users-many-assignments': () => {

@@ -1,4 +1,11 @@
-import { can, canAll, canAllTenantWide, canAny, type PermissionHolder } from '@/auth/permissions';
+import {
+  can,
+  canAll,
+  canAllTenantWide,
+  canAny,
+  ownAccessBlocked,
+  type PermissionHolder,
+} from '@/auth/permissions';
 import { withViews } from '@/auth/permission-views';
 import { humanizeEnum, type StatusTone } from '@/components/data-display/status-chip';
 import { UUID_PATTERN, type Page } from '@/lib/api/wire';
@@ -260,16 +267,35 @@ export function membershipActionsNote(
   return lookup === 'failed' ? MEMBERSHIP_UNAVAILABLE : null;
 }
 
+export const OWN_ACCESS = "You can't add to your own access. A tenant administrator can.";
+
+// Client components import the role rules, so the rule itself lives in auth/permissions.ts.
+export { ownAccessBlocked };
+
 /** A REVOKED membership takes no assignment (409). The write needs its views (ADR 0030); the
- * role select reads the role index, which needs `role.view`. */
-export function canAssignUserRole(status: MembershipStatus, holder: PermissionHolder): boolean {
-  return status !== 'REVOKED' && canAll(holder, [...withViews(['user.assign_role']), 'role.view']);
+ * role select reads the role index, which needs `role.view`. `self`: the record is the caller's. */
+export function canAssignUserRole(
+  status: MembershipStatus,
+  holder: PermissionHolder,
+  self: boolean,
+): boolean {
+  return (
+    status !== 'REVOKED' &&
+    canAll(holder, [...withViews(['user.assign_role']), 'role.view']) &&
+    !ownAccessBlocked(self, holder)
+  );
 }
 
 /** The write needs its views (ADR 0030); the branch select needs `branch.view`. */
-export function canAssignUserBranch(status: MembershipStatus, holder: PermissionHolder): boolean {
+export function canAssignUserBranch(
+  status: MembershipStatus,
+  holder: PermissionHolder,
+  self: boolean,
+): boolean {
   return (
-    status !== 'REVOKED' && canAll(holder, [...withViews(['user.assign_branch']), 'branch.view'])
+    status !== 'REVOKED' &&
+    canAll(holder, [...withViews(['user.assign_branch']), 'branch.view']) &&
+    !ownAccessBlocked(self, holder)
   );
 }
 

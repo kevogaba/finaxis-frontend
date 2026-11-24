@@ -1,4 +1,5 @@
 import type { BackendProfile } from './context.types';
+import { withViews } from './permission-views';
 
 /**
  * Permission checks over the sanitized FinaxisUser's effective permission codes (from
@@ -44,4 +45,11 @@ export function canTenantWide(holder: PermissionHolder, code: string): boolean {
 
 export function canAllTenantWide(holder: PermissionHolder, codes: readonly string[]): boolean {
   return codes.every((code) => canTenantWide(holder, code));
+}
+
+/** Adding to your own access (a role or a branch for yourself, a permission to or re-enabling a
+ * role you hold) also needs `user.assign_self` and its view tenant-wide, which only the seeded
+ * administrators hold (platform #342, ADR 0044). */
+export function ownAccessBlocked(self: boolean, holder: PermissionHolder): boolean {
+  return self && !canAllTenantWide(holder, withViews(['user.assign_self']));
 }

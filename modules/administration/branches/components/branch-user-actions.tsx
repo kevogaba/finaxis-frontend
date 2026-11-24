@@ -18,6 +18,9 @@ import { BRANCH_ASSIGNMENT_TYPES } from '../branch-contract';
 interface AssignBranchUserButtonProps {
   branchId: string;
   branchName: string;
+  /** Left out of the user search: the signed-in user, where they can't add to their own access
+   * (#342). */
+  excludeUserId?: string;
   /** I2: the organisation the page rendered for; forwarded to the drawer as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -25,6 +28,7 @@ interface AssignBranchUserButtonProps {
 export function AssignBranchUserButton({
   branchId,
   branchName,
+  excludeUserId,
   contextOrganisationId,
 }: AssignBranchUserButtonProps) {
   const notify = useToast();
@@ -58,7 +62,13 @@ export function AssignBranchUserButton({
         {(fieldErrors) => (
           <>
             <input type="hidden" name="branchId" value={branchId} />
-            <UserPicker name="userId" label="User" required error={fieldErrors.userId} />
+            <UserPicker
+              name="userId"
+              label="User"
+              required
+              error={fieldErrors.userId}
+              excludeUserId={excludeUserId}
+            />
             <TextField
               select
               name="assignmentType"

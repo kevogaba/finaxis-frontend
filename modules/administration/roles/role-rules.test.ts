@@ -10,6 +10,7 @@ import {
   canRevokeRoleAssignments,
   grantableOptions,
   groupByModule,
+  HELD_ROLE,
   isAssignmentRevocable,
   moduleLabel,
   neededByNames,
@@ -54,29 +55,35 @@ describe('role rules', () => {
     ['DISABLED', 'activate'],
     ['ARCHIVED', 'activate'],
   ] as const)('a custom %s role offers %s (any state → ACTIVE / DISABLED)', (status, expected) => {
-    expect(roleStatusAction({ systemRole: false, status }, wide(ALL))).toBe(expected);
+    expect(roleStatusAction({ systemRole: false, status }, wide(ALL), false)).toBe(expected);
   });
 
   it('hides every mutation of a system role (contract §E.3: 409), but still assigns it', () => {
     const holder = { permissions: ALL, tenantPermissions: ALL };
-    expect(roleStatusAction(SYSTEM, holder)).toBeNull();
+    expect(roleStatusAction(SYSTEM, holder, false)).toBeNull();
     expect(canEditRole(SYSTEM, holder)).toBe(false);
-    expect(canGrantPermissions(SYSTEM, holder)).toBe(false);
+    expect(canGrantPermissions(SYSTEM, holder, false)).toBe(false);
     expect(canRemovePermissions(SYSTEM, holder)).toBe(false);
     expect(canAssignRole(SYSTEM, holder)).toBe(true);
   });
 
   it('needs each code plus role.view for the read-back (BG-31)', () => {
-    expect(roleStatusAction(CUSTOM, wide(['role.deactivate']))).toBeNull();
-    expect(roleStatusAction(CUSTOM, wide(['role.view', 'role.activate']))).toBeNull();
+    expect(roleStatusAction(CUSTOM, wide(['role.deactivate']), false)).toBeNull();
+    expect(roleStatusAction(CUSTOM, wide(['role.view', 'role.activate']), false)).toBeNull();
     expect(canEditRole(CUSTOM, wide(['role.update']))).toBe(false);
     expect(canEditRole(CUSTOM, wide(['role.update', 'role.view']))).toBe(true);
     expect(canCreateRole(wide(['role.create']))).toBe(false);
     expect(canCreateRole(wide(['role.create', 'role.view']))).toBe(true);
     // The grant drawer browses the catalogue, so it needs permission.view too.
-    expect(canGrantPermissions(CUSTOM, wide(['role.assign_permission', 'role.view']))).toBe(false);
+    expect(canGrantPermissions(CUSTOM, wide(['role.assign_permission', 'role.view']), false)).toBe(
+      false,
+    );
     expect(
-      canGrantPermissions(CUSTOM, wide(['role.assign_permission', 'role.view', 'permission.view'])),
+      canGrantPermissions(
+        CUSTOM,
+        wide(['role.assign_permission', 'role.view', 'permission.view']),
+        false,
+      ),
     ).toBe(true);
     expect(canRemovePermissions(CUSTOM, wide(['role.remove_permission']))).toBe(false);
     expect(canRemovePermissions(CUSTOM, wide(['role.remove_permission', 'role.view']))).toBe(true);
@@ -92,11 +99,37 @@ describe('role rules', () => {
     const holder = { permissions: codes, tenantPermissions: codes.filter((c) => c !== branchOnly) };
     expect(canEditRole(CUSTOM, holder)).toBe(false);
     if (branchOnly === 'role.view') {
-      expect(roleStatusAction(CUSTOM, holder)).toBeNull();
+      expect(roleStatusAction(CUSTOM, holder, false)).toBeNull();
       expect(canCreateRole(holder)).toBe(false);
-      expect(canGrantPermissions(CUSTOM, holder)).toBe(false);
+      expect(canGrantPermissions(CUSTOM, holder, false)).toBe(false);
       expect(canRemovePermissions(CUSTOM, holder)).toBe(false);
     }
+  });
+
+  // Platform #342 (ADR 0044): adding a permission to, or re-enabling, a role you hold also needs
+  // user.assign_self (and its view) tenant-wide; only the seeded administrators hold it.
+  it('blocks granting to, or re-enabling, a role you hold without user.assign_self', () => {
+    const disabled = { systemRole: false, status: 'DISABLED' } as const;
+    const iamAdmin = { permissions: ALL, tenantPermissions: ALL };
+    expect(canGrantPermissions(CUSTOM, iamAdmin, true)).toBe(false);
+    expect(roleStatusAction(disabled, iamAdmin, true)).toBeNull();
+    // Deactivating a role you hold takes nothing from anyone's reach.
+    expect(roleStatusAction(CUSTOM, iamAdmin, true)).toBe('deactivate');
+    // A role you don't hold, or a holder with user.assign_self tenant-wide, is unaffected.
+    expect(canGrantPermissions(CUSTOM, iamAdmin, false)).toBe(true);
+    expect(roleStatusAction(disabled, iamAdmin, false)).toBe('activate');
+    const admin = {
+      permissions: [...ALL, 'user.assign_self'],
+      tenantPermissions: [...ALL, 'user.assign_self'],
+    };
+    expect(canGrantPermissions(CUSTOM, admin, true)).toBe(true);
+    expect(roleStatusAction(disabled, admin, true)).toBe('activate');
+    // Held only at branch scope, it doesn't count.
+    const branchScoped = { permissions: admin.permissions, tenantPermissions: ALL };
+    expect(canGrantPermissions(CUSTOM, branchScoped, true)).toBe(false);
+    expect(HELD_ROLE).toBe(
+      'You hold this role, so adding to it or re-enabling it needs a tenant administrator.',
+    );
   });
 
   it('assigns only ACTIVE roles, with the user search; revokes with the read-back', () => {
@@ -219,6 +252,19 @@ describe('the grant drawer and Remove (ADR 0030)', () => {
   it('offers only ACTIVE tenant-scope codes the role lacks', () => {
     const offered = grantableOptions(CATALOGUE, new Set(['role.view']));
     expect(offered.map((item) => item.name)).toEqual(['View branch', 'Create branch']);
+  });
+
+  it('never offers user.assign_self, which every role refuses (422, #342)', () => {
+    const withSelf = [
+      ...CATALOGUE,
+      entry('user.assign_self', 'Assign self', {
+        kind: 'MUTATION',
+        requiredViewPermissions: ['user.view'],
+      }),
+    ];
+    expect(grantableOptions(withSelf, new Set()).map((item) => item.code)).not.toContain(
+      'user.assign_self',
+    );
   });
 
   it('names the granted ACTIVE mutations that need a view, never a DEPRECATED one', () => {

@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
+import AddModeratorOutlined from '@mui/icons-material/AddModeratorOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { permissionHolder } from '@/auth/permissions';
+import { can, permissionHolder } from '@/auth/permissions';
+import { BlockedButton } from '@/components/data-display/blocked-button';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -17,11 +19,13 @@ import {
   canGrantPermissions,
   canRemovePermissions,
   grantableOptions,
+  HELD_ROLE,
   neededByNames,
 } from '@/modules/administration/roles/role-rules';
 import {
   getPermissionCatalogue,
   getRole,
+  holdsRole,
   listGrantedCodes,
   listRolePermissions,
 } from '@/modules/administration/roles/role-service';
@@ -53,10 +57,22 @@ export default async function RolePermissionsPage({
 
   const record = role.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
-  const holder = permissionHolder(resolved?.profile);
+  const profile = resolved?.profile;
+  const holder = permissionHolder(profile);
   // I2: the organisation this page rendered with, carried by every mutation surface below.
   const contextOrganisationId = resolved?.context.organization.id;
-  const canGrant = catalogue !== null && canGrantPermissions(record, holder);
+  const offered = canGrantPermissions(record, holder, false);
+  // Whether you hold it, as the layout reads it (#342; one cached read for a DISABLED role).
+  const heldByMe =
+    offered &&
+    profile !== undefined &&
+    (profile.roles.some((held) => held.id === record.id) ||
+      (record.status === 'DISABLED' &&
+        can(holder, 'role_assignment.view') &&
+        (await holdsRole(record.id, profile.user_id))));
+  const canGrant = catalogue !== null && canGrantPermissions(record, holder, heldByMe);
+  // Offered to your codes but refused because you hold it: shown disabled with the reason.
+  const grantBlocked = offered && !canGrantPermissions(record, holder, heldByMe);
   const canRemove = canRemovePermissions(record, holder);
   // One bounded read, only when the drawer or Remove is on offer (Ruling 6): Remove needs it to
   // know which views a granted mutation still needs.
@@ -78,6 +94,12 @@ export default async function RolePermissionsPage({
             available={grantableOptions(catalogue.items, granted)}
             truncated={catalogue.page.hasNext}
             contextOrganisationId={contextOrganisationId}
+          />
+        ) : grantBlocked ? (
+          <BlockedButton
+            label="Grant permissions"
+            reason={HELD_ROLE}
+            startIcon={<AddModeratorOutlined />}
           />
         ) : undefined
       }

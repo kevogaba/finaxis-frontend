@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { permissionHolder } from '@/auth/permissions';
+import { ownAccessBlocked, permissionHolder } from '@/auth/permissions';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -56,6 +56,10 @@ export default async function BranchUsersPage({ params, searchParams }: BranchUs
           <AssignBranchUserButton
             branchId={branchId}
             branchName={record.branchName}
+            // Only a tenant administrator may assign themselves (#342).
+            excludeUserId={
+              ownAccessBlocked(true, holder) ? (signedInUserId ?? undefined) : undefined
+            }
             contextOrganisationId={contextOrganisationId}
           />
         ) : undefined

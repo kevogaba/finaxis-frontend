@@ -17,6 +17,9 @@ interface UserPickerProps {
   onChange?: (user: TenantUserOption | null) => void;
   /** Seeds the initial selection (uncontrolled): an edit form pre-filling an existing user. */
   defaultValue?: TenantUserOption | null;
+  /** Left out of the matches: the signed-in user, where they can't add to their own access
+   * (#342). */
+  excludeUserId?: string;
 }
 
 class SearchFailed extends Error {
@@ -45,6 +48,7 @@ export function UserPicker({
   helperText,
   onChange,
   defaultValue,
+  excludeUserId,
 }: UserPickerProps) {
   const [open, setOpen] = useState(false);
   // Autocomplete itself seeds its displayed input text from this same `value` prop at mount
@@ -64,7 +68,7 @@ export function UserPicker({
       setFailure(null);
       searchUsers(input.trim(), controller.signal)
         .then((items) => {
-          setOptions(items);
+          setOptions(items.filter((item) => item.id !== excludeUserId));
           setFailure(null);
         })
         .catch((caught: unknown) => {
@@ -86,7 +90,7 @@ export function UserPicker({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [input, open]);
+  }, [input, open, excludeUserId]);
 
   return (
     <>
