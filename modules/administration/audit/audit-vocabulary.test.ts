@@ -50,6 +50,13 @@ describe('audit vocabulary', () => {
     );
   });
 
+  it('names a membership edit (BG-17)', () => {
+    expect(actionLabel('membership.update')).toBe('Edited membership');
+    expect(actionsForEntityType('MEMBERSHIP').map((action) => action.value)).toContain(
+      'membership.update',
+    );
+  });
+
   it('labels entity types', () => {
     expect(entityTypeLabel('USER_ROLE_ASSIGNMENT')).toBe('Role assignment');
     expect(entityTypeLabel('GL_ACCOUNT')).toBe('Gl account');

@@ -159,6 +159,40 @@ describe('ReasonDialog', () => {
     expect(keyOf(secondFormData)).toBe(keyOf(action.mock.calls[0]?.[1]));
   });
 
+  // BG-17: Edit membership's route takes no reason, so its fields are the whole form.
+  it('renders no reason field for reason="none", submitting the fields alone', async () => {
+    const user = userEvent.setup();
+    const action = vi.fn((_previous: ActionResult | null, _formData: FormData) =>
+      Promise.resolve<ActionResult>({ ok: true }),
+    );
+    const onSuccess = vi.fn();
+    renderWithProviders(
+      <ReasonDialog
+        open
+        title="Edit the membership"
+        description="Change the type."
+        confirmLabel="Save"
+        reason="none"
+        action={action}
+        onClose={vi.fn()}
+        onSuccess={onSuccess}
+        fields={() => <TextField name="note" label="Note" />}
+      />,
+    );
+
+    expect(screen.queryByRole('textbox', { name: /^Reason/ })).not.toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Note' }), 'Moved');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
+    const formData = action.mock.calls[0]?.[1];
+    expect(formData?.get('note')).toBe('Moved');
+    expect(formData?.has('reason')).toBe(false);
+    expect(keyOf(formData)).toMatch(UUID_PATTERN);
+  });
+
   it('marks a required reason as required', () => {
     renderWithProviders(
       <ReasonDialog

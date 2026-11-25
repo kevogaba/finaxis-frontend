@@ -255,11 +255,13 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
   }) => {
     const { get, invite, revoke } = await signIn(request);
     const membershipPath = `/tenant/memberships/${USERS.estherMembership}`;
-    // Esther's identity was provisioned when she first joined; revoking her keeps that dispatch.
+    // Esther's identity was provisioned when she first joined; revoking her keeps that dispatch,
+    // and her member number (BG-17, ADR 0040).
     expect((await revoke(USERS.estherMembership)).status()).toBe(200);
     expect(await read(await get(membershipPath))).toMatchObject({
       membership_status: 'REVOKED',
       invitation: { status: 'COMPLETED', attempts: 1 },
+      member_number: 3,
     });
 
     const created = await invite({ ...BODY, email: 'esther.njoki@greenfield.example' });
@@ -268,7 +270,8 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
       membership_id: USERS.estherMembership,
       user_status: 'INVITED',
     });
-    // Nothing of the new life has been queued: it awaits approval, as a first invitation does.
+    // Nothing of the new life has been queued: it awaits approval, as a first invitation does. The
+    // re-invite keeps her number.
     expect(await read(await get(membershipPath))).toMatchObject({
       membership_status: 'PENDING_APPROVAL',
       invitation: {
@@ -277,6 +280,7 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
         last_error_code: null,
         updated_at: null,
       },
+      member_number: 3,
     });
   });
 

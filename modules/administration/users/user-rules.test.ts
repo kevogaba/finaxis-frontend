@@ -31,6 +31,7 @@ import {
   branchAssignmentsEmptyState,
   canAssignUserBranch,
   canAssignUserRole,
+  canEditMembership,
   invitationErrorText,
   invitationFacts,
   membershipActionsNote,
@@ -39,6 +40,7 @@ import {
   onboardingState,
   ownAccessBlocked,
   parseUserId,
+  primaryBranchHint,
   roleScopeBranches,
   roleScopeHint,
   rolesCappedHint,
@@ -914,6 +916,71 @@ describe('role and branch assignment gates', () => {
     expect(canAssignUserRole('ACTIVE', iamAdmin, false)).toBe(true);
     expect(canAssignUserBranch('ACTIVE', iamAdmin, false)).toBe(true);
     expect(OWN_ACCESS).toBe("You can't add to your own access. A tenant administrator can.");
+  });
+});
+
+// BG-17 (platform #161): ProfileUpdateService.updateMembership checks membership.update and its
+// view tenant-wide, refuses REVOKED and SYSTEM (422), and has no self rule.
+describe('canEditMembership', () => {
+  const EDITOR = ['membership.update', 'membership.view'];
+  const active = { membershipStatus: 'ACTIVE', membershipType: 'STAFF' } as const;
+
+  it('offers the edit to a tenant-wide holder of membership.update and its view', () => {
+    expect(canEditMembership(active, wide(EDITOR))).toBe(true);
+  });
+
+  it.each(['PENDING_APPROVAL', 'SUSPENDED'] as const)('offers it for a %s membership', (status) => {
+    expect(canEditMembership({ ...active, membershipStatus: status }, wide(EDITOR))).toBe(true);
+  });
+
+  it.each(['ADMIN', 'AUDITOR'] as const)('offers it for an %s membership', (type) => {
+    expect(canEditMembership({ ...active, membershipType: type }, wide(EDITOR))).toBe(true);
+  });
+
+  it('never offers it for a revoked or a system membership (422)', () => {
+    expect(canEditMembership({ ...active, membershipStatus: 'REVOKED' }, wide(EDITOR))).toBe(false);
+    expect(canEditMembership({ ...active, membershipType: 'SYSTEM' }, wide(EDITOR))).toBe(false);
+  });
+
+  // Review Focus 3: a mutation held without its view, or only at the selected branch.
+  it.each([
+    ['membership.update without membership.view', wide(['membership.update'])],
+    ['membership.view alone', wide(['membership.view'])],
+    ['both held only at the selected branch', { permissions: EDITOR, tenantPermissions: [] }],
+    [
+      'membership.update held only at the selected branch',
+      { permissions: EDITOR, tenantPermissions: ['membership.view'] },
+    ],
+  ])('hides it for %s', (_case, holder) => {
+    expect(canEditMembership(active, holder)).toBe(false);
+  });
+});
+
+describe('primaryBranchHint', () => {
+  it('says what the primary branch is when every active branch is listed', () => {
+    expect(primaryBranchHint({ read: 'listed', truncated: false, scoped: false })).toBe(
+      'Shown on their record as their main branch.',
+    );
+  });
+
+  it('says when only the first page, or only the branches you can view, are listed', () => {
+    expect(primaryBranchHint({ read: 'listed', truncated: true, scoped: true })).toBe(
+      'Shown on their record as their main branch. Only the first 100 active branches are listed. Only branches you can view are shown.',
+    );
+  });
+
+  it('says only the current branch or None can be chosen when none could be read', () => {
+    expect(primaryBranchHint({ read: 'unread', truncated: false, scoped: false })).toBe(
+      "Branches can't be listed here, so you can keep the current primary branch or choose None.",
+    );
+  });
+
+  // A failed read is not a missing `branch.view`: it says the read failed and to refresh.
+  it('says the branches could not be loaded when the read failed, scoped or not', () => {
+    const failed =
+      "Branches couldn't be loaded. You can keep the current primary branch or choose None; refresh to try again.";
+    expect(primaryBranchHint({ read: 'failed', truncated: false, scoped: false })).toBe(failed);
+    expect(primaryBranchHint({ read: 'failed', truncated: false, scoped: true })).toBe(failed);
   });
 });
 

@@ -1,3 +1,4 @@
+import { numberSeededMembers } from './member-number.mts';
 import type {
   FakeAuditEvent,
   FakeBranch,
@@ -1084,6 +1085,8 @@ const USER_ADMIN_CODES = [
   'user.revoke_role',
   'user.assign_branch',
   'user.revoke_branch',
+  // V32 (platform #161): the seeded TENANT_ADMIN edits a membership's type and primary branch.
+  'membership.update',
 ];
 
 /** 100 characters: the backend's display-name maximum (contract §D). */
@@ -1279,6 +1282,10 @@ function usersScenario(): RunState {
         primaryBranchId: IDS.westlands,
       }),
       member(ids.gladysMembership, ids.gladys, 'STAFF', 'SUSPENDED'),
+      // Hassan was rejected and revoked here before his approval: never active in Greenfield, so
+      // no member number (V35 numbers only a membership that was), and no identity dispatch of
+      // its own, since his account was already ACTIVE through another institution. His HOME
+      // assignment and Teller grant were revoked with the membership. A re-invite keeps the null.
       member(ids.hassanMembership, ids.hassan, 'STAFF', 'REVOKED'),
       member(ids.wanjiruMembership, ids.wanjiru, 'AUDITOR', 'ACTIVE'),
       member(ids.annMembership, ids.ann, 'ADMIN', 'ACTIVE'),
@@ -2604,5 +2611,7 @@ export function seedScenario(name: string): RunState {
   if (!build) {
     throw new Error(`Unknown fake API scenario "${name}".`);
   }
-  return build();
+  const state = build();
+  numberSeededMembers(state.memberships);
+  return state;
 }

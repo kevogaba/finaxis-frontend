@@ -70,6 +70,9 @@ export interface FakeMembership {
   invitedBy?: string;
   /** Its identity-provisioning dispatch (BG-11); absent = none recorded. */
   dispatch?: FakeDispatch;
+  /** `member_number` (BG-17, ADR 0040): taken at the first activation and kept for life; absent =
+   * `null`, never activated. */
+  memberNumber?: number;
 }
 
 export interface FakeBranch {

@@ -13,20 +13,27 @@ import { load, type Loaded } from '@/lib/api/load';
 import { getBranchIndex, getOrganisationTimeZone } from '@/lib/api/lookups';
 import type { ProblemView } from '@/lib/api/problem';
 import { formatInstant, shortId } from '@/lib/format';
+import { makerLabel } from '@/modules/administration/approvals/components/request-facts';
+import { scopedBranchView } from '@/modules/administration/branches/branch-rules';
+import { listBranches } from '@/modules/administration/branches/branch-service';
 import {
   roleAssignmentCount,
   scopedRoleAssignmentView,
 } from '@/modules/administration/roles/role-rules';
+import { EditMembershipButton } from '@/modules/administration/users/components/edit-membership-button';
 import { OnboardingTimeline } from '@/modules/administration/users/components/onboarding-timeline';
 import type { MembershipDetail } from '@/modules/administration/users/user-contract';
 import {
   availableMembershipActions,
   branchAssignmentCount,
+  canEditMembership,
   invitationFacts,
   onboardingProgress,
   parseUserId,
+  primaryBranchHint,
   scopedAssignmentView,
   userStatusLabel,
+  type SelectOption,
 } from '@/modules/administration/users/user-rules';
 import {
   countUserBranchAssignments,
@@ -51,16 +58,32 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
   if (!user.ok) return null; // the layout renders the failure
 
   const record = user.value;
-  const holder = permissionHolder(selected.kind === 'resolved' ? selected.profile : undefined);
+  const resolved = selected.kind === 'resolved' ? selected : null;
+  const holder = permissionHolder(resolved?.profile);
+  // BG-17: Edit membership, decided from the user read (it carries the status and the type), so
+  // its Primary branch options are read beside the membership. ponytail: one page of 100 ACTIVE
+  // branches by name, as the Assign-branch drawer reads them (AGENTS.md's fifth exception); a
+  // branch-scoped `branch.view` lists its own (BG-03), and without one none are listed.
+  const editable = canEditMembership(record, holder);
   // The membership by the id the user read carries (BG-09). null: not permitted (a count's row is
   // left out, the card says so). A Loaded failure: permitted, but the read failed.
   // The platform checks the membership read tenant-wide (BG-33), and the assignment search by user
   // against every branch a grant covers, whichever branch is selected (BG-03).
-  const [membership, roleCount, branchCount] = await Promise.all([
+  const [membership, roleCount, branchCount, activeBranches] = await Promise.all([
     canTenantWide(holder, 'membership.view') ? load(getMembership(record.membershipId)) : null,
     can(holder, 'role_assignment.view') ? load(countUserRoleAssignments(record.id)) : null,
     canAnywhere(holder, 'branch_assignment.view')
       ? load(countUserBranchAssignments(record.id))
+      : null,
+    editable && canAnywhere(holder, 'branch.view')
+      ? load(
+          listBranches({
+            status: 'ACTIVE',
+            sort: { by: 'branchName', dir: 'ASC' },
+            page: 0,
+            size: 100,
+          }),
+        )
       : null,
   ]);
   // BG-11: where the identity provisioning stands, from the membership read (null: unknown).
@@ -73,6 +96,50 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
   const at = (iso: string) => {
     const when = formatInstant(iso, timeZone);
     return `${when.date} · ${when.time}`;
+  };
+  const branchLabel = (id: string) => {
+    const branch = branches.get(id);
+    return branch ? `${branch.name} (${branch.code})` : shortId(id);
+  };
+  const me = resolved?.profile.user_id ?? '';
+
+  /** The card's Edit membership, on the membership as read: the user read decided the branch read,
+   * and a membership revoked meanwhile offers nothing. */
+  const editAction = (detail: MembershipDetail): ReactNode => {
+    if (!editable || detail.type === 'SYSTEM' || detail.status === 'REVOKED') return undefined;
+    const listed: SelectOption[] = activeBranches?.ok
+      ? activeBranches.value.items.map((branch) => ({
+          id: branch.id,
+          label: `${branch.branchName} (${branch.branchCode})`,
+        }))
+      : [];
+    // The current branch stays on offer when the page didn't list it (none listed, past the page,
+    // out of a scoped view, or no longer ACTIVE), so keeping it sends nothing.
+    const current = detail.primaryBranchId;
+    // A failed read says so, apart from a holder with no `branch.view`, for whom none was made.
+    let branchRead: 'listed' | 'failed' | 'unread' = 'unread';
+    if (activeBranches) branchRead = activeBranches.ok ? 'listed' : 'failed';
+    const options =
+      current === null || listed.some((option) => option.id === current)
+        ? listed
+        : [...listed, { id: current, label: branchLabel(current) }].sort((a, b) =>
+            a.label.localeCompare(b.label),
+          );
+    return (
+      <EditMembershipButton
+        membershipId={detail.id}
+        userName={record.displayName}
+        membershipType={detail.type}
+        primaryBranchId={current}
+        branches={options}
+        branchHint={primaryBranchHint({
+          read: branchRead,
+          truncated: activeBranches?.ok === true && activeBranches.value.page.hasNext,
+          scoped: scopedBranchView(holder),
+        })}
+        contextOrganisationId={resolved?.context.organization.id}
+      />
+    );
   };
 
   const profileItems: DescriptionItem[] = [
@@ -111,8 +178,11 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
       <SectionCard title="Profile">
         <DescriptionList items={profileItems} />
       </SectionCard>
-      <SectionCard title="Membership">
-        {membershipBody(membership, branches, timeZone, at)}
+      <SectionCard
+        title="Membership"
+        actions={membership?.ok ? editAction(membership.value) : undefined}
+      >
+        {membershipBody(membership, { timeZone, at, branchLabel, me })}
       </SectionCard>
       <SectionCard title="Onboarding">
         <OnboardingTimeline
@@ -152,9 +222,18 @@ function readFailed(problem: ProblemView): ReactNode {
 /** The Membership card's body: each way the read can fall short says so, never an empty card. */
 function membershipBody(
   membership: Loaded<MembershipDetail> | null,
-  branches: ReadonlyMap<string, { name: string; code: string }>,
-  timeZone: string,
-  at: (iso: string) => string,
+  {
+    timeZone,
+    at,
+    branchLabel,
+    me,
+  }: {
+    timeZone: string;
+    at: (iso: string) => string;
+    branchLabel: (id: string) => string;
+    /** The signed-in user's id: their own invitation reads "You (…)". */
+    me: string;
+  },
 ): ReactNode {
   if (membership === null) {
     return (
@@ -166,18 +245,23 @@ function membershipBody(
   if (!membership.ok) return <ErrorState problem={membership.problem} />;
 
   const { value } = membership;
-  const branch = value.primaryBranchId ? branches.get(value.primaryBranchId) : undefined;
-  let primaryBranch = 'None';
-  if (value.primaryBranchId) {
-    primaryBranch = branch ? `${branch.name} (${branch.code})` : shortId(value.primaryBranchId);
-  }
   return (
     <DescriptionList
       items={[
+        // BG-17 (ADR 0040): taken at the first activation and kept for life; none before it.
+        { label: 'Member no.', value: value.memberNumber ?? '—' },
         { label: 'Membership type', value: humanizeEnum(value.type) },
         { label: 'Membership status', value: <StatusChip value={value.status} /> },
-        { label: 'Primary branch', value: primaryBranch },
-        { label: `Created (${timeZone})`, value: at(value.createdAt) },
+        {
+          label: 'Primary branch',
+          value: value.primaryBranchId ? branchLabel(value.primaryBranchId) : 'None',
+        },
+        // BG-08: the membership's `created_by`, the re-inviter after a re-invite, so "Last": beside
+        // "First invited" (a kept `created_at`) a bare "Invited by" would date the re-invite to the
+        // first. "—" for the system or someone the caller may not see.
+        { label: 'Last invited by', value: makerLabel(value.createdBy, me) },
+        // A re-invite keeps the membership's `created_at` (spec §6.3), so it is the first invitation.
+        { label: `First invited (${timeZone})`, value: at(value.createdAt) },
         { label: `Updated (${timeZone})`, value: at(value.updatedAt) },
         { label: 'Membership ID', value: <CopyIdButton value={value.id} label="Membership ID" /> },
       ]}

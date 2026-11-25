@@ -25,21 +25,29 @@ import type { ActionResult, FormAction } from '@/lib/api/action-result';
 
 type FieldErrors = Partial<Record<string, string>>;
 
-interface ReasonDialogProps {
-  open: boolean;
+/** The reason field, or `none`: no reason field, for a form whose `fields` are the whole of it and
+ * whose route takes no reason (Edit membership, BG-17), so it takes no label or helper text. */
+type ReasonField =
+  | {
+      reason: 'optional' | 'required';
+      /** The reason field's label when "Reason" undersells it (e.g. "What needs to change"). Used
+       * as given: an optional field's label says "(optional)" itself (e.g. "Remark (optional)"). */
+      reasonLabel?: string;
+      /** Said under the reason field (its accessible description) until a field error replaces
+       * it. */
+      reasonHelperText?: string;
+    }
+  | { reason: 'none'; reasonLabel?: never; reasonHelperText?: never };
+
+type ReasonFormProps = ReasonField & {
   title: string;
   description: string;
   confirmLabel: string;
-  reason: 'optional' | 'required';
-  /** The reason field's label when "Reason" undersells it (e.g. "What needs to change"). Used as
-   * given: an optional field's label says "(optional)" itself (e.g. "Remark (optional)"). */
-  reasonLabel?: string;
-  /** Said under the reason field (its accessible description) until a field error replaces it. */
-  reasonHelperText?: string;
   action: FormAction;
   onClose: () => void;
   onSuccess: () => void;
-  /** Extra fields rendered above the reason (e.g. the advance date). */
+  /** Extra fields, rendered above the reason field (e.g. the advance date); with `reason: 'none'`,
+   * the whole form. */
   fields?: (fieldErrors: Partial<Record<string, string>>) => ReactNode;
   /**
    * The organisation the page rendered for, carried as a hidden input so a Server Action can
@@ -49,7 +57,9 @@ interface ReasonDialogProps {
   /** `error` for a destructive or irreversible action (e.g. Close): colours the confirm button
    * and marks the dialog `role="alertdialog"`, matching ConfirmDialog's own `tone`. */
   tone?: 'default' | 'error';
-}
+};
+
+type ReasonDialogProps = ReasonFormProps & { open: boolean };
 
 const REASON_MAX = 500;
 const NO_ERRORS: FieldErrors = {};
@@ -101,7 +111,7 @@ function ReasonForm({
   tone = 'default',
   onPendingChange,
   descriptionId,
-}: Omit<ReasonDialogProps, 'open'> & {
+}: ReasonFormProps & {
   onPendingChange: (pending: boolean) => void;
   descriptionId: string;
 }) {
@@ -183,18 +193,23 @@ function ReasonForm({
           <input type="hidden" name="contextOrganisationId" value={contextOrganisationId} />
         )}
         {fields?.(fieldErrors)}
-        <TextField
-          name="reason"
-          label={reasonLabel}
-          required={reason === 'required'}
-          multiline
-          minRows={2}
-          error={Boolean(fieldErrors.reason)}
-          helperText={fieldErrors.reason ?? reasonHelperText}
-          slotProps={{
-            htmlInput: { maxLength: REASON_MAX, minLength: reason === 'required' ? 3 : undefined },
-          }}
-        />
+        {reason !== 'none' && (
+          <TextField
+            name="reason"
+            label={reasonLabel}
+            required={reason === 'required'}
+            multiline
+            minRows={2}
+            error={Boolean(fieldErrors.reason)}
+            helperText={fieldErrors.reason ?? reasonHelperText}
+            slotProps={{
+              htmlInput: {
+                maxLength: REASON_MAX,
+                minLength: reason === 'required' ? 3 : undefined,
+              },
+            }}
+          />
+        )}
       </DialogContent>
       <DialogActions disableSpacing sx={{ flexWrap: 'wrap' }}>
         <Button

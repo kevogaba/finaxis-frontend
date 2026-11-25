@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
 import { permissionScopes } from '@/test/permission-scopes';
@@ -11,6 +12,7 @@ const {
   getCurrentContextProfile,
   getMembership,
   getUser,
+  listBranches,
 } = vi.hoisted(() => ({
   countUserBranchAssignments: vi.fn(),
   countUserRoleAssignments: vi.fn(),
@@ -18,6 +20,7 @@ const {
   getCurrentContextProfile: vi.fn(),
   getMembership: vi.fn(),
   getUser: vi.fn(),
+  listBranches: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
@@ -44,13 +47,25 @@ vi.mock('@/modules/administration/users/user-service', () => ({
   getUser: (...args: unknown[]) => getUser(...args) as unknown,
 }));
 
+vi.mock('@/modules/administration/branches/branch-service', () => ({
+  listBranches: (...args: unknown[]) => listBranches(...args) as unknown,
+}));
+// Edit membership's dialog imports the Server Action; its own test submits it.
+vi.mock('@/modules/administration/users/membership-actions', () => ({
+  updateMembership: vi.fn(),
+}));
+
 const { default: UserOverviewPage } = await import('./page');
 
 const FELIX = '10000000-0000-4000-8000-00000000000d';
 const EMAIL = 'felix.omondi@greenfield.example';
 const MEMBERSHIP = '10000000-0000-4000-8000-00000000000e';
 const WESTLANDS = '44444444-4444-4444-8444-444444444444';
+const HEAD_OFFICE = '22222222-2222-4222-8222-222222222222';
 const UNKNOWN_BRANCH = '99999999-9999-4999-8999-999999999999';
+const VICTOR = '10000000-0000-4000-8000-000000000001';
+const JANE = '55555555-5555-4555-8555-555555555555';
+const EDITOR = ['membership.update', 'membership.view'];
 const ALL_CODES = ['membership.view', 'role_assignment.view', 'branch_assignment.view'];
 const without = (...codes: string[]) => ALL_CODES.filter((code) => !codes.includes(code));
 
@@ -63,7 +78,14 @@ interface Setup {
   elsewhere?: string[];
   selectedBranch?: { id: string; name: string } | null;
   membershipStatus?: string;
+  /** The user read's `membership_type`, which decides Edit membership with the status (BG-17). */
+  membershipType?: string;
   userStatus?: string;
+  /** The signed-in user (`/auth/me`'s `user_id`). */
+  signedInAs?: string;
+  /** The ACTIVE branches Edit membership lists, and whether more follow; an Error rejects it. */
+  activeBranches?: { id: string; branchName: string; branchCode: string }[] | Error;
+  activeHasNext?: boolean;
   /** What the membership read (by the user read's id) settles with; an Error rejects it. */
   detail?: Record<string, unknown> | Error;
   /** The role count read: the count, or an Error that rejects it. */
@@ -79,6 +101,8 @@ const DETAIL = {
   primaryBranchId: WESTLANDS,
   createdAt: '2026-08-01T08:00:00Z',
   updatedAt: '2026-08-02T09:30:00Z',
+  createdBy: { id: VICTOR, displayName: 'Victor Otieno' },
+  memberNumber: 4,
 };
 
 /** Programs every service the Overview reads. A test names only what it varies. */
@@ -88,7 +112,14 @@ function setup({
   elsewhere = [],
   selectedBranch = null,
   membershipStatus = 'ACTIVE',
+  membershipType = 'STAFF',
   userStatus = 'ACTIVE',
+  signedInAs = JANE,
+  activeBranches = [
+    { id: HEAD_OFFICE, branchName: 'Head Office', branchCode: 'HEAD_OFFICE' },
+    { id: WESTLANDS, branchName: 'Westlands Branch', branchCode: 'WESTLANDS' },
+  ],
+  activeHasNext = false,
   detail = DETAIL,
   roleCount = 2,
   branchCount = 3,
@@ -101,6 +132,7 @@ function setup({
         ...permissionScopes(permissions, branchOnly),
         ...permissionScopes(elsewhere, elsewhere),
       ],
+      user_id: signedInAs,
     },
     context: { organization: { id: 'org-1', name: 'Greenfield' }, branch: selectedBranch },
   });
@@ -110,9 +142,24 @@ function setup({
     email: EMAIL,
     displayName: 'Felix Omondi',
     membershipStatus,
+    membershipType,
     userStatus,
     membershipId: MEMBERSHIP,
   });
+  if (activeBranches instanceof Error) listBranches.mockRejectedValue(activeBranches);
+  else {
+    listBranches.mockResolvedValue({
+      items: activeBranches,
+      page: {
+        number: 0,
+        size: 100,
+        totalItems: activeBranches.length,
+        totalPages: 1,
+        hasNext: activeHasNext,
+        hasPrevious: false,
+      },
+    });
+  }
   if (detail instanceof Error) getMembership.mockRejectedValue(detail);
   else getMembership.mockResolvedValue(detail);
   if (roleCount instanceof Error) countUserRoleAssignments.mockRejectedValue(roleCount);
@@ -328,9 +375,13 @@ describe('UserOverviewPage: the membership card', () => {
       /^Westlands Branch \(WESTLANDS\)$/,
     );
     // 08:00Z and 09:30Z, five and a half hours ahead: not the runner's own zone.
-    expect(fact(card('Membership'), 'Created (Asia/Kolkata)')).toHaveTextContent(
+    // BG-17: the number, who invited them and when (a re-invite keeps the creation, spec §6.3).
+    expect(fact(card('Membership'), 'Member no.')).toHaveTextContent(/^4$/);
+    expect(fact(card('Membership'), 'Last invited by')).toHaveTextContent(/^Victor Otieno$/);
+    expect(fact(card('Membership'), 'First invited (Asia/Kolkata)')).toHaveTextContent(
       /^01 Aug 2026 · 13:30$/,
     );
+    expect(hasFact(card('Membership'), 'Created (Asia/Kolkata)')).toBe(false);
     expect(fact(card('Membership'), 'Updated (Asia/Kolkata)')).toHaveTextContent(
       /^02 Aug 2026 · 15:00$/,
     );
@@ -394,6 +445,197 @@ describe('UserOverviewPage: the membership card', () => {
     expect(within(membership).getByText('Something went wrong')).toBeInTheDocument();
     expect(within(membership).getByText('Reference: req-2')).toBeInTheDocument();
     expect(hasFact(card('Membership'), 'Membership type')).toBe(false);
+  });
+});
+
+describe('UserOverviewPage: member number and inviter (BG-17, BG-08)', () => {
+  // Review Focus 4: null fields render "—", never "null" or nothing.
+  it('shows "—" for a membership not yet numbered and for one the system created', async () => {
+    setup({ detail: { ...DETAIL, memberNumber: null, createdBy: null } });
+
+    await show();
+
+    expect(fact(card('Membership'), 'Member no.')).toHaveTextContent(/^—$/);
+    expect(fact(card('Membership'), 'Last invited by')).toHaveTextContent(/^—$/);
+  });
+
+  it('names the signed-in inviter "You", and an inviter with no name by short id', async () => {
+    setup({ signedInAs: VICTOR });
+    const { unmount } = await show();
+
+    expect(fact(card('Membership'), 'Last invited by')).toHaveTextContent(
+      /^You \(Victor Otieno\)$/,
+    );
+    unmount();
+
+    vi.resetAllMocks();
+    setup({ detail: { ...DETAIL, createdBy: { id: VICTOR, displayName: null } } });
+    await show();
+
+    expect(fact(card('Membership'), 'Last invited by')).toHaveTextContent(/^10000000$/);
+  });
+});
+
+describe('UserOverviewPage: Edit membership (BG-17)', () => {
+  const editButton = () =>
+    within(card('Membership')).queryByRole('button', { name: 'Edit membership' });
+
+  it('is offered on the card to a tenant-wide holder of membership.update and its view', async () => {
+    setup({ permissions: [...ALL_CODES, 'membership.update', 'branch.view'] });
+
+    await show();
+
+    expect(editButton()).toBeInTheDocument();
+    // One page of 100 ACTIVE branches by name, as the Assign-branch drawer reads them.
+    expect(listBranches).toHaveBeenCalledWith({
+      status: 'ACTIVE',
+      sort: { by: 'branchName', dir: 'ASC' },
+      page: 0,
+      size: 100,
+    });
+  });
+
+  // Review Focus 3: a mutation held without its view, or only at the selected branch.
+  it.each([
+    ['without membership.update', { permissions: ALL_CODES }],
+    [
+      'with membership.update but no membership.view',
+      { permissions: [...without('membership.view'), 'membership.update'] },
+    ],
+    [
+      'with membership.update held only at the selected branch',
+      {
+        permissions: [...ALL_CODES, 'membership.update'],
+        branchOnly: ['membership.update'],
+        selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' },
+      },
+    ],
+  ])('is not offered %s, and reads no branches', async (_case, overrides) => {
+    setup({ ...overrides });
+
+    await show();
+
+    expect(editButton()).not.toBeInTheDocument();
+    expect(listBranches).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a revoked membership', { membershipStatus: 'REVOKED' }],
+    ['a system membership', { membershipType: 'SYSTEM' }],
+  ])('is not offered for %s (422)', async (_case, overrides) => {
+    setup({ permissions: [...ALL_CODES, ...EDITOR, 'branch.view'], ...overrides });
+
+    await show();
+
+    expect(editButton()).not.toBeInTheDocument();
+    expect(listBranches).not.toHaveBeenCalled();
+  });
+
+  it('is offered on your own membership: the platform has no self rule here', async () => {
+    setup({ permissions: [...ALL_CODES, ...EDITOR], signedInAs: FELIX });
+
+    await show();
+
+    expect(editButton()).toBeInTheDocument();
+  });
+
+  it('opens on the membership as read, offering the ACTIVE branches and None', async () => {
+    const user = userEvent.setup();
+    setup({ permissions: [...ALL_CODES, ...EDITOR, 'branch.view'] });
+    await show();
+
+    await user.click(editButton() ?? document.body);
+    const dialog = screen.getByRole('dialog', { name: "Edit Felix Omondi's membership" });
+    expect(within(dialog).getByRole('combobox', { name: 'Membership type' })).toHaveTextContent(
+      /^Staff$/,
+    );
+    const branch = within(dialog).getByRole('combobox', { name: 'Primary branch' });
+    expect(branch).toHaveTextContent(/^Westlands Branch \(WESTLANDS\)$/);
+    expect(branch).toHaveAccessibleDescription('Shown on their record as their main branch.');
+    await user.click(branch);
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'None',
+      'Head Office (HEAD_OFFICE)',
+      'Westlands Branch (WESTLANDS)',
+    ]);
+  });
+
+  it('keeps the current branch on offer when it was not listed, and says how much was', async () => {
+    const user = userEvent.setup();
+    setup({
+      permissions: [...ALL_CODES, ...EDITOR, 'branch.view'],
+      activeBranches: [{ id: HEAD_OFFICE, branchName: 'Head Office', branchCode: 'HEAD_OFFICE' }],
+      activeHasNext: true,
+    });
+    await show();
+
+    await user.click(editButton() ?? document.body);
+    const branch = screen.getByRole('combobox', { name: 'Primary branch' });
+    expect(branch).toHaveTextContent(/^Westlands Branch \(WESTLANDS\)$/);
+    expect(branch).toHaveAccessibleDescription(
+      'Shown on their record as their main branch. Only the first 100 active branches are listed.',
+    );
+    await user.click(branch);
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'None',
+      'Head Office (HEAD_OFFICE)',
+      'Westlands Branch (WESTLANDS)',
+    ]);
+  });
+
+  it('says only the branches you can view are listed for a branch-scoped branch.view', async () => {
+    const user = userEvent.setup();
+    setup({
+      permissions: [...ALL_CODES, ...EDITOR, 'branch.view'],
+      branchOnly: ['branch.view'],
+    });
+    await show();
+
+    await user.click(editButton() ?? document.body);
+    expect(screen.getByRole('combobox', { name: 'Primary branch' })).toHaveAccessibleDescription(
+      'Shown on their record as their main branch. Only branches you can view are shown.',
+    );
+  });
+
+  // A failed read says so and to refresh, apart from a holder with no branch.view.
+  it.each([
+    [
+      'without branch.view, reading none',
+      [...ALL_CODES, ...EDITOR],
+      undefined,
+      "Branches can't be listed here, so you can keep the current primary branch or choose None.",
+    ],
+    [
+      'when the branch read failed, saying so',
+      [...ALL_CODES, ...EDITOR, 'branch.view'],
+      new BackendApiError(500, { requestId: 'req-branches' }),
+      "Branches couldn't be loaded. You can keep the current primary branch or choose None; refresh to try again.",
+    ],
+  ])('offers None and the current branch only %s', async (_case, permissions, failure, hint) => {
+    const user = userEvent.setup();
+    setup({ permissions, ...(failure && { activeBranches: failure }) });
+    await show();
+
+    await user.click(editButton() ?? document.body);
+    const branch = screen.getByRole('combobox', { name: 'Primary branch' });
+    expect(branch).toHaveAccessibleDescription(hint);
+    await user.click(branch);
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'None',
+      'Westlands Branch (WESTLANDS)',
+    ]);
+    if (!failure) expect(listBranches).not.toHaveBeenCalled();
+  });
+
+  it('is not offered when the membership read failed', async () => {
+    setup({
+      permissions: [...ALL_CODES, ...EDITOR, 'branch.view'],
+      detail: new BackendApiError(500, { requestId: 'req-2' }),
+    });
+
+    await show();
+
+    expect(editButton()).not.toBeInTheDocument();
   });
 });
 
