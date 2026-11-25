@@ -28,6 +28,21 @@ describe('the decisions', () => {
       reason: 'optional',
       destructive: false,
     });
+    // The branch record's words: one route, two intents.
+    expect(decisionCopy('return', 'Kericho Branch')).toMatchObject({
+      label: 'Return for changes',
+      title: 'Return Kericho Branch for changes?',
+      description: 'It goes back to draft. Its maker sees your reason.',
+      reason: 'required',
+      reasonLabel: 'What needs to change',
+      destructive: false,
+    });
+    expect(decisionCopy('withdraw', 'Kericho Branch')).toMatchObject({
+      label: 'Withdraw',
+      title: 'Withdraw Kericho Branch?',
+      reason: 'required',
+      destructive: false,
+    });
   });
 
   it('reads a 200 from an ACTIVE echo and a 202 from a pending one (Ruling 10)', () => {

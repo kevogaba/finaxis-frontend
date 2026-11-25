@@ -195,7 +195,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
 ### BG-01 — No approval-request / pending-change model · P0
 
 - **Status:** Partly fixed. Platform #155 (sub-issues #178–#182), #221, #222, #282. ADR 0029 chose
-  per-resource extensions over an approval-request model.
+  per-resource extensions over an approval-request model. The branch return, withdrawal and discard
+  are **adopted** (frontend #117); decision remarks and the institution return are still to adopt.
 - **Gap:** Maker-checker exists only as per-resource transitions: membership activate (approver ≠
   inviter), branch activate (activator ≠ drafter), tenant approve (approver ≠ creator and submitter).
   There is no approval-request entity, no "return for changes", no resubmission, no reject for a
@@ -239,9 +240,16 @@ the same bullets): the first is the gap as found, the second what the UI still d
   the UI sends it; only membership and tenant approval lacked a remark. Discard needs `branch.create`
   **tenant-wide**, and a draft with an ACTIVE child branch or an active assignment is a plain 409
   `conflict`. A discarded draft ends CLOSED with `closed_on` set and `opened_on` null.
-- **To adopt:** Return/Withdraw and Discard on branches, Return on pending institutions with their
-  `status_reason`, and an optional remark on Approve. (Activation is gated on `branch.approve` since
-  frontend #107.)
+- **Adopted** (frontend #117): a pending branch offers Withdraw to its creator or latest submitter
+  (with `branch.create`) and Return for changes to anyone else (with `branch.approve`), on the branch
+  record and beside Activate on the approval page; a draft offers Discard draft (never the head
+  office). Each needs its code and `branch.view` tenant-wide, since a branch-scope grant never
+  reaches a pending or draft branch (#242, `canActOnBranch`). Each takes a required reason of 3–500
+  characters, and a draft with a reason shows "Sent back: <reason>" (the record can't tell a
+  withdrawal from a return). The head-office 409 and the closure guard's 409 are named, and a
+  return of a request decided elsewhere says so.
+- **To adopt:** Return on pending institutions with their `status_reason`, and an optional remark on
+  Approve. (Activation is gated on `branch.approve` since frontend #107.)
 
 ### BG-02 — A tenant created through the API cannot onboard a second person · P0
 

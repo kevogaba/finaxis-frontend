@@ -11,10 +11,11 @@ import { ACTIVATED_TOAST, APPROVED_TOAST, REJECTED_TOAST } from '../approval-cop
 import type { ApprovalDecision } from '../approval-rules';
 import { DecisionBar, type DecisionSubject } from './decision-bar';
 
-const { activatePendingBranch, approveUser, rejectUser } = vi.hoisted(() => ({
+const { activatePendingBranch, approveUser, rejectUser, returnBranch } = vi.hoisted(() => ({
   activatePendingBranch: vi.fn(),
   approveUser: vi.fn(),
   rejectUser: vi.fn(),
+  returnBranch: vi.fn(),
 }));
 vi.mock('../approval-actions', () => ({
   approveUser: (...args: unknown[]) => approveUser(...args) as unknown,
@@ -22,6 +23,9 @@ vi.mock('../approval-actions', () => ({
 }));
 vi.mock('../branch-activation-actions', () => ({
   activatePendingBranch: (...args: unknown[]) => activatePendingBranch(...args) as unknown,
+}));
+vi.mock('@/modules/administration/branches/branch-actions', () => ({
+  returnBranch: (...args: unknown[]) => returnBranch(...args) as unknown,
 }));
 
 // Distinct first blocks, so a short id names its id; lettered, so upper case differs.
@@ -157,6 +161,37 @@ describe('DecisionBar', () => {
     expect(sent.get('membershipId')).toBeNull();
   });
 
+  it.each([
+    ['Return for changes', 'return', `Return ${BRANCH_NAME} for changes?`, 'What needs to change'],
+    ['Withdraw', 'withdraw', `Withdraw ${BRANCH_NAME}?`, 'Reason'],
+  ] as const)(
+    'sends a branch back with %s beside Activate: outlined, a required reason, carrying the branch',
+    async (label, id, title, field) => {
+      const user = userEvent.setup({ delay: null });
+      returnBranch.mockResolvedValueOnce({ ok: true });
+      renderWithProviders(
+        record({ subject: { kind: 'branch', branchId: BRANCH }, decisions: ['activate', id] }),
+      );
+
+      const trigger = screen.getByRole('button', { name: label });
+      expect(trigger).toHaveClass('MuiButton-outlined', 'MuiButton-colorPrimary');
+      await user.click(trigger);
+      const dialog = screen.getByRole('dialog', { name: title });
+      const reason = within(dialog).getByRole('textbox', { name: field });
+      expect(reason).toBeRequired();
+      await user.type(reason, 'Wrong parent branch');
+      await user.click(within(dialog).getByRole('button', { name: label }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        id === 'return' ? 'Returned for changes' : 'Branch withdrawn',
+      );
+      const sent = returnBranch.mock.calls[0]?.[1] as FormData;
+      expectScoped(sent, 'branchId');
+      expect(sent.get('reason')).toBe('Wrong parent branch');
+      expect(activatePendingBranch).not.toHaveBeenCalled();
+    },
+  );
+
   it('disables Approve for its inviter and says why, leaving Reject & revoke enabled', () => {
     renderWithProviders(record({ blocked: { approve: USER_MAKER_CHECKER_BLOCKED } }));
 
@@ -236,11 +271,23 @@ describe('DecisionBar', () => {
       REJECTED_TOAST,
     ],
     ['Activate', 'dialog', `Activate ${BRANCH_NAME}?`, 'branchId', ACTIVATED_TOAST],
+    [
+      'Return for changes',
+      'dialog',
+      `Return ${BRANCH_NAME} for changes?`,
+      'branchId',
+      'Returned for changes',
+    ],
   ] as const)(
     'keeps the key after a failed %s, and retries with it',
     async (label, role, title, field, toast) => {
       const user = userEvent.setup({ delay: null });
-      const action = field === 'membershipId' ? rejectUser : activatePendingBranch;
+      const action =
+        field === 'membershipId'
+          ? rejectUser
+          : label === 'Activate'
+            ? activatePendingBranch
+            : returnBranch;
       action
         .mockResolvedValueOnce({
           ok: false,
@@ -253,14 +300,16 @@ describe('DecisionBar', () => {
       renderWithProviders(
         field === 'membershipId'
           ? record()
-          : record({ subject: { kind: 'branch', branchId: BRANCH }, decisions: ['activate'] }),
+          : record({
+              subject: { kind: 'branch', branchId: BRANCH },
+              decisions: ['activate', 'return'],
+            }),
       );
 
       await user.click(screen.getByRole('button', { name: label }));
       const dialog = screen.getByRole(role, { name: title });
-      if (field === 'membershipId') {
-        await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), 'Duplicate');
-      }
+      const reason = within(dialog).getByRole('textbox');
+      if (label !== 'Activate') await user.type(reason, 'Duplicate');
       await user.click(within(dialog).getByRole('button', { name: label }));
       expect(await within(dialog).findByRole('alert')).toHaveTextContent('Reference: req-2');
 
@@ -273,6 +322,8 @@ describe('DecisionBar', () => {
       expect(await screen.findByText(toast)).toBeInTheDocument();
       const [first, second] = action.mock.calls.map((call) => call[1] as FormData);
       expect(second?.get('idempotencyKey')).toBe(first?.get('idempotencyKey'));
+      // Review Focus 1: the refusal keeps what was typed.
+      expect(second?.get('reason')).toBe(first?.get('reason'));
       expectScoped(first, field);
       expectScoped(second, field);
     },

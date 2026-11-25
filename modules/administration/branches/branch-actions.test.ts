@@ -112,7 +112,7 @@ describe('branch actions', () => {
     );
   });
 
-  it.each(['suspendBranch', 'closeBranch'] as const)(
+  it.each(['suspendBranch', 'closeBranch', 'returnBranch', 'discardBranch'] as const)(
     '%s requires a reason of 3–500 characters before calling the backend',
     async (name) => {
       await expect(
@@ -131,12 +131,84 @@ describe('branch actions', () => {
         form({ idempotencyKey: KEY, branchId: BRANCH, reason: 'Cash count' }),
       );
       expect(apiPost).toHaveBeenCalledWith(
-        expect.stringMatching(new RegExp(`/branches/${BRANCH}/(suspend|close)$`)),
+        expect.stringMatching(new RegExp(`/branches/${BRANCH}/(suspend|close|return|discard)$`)),
         { reason: 'Cash count' },
         KEY,
       );
     },
   );
+
+  // Withdraw and Return are one route: the platform tells them apart by the caller.
+  it.each([
+    ['returnBranch', 'return'],
+    ['discardBranch', 'discard'],
+  ] as const)('%s posts the trimmed reason to /%s with the minted key', async (name, path) => {
+    await actions[name](
+      null,
+      form({ idempotencyKey: KEY, branchId: BRANCH, reason: '  Wrong parent  ' }),
+    );
+    expect(apiPost).toHaveBeenCalledExactlyOnceWith(
+      `/api/v1/branches/${BRANCH}/${path}`,
+      { reason: 'Wrong parent' },
+      KEY,
+    );
+  });
+
+  // Review Focus 2: the action sends the form's key, never one of its own, so a retry replays.
+  it.each(['returnBranch', 'discardBranch'] as const)(
+    '%s reuses the minted key on retry',
+    async (name) => {
+      apiPost.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce({});
+      runServerAction.mockImplementation(
+        async (
+          schema: z.ZodType,
+          formData: FormData,
+          run: (input: unknown) => Promise<unknown>,
+        ) => {
+          try {
+            await run(schema.parse(Object.fromEntries(formData)));
+            return { ok: true };
+          } catch {
+            return failure('network_error');
+          }
+        },
+      );
+      const fields = form({ idempotencyKey: KEY, branchId: BRANCH, reason: 'Wrong parent' });
+
+      expect(await actions[name](null, fields)).toMatchObject({ ok: false });
+      expect(await actions[name](null, fields)).toEqual({ ok: true });
+      expect(apiPost.mock.calls.map((call) => call[2])).toEqual([KEY, KEY]);
+    },
+  );
+
+  // Review Focus 1: a request withdrawn, returned or decided elsewhere names its refusal.
+  it('explains a return of a branch already decided elsewhere, and leaves others alone', async () => {
+    runServerAction.mockResolvedValueOnce(failure('conflict'));
+    expect(await actions.returnBranch(null, form({}))).toMatchObject({
+      code: 'conflict',
+      requestId: 'req-1',
+      formError:
+        "This branch isn't waiting for approval any more: it was decided, returned or withdrawn elsewhere. Refresh to see where it stands.",
+    });
+
+    runServerAction.mockResolvedValueOnce(failure('forbidden'));
+    expect(await actions.returnBranch(null, form({}))).toMatchObject({ formError: 'generic' });
+  });
+
+  it.each([
+    ['lifecycle.head_office_branch_protected', "The head office can't be discarded."],
+    [
+      'conflict',
+      'This draft still has an active child branch or assignment, or it changed. Refresh and check.',
+    ],
+  ])('explains a discard refused with %s', async (code, formError) => {
+    runServerAction.mockResolvedValueOnce(failure(code));
+    expect(await actions.discardBranch(null, form({}))).toMatchObject({
+      code,
+      requestId: 'req-1',
+      formError,
+    });
+  });
 
   it('explains an activation `forbidden` as a missing permission only (BG-08) and leaves others alone', async () => {
     runServerAction.mockResolvedValueOnce(failure('forbidden'));

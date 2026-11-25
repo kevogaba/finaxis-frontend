@@ -9,6 +9,8 @@ import { ConfirmDialog } from '@/components/data-display/confirm-dialog';
 import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { ReasonDialog } from '@/components/data-display/reason-dialog';
 import { useToast } from '@/components/providers/toast-provider';
+import { returnBranch } from '@/modules/administration/branches/branch-actions';
+import { sendBackCopy } from '@/modules/administration/branches/branch-rules';
 import { approveUser, rejectUser } from '../approval-actions';
 import {
   ACTIVATED_TOAST,
@@ -45,7 +47,7 @@ interface DecisionBarProps {
   contextOrganisationId: string;
 }
 
-function successToast(decision: ApprovalDecision, outcome: ApprovalOutcome): string {
+function successToast(decision: ApprovalDecision, outcome: ApprovalOutcome, name: string): string {
   switch (decision) {
     case 'approve':
       return APPROVED_TOAST[outcome];
@@ -53,11 +55,23 @@ function successToast(decision: ApprovalDecision, outcome: ApprovalOutcome): str
       return REJECTED_TOAST;
     case 'activate':
       return ACTIVATED_TOAST;
+    case 'withdraw':
+    case 'return':
+      return sendBackCopy(decision, name).success;
   }
 }
 
+/** The reason-taking decisions' Server Actions; Withdraw and Return share the return route. */
+const REASON_ACTIONS = {
+  reject: rejectUser,
+  activate: activatePendingBranch,
+  withdraw: returnBranch,
+  return: returnBranch,
+};
+
 /** The decision bar (spec §10.6) in the record hero: Approve and Reject & revoke for a user,
- * Activate for a branch. Primitive props only, so the Server Component page can render it. */
+ * Activate and Return (or its maker's Withdraw) for a branch. Primitive props only, so the Server
+ * Component page can render it. */
 export function DecisionBar({
   subject,
   name,
@@ -204,7 +218,7 @@ export function DecisionBar({
         const succeed = () => {
           succeededRef.current = id;
           setOpen(null);
-          notify(successToast(id, outcomeRef.current));
+          notify(successToast(id, outcomeRef.current, name));
         };
         if (id === 'approve') {
           return (
@@ -231,8 +245,9 @@ export function DecisionBar({
             description={copy.description}
             confirmLabel={copy.label}
             reason={copy.reason ?? 'optional'}
+            reasonLabel={copy.reasonLabel}
             tone={copy.destructive ? 'error' : 'default'}
-            action={id === 'reject' ? rejectUser : activatePendingBranch}
+            action={REASON_ACTIONS[id]}
             contextOrganisationId={contextOrganisationId}
             onClose={close}
             onSuccess={succeed}

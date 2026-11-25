@@ -9,7 +9,7 @@ import NextLink from '@/components/navigation/next-link';
 import { load } from '@/lib/api/load';
 import { getBranchIndex, getOrganisationTimeZone } from '@/lib/api/lookups';
 import { formatBusinessDate, formatInstant, shortId } from '@/lib/format';
-import { branchTypeLabel } from '@/modules/administration/branches/branch-rules';
+import { branchTypeLabel, sentBackNote } from '@/modules/administration/branches/branch-rules';
 import {
   countActiveAssignments,
   getBranch,
@@ -59,7 +59,7 @@ export default async function BranchOverviewPage({ params }: BranchOverviewPageP
       ),
     },
     { label: 'Timezone', value: record.timezone },
-    { label: 'Last status reason', value: record.statusReason ?? '—' },
+    { label: 'Last status reason', value: sentBackNote(record) ?? record.statusReason ?? '—' },
     // Never set by the API today (BG-13) — shown only when present.
     ...(record.openedOn
       ? [{ label: 'Opened on', value: formatBusinessDate(record.openedOn, 'short') }]

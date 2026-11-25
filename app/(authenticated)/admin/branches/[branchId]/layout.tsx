@@ -21,6 +21,7 @@ import {
 import {
   availableBranchActions,
   branchTypeLabel,
+  sentBackNote,
 } from '@/modules/administration/branches/branch-rules';
 import { getBranch } from '@/modules/administration/branches/branch-service';
 import { BranchLifecycleActions } from '@/modules/administration/branches/components/branch-lifecycle-actions';
@@ -63,13 +64,13 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
 
   const record = branch.value;
   const holder = permissionHolder(resolved?.profile);
-  const actions = availableBranchActions(record, holder);
+  const me = resolved?.profile.user_id ?? '';
+  const actions = availableBranchActions(record, holder, me);
   // Only the copy needs it: suspending or closing the selected branch ends the working context.
   const selectedHere = resolved?.context.branch?.id === record.id;
   // BG-08: the tenant route refuses the record's creator (`created_by`), not its submitter. The
   // switch is read only when the caller drafted it and Activate is on offer (decision Q4: unread,
   // Activate stays on offer, and the platform's named refusal explains a refusal).
-  const me = resolved?.profile.user_id ?? '';
   const makers = [record.createdBy?.id];
   const gate = makerGate({
     makerIds: makers,
@@ -88,7 +89,9 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
         avatar={{ kind: 'icon', icon: <AccountTreeOutlined /> }}
         eyebrow="Administration · Branch record"
         title={record.branchName}
-        subtitle={`${record.branchCode} · ${branchTypeLabel(record.branchType)}`}
+        subtitle={[record.branchCode, branchTypeLabel(record.branchType), sentBackNote(record)]
+          .filter(Boolean)
+          .join(' · ')}
         status={<StatusChip value={record.status} />}
         actions={
           // Keep RecordHero's actions prop undefined (not an empty component) when there are no
@@ -97,6 +100,7 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
           actions.length > 0 ? (
             <BranchLifecycleActions
               branchId={branchId}
+              branchCode={record.branchCode}
               branchName={record.branchName}
               actions={actions}
               activateBlocked={gate === 'blocked'}

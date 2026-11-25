@@ -28,8 +28,8 @@ const requiredReason = z
 const transitionInput = z.object({ idempotencyKey, branchId: uuidSchema, reason: optionalReason });
 const reasonedInput = transitionInput.extend({ reason: requiredReason });
 
-// Submit/Activate/Reactivate take an optional reason, Suspend/Close a required one; the body is
-// `{}` when there's no reason (contract §D).
+// Submit/Activate/Reactivate take an optional reason, Suspend/Close/Return/Discard a required one;
+// the body is `{}` when there's no reason (contract §D).
 function transition(
   path: string,
   schema: typeof transitionInput | typeof reasonedInput,
@@ -120,6 +120,36 @@ export async function closeBranch(
     'conflict',
     // 409 = this guard OR an invalid transition or a race (contract §I) — never assert which.
     "This branch couldn't be closed. A branch can't be closed while users are assigned to it or child branches are active. It may also have changed — refresh and check.",
+  );
+}
+
+/** Withdraw and Return: one route, which the platform tells apart by the caller (its creator or
+ * latest submitter withdraws). A 409 is the state: the tenant is ACTIVE for any tenant caller. */
+export async function returnBranch(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  return explain(
+    await transition('return', reasonedInput, formData),
+    'conflict',
+    "This branch isn't waiting for approval any more: it was decided, returned or withdrawn elsewhere. Refresh to see where it stands.",
+  );
+}
+
+export async function discardBranch(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const result = explain(
+    await transition('discard', reasonedInput, formData),
+    'lifecycle.head_office_branch_protected',
+    "The head office can't be discarded.",
+  );
+  // 409 = the closure guard OR the state (no longer a draft) — never assert which.
+  return explain(
+    result,
+    'conflict',
+    'This draft still has an active child branch or assignment, or it changed. Refresh and check.',
   );
 }
 

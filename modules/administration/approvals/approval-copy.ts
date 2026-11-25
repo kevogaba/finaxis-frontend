@@ -1,4 +1,5 @@
 import type { ActionResult } from '@/lib/api/action-result';
+import { sendBackCopy } from '@/modules/administration/branches/branch-rules';
 import type { MembershipDecision } from './approval-contract';
 import type { ApprovalDecision } from './approval-rules';
 
@@ -10,6 +11,8 @@ export interface DecisionCopy {
   description: string;
   /** `null`: the activate endpoint reads no body, so a confirmation without a reason. */
   reason: 'optional' | 'required' | null;
+  /** The reason field's label, when not "Reason". */
+  reasonLabel?: string;
   /** Irreversible and destructive: an error-toned trigger and an alertdialog. */
   destructive: boolean;
 }
@@ -43,6 +46,11 @@ export function decisionCopy(decision: ApprovalDecision, name: string): Decision
         reason: 'optional',
         destructive: false,
       };
+    case 'withdraw':
+    case 'return': {
+      const { label, title, description, reasonLabel } = sendBackCopy(decision, name);
+      return { label, title, description, reasonLabel, reason: 'required', destructive: false };
+    }
   }
 }
 

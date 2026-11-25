@@ -55,7 +55,8 @@ interface BranchApprovalPageProps {
 }
 
 /** A branch activation request (spec §10.6): the request, the branch, the control checks and the
- * decision bar (Activate), for a tenant-wide approver whichever branch is selected (BG-03). */
+ * decision bar (Activate, and Return or its maker's Withdraw), for a tenant-wide approver whichever
+ * branch is selected (BG-03). */
 export default async function BranchApprovalPage({ params }: BranchApprovalPageProps) {
   // Rule 7: the id is checked, and canonicalised, before any read (17's parser, client-safe).
   const branchId = parseBranchId((await params).branchId);
@@ -98,14 +99,14 @@ export default async function BranchApprovalPage({ params }: BranchApprovalPageP
     getOrganisationTimeZone(),
     isMaker(makers, me) ? readMakerCheckerSwitch('branch_creation', holder) : ('unknown' as const),
   ]);
-  const decisions = availableBranchDecisions(record, holder);
+  const decisions = availableBranchDecisions(record, holder, me);
   const gate = makerGate({ makerIds: makers, callerId: me, switchState });
   const blocked = blockedBranchDecisions(decisions, { makerGate: gate });
   const warning =
     decisions.includes('activate') && gate === 'allowed-self-approval'
       ? SELF_APPROVAL_NOTE_BRANCHES
       : null;
-  const outcome = branchOutcomeNote(record.status);
+  const outcome = branchOutcomeNote(record);
   const at = (iso: string) => {
     const when = formatInstant(iso, timeZone);
     return `${when.date} · ${when.time}`;

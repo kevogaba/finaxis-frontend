@@ -59,6 +59,7 @@ vi.mock('@/modules/administration/approvals/approval-actions', () => ({
 vi.mock('@/modules/administration/approvals/branch-activation-actions', () => ({
   activatePendingBranch: (...args: unknown[]) => activatePendingBranch(...args) as unknown,
 }));
+vi.mock('@/modules/administration/branches/branch-actions', () => ({ returnBranch: vi.fn() }));
 
 const { default: BranchApprovalPage } = await import('./page');
 
@@ -85,6 +86,7 @@ interface Setup {
   selectedBranch?: { id: string; name: string } | null;
   parentBranchId?: string | null;
   me?: string;
+  statusReason?: string | null;
 }
 
 function setup({
@@ -97,6 +99,7 @@ function setup({
   selectedBranch = null,
   parentBranchId = HEAD_OFFICE,
   me = ME,
+  statusReason = null,
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
@@ -124,7 +127,7 @@ function setup({
     timezone: 'Africa/Nairobi',
     openedOn: null,
     closedOn: null,
-    statusReason: null,
+    statusReason,
     createdAt: '2026-09-09T07:00:00Z',
     updatedAt: '2026-09-11T09:00:00Z',
     createdBy: maker,
@@ -239,6 +242,57 @@ describe('BranchApprovalPage', () => {
     expect(activate()).toBeEnabled();
   });
 
+  // BG-01: the return route beside Activate, told apart by the caller.
+  it.each([
+    ['someone else’s request', 'Return for changes', 'Withdraw', {}],
+    [
+      'its maker’s own request, with branch.create,',
+      'Withdraw',
+      'Return for changes',
+      {
+        submitter: { id: ME, displayName: 'Ann Admin' },
+        permissions: [...ALL_CODES, 'branch.create'],
+      },
+    ],
+  ])('offers %s %s, never %s', async (_case, shown, hidden, overrides) => {
+    setup(overrides);
+    await show();
+
+    expect(screen.getByRole('button', { name: shown })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: hidden })).toBeNull();
+  });
+
+  // A pending branch grants no branch-scoped permission (platform #242): branch.create held only at
+  // the selected branch doesn't reach it, so its maker isn't offered Withdraw (`canActOnBranch`).
+  it.each([
+    ['without branch.create', {}],
+    [
+      'with branch.create held only at the selected branch',
+      {
+        permissions: [...ALL_CODES, 'branch.create'],
+        branchOnly: ['branch.create'],
+        selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' },
+      },
+    ],
+  ])('offers its maker no Withdraw %s', async (_case, overrides) => {
+    setup({ submitter: { id: ME, displayName: 'Ann Admin' }, ...overrides });
+    await show();
+
+    expect(activate()).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Withdraw' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Return for changes' })).toBeNull();
+  });
+
+  it('says a returned branch was sent back to draft, with no decision', async () => {
+    setup({ status: 'DRAFT', statusReason: 'Wrong parent' });
+    await show();
+
+    expect(activate()).toBeNull();
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Sent back to draft: it can be changed and submitted again.',
+    );
+  });
+
   it('offers no decision once decided, and links to the branch record', async () => {
     setup({ status: 'ACTIVE' });
     await show();
@@ -252,11 +306,12 @@ describe('BranchApprovalPage', () => {
     expect(screen.queryByRole('region', { name: 'Control checks' })).toBeNull();
   });
 
-  it('offers Activate to a tenant-wide approver with another branch selected (BG-03)', async () => {
+  it('offers Activate and Return to a tenant-wide approver with another branch selected (BG-03)', async () => {
     setup({ selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' } });
     await show();
 
     expect(activate()).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Return for changes' })).toBeEnabled();
   });
 
   // A pending branch grants no branch-scoped permission (platform #242), so only a tenant-wide

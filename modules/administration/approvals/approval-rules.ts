@@ -1,10 +1,12 @@
 import { can, canAllTenantWide, canTenantWide, type PermissionHolder } from '@/auth/permissions';
 import { withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
-import type { BranchStatus } from '@/modules/administration/branches/branch-contract';
+import type { BranchDetail } from '@/modules/administration/branches/branch-contract';
 import {
   canActOnBranch,
   MAKER_CHECKER_BLOCKED,
+  pendingBranchAction,
+  RETURN_ROUTE_CODES,
 } from '@/modules/administration/branches/branch-rules';
 import type { MembershipStatus, UserStatus } from '@/modules/administration/users/user-contract';
 import {
@@ -111,7 +113,7 @@ export function userApprovalState(
   }
 }
 
-export type ApprovalDecision = 'approve' | 'reject' | 'activate';
+export type ApprovalDecision = 'approve' | 'reject' | 'activate' | 'withdraw' | 'return';
 
 /** Every membership transition reads the membership back, so `membership.view` gates both (BG-31);
  * then each decision's own code: Approve `user.approve`, Reject & revoke `membership.revoke`. */
@@ -157,14 +159,22 @@ export function userOutcomeNote(
 }
 
 /** Activate is checked on the target branch and reads it back (BG-03, BG-31): a pending branch
- * grants no branch-scope permission (#242), so `branch.approve` and its view tenant-wide. */
+ * grants no branch-scope permission (#242), so `branch.approve` and its view tenant-wide. Beside
+ * it, the return route's intent for the caller: its maker withdraws (`branch.create`, there too),
+ * anyone else returns (`branch.approve`), past the route's own gate (`RETURN_ROUTE_CODES`). */
 export function availableBranchDecisions(
-  branch: { id: string; status: BranchStatus },
+  branch: Pick<BranchDetail, 'id' | 'status' | 'createdBy' | 'submittedBy'>,
   holder: PermissionHolder,
+  callerId: string,
 ): ApprovalDecision[] {
-  return branch.status === 'PENDING_APPROVAL' && canActOnBranch(holder, 'branch.approve', branch)
-    ? ['activate']
-    : [];
+  if (branch.status !== 'PENDING_APPROVAL' || !canActOnBranch(holder, 'branch.approve', branch)) {
+    return [];
+  }
+  const sendBack = pendingBranchAction(branch, callerId);
+  const code = sendBack === 'withdraw' ? 'branch.create' : 'branch.approve';
+  return canActOnBranch(holder, code, branch, RETURN_ROUTE_CODES)
+    ? ['activate', sendBack]
+    : ['activate'];
 }
 
 /** Activate disabled for its drafter while maker-checker is known to be on (`makerGate`, BG-08). */
@@ -177,16 +187,21 @@ export function blockedBranchDecisions(
     : {};
 }
 
-/** Why a branch activation offers no decision; null while it waits. */
-export function branchOutcomeNote(status: BranchStatus): string | null {
-  switch (status) {
+/** Why a branch activation offers no decision; null while it waits. A draft with a reason was
+ * sent back (`sentBackNote`). */
+export function branchOutcomeNote(
+  branch: Pick<BranchDetail, 'status' | 'statusReason'>,
+): string | null {
+  switch (branch.status) {
     case 'PENDING_APPROVAL':
       return null;
     case 'ACTIVE':
       return 'Activated: this branch is live.';
     case 'DRAFT':
-      return "This branch is still a draft: it hasn't been submitted for activation.";
+      return branch.statusReason
+        ? 'Sent back to draft: it can be changed and submitted again.'
+        : "This branch is still a draft: it hasn't been submitted for activation.";
     default:
-      return `This branch isn't waiting for activation: it is ${humanizeEnum(status).toLowerCase()}.`;
+      return `This branch isn't waiting for activation: it is ${humanizeEnum(branch.status).toLowerCase()}.`;
   }
 }

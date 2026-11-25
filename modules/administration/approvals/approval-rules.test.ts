@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { BranchStatus } from '@/modules/administration/branches/branch-contract';
 import { MAKER_CHECKER_BLOCKED } from '@/modules/administration/branches/branch-rules';
 import {
   PROVISIONING_NOTE,
@@ -203,25 +204,60 @@ describe('where a user approval stands', () => {
 
 describe('where a branch activation stands', () => {
   const ACTIVATOR = wide(['branch.approve', 'branch.view']);
+  const ME = 'a1000000-0000-4000-8000-0000000000aa';
+  const actor = (id: string) => ({ id, displayName: null });
+  const pending = (maker = VICTOR, status: BranchStatus = 'PENDING_APPROVAL') => ({
+    id: 'branch-a',
+    status,
+    branchCode: 'KERICHO',
+    createdBy: actor(maker),
+    submittedBy: actor(maker),
+  });
 
-  it('offers Activate only while pending, and only with both codes held tenant-wide', () => {
-    const pending = { id: 'branch-a', status: 'PENDING_APPROVAL' } as const;
-    expect(availableBranchDecisions(pending, ACTIVATOR)).toEqual(['activate']);
-    expect(availableBranchDecisions({ ...pending, status: 'ACTIVE' }, ACTIVATOR)).toEqual([]);
-    expect(availableBranchDecisions(pending, wide(['branch.approve']))).toEqual([]);
-    expect(availableBranchDecisions(pending, wide(['branch.view']))).toEqual([]);
+  it('offers Activate and Return only while pending, and only with both codes tenant-wide', () => {
+    expect(availableBranchDecisions(pending(), ACTIVATOR, ME)).toEqual(['activate', 'return']);
+    expect(availableBranchDecisions(pending(VICTOR, 'ACTIVE'), ACTIVATOR, ME)).toEqual([]);
+    expect(availableBranchDecisions(pending(), wide(['branch.approve']), ME)).toEqual([]);
+    expect(availableBranchDecisions(pending(), wide(['branch.view']), ME)).toEqual([]);
     // Held at that branch only: a pending branch grants no branch-scope permission (#242).
     expect(
-      availableBranchDecisions(pending, {
-        permissions: ['branch.approve', 'branch.view'],
-        tenantPermissions: ['branch.view'],
-        branchPermissions: { 'branch.approve': ['branch-a'] },
-      }),
+      availableBranchDecisions(
+        pending(),
+        {
+          permissions: ['branch.approve', 'branch.view'],
+          tenantPermissions: ['branch.view'],
+          branchPermissions: { 'branch.approve': ['branch-a'] },
+        },
+        ME,
+      ),
     ).toEqual([]);
+  });
+
+  // The return route's two intents (BranchProvisioningService.returnForChanges): its maker
+  // withdraws with branch.create, and never returns their own request.
+  it('offers its maker Withdraw beside Activate, with branch.create tenant-wide only', () => {
+    expect(availableBranchDecisions(pending(ME), ACTIVATOR, ME)).toEqual(['activate']);
+    expect(
+      availableBranchDecisions(pending(ME), wide([...ACTIVATOR.permissions, 'branch.create']), ME),
+    ).toEqual(['activate', 'withdraw']);
+    // branch.create held at a branch never reaches a pending one (#242): no Withdraw.
+    expect(
+      availableBranchDecisions(
+        pending(ME),
+        {
+          permissions: [...ACTIVATOR.permissions, 'branch.create'],
+          tenantPermissions: ACTIVATOR.permissions,
+        },
+        ME,
+      ),
+    ).toEqual(['activate']);
   });
 
   it('disables Activate only while the maker gate blocks it', () => {
     expect(blockedBranchDecisions(['activate'], { makerGate: 'blocked' })).toEqual({
+      activate: MAKER_CHECKER_BLOCKED,
+    });
+    expect(blockedBranchDecisions(['activate', 'withdraw'], { makerGate: 'blocked' })).toEqual({
       activate: MAKER_CHECKER_BLOCKED,
     });
     expect(blockedBranchDecisions(['activate'], { makerGate: 'allowed' })).toEqual({});
@@ -232,11 +268,12 @@ describe('where a branch activation stands', () => {
   });
 
   it.each([
-    ['PENDING_APPROVAL', null],
-    ['ACTIVE', 'Activated: this branch is live.'],
-    ['DRAFT', "This branch is still a draft: it hasn't been submitted for activation."],
-    ['CLOSED', "This branch isn't waiting for activation: it is closed."],
-  ] as const)('notes a %s branch: %j', (status, note) => {
-    expect(branchOutcomeNote(status)).toBe(note);
+    ['PENDING_APPROVAL', null, null],
+    ['ACTIVE', null, 'Activated: this branch is live.'],
+    ['DRAFT', null, "This branch is still a draft: it hasn't been submitted for activation."],
+    ['DRAFT', 'Wrong parent', 'Sent back to draft: it can be changed and submitted again.'],
+    ['CLOSED', 'Merged', "This branch isn't waiting for activation: it is closed."],
+  ] as const)('notes a %s branch (reason %j): %j', (status, statusReason, note) => {
+    expect(branchOutcomeNote({ status, statusReason })).toBe(note);
   });
 });

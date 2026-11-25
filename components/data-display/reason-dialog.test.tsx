@@ -175,6 +175,23 @@ describe('ReasonDialog', () => {
     expect(screen.getByRole('textbox', { name: 'Reason' })).toBeRequired();
   });
 
+  it('names the reason field as asked, keeping it required', () => {
+    renderWithProviders(
+      <ReasonDialog
+        open
+        title="Return Karen Branch for changes?"
+        description="It goes back to draft."
+        confirmLabel="Return for changes"
+        reason="required"
+        reasonLabel="What needs to change"
+        action={() => Promise.resolve<ActionResult>({ ok: true })}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('textbox', { name: 'What needs to change' })).toBeRequired();
+  });
+
   it('recovers from a rejected action with safe copy, keeps the reason, and retries with the same key (I1)', async () => {
     const user = userEvent.setup();
     const action = vi
