@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen, waitFor, within } from '@testing-library/react';
 import { ownStyle } from '@/test/own-style';
@@ -59,6 +59,10 @@ function expectScoped(formData: FormData) {
 }
 
 describe('TenantLifecycleActions', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
   it('disables a blocked decision, tied to its caption (BG-08)', () => {
     const caption =
       'You requested or submitted this institution, so another platform administrator must decide it.';
@@ -166,7 +170,32 @@ describe('TenantLifecycleActions', () => {
     });
   });
 
-  it('explains an approve refusal inside the dialog, with its reference (BG-08)', async () => {
+  // Decision Q7 (BG-01): Approve takes an optional remark.
+  it('approves with an optional remark, carrying the tenant and the organisation', async () => {
+    const user = userEvent.setup();
+    approveTenant.mockResolvedValueOnce({ ok: true });
+    renderWithProviders(record(['approve', 'reject']));
+
+    await user.click(screen.getByRole('button', { name: 'Approve' }));
+    const dialog = screen.getByRole('dialog', { name: `Approve ${NAME}?` });
+    expect(dialog).toHaveTextContent("Someone who created or submitted the request can't approve");
+    const remark = within(dialog).getByRole('textbox', { name: 'Remark (optional)' });
+    expect(remark).not.toBeRequired();
+    expect(remark).toHaveAccessibleDescription('Recorded with the approval. Up to 500 characters.');
+    await user.type(remark, 'KYC pack reviewed');
+    await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
+
+    await waitFor(() => {
+      expect(approveTenant).toHaveBeenCalledTimes(1);
+    });
+    const formData = approveTenant.mock.calls[0]?.[1] as FormData;
+    expect(formData.get('reason')).toBe('KYC pack reviewed');
+    expect(formData.get('idempotencyKey')).toMatch(/^[0-9a-f-]{36}$/);
+    expectScoped(formData);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Approved. Provisioning is queued.');
+  });
+
+  it('explains an approve refusal inside the dialog, with its reference, keeping the remark and the key (BG-08)', async () => {
     const user = userEvent.setup();
     // The maker's own code, which describeProblem explains (the action adds no copy of its own).
     approveTenant.mockResolvedValueOnce({
@@ -181,12 +210,25 @@ describe('TenantLifecycleActions', () => {
 
     await user.click(screen.getByRole('button', { name: 'Approve' }));
     const dialog = screen.getByRole('dialog', { name: `Approve ${NAME}?` });
+    const remark = within(dialog).getByRole('textbox', { name: 'Remark (optional)' });
+    await user.type(remark, 'KYC pack reviewed');
     await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       /requested or submitted this institution.*Reference: req-7/,
     );
+    expect(remark).toHaveValue('KYC pack reviewed');
     expectScoped(approveTenant.mock.calls[0]?.[1] as FormData);
+
+    // Review Focus 2: a retry after the refusal reuses the key minted when the dialog opened.
+    approveTenant.mockResolvedValueOnce({ ok: true });
+    await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
+    await waitFor(() => {
+      expect(approveTenant).toHaveBeenCalledTimes(2);
+    });
+    const [first, second] = approveTenant.mock.calls.map((call) => call[1] as FormData);
+    expect(second?.get('idempotencyKey')).toBe(first?.get('idempotencyKey'));
+    expect(second?.get('reason')).toBe('KYC pack reviewed');
   });
 
   it('suspends with a required reason', async () => {

@@ -192,6 +192,44 @@ describe('ReasonDialog', () => {
     expect(screen.getByRole('textbox', { name: 'What needs to change' })).toBeRequired();
   });
 
+  it('describes the field with its helper text until a field error replaces it', async () => {
+    const user = userEvent.setup();
+    const action = vi.fn((_previous: ActionResult | null, _formData: FormData) =>
+      Promise.resolve<ActionResult>({
+        ok: false,
+        formError: 'Check the highlighted fields and try again.',
+        fieldErrors: { reason: 'Keep the reason under 500 characters.' },
+        code: 'validation_failed',
+        requestId: null,
+      }),
+    );
+    renderWithProviders(
+      <ReasonDialog
+        open
+        title="Approve Rose Atieno?"
+        description="Their membership becomes active."
+        confirmLabel="Approve"
+        reason="optional"
+        reasonLabel="Remark (optional)"
+        reasonHelperText="Recorded with the approval. Up to 500 characters."
+        action={action}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    // The label is used as given: "(optional)" is never added a second time.
+    const remark = screen.getByRole('textbox', { name: 'Remark (optional)' });
+    expect(remark).not.toBeRequired();
+    expect(remark).toHaveAccessibleDescription('Recorded with the approval. Up to 500 characters.');
+
+    await user.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => {
+      expect(remark).toHaveAccessibleDescription('Keep the reason under 500 characters.');
+    });
+    expect(remark).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('recovers from a rejected action with safe copy, keeps the reason, and retries with the same key (I1)', async () => {
     const user = userEvent.setup();
     const action = vi

@@ -159,6 +159,20 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
 
     const once = { ...headers, 'Idempotency-Key': randomUUID() };
     const harambee = api(`/platform/tenants/${TENANT_SCENARIO_IDS.harambee}/approve`);
+    // Platform #179 (BG-01): an optional remark of at most 500 characters, and no other property,
+    // both refused before the transition runs.
+    const long = await request.post(harambee, { headers, data: { reason: 'x'.repeat(501) } });
+    expect(long.status()).toBe(400);
+    expect(await long.json()).toMatchObject({
+      code: 'validation_failed',
+      violations: [{ field: 'reason' }],
+    });
+    const extra = await request.post(harambee, {
+      headers,
+      data: { reason: 'KYC pack reviewed', remark: 'x' },
+    });
+    expect(extra.status()).toBe(400);
+    expect(await extra.json()).toMatchObject({ code: 'invalid_json' });
     const approved = await request.post(harambee, { headers: once, data: {} });
     expect(approved.status()).toBe(202);
     expect(await approved.json()).toMatchObject({ status: 'ACTIVE', bootstrap_status: 'QUEUED' });
@@ -166,6 +180,43 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
     const replay = await request.post(harambee, { headers: once, data: {} });
     expect(replay.status()).toBe(202);
     expect(replay.headers()['idempotency-replayed']).toBe('true');
+  });
+
+  test('approves with a remark of exactly 500 characters, or with no body at all', async ({
+    request,
+  }) => {
+    const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
+    const harambee = api(`/platform/tenants/${TENANT_SCENARIO_IDS.harambee}/approve`);
+    const approved = await request.post(harambee, {
+      headers,
+      data: { reason: 'x'.repeat(500) },
+    });
+    expect(approved.status()).toBe(202);
+    expect(await approved.json()).toMatchObject({ status: 'ACTIVE' });
+
+    const fresh = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
+    // `@RequestBody(required = false)`: no body is `{}`.
+    const bare = await request.post(harambee, { headers: fresh });
+    expect(bare.status()).toBe(202);
+  });
+
+  // ReactivateTenantRequest bounds its optional reason at 500 too (6a8ea28).
+  test('reactivates with a reason of at most 500 characters', async ({ request }) => {
+    const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
+    const kilimo = api(`/platform/tenants/${TENANT_SCENARIO_IDS.kilimo}/reactivate`);
+    const long = await request.post(kilimo, { headers, data: { reason: 'x'.repeat(501) } });
+    expect(long.status()).toBe(400);
+    expect(await long.json()).toMatchObject({
+      code: 'validation_failed',
+      violations: [{ field: 'reason' }],
+    });
+    // Still SUSPENDED: refused before the transition runs.
+    const reactivated = await request.post(kilimo, {
+      headers,
+      data: { reason: 'x'.repeat(500) },
+    });
+    expect(reactivated.status()).toBe(200);
+    expect(await reactivated.json()).toMatchObject({ status: 'ACTIVE' });
   });
 
   test('requires reasons, guards transitions, amends only a draft, and retries only a failed bootstrap', async ({

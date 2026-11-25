@@ -196,7 +196,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 - **Status:** Partly fixed. Platform #155 (sub-issues #178–#182), #221, #222, #282. ADR 0029 chose
   per-resource extensions over an approval-request model. The branch return, withdrawal and discard
-  are **adopted** (frontend #117); decision remarks and the institution return are still to adopt.
+  are **adopted** (frontend #117), and so are the decision remarks (frontend #119); the
+  institution return is still to adopt.
 - **Gap:** Maker-checker exists only as per-resource transitions: membership activate (approver ≠
   inviter), branch activate (activator ≠ drafter), tenant approve (approver ≠ creator and submitter).
   There is no approval-request entity, no "return for changes", no resubmission, no reject for a
@@ -248,8 +249,17 @@ the same bullets): the first is the gap as found, the second what the UI still d
   characters, and a draft with a reason shows "Sent back: <reason>" (the record can't tell a
   withdrawal from a return). The head-office 409 and the closure guard's 409 are named, and a
   return of a request decided elsewhere says so.
-- **To adopt:** Return on pending institutions with their `status_reason`, and an optional remark on
-  Approve. (Activation is gated on `branch.approve` since frontend #107.)
+- **Adopted** (frontend #119): Approve takes an optional remark (decision Q7) on the user record,
+  the user approval page and the institution record: a "Remark (optional)" field ("Recorded with the
+  approval. Up to 500 characters."), sent as `{reason}` only when it isn't blank, and refused over
+  500 characters before any call. The platform trims it, drops a blank one and refuses one over 500
+  (`validation_failed`). A member's remark is on the `user.approve` audit row, which the user's audit
+  trail shows (and is the membership's status reason on a 200, which no read returns); an
+  institution's is on its approval's transitions and audit rows and becomes its `status_reason`,
+  which its detail returns. Branch activation already sent one, and keeps its "Reason (optional)"
+  field.
+- **To adopt:** Return on pending institutions with their `status_reason`. (Activation is gated on
+  `branch.approve` since frontend #107.)
 
 ### BG-02 — A tenant created through the API cannot onboard a second person · P0
 

@@ -88,6 +88,8 @@ describe('DecisionBar', () => {
     expect(note).toHaveTextContent(warning);
     const approve = screen.getByRole('button', { name: 'Approve' });
     expect(approve).toBeEnabled();
+    // The note describes the decision it relaxes.
+    expect(approve).toHaveAccessibleDescription(warning);
     expect(note.compareDocumentPosition(approve) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -101,7 +103,7 @@ describe('DecisionBar', () => {
     ['a 202', 'provisioning', APPROVED_TOAST.provisioning],
     ['an unreadable echo', 'recorded', APPROVED_TOAST.recorded],
   ] as const)(
-    'approves through a bare confirmation and says what %s means',
+    'approves with an optional remark and says what %s means',
     async (_case, outcome, toast) => {
       const user = userEvent.setup({ delay: null });
       approveUser.mockResolvedValueOnce({ ok: true, outcome });
@@ -109,18 +111,38 @@ describe('DecisionBar', () => {
 
       await user.click(screen.getByRole('button', { name: 'Approve' }));
       const dialog = screen.getByRole('dialog', { name: `Approve ${NAME}?` });
-      // The activate endpoint reads no body: no reason field.
-      expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument();
       expect(dialog).toHaveTextContent("An approval can't be undone.");
+      // Decision Q7 (BG-01): one optional field, labelled once as optional.
+      const remark = within(dialog).getByRole('textbox', { name: 'Remark (optional)' });
+      expect(remark).not.toBeRequired();
+      expect(remark).toHaveAccessibleDescription(
+        'Recorded with the approval. Up to 500 characters.',
+      );
+      await user.type(remark, 'Signed form on file');
       await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
 
       expect(await screen.findByRole('alert')).toHaveTextContent(toast);
       expect(approveUser).toHaveBeenCalledTimes(1);
       const sent = approveUser.mock.calls[0]?.[1] as FormData;
       expectScoped(sent, 'membershipId');
+      expect(sent.get('reason')).toBe('Signed form on file');
       expect(sent.get('userId')).toBeNull();
     },
   );
+
+  it('approves without a remark, sending it blank', async () => {
+    const user = userEvent.setup({ delay: null });
+    approveUser.mockResolvedValueOnce({ ok: true, outcome: 'active' });
+    renderWithProviders(record());
+
+    await user.click(screen.getByRole('button', { name: 'Approve' }));
+    const dialog = screen.getByRole('dialog', { name: `Approve ${NAME}?` });
+    await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(APPROVED_TOAST.active);
+    // The action drops a blank remark, so the platform is sent `{}`.
+    expect((approveUser.mock.calls[0]?.[1] as FormData).get('reason')).toBe('');
+  });
 
   it('makes Reject & revoke an alertdialog with the permanence warning and a required reason', async () => {
     const user = userEvent.setup({ delay: null });
@@ -235,7 +257,7 @@ describe('DecisionBar', () => {
     expect(screen.getByText(MEMBERSHIP_UNAVAILABLE)).toBeInTheDocument();
   });
 
-  it('keeps the key after a failed approval, and retries with it', async () => {
+  it('keeps the key and the remark after a failed approval, and retries with them', async () => {
     const user = userEvent.setup({ delay: null });
     approveUser
       .mockResolvedValueOnce({
@@ -250,14 +272,18 @@ describe('DecisionBar', () => {
 
     await user.click(screen.getByRole('button', { name: 'Approve' }));
     const dialog = screen.getByRole('dialog', { name: `Approve ${NAME}?` });
+    const remark = within(dialog).getByRole('textbox', { name: 'Remark (optional)' });
+    await user.type(remark, 'Signed form on file');
     const confirm = within(dialog).getByRole('button', { name: 'Approve' });
     await user.click(confirm);
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Reference: req-1');
+    expect(remark).toHaveValue('Signed form on file');
 
     await user.click(confirm);
     expect(await screen.findByRole('alert')).toHaveTextContent(APPROVED_TOAST.active);
     const [first, second] = approveUser.mock.calls.map((call) => call[1] as FormData);
     expect(second?.get('idempotencyKey')).toBe(first?.get('idempotencyKey'));
+    expect(second?.get('reason')).toBe('Signed form on file');
     expectScoped(first, 'membershipId');
     expectScoped(second, 'membershipId');
   });

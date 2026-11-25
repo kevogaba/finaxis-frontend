@@ -90,25 +90,63 @@ describe('UserLifecycleActions', () => {
     expect(note).toHaveTextContent(warning);
     const approve = screen.getByRole('button', { name: 'Approve' });
     expect(approve).toBeEnabled();
+    // The note describes the decision it relaxes.
+    expect(approve).toHaveAccessibleDescription(warning);
     expect(note.compareDocumentPosition(approve) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('approves through a confirmation that carries the membership, key and organisation (I2)', async () => {
+  it('approves with an optional remark, carrying the membership, key and organisation (I2)', async () => {
     const user = userEvent.setup();
     approveMembership.mockResolvedValueOnce({ ok: true });
     renderActions({ actions: ['approve', 'reject'] });
 
     await user.click(screen.getByRole('button', { name: 'Approve' }));
     const dialog = screen.getByRole('dialog', { name: `Approve ${NAME}?` });
-    // The activate endpoint reads no body, so Approve is a bare confirmation: no reason field.
-    expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument();
+    // Decision Q7 (BG-01): one optional field, labelled once as optional.
+    const remark = within(dialog).getByRole('textbox', { name: 'Remark (optional)' });
+    expect(remark).not.toBeRequired();
+    expect(remark).toHaveAccessibleDescription('Recorded with the approval. Up to 500 characters.');
+    await user.type(remark, 'Signed form on file');
     await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
 
     await waitFor(() => {
       expect(approveMembership).toHaveBeenCalledTimes(1);
     });
-    expectScoped(approveMembership.mock.calls[0]?.[1] as FormData);
+    const sent = approveMembership.mock.calls[0]?.[1] as FormData;
+    expectScoped(sent);
+    expect(sent.get('reason')).toBe('Signed form on file');
     expect(await screen.findByRole('alert')).toHaveTextContent('Approval recorded');
+  });
+
+  it('keeps the key and the remark after a failed approval, and retries with them', async () => {
+    const user = userEvent.setup();
+    approveMembership
+      .mockResolvedValueOnce({
+        ok: false,
+        formError: 'Refused.',
+        fieldErrors: {},
+        code: 'conflict',
+        requestId: 'req-9',
+      })
+      .mockResolvedValueOnce({ ok: true });
+    renderActions({ actions: ['approve', 'reject'] });
+
+    await user.click(screen.getByRole('button', { name: 'Approve' }));
+    const dialog = screen.getByRole('dialog', { name: `Approve ${NAME}?` });
+    const remark = within(dialog).getByRole('textbox', { name: 'Remark (optional)' });
+    await user.type(remark, 'Signed form on file');
+    await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Reference: req-9');
+    expect(remark).toHaveValue('Signed form on file');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
+    await waitFor(() => {
+      expect(approveMembership).toHaveBeenCalledTimes(2);
+    });
+    const [first, second] = approveMembership.mock.calls.map((call) => call[1] as FormData);
+    expect(second?.get('idempotencyKey')).toBe(first?.get('idempotencyKey'));
+    expect(second?.get('reason')).toBe('Signed form on file');
+    expectScoped(second);
   });
 
   it('makes Reject & revoke an alertdialog with the permanence warning and a required reason', async () => {

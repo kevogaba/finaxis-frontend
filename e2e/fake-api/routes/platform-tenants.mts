@@ -251,7 +251,8 @@ function draftFields(body: Record<string, unknown>, options: { amend: boolean })
 }
 
 interface TransitionOptions {
-  /** `none`: the endpoint has no body, and never reads one (contract §E.2). */
+  /** `none`: the endpoint has no body, and never reads one (contract §E.2). `optional`: a decision
+   * remark of at most 500 characters; `required`: a reason of 3–500. */
   reason: 'none' | 'optional' | 'required';
   status?: number;
   /** A checker decision (BG-08, TenantCheckerRule): its requester or submitter is refused by name,
@@ -282,6 +283,12 @@ function transition(
     ) {
       throw problem(400, 'validation_failed', 'Validation failed.', [
         { field: 'reason', code: 'Size', message: 'size must be between 3 and 500' },
+      ]);
+    }
+    // ApproveTenantRequest, ReactivateTenantRequest: `@Size(max = 500)` on the raw text.
+    if (options.reason === 'optional' && reason !== null && reason.length > 500) {
+      throw problem(400, 'validation_failed', 'Validation failed.', [
+        { field: 'reason', code: 'Size', message: 'size must be between 0 and 500' },
       ]);
     }
     sendIdempotent(
@@ -430,7 +437,9 @@ export const platformTenantRoutes: Route[] = [
       tenant.status = 'ACTIVE';
       tenant.bootstrapStatus = 'QUEUED';
     },
-    { reason: 'none', status: 202, checker: true },
+    // A decision remark (platform #179, BG-01), which the platform keeps as the tenant's
+    // `status_reason`. ponytail: not kept, since the fake's detail returns no `status_reason` yet.
+    { reason: 'optional', status: 202, checker: true },
   ),
   transition(
     'reject',

@@ -11,6 +11,7 @@ import { ReasonDialog } from '@/components/data-display/reason-dialog';
 import NextLink from '@/components/navigation/next-link';
 import { useToast } from '@/components/providers/toast-provider';
 import type { FormAction } from '@/lib/api/action-result';
+import { APPROVAL_REMARK } from '@/modules/administration/approvals/approval-copy';
 import {
   approveTenant,
   deprovisionTenant,
@@ -29,6 +30,9 @@ interface ActionCopy {
   description: string;
   /** `null`: the endpoint reads no body (contract §E.2), so a ConfirmDialog without a reason. */
   reason: 'optional' | 'required' | null;
+  /** The reason field's label and helper text, when not "Reason" (Approve's remark). */
+  reasonLabel?: string;
+  reasonHelperText?: string;
   /** Irreversible: an error-toned trigger and dialog. */
   destructive: boolean;
   success: string;
@@ -54,7 +58,8 @@ function copyFor(id: DialogAction, name: string): ActionCopy {
         title: `Approve ${name}?`,
         description:
           "Approval activates the institution, creates its head office and default roles, and queues its first administrator's account. Someone who created or submitted the request can't approve it.",
-        reason: null,
+        reason: 'optional',
+        ...APPROVAL_REMARK,
         destructive: false,
         success: 'Approved. Provisioning is queued.',
         action: approveTenant,
@@ -252,6 +257,8 @@ export function TenantLifecycleActions({
             description={copy.description}
             confirmLabel={copy.label}
             reason={copy.reason}
+            reasonLabel={copy.reasonLabel}
+            reasonHelperText={copy.reasonHelperText}
             tone={copy.destructive ? 'error' : undefined}
             action={copy.action}
             contextOrganisationId={contextOrganisationId}

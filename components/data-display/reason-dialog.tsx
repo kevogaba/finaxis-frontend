@@ -31,8 +31,11 @@ interface ReasonDialogProps {
   description: string;
   confirmLabel: string;
   reason: 'optional' | 'required';
-  /** The reason field's label when "Reason" undersells it (e.g. "What needs to change"). */
+  /** The reason field's label when "Reason" undersells it (e.g. "What needs to change"). Used as
+   * given: an optional field's label says "(optional)" itself (e.g. "Remark (optional)"). */
   reasonLabel?: string;
+  /** Said under the reason field (its accessible description) until a field error replaces it. */
+  reasonHelperText?: string;
   action: FormAction;
   onClose: () => void;
   onSuccess: () => void;
@@ -89,6 +92,7 @@ function ReasonForm({
   confirmLabel,
   reason,
   reasonLabel = reason === 'required' ? 'Reason' : 'Reason (optional)',
+  reasonHelperText,
   action,
   onClose,
   onSuccess,
@@ -166,7 +170,9 @@ function ReasonForm({
       <DialogTitle>{title}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 3 }}>
         <DialogContentText id={descriptionId}>{description}</DialogContentText>
-        {failure && (
+        {/* Hidden while a retry is pending (as ConfirmDialog), so a stale failure never sits on
+            screen beside the success that follows it. */}
+        {failure && !pending && (
           <Alert severity="error">
             {failure.formError}
             {failure.requestId && ` Reference: ${failure.requestId}`}
@@ -184,7 +190,7 @@ function ReasonForm({
           multiline
           minRows={2}
           error={Boolean(fieldErrors.reason)}
-          helperText={fieldErrors.reason}
+          helperText={fieldErrors.reason ?? reasonHelperText}
           slotProps={{
             htmlInput: { maxLength: REASON_MAX, minLength: reason === 'required' ? 3 : undefined },
           }}

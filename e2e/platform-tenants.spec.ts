@@ -291,7 +291,7 @@ test.describe('platform tenants', () => {
     ).toBeFocused();
   });
 
-  test('approves a request another administrator submitted, and shows provisioning queued', async ({
+  test('approves a request another administrator submitted with a remark, and shows provisioning queued', async ({
     context,
     page,
   }, testInfo) => {
@@ -299,7 +299,16 @@ test.describe('platform tenants', () => {
     await openDirectory(page);
     await openRecord(page, 'Institutions', 'Harambee Farmers SACCO');
 
-    await expect(await act(page, 'Approve')).toBeHidden();
+    // Decision Q7 (BG-01): an optional remark, which becomes the institution's status reason.
+    await page.getByRole('button', { name: 'Approve', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Approve Harambee Farmers SACCO?' });
+    const remark = dialog.getByRole('textbox', { name: 'Remark (optional)' });
+    await expect(remark).toHaveAccessibleDescription(
+      'Recorded with the approval. Up to 500 characters.',
+    );
+    await remark.fill('KYC pack reviewed');
+    await dialog.getByRole('button', { name: 'Approve', exact: true }).click();
+    await expect(dialog).toBeHidden();
     await expect(
       page.getByRole('alert').filter({ hasText: 'Approved. Provisioning is queued.' }),
     ).toBeVisible();

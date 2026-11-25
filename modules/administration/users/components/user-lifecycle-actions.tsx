@@ -5,11 +5,11 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
-import { ConfirmDialog } from '@/components/data-display/confirm-dialog';
 import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { ReasonDialog } from '@/components/data-display/reason-dialog';
 import { useToast } from '@/components/providers/toast-provider';
 import type { FormAction } from '@/lib/api/action-result';
+import { APPROVAL_REMARK } from '@/modules/administration/approvals/approval-copy';
 import {
   approveMembership,
   reactivateMembership,
@@ -26,8 +26,10 @@ interface ActionCopy {
   label: string;
   title: string;
   description: string;
-  /** `null`: the activate endpoint reads no body (contract §E.3), so a ConfirmDialog. */
-  reason: 'optional' | 'required' | null;
+  reason: 'optional' | 'required';
+  /** The reason field's label and helper text, when not "Reason" (Approve's remark). */
+  reasonLabel?: string;
+  reasonHelperText?: string;
   /** Irreversible: an error-toned trigger and dialog. */
   destructive: boolean;
   success: string;
@@ -42,7 +44,8 @@ function copyFor(id: MembershipAction, name: string): ActionCopy {
         title: `Approve ${name}?`,
         description:
           "Their membership becomes active once their sign-in identity is ready. If they don't have one yet, it is created first and the invitation is sent when it completes.",
-        reason: null,
+        reason: 'optional',
+        ...APPROVAL_REMARK,
         destructive: false,
         success: 'Approval recorded',
         action: approveMembership,
@@ -252,24 +255,6 @@ export function UserLifecycleActions({
             setOpen(null);
             notify(copy.success);
           };
-          if (copy.reason === null) {
-            return (
-              <ConfirmDialog
-                key={id}
-                open={open === id}
-                title={copy.title}
-                description={copy.description}
-                confirmLabel={copy.label}
-                tone={copy.destructive ? 'error' : 'primary'}
-                action={copy.action}
-                contextOrganisationId={contextOrganisationId}
-                onClose={close}
-                onSuccess={succeed}
-              >
-                <input type="hidden" name="membershipId" value={membershipId} />
-              </ConfirmDialog>
-            );
-          }
           return (
             <ReasonDialog
               key={id}
@@ -278,6 +263,8 @@ export function UserLifecycleActions({
               description={copy.description}
               confirmLabel={copy.label}
               reason={copy.reason}
+              reasonLabel={copy.reasonLabel}
+              reasonHelperText={copy.reasonHelperText}
               tone={copy.destructive ? 'error' : 'default'}
               action={copy.action}
               contextOrganisationId={contextOrganisationId}

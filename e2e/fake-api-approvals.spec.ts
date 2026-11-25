@@ -250,6 +250,47 @@ test.describe('fake API: the approvals scenarios (layer 12)', () => {
       ).toMatchObject({ membership_status: 'PENDING_APPROVAL', user_status: 'SUSPENDED' });
     });
 
+    // Platform #179 (BG-01, decision Q7): an optional remark, kept on the `user.approve` row.
+    test('a remark: at most 500 characters and no other property, trimmed onto the audit row', async ({
+      request,
+    }) => {
+      const { get, post } = await signIn(request);
+      const path = `/tenant/memberships/${APPROVALS.tabithaMembership}/activate`;
+      const long = await post(path, { reason: 'x'.repeat(501) });
+      expect(long.status()).toBe(400);
+      expect(await read(long)).toMatchObject({
+        code: 'validation_failed',
+        violations: [{ field: 'reason' }],
+      });
+      const extra = await post(path, { reason: 'Signed form on file', remark: 'x' });
+      expect(extra.status()).toBe(400);
+      expect(await read(extra)).toMatchObject({ code: 'invalid_json' });
+
+      // Neither refusal changed anything: Tabitha is still pending, and is approved with it.
+      expect((await post(path, { reason: '  Signed form on file  ' })).status()).toBe(200);
+      const rows = await read<Paged<{ reason: string | null }>>(
+        await get(`/tenant/audit-events?entity_id=${APPROVALS.tabitha}&action=user.approve`),
+      );
+      expect(rows.items).toEqual([expect.objectContaining({ reason: 'Signed form on file' })]);
+    });
+
+    test('a blank remark is none, and exactly 500 characters is accepted', async ({ request }) => {
+      const { get, post } = await signIn(request);
+      const blank = await post(`/tenant/memberships/${APPROVALS.zawadiMembership}/activate`, {
+        reason: '   ',
+      });
+      expect(blank.status()).toBe(202);
+      const rows = await read<Paged<{ reason: string | null }>>(
+        await get(`/tenant/audit-events?entity_id=${APPROVALS.zawadi}&action=user.approve`),
+      );
+      expect(rows.items).toEqual([expect.objectContaining({ reason: null })]);
+
+      const full = await post(`/tenant/memberships/${APPROVALS.tabithaMembership}/activate`, {
+        reason: 'x'.repeat(500),
+      });
+      expect(full.status()).toBe(200);
+    });
+
     test('the inviter: 403 by name (BG-08)', async ({ request }) => {
       const { post } = await signIn(request);
       const response = await post(`/tenant/memberships/${USERS.carolMembership}/activate`);

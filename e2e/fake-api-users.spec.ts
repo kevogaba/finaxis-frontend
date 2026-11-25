@@ -402,10 +402,11 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
     const brief = await post(`${esther}/reactivate`, { reason: 'ok' });
     expect(brief.status()).toBe(200);
 
-    // The approval reads no body, so any property is refused; `{}` is the control.
+    // The approval takes only an optional remark (platform #179, BG-01), so any other property is
+    // refused; the remark alone is the control.
     const activate = `${membershipPath(USERS.aminaMembership)}/activate`;
-    await expectProblem(await post(activate, { reason: 'x' }), 400, 'invalid_json');
-    expect((await post(activate, {})).status()).toBe(202);
+    await expectProblem(await post(activate, { reason: 'x', note: 'x' }), 400, 'invalid_json');
+    expect((await post(activate, { reason: 'x' })).status()).toBe(202);
   });
 
   test('revokes for good, cascading to every assignment; a second revoke is a 409', async ({

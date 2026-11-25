@@ -105,7 +105,7 @@ describe('membership actions', () => {
   });
 
   describe('approveMembership', () => {
-    it('approves with an empty body on the activate path, forwarding the form key', async () => {
+    it('approves with an empty body on the activate path without a remark, forwarding the form key', async () => {
       await actions.approveMembership(
         null,
         form({ idempotencyKey: KEY, membershipId: MEMBERSHIP }),
@@ -118,12 +118,42 @@ describe('membership actions', () => {
       );
     });
 
-    it('never sends a reason: the endpoint reads no body', async () => {
-      await actions.approveMembership(
-        null,
-        form({ idempotencyKey: KEY, membershipId: MEMBERSHIP, reason: 'Looks fine' }),
-      );
-      expect(apiPost).toHaveBeenCalledWith(expect.any(String), {}, KEY);
+    // Decision Q7 (BG-01): an optional remark, sent only when it isn't blank.
+    it('sends the trimmed remark when given, and {} when it is blank or absent', async () => {
+      const path = `/api/v1/tenant/memberships/${MEMBERSHIP}/activate`;
+      const base = { idempotencyKey: KEY, membershipId: MEMBERSHIP };
+
+      await actions.approveMembership(null, form({ ...base, reason: '  Checked the form  ' }));
+      expect(apiPost).toHaveBeenLastCalledWith(path, { reason: 'Checked the form' }, KEY);
+      await actions.approveMembership(null, form({ ...base, reason: '   ' }));
+      expect(apiPost).toHaveBeenLastCalledWith(path, {}, KEY);
+      await actions.approveMembership(null, form(base));
+      expect(apiPost).toHaveBeenLastCalledWith(path, {}, KEY);
+      expect(apiPost).toHaveBeenCalledTimes(3);
+    });
+
+    it('accepts exactly 500 characters and refuses 501 as a field error, before any call', async () => {
+      const base = { idempotencyKey: KEY, membershipId: MEMBERSHIP };
+      expect(
+        await actions.approveMembership(null, form({ ...base, reason: 'x'.repeat(501) })),
+      ).toMatchObject({
+        ok: false,
+        fieldErrors: { reason: 'Keep the remark to 500 characters or fewer.' },
+      });
+      expect(apiPost).not.toHaveBeenCalled();
+
+      await actions.approveMembership(null, form({ ...base, reason: 'x'.repeat(500) }));
+      expect(apiPost).toHaveBeenCalledWith(expect.any(String), { reason: 'x'.repeat(500) }, KEY);
+    });
+
+    it('retries with the minted key and the same remark', async () => {
+      const fields = { idempotencyKey: KEY, membershipId: MEMBERSHIP, reason: 'Form checked' };
+      await actions.approveMembership(null, form(fields));
+      await actions.approveMembership(null, form(fields));
+      expect(apiPost.mock.calls.map(([, body, key]) => [body, key])).toEqual([
+        [{ reason: 'Form checked' }, KEY],
+        [{ reason: 'Form checked' }, KEY],
+      ]);
     });
 
     it.each([
