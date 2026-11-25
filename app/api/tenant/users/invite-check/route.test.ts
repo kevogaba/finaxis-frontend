@@ -26,19 +26,44 @@ describe('GET /api/tenant/users/invite-check', () => {
     requireAuthenticatedUser.mockResolvedValue({});
   });
 
-  it('answers the membership status the trimmed email already has here', async () => {
-    findMemberByEmail.mockResolvedValueOnce({ membershipStatus: 'REVOKED' });
+  it("answers a revoked member's status for the trimmed email, and their name for the re-invite", async () => {
+    findMemberByEmail.mockResolvedValueOnce({
+      id: '10000000-0000-4000-8000-000000000011',
+      email: 'hassan.ali@greenfield.example',
+      username: 'hassan.ali',
+      displayName: 'Hassan Ali',
+      membershipStatus: 'REVOKED',
+    });
     const response = await check('?email=%20hassan.ali%40greenfield.example%20');
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
-    expect(await response.json()).toEqual({ membershipStatus: 'REVOKED' });
+    // Only the status and the name: nothing else of the user's leaves the server.
+    expect(await response.json()).toEqual({
+      member: { membershipStatus: 'REVOKED', displayName: 'Hassan Ali' },
+    });
     expect(findMemberByEmail).toHaveBeenCalledWith('hassan.ali@greenfield.example');
   });
+
+  it.each(['PENDING_APPROVAL', 'ACTIVE', 'SUSPENDED'])(
+    "answers a %s member's status without their name: the email is refused, not re-invited",
+    async (membershipStatus) => {
+      findMemberByEmail.mockResolvedValueOnce({
+        id: '10000000-0000-4000-8000-000000000012',
+        email: 'neema@greenfield.example',
+        username: 'neema',
+        displayName: 'Neema Wanjiku',
+        membershipStatus,
+      });
+      expect(await (await check('?email=neema%40greenfield.example')).json()).toEqual({
+        member: { membershipStatus },
+      });
+    },
+  );
 
   it('answers null when no member has it', async () => {
     findMemberByEmail.mockResolvedValueOnce(null);
     expect(await (await check('?email=neema%40greenfield.example')).json()).toEqual({
-      membershipStatus: null,
+      member: null,
     });
   });
 

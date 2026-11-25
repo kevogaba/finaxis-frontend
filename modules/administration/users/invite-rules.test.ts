@@ -11,6 +11,10 @@ import {
   memberEmailMessage,
   MEMBERSHIP_TYPE_OPTIONS,
   needsBranch,
+  REINVITE_CONFLICT,
+  REINVITE_NOTE,
+  reinviteLead,
+  reinviteReviewNote,
   REVIEW_NOTE,
   SCOPE_OPTIONS,
   userRecordHref,
@@ -100,21 +104,40 @@ describe('an email already in use here (BG-28)', () => {
       'SUSPENDED',
       'This email belongs to a suspended member of this institution. Reactivate them from their record instead.',
     ],
-    [
-      'REVOKED',
-      "This email's membership here was revoked, so it can't be invited to this institution again.",
-    ],
   ] as const)('names a %s membership', (status, message) => {
     expect(memberEmailMessage(status)).toBe(message);
   });
 
   it("reads the route handler's answer, and nothing it doesn't know", () => {
-    expect(emailCheckSchema.parse({ membershipStatus: 'REVOKED' })).toEqual({
-      membershipStatus: 'REVOKED',
+    const hassan = { membershipStatus: 'REVOKED', displayName: 'Hassan Ali' };
+    expect(emailCheckSchema.parse({ member: hassan })).toEqual({ member: hassan });
+    expect(emailCheckSchema.parse({ member: null })).toEqual({ member: null });
+    // Only a revoked member is named: a refused email's member never is, even if sent.
+    expect(emailCheckSchema.parse({ member: { membershipStatus: 'ACTIVE' } })).toEqual({
+      member: { membershipStatus: 'ACTIVE' },
     });
-    expect(emailCheckSchema.parse({ membershipStatus: null })).toEqual({ membershipStatus: null });
-    expect(emailCheckSchema.safeParse({ membershipStatus: 'GONE' }).success).toBe(false);
+    expect(
+      emailCheckSchema.parse({ member: { membershipStatus: 'SUSPENDED', displayName: 'Esther' } }),
+    ).toEqual({ member: { membershipStatus: 'SUSPENDED' } });
+    expect(
+      emailCheckSchema.safeParse({ member: { ...hassan, membershipStatus: 'GONE' } }).success,
+    ).toBe(false);
+    expect(emailCheckSchema.safeParse({ member: { membershipStatus: 'REVOKED' } }).success).toBe(
+      false,
+    );
     expect(emailCheckSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('re-invites a revoked member by name, saying what the platform keeps and ignores, and what Continue does', () => {
+    expect(reinviteLead('Hassan Ali')).toBe('This re-invites Hassan Ali.');
+    // A member number is taken at first activation (platform V35): one revoked while pending has
+    // none, so the copy says "any".
+    expect(REINVITE_NOTE).toBe(
+      'Their revoked membership returns to awaiting approval with the access you choose next. They keep any member number they had, and their existing account details stay as they are, so the name, username and phone you enter here are ignored. Someone else must approve them. Continue to choose their access, or change the email.',
+    );
+    expect(reinviteReviewNote('Hassan Ali')).toBe(
+      'Sending re-invites Hassan Ali now: their revoked membership returns to awaiting approval with the access above. They keep any member number they had, and their existing account details stay as they are, so the name, username and phone above are ignored. A different administrator must approve it before they can use this institution.',
+    );
   });
 });
 
@@ -124,6 +147,11 @@ describe('copy that promises no more than the platform does', () => {
       "conflicts with an existing member or username, or the institution isn't active",
     );
     expect(REVIEW_NOTE).toContain('must approve it before they can use this institution.');
+  });
+
+  it("names a revoked member's 409 without the username its re-invite never checks (BG-28)", () => {
+    expect(REINVITE_CONFLICT).toContain("the institution isn't active");
+    expect(REINVITE_CONFLICT).not.toMatch(/username/i);
   });
 
   it('asks for a reload, never a retry, when the email check is refused (Ruling 12)', () => {

@@ -23,10 +23,10 @@ async function scanUsers(
 }
 
 /**
- * The member of this institution whose email this is, in any membership status (BG-28: a revoked
- * one still blocks the email); null when none is found within the ceiling. `GET /tenant/users`
- * lists everyone with a membership here; the email is compared exactly, without letter case. One
- * endpoint, no read per hit (BG-09; Ruling 1).
+ * The member of this institution whose email this is, in any membership status (a revoked one is
+ * re-invited rather than refused, BG-28); null when none is found within the ceiling.
+ * `GET /tenant/users` lists everyone with a membership here; the email is compared exactly, without
+ * letter case. One endpoint, no read per hit (BG-09; Ruling 1).
  *
  * A scan cut at the ceiling answers null, as if free (L1's capped scan): an exact email as `q` can't
  * realistically match 500 users, and the backstop is the invitation itself, which is posted first

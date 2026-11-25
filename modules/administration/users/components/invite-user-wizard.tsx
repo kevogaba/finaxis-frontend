@@ -9,7 +9,7 @@ import {
   type SyntheticEvent,
 } from 'react';
 import { unstable_rethrow } from 'next/navigation';
-import { useForm, type FieldErrors, type Path } from 'react-hook-form';
+import { useForm, useWatch, type FieldErrors, type Path } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Alert from '@mui/material/Alert';
 import { WizardForm, type WizardStep } from '@/components/data-display/wizard-form';
@@ -17,18 +17,21 @@ import type { ActionResult } from '@/lib/api/action-result';
 import { applyFieldErrors } from '@/lib/apply-field-errors';
 import { inviteUser } from '../invite-actions';
 import {
+  type BlockingMembershipStatus,
   EMAIL_CHECK_FAILED,
   EMAIL_CHECK_REFUSED,
   emailCheckSchema,
   IDENTITY_FIELDS,
   IDENTITY_LABELS,
   INVITATION_FIELDS,
+  INVITE_CONFLICT_CODES,
   memberEmailMessage,
+  REINVITE_NOTE,
+  reinviteLead,
   SESSION_EXPIRED,
   USERS_HREF,
 } from '../invite-rules';
 import { EMPTY_INVITE, inviteSchema, type InviteValues } from '../invite-schema';
-import type { MembershipStatus } from '../user-contract';
 import type { SelectOption } from '../user-rules';
 import { InviteAccessFields } from './invite-access-fields';
 import { InviteIdentityFields } from './invite-identity-fields';
@@ -109,8 +112,18 @@ const SUBMIT_FAILED =
 
 type EmailCheckOutcome =
   | { kind: 'free' }
-  | { kind: 'member'; status: MembershipStatus }
+  | { kind: 'revoked'; name: string }
+  | { kind: 'taken'; status: BlockingMembershipStatus }
   | { kind: 'failed'; message: string };
+
+/** A revoked member's email the check found (BG-28): the invitation re-invites them by name. */
+interface Reinvite {
+  email: string;
+  name: string;
+}
+
+/** The email check's comparison: the route trims, and the platform matches without letter case. */
+const sameEmail = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** The Identity step's email check (Ruling 1), through the same-origin route handler. A failed
  * check is said, never read as "free" (Ruling 12, L1); a refused one (403) asks for a reload, since
@@ -133,8 +146,11 @@ async function checkEmail(email: string): Promise<EmailCheckOutcome> {
     }
     const check = emailCheckSchema.safeParse(await response.json());
     if (!check.success) return { kind: 'failed', message: EMAIL_CHECK_FAILED };
-    const status = check.data.membershipStatus;
-    return status === null ? { kind: 'free' } : { kind: 'member', status };
+    const member = check.data.member;
+    if (member === null) return { kind: 'free' };
+    return member.membershipStatus === 'REVOKED'
+      ? { kind: 'revoked', name: member.displayName }
+      : { kind: 'taken', status: member.membershipStatus };
   } catch {
     return { kind: 'failed', message: EMAIL_CHECK_FAILED };
   }
@@ -173,8 +189,11 @@ export function InviteUserWizard({
   const [failureShown, setFailureShown] = useState(false);
   const [checking, setChecking] = useState(false);
   const [checkFailure, setCheckFailure] = useState<string | null>(null);
+  // The revoked member the last check found; said while the email still reads the same.
+  const [reinvite, setReinvite] = useState<Reinvite | null>(null);
   const failureRef = useRef<HTMLDivElement>(null);
   const checkRef = useRef<HTMLDivElement>(null);
+  const reinviteRef = useRef<HTMLDivElement>(null);
   const {
     control,
     register,
@@ -207,6 +226,8 @@ export function InviteUserWizard({
     null,
   );
   const failure = state && !state.ok ? state : null;
+  const email = useWatch({ control, name: 'email' });
+  const reinviteName = reinvite && sameEmail(reinvite.email, email) ? reinvite.name : null;
 
   // React's "previous value" pattern (as 16's wizard): a new failure moves the wizard to the first
   // step holding one of its field errors in the same render, never from an effect.
@@ -218,6 +239,9 @@ export function InviteUserWizard({
       if (target !== -1) setActive(target);
       setAttempted(false);
       setFailureShown(true);
+      // A 409: the email's standing may have changed since its check (someone else re-invited
+      // them, say), so the re-invite it found no longer holds; the next Continue checks again.
+      if (failure.code !== null && INVITE_CONFLICT_CODES.includes(failure.code)) setReinvite(null);
     }
   }
 
@@ -244,6 +268,10 @@ export function InviteUserWizard({
   useEffect(() => {
     if (checkFailure) checkRef.current?.focus();
   }, [checkFailure]);
+  // The re-invite note takes focus the same way when a check first finds a revoked member.
+  useEffect(() => {
+    if (reinvite) reinviteRef.current?.focus();
+  }, [reinvite]);
 
   const goTo = (step: number) => {
     setActive(step);
@@ -279,22 +307,34 @@ export function InviteUserWizard({
       return;
     }
     setChecking(true);
-    const email = getValues('email');
+    const checked = getValues('email');
     // Every Identity answer as Continue validated it: an answer about values edited meanwhile moves
     // nothing, and the next Continue validates and checks them again (Ruling 1, rule 8).
     const validated = JSON.stringify(getValues([...IDENTITY_FIELDS]));
-    const outcome = await checkEmail(email);
+    const outcome = await checkEmail(checked);
     setChecking(false);
     if (JSON.stringify(getValues([...IDENTITY_FIELDS])) !== validated) return;
     if (outcome.kind === 'failed') {
       setCheckFailure(outcome.message);
       return;
     }
-    if (outcome.kind === 'member') {
+    if (outcome.kind === 'taken') {
+      // A note found by an earlier check (someone else re-invited them since) no longer holds.
+      setReinvite(null);
       const message = memberEmailMessage(outcome.status);
       setError('email', { type: 'taken', message }, { shouldFocus: true });
       setAttempted(true);
       return;
+    }
+    if (outcome.kind === 'revoked') {
+      // BG-28: the platform re-invites a revoked member on the same membership. The first
+      // Continue says so and stays; the next one, for the same email, goes on.
+      if (!reinvite || !sameEmail(reinvite.email, checked)) {
+        setReinvite({ email: checked, name: outcome.name });
+        return;
+      }
+    } else {
+      setReinvite(null);
     }
     // A membership type changed since Access was refused: its branch rule may no longer apply (rule 8).
     if (getFieldState('branchAssignments').error) void trigger('branchAssignments');
@@ -321,6 +361,8 @@ export function InviteUserWizard({
   const stepErrors = attempted ? stepSummary(active, errors) : [];
   const visibleFailure = failureShown && !pending ? failure : null;
   const values = active === REVIEW ? getValues() : null;
+  // Never beside an error that refuses the email.
+  const showReinvite = active === IDENTITY && reinviteName !== null && !errors.email;
 
   return (
     <WizardForm
@@ -335,7 +377,7 @@ export function InviteUserWizard({
       submitLabel="Send invitation"
       pending={pending || checking}
       alerts={
-        visibleFailure || checkFailure || stepErrors.length > 0 ? (
+        visibleFailure || checkFailure || stepErrors.length > 0 || showReinvite ? (
           <>
             {visibleFailure && (
               <Alert ref={failureRef} tabIndex={-1} severity="error">
@@ -350,6 +392,11 @@ export function InviteUserWizard({
             )}
             {stepErrors.length > 0 && (
               <Alert severity="error">{`Check these fields: ${stepErrors.join(', ')}.`}</Alert>
+            )}
+            {showReinvite && (
+              <Alert ref={reinviteRef} tabIndex={-1} severity="info" role="note">
+                <strong>{reinviteLead(reinviteName)}</strong> {REINVITE_NOTE}
+              </Alert>
             )}
           </>
         ) : undefined
@@ -382,6 +429,7 @@ export function InviteUserWizard({
           values={values}
           roles={roles}
           branches={branches}
+          reinviteName={reinviteName}
           pending={pending}
           onEdit={goTo}
         />

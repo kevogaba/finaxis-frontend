@@ -144,7 +144,7 @@ describe('DecisionBar', () => {
     expect((approveUser.mock.calls[0]?.[1] as FormData).get('reason')).toBe('');
   });
 
-  it('makes Reject & revoke an alertdialog with the permanence warning and a required reason', async () => {
+  it('makes Reject & revoke an alertdialog that says they can come back, with a required reason', async () => {
     const user = userEvent.setup({ delay: null });
     rejectUser.mockResolvedValueOnce({ ok: true });
     renderWithProviders(record());
@@ -153,7 +153,8 @@ describe('DecisionBar', () => {
     expect(trigger).toHaveClass('MuiButton-outlined', 'MuiButton-colorError');
     await user.click(trigger);
     const dialog = screen.getByRole('alertdialog', { name: `Reject and revoke ${NAME}?` });
-    expect(dialog).toHaveTextContent('can never be invited to this institution again');
+    expect(dialog).toHaveTextContent('They can be invited again later.');
+    expect(dialog).not.toHaveTextContent(/permanent|never/);
     const reason = within(dialog).getByRole('textbox', { name: /^Reason/ });
     expect(reason).toBeRequired();
     await user.type(reason, 'Duplicate invitation');

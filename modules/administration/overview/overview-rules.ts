@@ -20,7 +20,8 @@ import { auditTrailHref } from '@/modules/administration/audit/audit-rows';
 import { actionLabel } from '@/modules/administration/audit/audit-vocabulary';
 import type { BranchSummary } from '@/modules/administration/branches/branch-contract';
 import { branchTypeLabel } from '@/modules/administration/branches/branch-rules';
-import type { UserSummary } from '@/modules/administration/users/user-contract';
+import type { InvitationStatus, UserSummary } from '@/modules/administration/users/user-contract';
+import { awaitsIdentity } from '@/modules/administration/users/user-rules';
 import {
   provisioningNote,
   READINESS_CODES,
@@ -99,9 +100,24 @@ export const USER_PREVIEW_CEILING = 100;
 
 /** BG-11: an approved user can stay PROVISIONING_IDP with a pending membership for good, and the
  * endpoint can't leave such rows out, so the users read is wide enough to skip every one of them
- * and still hold five requests waiting for a decision (Ruling 5). */
+ * and still hold five requests waiting for a decision (Ruling 5). A re-invited member whose account
+ * was never provisioned reads the same (BG-28): see `previewInvitationRows`. */
 export function userPreviewSize(provisioning: number): number {
   return Math.min(USER_PREVIEW_CEILING, APPROVAL_PREVIEW_SIZE + Math.max(0, provisioning));
+}
+
+/** BG-28: the rows awaiting an identity that could reach the preview, so their `invitation` can be
+ * read and a re-invited member, who still awaits approval, listed: those before the fifth other
+ * row. ponytail: at most five lookups; a re-invited member past them stays skipped, as before. */
+export function previewInvitationRows(users: readonly UserSummary[]): UserSummary[] {
+  const rows: UserSummary[] = [];
+  let others = 0;
+  for (const user of users) {
+    if (others === APPROVAL_PREVIEW_SIZE || rows.length === APPROVAL_PREVIEW_SIZE) break;
+    if (awaitsIdentity(user)) rows.push(user);
+    else others += 1;
+  }
+  return rows;
 }
 
 export const APPROVALS_DESCRIPTION = 'Requests waiting for a decision, newest first.';
@@ -127,7 +143,8 @@ export interface PendingApprovalsView {
   rows: readonly ApprovalRow[];
   /** One sentence per kind whose read failed, with its reference (rule 6). */
   failures: readonly string[];
-  /** Identities still provisioning: approval already ran, so they are not listed (BG-11). */
+  /** Identities still being set up, usually after approval: those are not listed (BG-11), but a
+   * re-invited member's row whose invitation still awaits approval is (BG-28). */
   provisioning: string | null;
   /** Nothing waits, and every permitted read said so. */
   empty: boolean;
@@ -140,6 +157,9 @@ export interface PendingApprovalsReads {
   users: Settled<Page<UserSummary>>;
   /** The bell's two counts (pending, and of those provisioning), shared per request. */
   userCounts: Settled<UserApprovalCounts>;
+  /** BG-28: the `invitation` of preview rows awaiting an identity, by user id: one still
+   * AWAITING_APPROVAL (a re-invited member) is listed. None read: every such row is skipped. */
+  invitations?: Readonly<Record<string, InvitationStatus>>;
   /** The first page of branches pending activation, newest first; its total is the count. */
   branches: Settled<Page<BranchSummary>>;
 }
@@ -186,8 +206,11 @@ export function pendingApprovalsView(reads: PendingApprovalsReads): PendingAppro
       `Branches waiting for activation couldn't be loaded.${reference(reads.branches.problem.requestId)}`,
     );
   }
+  const invitations = reads.invitations ?? {};
   const users = reads.users?.ok
-    ? reads.users.value.items.filter((user) => user.userStatus !== 'PROVISIONING_IDP').map(userRow)
+    ? reads.users.value.items
+        .filter((user) => !awaitsIdentity(user) || invitations[user.id] === 'AWAITING_APPROVAL')
+        .map(userRow)
     : [];
   const branches = reads.branches?.ok ? reads.branches.value.items.map(branchRow) : [];
   const rows = [...users, ...branches].slice(0, APPROVAL_PREVIEW_SIZE);

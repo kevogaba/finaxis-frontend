@@ -143,7 +143,9 @@ describe('AdminOverviewPage', () => {
       'Recent activity card',
     ]);
     expect(
-      screen.getByText('Pending approvals card {"users":true,"branches":true}'),
+      screen.getByText(
+        `Pending approvals card ${JSON.stringify({ users: true, branches: true, holder: { permissions: EVERY_CODE, tenantPermissions: EVERY_CODE, branchPermissions: {} } })}`,
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -187,12 +189,15 @@ describe('AdminOverviewPage', () => {
   });
 
   it('omits a card the holder could never read or act on (Ruling 2)', async () => {
-    resolved(['branch.approve', 'branch.view', 'user.view']);
+    const CODES = ['branch.approve', 'branch.view', 'user.view'];
+    resolved(CODES);
     await show();
 
     expect(cards()).toEqual(['Pending approvals card', 'Readiness card']);
     expect(
-      screen.getByText('Pending approvals card {"users":false,"branches":true}'),
+      screen.getByText(
+        `Pending approvals card ${JSON.stringify({ users: false, branches: true, holder: { permissions: CODES, tenantPermissions: CODES, branchPermissions: {} } })}`,
+      ),
     ).toBeInTheDocument();
   });
 

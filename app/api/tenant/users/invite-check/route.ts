@@ -16,8 +16,11 @@ const reply = (body: unknown, status = 200) =>
 
 /**
  * Same-origin email check for the Invite user wizard's Identity step (Ruling 1): the membership
- * status this email already has in the institution, or null. A read, so a Route Handler, not a
- * Server Action (Next's guidance); the context token stays server-side, as for UserPicker's search.
+ * status this email already has in the institution, or null, and for a revoked member their name
+ * (the wizard re-invites them by name, BG-28); any other status refuses the email, so it answers
+ * no name. The caller can read either from the directory: inviting needs `user.view`
+ * institution-wide. A read, so a Route Handler, not a Server Action (Next's
+ * guidance); the context token stays server-side, as for UserPicker's search.
  */
 export async function GET(request: Request): Promise<Response> {
   const email = (new URL(request.url).searchParams.get('email') ?? '').trim();
@@ -28,7 +31,14 @@ export async function GET(request: Request): Promise<Response> {
   try {
     await requireAuthenticatedUser(await headers());
     const member = await findMemberByEmail(email);
-    const answer: EmailCheck = { membershipStatus: member?.membershipStatus ?? null };
+    const answer: EmailCheck = {
+      member:
+        member === null
+          ? null
+          : member.membershipStatus === 'REVOKED'
+            ? { membershipStatus: 'REVOKED', displayName: member.displayName }
+            : { membershipStatus: member.membershipStatus },
+    };
     return reply(answer);
   } catch (error) {
     if (

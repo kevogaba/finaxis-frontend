@@ -9,10 +9,16 @@ import {
   notFoundHeading,
   openRecord,
   rowsOf,
+  statusChip,
   type A11yCase,
 } from './support/admin';
 import { authenticate, clickMuiOption, expectHydrated, selectMuiOption } from './support/auth';
-import { BRANCH_SCENARIO_IDS, IDS, USER_SCENARIO_IDS as USERS } from './fake-api/scenarios.mts';
+import {
+  BRANCH_SCENARIO_IDS,
+  IDS,
+  REINVITED_SCENARIO_IDS as REINVITED,
+  USER_SCENARIO_IDS as USERS,
+} from './fake-api/scenarios.mts';
 
 const ALL_BRANCHES = /All branches \(institution level\)/;
 
@@ -214,10 +220,11 @@ test.describe('users: directory and lifecycle', () => {
       (url) => url.searchParams.get('membershipStatus') === 'PENDING_APPROVAL',
     );
     await expect(rowsOf(page, 'Users')).toHaveCount(5); // header + Amina, Brian, Carol, Daniel
-    // Daniel's User status cell reads `Provisioning identity` as well, so the cell is named: the
-    // Onboarding column is the third.
+    // The Onboarding column is the third. Daniel's approval ran and his identity failed, which his
+    // membership's invitation says (BG-28); his User status cell still reads Provisioning identity.
     const daniel = rowsOf(page, 'Users').filter({ hasText: 'Daniel Mutua' });
-    await expect(daniel.getByRole('cell').nth(2)).toHaveText('Provisioning identity');
+    await expect(daniel.getByRole('cell').nth(2)).toHaveText('Identity failed');
+    await expect(daniel.getByRole('cell').nth(4)).toHaveText('Provisioning identity');
     await expect(
       rowsOf(page, 'Users').filter({ hasText: 'Amina Odhiambo' }).getByRole('cell').nth(2),
     ).toHaveText('Awaiting approval');
@@ -394,7 +401,7 @@ test.describe('users: directory and lifecycle', () => {
     await expect.poll(() => lineCount(carolSubtitle)).toBeGreaterThan(1);
   });
 
-  test('rejects and revokes a provisioning user permanently, checking the reason on the server', async ({
+  test('rejects and revokes a provisioning user, checking the reason on the server', async ({
     context,
     page,
   }, testInfo) => {
@@ -408,7 +415,8 @@ test.describe('users: directory and lifecycle', () => {
 
     await press(page.getByRole('button', { name: 'Reject & revoke', exact: true }));
     const dialog = page.getByRole('alertdialog', { name: 'Reject and revoke Daniel Mutua?' });
-    await expect(dialog).toContainText('can never be invited to this institution again');
+    // BG-28: a revoked member can be invited again, so nothing says it is permanent.
+    await expect(dialog).toContainText('They can be invited again later.');
     await expectGuardFields(dialog);
     await expect(dialog.locator('input[name="membershipId"]')).toHaveValue(USERS.danielMembership);
 
@@ -1379,6 +1387,20 @@ test.describe('users: accessibility', () => {
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);
       }
+    });
+
+    // BG-28: Kamau, re-invited with his account never provisioned, awaits approval again.
+    test(`has no serious or critical accessibility violations on a re-invited member's record (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
+      context,
+      page,
+    }, testInfo) => {
+      await applyA11yCase(page, a11yCase);
+      await authenticate(context, testInfo, 'users-reinvited');
+      await enterUser(page, REINVITED.kamau, 'Kamau Njoroge');
+      await expect(statusChip(page, 'Awaiting approval')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeEnabled();
+      await expectA11yCaseApplied(page, a11yCase);
+      await expectNoSeriousOrCriticalViolations(page);
     });
 
     // #342: the disabled Assign role and Assign branch with their reasons, on your own record.

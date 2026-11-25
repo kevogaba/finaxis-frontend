@@ -10,11 +10,14 @@ import { USER_QUEUE_LABEL } from '@/modules/administration/approvals/approval-ru
 import { renderWithProviders } from '@/test/test-utils';
 import { permissionScopes } from '@/test/permission-scopes';
 
-const { getCurrentContextProfile, listUserApprovals, redirect } = vi.hoisted(() => ({
-  getCurrentContextProfile: vi.fn(),
-  listUserApprovals: vi.fn(),
-  redirect: vi.fn(),
-}));
+const { getCurrentContextProfile, listUserApprovals, readRowInvitations, redirect } = vi.hoisted(
+  () => ({
+    getCurrentContextProfile: vi.fn(),
+    listUserApprovals: vi.fn(),
+    readRowInvitations: vi.fn(),
+    redirect: vi.fn(),
+  }),
+);
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('next/navigation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('next/navigation')>()),
@@ -28,6 +31,9 @@ vi.mock('@/auth/context-service', () => ({
 }));
 vi.mock('@/modules/administration/approvals/approval-service', () => ({
   listUserApprovals: (...args: unknown[]) => listUserApprovals(...args) as unknown,
+}));
+vi.mock('@/modules/administration/users/user-service', () => ({
+  readRowInvitations: (...args: unknown[]) => readRowInvitations(...args) as unknown,
 }));
 
 const { default: UserOnboardingPage } = await import('./page');
@@ -96,6 +102,7 @@ beforeEach(() => {
   redirect.mockImplementation((to: string) => {
     throw new Error(`NEXT_REDIRECT:${to}`);
   });
+  readRowInvitations.mockResolvedValue({});
 });
 
 describe('UserOnboardingPage', () => {
@@ -123,6 +130,24 @@ describe('UserOnboardingPage', () => {
       'href',
       `/admin/approvals/users/${DANIEL}`,
     );
+  });
+
+  it('labels a re-invited member by their invitation: still awaiting approval (BG-28)', async () => {
+    setup();
+    const page = users(3);
+    listUserApprovals.mockResolvedValue(page);
+    readRowInvitations.mockResolvedValue({ [DANIEL]: 'AWAITING_APPROVAL' });
+    await show();
+
+    // The page's rows and the holder go to the read, which decides which rows to look up.
+    expect(readRowInvitations).toHaveBeenCalledExactlyOnceWith(
+      page.items,
+      expect.objectContaining({ permissions: CODES }),
+    );
+    const daniel = screen.getByRole('row', { name: /Daniel Mutua/ });
+    expect(within(daniel).getByText('Awaiting approval')).toBeInTheDocument();
+    // The account column still says what the account is doing.
+    expect(within(daniel).getAllByText('Provisioning identity')).toHaveLength(1);
   });
 
   it('says nothing is waiting, never an empty table', async () => {

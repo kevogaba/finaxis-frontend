@@ -265,7 +265,7 @@ describe('where a user approval stands', () => {
     );
     expect(userOutcomeNote('decided', 'ACTIVE')).toBe('Approved: this membership is active.');
     expect(userOutcomeNote('decided', 'REVOKED')).toBe(
-      "Rejected: this membership was revoked, and this email can't be invited to this institution again.",
+      'Rejected: this membership was revoked. Inviting this email again brings them back for a new approval.',
     );
     expect(userOutcomeNote('decided', 'SUSPENDED')).toBe(
       "This membership isn't waiting for approval: it is suspended.",

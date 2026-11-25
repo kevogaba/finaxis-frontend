@@ -95,14 +95,15 @@ const revokeInput = membershipInput.extend({
   expectedUserStatus: z.enum(USER_STATUSES).optional(),
 });
 
-/** Revoke and Reject & revoke (D12): terminal; every assignment goes with it (BG-28). With an
- * `expectedStatus`, a membership that moved on since the page loaded (approved with a 200,
- * suspended) is refused before the terminal call, and so is one that was approved into identity
- * provisioning (a 202) when the page showed a user who was not provisioning: a stale Reject never
- * revokes an approved member. A record the page showed as provisioning stays revocable (10 offers
- * it), and a membership already REVOKED goes through to the backend, which replays this key's
- * earlier success (anyone else's revoke answers 409: REVOKE_CONFLICT). Every guard read failure
- * rejects, so a lost session or a stale context redirects and any other failure fails closed. */
+/** Revoke and Reject & revoke (D12): every assignment goes with it, and only a new invitation and
+ * approval bring the member back (BG-28). With an `expectedStatus`, a membership that moved on
+ * since the page loaded (approved with a 200, suspended) is refused before the revoking call, and
+ * so is one that was approved into identity provisioning (a 202) when the page showed a user who
+ * was not provisioning: a stale Reject never revokes an approved member. A record the page showed
+ * as provisioning stays revocable (10 offers it), and a membership already REVOKED goes through to
+ * the backend, which replays this key's earlier success (anyone else's revoke answers 409:
+ * REVOKE_CONFLICT). Every guard read failure rejects, so a lost session or a stale context
+ * redirects and any other failure fails closed. */
 export async function revokeMembership(
   _previous: ActionResult | null,
   formData: FormData,

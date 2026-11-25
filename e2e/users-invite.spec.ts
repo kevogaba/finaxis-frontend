@@ -19,8 +19,10 @@ const ALL_BRANCHES = /All branches \(institution level\)/;
 const INVITE_FORBIDDEN =
   'Inviting someone needs permission for the whole institution to invite users and to view users and memberships, and permission to assign branches and to view branch assignments, roles and branches. Ask an administrator if you need access.';
 const ACTIVE_EMAIL = 'This email already belongs to a member of this institution.';
-const REVOKED_EMAIL =
-  "This email's membership here was revoked, so it can't be invited to this institution again.";
+const REINVITE_NOTE =
+  'This re-invites Hassan Ali. Their revoked membership returns to awaiting approval with the access you choose next. They keep any member number they had, and their existing account details stay as they are, so the name, username and phone you enter here are ignored. Someone else must approve them. Continue to choose their access, or change the email.';
+const REINVITE_REVIEW_NOTE =
+  'Sending re-invites Hassan Ali now: their revoked membership returns to awaiting approval with the access above. They keep any member number they had, and their existing account details stay as they are, so the name, username and phone above are ignored. A different administrator must approve it before they can use this institution.';
 const NEEDS_A_BRANCH = 'Add a branch: staff and admin members need at least one.';
 const ROLE_BRANCH_UNASSIGNED = 'Assign them to this branch under Branch assignments first.';
 const INVITE_CONFLICT =
@@ -46,6 +48,14 @@ const NEEMA: Identity = {
   name: 'Neema Wanjiku',
   email: 'neema.wanjiku@greenfield.example',
   username: 'neema.wanjiku',
+};
+
+/** Hassan Ali's membership here was revoked (BG-28). The name and username entered for him are
+ * ignored: the platform matches his account by email, letter case aside. */
+const HASSAN: Identity = {
+  name: 'Hassan A.',
+  email: 'Hassan.Ali@greenfield.example',
+  username: 'hassan.again',
 };
 
 /** A users page at institution level (All branches), entered through context selection. */
@@ -211,14 +221,41 @@ test.describe('users invite: entry and identity', () => {
     await expect(email).toBeFocused();
     await expect(mainText(page, 'Check these fields: Email.')).toBeVisible();
 
-    // Hassan's membership was revoked: his email can never come back (BG-28). Letter case aside.
-    await email.fill('Hassan.Ali@greenfield.example');
-    await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(email).toHaveAccessibleDescription(REVOKED_EMAIL);
-    await expect(page.getByRole('heading', { level: 2, name: 'Identity' })).toBeVisible();
-
     await email.fill(NEEMA.email);
     await next(page, 'Access');
+  });
+
+  test('re-invites a revoked member on their membership, which the re-inviter then can’t approve (BG-28)', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users-invite');
+    await openWizard(page);
+    await fillIdentity(page, HASSAN);
+
+    // The first Continue says who this re-invites, and stays: a note, never an error.
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const note = page.getByRole('main').getByRole('note');
+    await expect(note).toHaveText(REINVITE_NOTE);
+    await expect(note).toBeFocused();
+    await expect(page.getByRole('heading', { level: 2, name: 'Identity' })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
+
+    await next(page, 'Access');
+    await fillAccess(page);
+    await next(page, 'Invitation');
+    await next(page, 'Review');
+    await expect(page.getByRole('main').getByRole('note')).toHaveText(REINVITE_REVIEW_NOTE);
+    await sendInvitation(page);
+
+    // His record, by his own name, awaiting approval again.
+    await expect(page).toHaveURL(RECORD);
+    await expect(page.getByRole('heading', { level: 1, name: 'Hassan Ali' })).toBeVisible();
+    await expect(statusChip(page, 'Awaiting approval')).toBeVisible();
+    // Jane re-invited him, so she is the maker now (entry 08): another administrator approves.
+    const approve = page.getByRole('button', { name: 'Approve', exact: true });
+    await expect(approve).toBeDisabled();
+    await expect(approve).toHaveAccessibleDescription(USER_MAKER_CHECKER_BLOCKED);
   });
 });
 
@@ -670,6 +707,33 @@ const SURFACES: readonly Surface[] = [
       await fillIdentity(page, { ...NEEMA, email: 'esther.njoki@greenfield.example' });
       await page.getByRole('button', { name: 'Continue' }).click();
       await expect(mainText(page, ACTIVE_EMAIL)).toBeVisible();
+    },
+  },
+  {
+    label: 'identity re-inviting a revoked member',
+    scenario: 'users-invite',
+    path: '/admin/users/new',
+    heading: 'Invite user',
+    open: async (page) => {
+      await fillIdentity(page, HASSAN);
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await expect(page.getByRole('main').getByRole('note')).toHaveText(REINVITE_NOTE);
+    },
+  },
+  {
+    label: 'review re-inviting a revoked member',
+    scenario: 'users-invite',
+    path: '/admin/users/new',
+    heading: 'Invite user',
+    open: async (page) => {
+      await fillIdentity(page, HASSAN);
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await expect(page.getByRole('main').getByRole('note')).toHaveText(REINVITE_NOTE);
+      await next(page, 'Access');
+      await fillAccess(page);
+      await next(page, 'Invitation');
+      await next(page, 'Review');
+      await expect(page.getByRole('main').getByRole('note')).toHaveText(REINVITE_REVIEW_NOTE);
     },
   },
   {

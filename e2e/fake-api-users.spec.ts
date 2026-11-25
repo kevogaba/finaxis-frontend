@@ -3,6 +3,7 @@ import { expect, test, type APIRequestContext, type APIResponse } from '@playwri
 import {
   DISPATCH_EDGE_IDS as EDGES,
   IDS,
+  REINVITED_SCENARIO_IDS as REINVITED,
   seedScenario,
   USER_SCENARIO_IDS as USERS,
   type ScenarioName,
@@ -259,6 +260,27 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
     });
     // Revoked with no dispatch: nothing was provisioned.
     expect(await invitation(USERS.hassanMembership)).toMatchObject({ status: 'NOT_REQUIRED' });
+  });
+
+  // BG-28: a re-invited member whose account was never provisioned lists exactly as Daniel does;
+  // only the membership detail's invitation tells them apart.
+  test('seeds a re-invited member whose account still provisions, awaiting approval', async ({
+    request,
+  }) => {
+    const { get } = await signIn(request, 'users-reinvited');
+    const pending = await read<{ items: { id: string; user_status: string }[] }>(
+      await get('/tenant/users?membership_status=PENDING_APPROVAL&user_status=PROVISIONING_IDP'),
+    );
+    expect(pending.items.map((row) => row.id).sort()).toEqual(
+      [REINVITED.kamau, USERS.daniel].sort(),
+    );
+    const detail = await read<{ invitation: unknown; created_by: unknown }>(
+      await get(membershipPath(REINVITED.kamauMembership)),
+    );
+    expect(detail).toMatchObject({
+      invitation: { status: 'AWAITING_APPROVAL', attempts: 0 },
+      created_by: { id: USERS.victor },
+    });
   });
 
   test('retries a failed provisioning: IN_PROGRESS, no maker-checker, a queued one left alone, audited', async ({

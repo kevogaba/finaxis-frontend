@@ -52,7 +52,8 @@ const reject = (extra: Record<string, string> = {}) =>
   form({ idempotencyKey: KEY, membershipId: MEMBERSHIP, reason: 'Not our member', ...extra });
 
 /** Layer 12, P-3: the user record's Reject & revoke names the status it was offered for, so a stale
- * tab never revokes (terminally, BG-28) a member another administrator approved meanwhile. */
+ * tab never revokes a member another administrator approved meanwhile (only a new invitation and
+ * approval would bring them back, BG-28). */
 describe('revokeMembership with an expected status', () => {
   beforeEach(() => {
     vi.clearAllMocks();

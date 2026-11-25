@@ -64,6 +64,15 @@ async function signIn(
     /** A mutation carries a fresh Idempotency-Key unless the test pins one. */
     invite: (data: Record<string, unknown>, key: string = randomUUID()) =>
       request.post(api('/tenant/users'), { headers: { ...headers, 'Idempotency-Key': key }, data }),
+    approve: (membershipId: string) =>
+      request.post(api(`/tenant/memberships/${membershipId}/activate`), {
+        headers: { ...headers, 'Idempotency-Key': randomUUID() },
+      }),
+    revoke: (membershipId: string) =>
+      request.post(api(`/tenant/memberships/${membershipId}/revoke`), {
+        headers: { ...headers, 'Idempotency-Key': randomUUID() },
+        data: { reason: 'Left the SACCO' },
+      }),
   };
 }
 
@@ -170,6 +179,104 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
     expect(await read<UserRow>(await get(`/tenant/users/${INVITE.rehema}`))).toMatchObject({
       display_name: TEXT.rehemaName,
       username: 'rehema.mwangi',
+    });
+  });
+
+  test('re-invites a revoked member on the same membership, the caller its maker (BG-28)', async ({
+    request,
+  }) => {
+    const { get, invite, approve } = await signIn(request);
+    const membershipPath = `/tenant/memberships/${USERS.hassanMembership}`;
+    const before = await read<{ created_at: string }>(await get(membershipPath));
+
+    // Hassan's membership here is REVOKED. The account is matched by email, letter case aside, so
+    // the entered identity is ignored, as for any reused account.
+    const created = await invite({
+      ...BODY,
+      email: 'Hassan.Ali@greenfield.example',
+      username: TEXT.takenUsername,
+      display_name: 'Someone Else',
+    });
+    expect(created.status()).toBe(201);
+    expect(await read<Invitation>(created)).toEqual({
+      user_id: USERS.hassan,
+      membership_id: USERS.hassanMembership,
+      user_status: 'ACTIVE',
+      membership_status: 'PENDING_APPROVAL',
+    });
+    // The same membership, back to awaiting approval with the request's type and primary branch:
+    // the caller is now its maker, and it keeps its first creation date.
+    expect(await read(await get(membershipPath))).toMatchObject({
+      membership_status: 'PENDING_APPROVAL',
+      membership_type: 'STAFF',
+      primary_branch_id: IDS.westlands,
+      created_at: before.created_at,
+      created_by: { id: IDS.jane, display_name: 'Backend Jane Manager' },
+      invitation: { status: 'AWAITING_APPROVAL' },
+    });
+    const users = await read<Paged<UserRow>>(await get('/tenant/users?q=hassan'));
+    expect(users.items).toMatchObject([
+      {
+        id: USERS.hassan,
+        display_name: 'Hassan Ali',
+        username: 'hassan.ali',
+        membership_id: USERS.hassanMembership,
+        membership_status: 'PENDING_APPROVAL',
+      },
+    ]);
+    // Fresh access from the request; the first life's assignments stay revoked.
+    const roles = await read<Paged<{ role_id: string; status: string }>>(
+      await get(`/tenant/role-assignments?user_id=${USERS.hassan}&status=ACTIVE`),
+    );
+    expect(roles.items).toMatchObject([{ role_id: USERS.teller, status: 'ACTIVE' }]);
+    // One audit row, the transition's own, and no user.invite.
+    const reinvited = await read<Paged<{ actor_id: string }>>(
+      await get(
+        `/tenant/audit-events?entity_type=MEMBERSHIP&entity_id=${USERS.hassanMembership}&action=membership.reinvite`,
+      ),
+    );
+    expect(reinvited.items).toMatchObject([{ actor_id: IDS.jane }]);
+    const invited = await read<Paged<unknown>>(
+      await get(
+        `/tenant/audit-events?entity_type=USER&entity_id=${USERS.hassan}&action=user.invite`,
+      ),
+    );
+    expect(invited.items).toEqual([]);
+    // The re-inviter is the maker, so their own approval is refused by name (entry 08).
+    await expectProblem(
+      await approve(USERS.hassanMembership),
+      403,
+      'lifecycle.approver_is_membership_maker',
+    );
+  });
+
+  test("drops the first life's invitation when a revoked member is re-invited (ADR 0037)", async ({
+    request,
+  }) => {
+    const { get, invite, revoke } = await signIn(request);
+    const membershipPath = `/tenant/memberships/${USERS.estherMembership}`;
+    // Esther's identity was provisioned when she first joined; revoking her keeps that dispatch.
+    expect((await revoke(USERS.estherMembership)).status()).toBe(200);
+    expect(await read(await get(membershipPath))).toMatchObject({
+      membership_status: 'REVOKED',
+      invitation: { status: 'COMPLETED', attempts: 1 },
+    });
+
+    const created = await invite({ ...BODY, email: 'esther.njoki@greenfield.example' });
+    expect(created.status()).toBe(201);
+    expect(await read<Invitation>(created)).toMatchObject({
+      membership_id: USERS.estherMembership,
+      user_status: 'INVITED',
+    });
+    // Nothing of the new life has been queued: it awaits approval, as a first invitation does.
+    expect(await read(await get(membershipPath))).toMatchObject({
+      membership_status: 'PENDING_APPROVAL',
+      invitation: {
+        status: 'AWAITING_APPROVAL',
+        attempts: 0,
+        last_error_code: null,
+        updated_at: null,
+      },
     });
   });
 
@@ -336,13 +443,21 @@ test.describe("fake API invitations: the backend's rules (BG-07)", () => {
         'invalid_operation',
       ],
       [branchRole(INVITE.kisumu), 422, 'invalid_operation'],
-      // Existing memberships here, in any status (BG-28): Esther is ACTIVE, Amina pending,
-      // Gladys SUSPENDED, Hassan REVOKED (the platform re-invites a revoked member; the fake
-      // does from 18).
+      // Existing memberships here, in any status but REVOKED, which is re-invited (BG-28): Esther
+      // is ACTIVE, Amina pending, Gladys SUSPENDED.
       [{ ...BODY, email: 'esther.njoki@greenfield.example' }, 409, 'conflict'],
       [{ ...BODY, email: 'amina.odhiambo@greenfield.example' }, 409, 'conflict'],
       [{ ...BODY, email: 'gladys.chebet@greenfield.example' }, 409, 'conflict'],
-      [{ ...BODY, email: 'Hassan.Ali@greenfield.example' }, 409, 'conflict'],
+      // Hassan's re-invite still runs every rule first: a role that isn't ACTIVE is its 422.
+      [
+        {
+          ...BODY,
+          email: 'Hassan.Ali@greenfield.example',
+          role_assignments: [{ role_id: USERS.loansOfficer, scope_type: 'TENANT' }],
+        },
+        422,
+        'invalid_operation',
+      ],
       // A username another account holds, with a new email.
       [{ ...BODY, username: TEXT.takenUsername }, 409, 'conflict'],
     ];
@@ -364,6 +479,10 @@ test.describe("fake API invitations: the backend's rules (BG-07)", () => {
     expect((await invite(branchRole(IDS.westlands))).status()).toBe(201);
     const users = await read<Paged<UserRow>>(await get('/tenant/users?q=neema'));
     expect(users.page.total_items).toBe(1);
+    // The refused re-invite changed nothing either.
+    expect(await read(await get(`/tenant/memberships/${USERS.hassanMembership}`))).toMatchObject({
+      membership_status: 'REVOKED',
+    });
   });
 
   test("takes a branch-scoped role at any ACTIVE branch, assigned or not (the platform's rule)", async ({

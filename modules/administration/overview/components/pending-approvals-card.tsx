@@ -4,6 +4,7 @@ import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { SectionCard } from '@/components/data-display/section-card';
 import NextLink from '@/components/navigation/next-link';
+import type { PermissionHolder } from '@/auth/permissions';
 import { load } from '@/lib/api/load';
 import { NOTHING_WAITING } from '@/modules/administration/approvals/approval-notifications';
 import { APPROVALS_HREF } from '@/modules/administration/approvals/approval-rules';
@@ -13,12 +14,14 @@ import {
   listUserApprovals,
 } from '@/modules/administration/approvals/approval-service';
 import { DEFAULT_BRANCH_SORT } from '@/modules/administration/branches/branch-query';
+import { readRowInvitations } from '@/modules/administration/users/user-service';
 import {
   APPROVAL_PREVIEW_SIZE,
   APPROVALS_DESCRIPTION,
   APPROVALS_LINK,
   CARD_TITLES,
   pendingApprovalsView,
+  previewInvitationRows,
   REQUESTS_LABEL,
   REVIEW,
   userPreviewSize,
@@ -128,14 +131,18 @@ export function PendingApprovalsCard({ view }: { view: PendingApprovalsView }) {
 /** BG-11: an approved identity can wait on provisioning for good, and the endpoint can't leave it
  * out, so the users preview follows the bell's counts (shared per request, `cache()`) and is wide
  * enough to skip each one: one bounded read of at most 100 (`userPreviewSize`). After a failed
- * count the preview isn't read; the card says the users couldn't be loaded. */
-async function readUserPreview() {
+ * count the preview isn't read; the card says the users couldn't be loaded. The rows awaiting an
+ * identity that could be shown read their invitation, so a re-invited member is listed (BG-28). */
+async function readUserPreview(holder: PermissionHolder) {
   const counts = await load(countUserApprovals());
-  if (!counts.ok) return { counts, page: counts };
+  if (!counts.ok) return { counts, page: counts, invitations: {} };
   const page = await load(
     listUserApprovals({ page: 0, size: userPreviewSize(counts.value.provisioning) }),
   );
-  return { counts, page };
+  const invitations = page.ok
+    ? await readRowInvitations(previewInvitationRows(page.value.items), holder)
+    : {};
+  return { counts, page, invitations };
 }
 
 /** The users preview after its count, the five-row branch preview beside it; each read only with
@@ -143,12 +150,15 @@ async function readUserPreview() {
 export async function PendingApprovalsSection({
   users,
   branches,
+  holder,
 }: {
   users: boolean;
   branches: boolean;
+  /** For the preview's invitation lookups, which need `membership.view` tenant-wide (BG-28). */
+  holder: PermissionHolder;
 }) {
   const [userReads, branchPage] = await Promise.all([
-    users ? readUserPreview() : null,
+    users ? readUserPreview(holder) : null,
     branches
       ? load(
           listBranchActivations({
@@ -164,6 +174,7 @@ export async function PendingApprovalsSection({
       view={pendingApprovalsView({
         users: userReads?.page ?? null,
         userCounts: userReads?.counts ?? null,
+        invitations: userReads?.invitations,
         branches: branchPage,
       })}
     />

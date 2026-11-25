@@ -14,6 +14,7 @@ import { authenticate, clickInMuiPopover, expectHydrated } from './support/auth'
 import {
   APPROVAL_SCENARIO_IDS as APPROVALS,
   APPROVAL_SCENARIO_TEXT as TEXT,
+  REINVITED_SCENARIO_IDS as REINVITED,
   USER_SCENARIO_IDS as USERS,
 } from './fake-api/scenarios.mts';
 
@@ -35,7 +36,7 @@ const PROVISIONING_FAILED_NOTE =
   "Approved, but their sign-in identity couldn't be created. Their user record says why, and provisioning can be retried from there.";
 const APPROVED_NOTE = 'Approved: this membership is active.';
 const REJECTED_NOTE =
-  "Rejected: this membership was revoked, and this email can't be invited to this institution again.";
+  'Rejected: this membership was revoked. Inviting this email again brings them back for a new approval.';
 const ACTIVATED_NOTE = 'Activated: this branch is live.';
 const USER_MAKER_CHECKER_BLOCKED =
   'You invited this user, so another administrator must approve them.';
@@ -150,12 +151,11 @@ test.describe('approvals: the queue', () => {
       'Brian Kiprono',
       'Amina Odhiambo',
     ]);
-    // Approval already ran for Daniel: his row says so (Ruling 12). The copy appears twice in his
-    // row (the onboarding state and the user status), so the count pins both, inside his row.
+    // Approval already ran for Daniel: his row says so by his invitation (Ruling 12, BG-28), and
+    // his account still reads as provisioning.
     const daniel = rowsOf(page, 'Users').filter({ hasText: 'Daniel Mutua' });
-    const provisioning = daniel.getByText('Provisioning identity', { exact: true });
-    await expect(provisioning).toHaveCount(2);
-    await expect(provisioning.first()).toBeVisible();
+    await expect(daniel.getByText('Identity failed', { exact: true })).toBeVisible();
+    await expect(daniel.getByText('Provisioning identity', { exact: true })).toHaveCount(1);
     await expect(daniel).not.toContainText('Awaiting approval');
 
     // The rail opens /admin/approvals, which opens the first tab the holder can see.
@@ -199,6 +199,43 @@ test.describe('approvals: the queue', () => {
     await openRequest(page, branchPath(APPROVALS.kericho), 'Kericho Branch');
     await decide(page, 'Activate');
     await expect(toast(page, BRANCH_ACTIVATED)).toBeVisible();
+  });
+
+  // BG-28: revoked before his identity was set up, then invited again, Kamau looks like Daniel in a
+  // list (pending, account provisioning); only his membership's invitation says he still waits.
+  test('lists a re-invited member whose account was never provisioned as awaiting approval', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users-reinvited');
+    await enterQueue(page);
+
+    const kamau = rowsOf(page, 'Users').filter({ hasText: 'Kamau Njoroge' });
+    await expect(kamau.getByRole('cell').nth(2)).toHaveText('Awaiting approval');
+    await expect(kamau.getByRole('cell').nth(4)).toHaveText('Provisioning identity');
+    const daniel = rowsOf(page, 'Users').filter({ hasText: 'Daniel Mutua' });
+    await expect(daniel.getByRole('cell').nth(2)).toHaveText('Identity failed');
+    // The counts can't tell him from Daniel: no list or count read carries the invitation.
+    await expect(page.getByRole('tab', { name: 'User onboarding (3)', exact: true })).toBeVisible();
+
+    // The users directory says the same, and the overview lists him among the requests.
+    await page.goto('/admin/users');
+    await expect(page.getByRole('heading', { level: 1, name: 'Users & access' })).toBeVisible();
+    await expect(
+      rowsOf(page, 'Users').filter({ hasText: 'Kamau Njoroge' }).getByRole('cell').nth(2),
+    ).toHaveText('Awaiting approval');
+    await page.goto('/admin');
+    const approvals = region(page, 'Pending approvals');
+    await expect(
+      approvals.getByRole('link', { name: 'Review Kamau Njoroge', exact: true }),
+    ).toHaveAttribute('href', userPath(REINVITED.kamau));
+    await expect(approvals.getByRole('link', { name: 'Review Daniel Mutua' })).toHaveCount(0);
+
+    // His approval page takes a decision: Victor re-invited him, so Jane may approve, which queues
+    // his identity (a 202).
+    await openRequest(page, userPath(REINVITED.kamau), 'Kamau Njoroge');
+    await decide(page, 'Approve');
+    await expect(toast(page, APPROVED_PROVISIONING)).toBeVisible();
   });
 
   test('hides the queue and the bell from a holder who can decide nothing', async ({
@@ -463,7 +500,8 @@ test.describe('approvals: user onboarding decisions', () => {
 
     await press(decision(page, 'Reject & revoke'));
     const dialog = page.getByRole('alertdialog', { name: 'Reject and revoke Samuel Kiptoo?' });
-    await expect(dialog).toContainText('can never be invited to this institution again');
+    // BG-28: a revoked member can be invited again.
+    await expect(dialog).toContainText('They can be invited again later.');
     // Three spaces pass the native minLength; the server trims and refuses them.
     await dialog.getByRole('textbox', { name: /^Reason/ }).fill('   ');
     await dialog.getByRole('button', { name: 'Reject & revoke', exact: true }).click();

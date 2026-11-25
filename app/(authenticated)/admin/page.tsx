@@ -109,6 +109,7 @@ export default async function AdminOverviewPage() {
             <PendingApprovalsSection
               users={cards.approvals.users}
               branches={cards.approvals.branches}
+              holder={holder}
             />,
           )}
         {cards.readiness &&

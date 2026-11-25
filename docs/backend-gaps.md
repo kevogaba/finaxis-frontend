@@ -98,7 +98,9 @@ miscount things today.
    audit actor) names the original inviter, so the user record disables Approve for the wrong
    person (BG-28, BG-08). **Adopted** (frontend #114) for the maker: the user record and the
    approval page read the inviter from `created_by`, so a re-invited membership's maker is its
-   re-inviter. Re-inviting from the wizard is entry 18's (BG-28).
+   re-inviter. **Adopted** (frontend #125) for the wizard: its Identity step lets a revoked
+   member's email through and says, by name, that the invitation re-invites them, and no dialog or
+   note calls revocation permanent any more (BG-28).
 9. **Roles can be archived, and status changes only from the named state** (platform #289, #302):
    `roleStatusAction` offers Activate for an `ARCHIVED` role, which is a 409 explained as a system
    role, and the default role list leaves archived roles out, so their names on old assignments fall
@@ -147,7 +149,7 @@ miscount things today.
 
 ## Summary
 
-7 backend fixed · 3 partly fixed · 0 open · 7 adopted · 18 closed.
+7 backend fixed · 2 partly fixed · 0 open · 8 adopted · 18 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -178,7 +180,7 @@ miscount things today.
 | BG-25 | P2       | Adopted       | Identity and email delivery defaults (Keycloak admin off, email off, no password step)             |
 | BG-26 | P2       | Closed        | Ignored or dangerous sort parameters                                                               |
 | BG-27 | P2       | Closed        | Role lifecycle gaps (no delete; DISABLED roles assignable; ARCHIVED unused)                        |
-| BG-28 | P2       | Partly fixed  | Terminal states without recovery (rejected tenant code stays taken; revoked member can't return)   |
+| BG-28 | P2       | Adopted       | Terminal states without recovery (rejected tenant code stays taken; revoked member can't return)   |
 | BG-29 | P2       | Closed        | PLATFORM organisation included in tenant search results                                            |
 | BG-30 | P2       | Closed        | Wrong-context 403s put a sentence in `code`; invalid JWT 401 has no body                           |
 | BG-31 | P2       | Closed        | Mutations silently require the matching `.view` permission                                         |
@@ -672,8 +674,11 @@ the same bullets): the first is the gap as found, the second what the UI still d
     recorded.", and "then retry" is said only beside a Retry the reader is offered) and its last
     update in the organisation's zone. The fact reads "Identity provisioning", not "Invitation", so
     a NOT_REQUIRED one never contradicts Resend beside it. A row of a list carries no
-    `invitation`, so it still reads "Provisioning identity", as does a record whose reader lacks
-    `membership.view`. A pending provisioning member whose invitation reads AWAITING_APPROVAL (a
+    `invitation`, so the users directory, the queue and the overview's preview read it per such row,
+    at most 10 a page (frontend #125, BG-28); a row past the cap, read without `membership.view`,
+    or whose read failed, still reads "Provisioning identity", as does a record whose reader lacks
+    `membership.view`. A
+    pending provisioning member whose invitation reads AWAITING_APPROVAL (a
     re-invite's first approval, ADR 0037) is awaiting approval, and Approve queues it.
   - **Retry provisioning** (`user.approve` + `membership.view`, tenant-wide) replaces Approve for a
     PENDING_APPROVAL member whose account is PROVISIONING_IDP and whose invitation is FAILED; while
@@ -1160,23 +1165,44 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-28 — Terminal states without recovery · P2
 
-- **Status:** Partly fixed. Platform #172.
+- **Status:** Adopted (frontend #125). Platform #172.
 - **Gap:** a rejected tenant is terminal and its `tenant_code` stays taken, so resubmission needs a
   new code. A revoked membership can never be re-invited (unique per organisation + user; invite
   rejects any existing membership).
-- **Frontend handling:** the UI warns before both, and the invite wizard refuses a revoked member's
-  email on its Identity step, saying it can't be invited again.
+- **Frontend handling:** the UI warns before rejecting a tenant. The invite wizard's Identity step
+  lets a revoked member's email through: its first Continue says "This re-invites <name>." with
+  what the platform keeps and ignores, and stays; the next one goes on, and the Review step says
+  the same. The invitation is the same `POST /tenant/users`, and the user record then shows the
+  member awaiting approval, with Approve disabled for the re-inviter while maker-checker is on
+  (entry 08). Revoke, Reject & revoke and the revoked notes on the user record and the approval
+  page say the person can be invited again. A list row PENDING_APPROVAL with its account
+  PROVISIONING_IDP reads its membership's `invitation` (one read per such row, at most 10 a page,
+  with `membership.view` tenant-wide), so a re-invited member whose account was never provisioned
+  reads Awaiting approval in the directory, the queue and the overview's preview; a row past the
+  cap, or whose read failed or wasn't permitted, keeps the status-only label (failed reads are
+  logged by count and status). The queue and the overview's provisioning note say those members
+  were usually approved already, not all, and the queue's that such a member can be missing from
+  the tab's count (frontend #125).
 - **Backend resolution:** inviting a REVOKED member's email through `POST /tenant/users` re-invites
   them: 201, the same membership id, back to PENDING_APPROVAL. `created_by` becomes the re-inviter,
-  the membership's dates and direct permission overrides are reset, `member_number` is kept, fresh
-  assignments are created, and the audit action is `membership.reinvite`.
+  the membership's dates and direct permission overrides are reset, `member_number` is kept (a
+  membership never activated has none: V35 numbers it at first activation), fresh assignments are
+  created, and the audit action is `membership.reinvite`.
 - **Still open:** a rejected tenant stays terminal with its `tenant_code` taken (ADR 0037 decision
-  13); return for changes (BG-01) is how a request goes back to its maker.
+  13); return for changes (BG-01) is how a request goes back to its maker. A re-invited member whose
+  account was never provisioned is left out of the pending counts (the bell, the queue tab, the
+  overview) until the platform's lists or counts carry the invitation: only the membership detail
+  does, so the counts' PROVISIONING_IDP exclusion can't tell them from members approved and
+  waiting on their identity.
 - **Verified 2026-11-24:** the reset clears `joined_at`, `suspended_at`, `revoked_at` and
   `status_reason` but **keeps `created_at`**; the account is matched by email, so the username, name
   and phone in the request are ignored.
-- **To adopt:** let the invite wizard re-invite a revoked member, saying the re-inviter can't
-  approve, and change the "can't be invited again" copy.
+- **To adopt:** done in frontend #125. **As built:** the email check's route handler also
+  returns a revoked member's name (the caller already reads it from the directory with
+  `user.view`; any other status refuses the email and answers no name), and after a failed
+  invitation's 409 a revoked member's email is not named as the cause: the platform re-invites it,
+  and never checks its account's username, so the 409 names an inactive institution or a change
+  since the check, never the username.
 
 ### BG-29 — PLATFORM organisation in tenant search · P2
 
@@ -1354,8 +1380,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
   membership, or revoking their own role assignments (§E.3 names none; source 7a7f4c3). Nor is one
   documented for `POST /platform/users/{id}/suspend` or `/deactivate` (§E.2), where a
   self-deactivate would be permanent. Without one, a self-suspend ends the session's context at
-  once, because every request re-validates an ACTIVE membership (§A), and a self-revoke is
-  permanent (BG-28). Not probed live: the probe itself would be irreversible.
+  once, because every request re-validates an ACTIVE membership (§A), and a self-revoke ends
+  your access until another administrator re-invites you (a revoked member can be re-invited
+  since platform #172, BG-28; it was permanent when this was recorded). Not probed live: the
+  probe itself would have been irreversible.
 - **Frontend handling:** the user record shows Suspend and Revoke disabled on the signed-in user's
   own record, with the reason; revoking your own role assignment warns in its confirmation
   (layer 09), and so does revoking your own branch assignment, from the user record's Branch

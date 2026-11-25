@@ -14,9 +14,14 @@ export interface DecisionCopy {
   reasonLabel?: string;
   /** Said under the reason field. */
   reasonHelperText?: string;
-  /** Irreversible and destructive: an error-toned trigger and an alertdialog. */
+  /** Destructive: an error-toned trigger and an alertdialog. */
   destructive: boolean;
 }
+
+/** Reject & revoke, here and on the user record: the membership ends with its access, but a
+ * revoked member can be invited again on the same membership (BG-28). */
+export const REJECT_AND_REVOKE_DESCRIPTION =
+  'The membership is revoked with every role and branch assignment it was given. They can be invited again later.';
 
 /** Decision Q7 (BG-01): the optional remark every Approve dialog takes, for a member (the user
  * record, the approval page) and an institution. The platform trims it, drops a blank one and
@@ -46,8 +51,7 @@ export function decisionCopy(decision: ApprovalDecision, name: string): Decision
       return {
         label: 'Reject & revoke',
         title: `Reject and revoke ${name}?`,
-        description:
-          'This is permanent. The membership is revoked, and this email can never be invited to this institution again.',
+        description: REJECT_AND_REVOKE_DESCRIPTION,
         reason: 'required',
         destructive: true,
       };
@@ -106,7 +110,7 @@ export const BRANCH_CHANGED =
 export const QUEUE_DESCRIPTION =
   'Memberships waiting for approval and branches waiting for activation. An administrator other than the one who asked must decide each.';
 export const USER_QUEUE_DESCRIPTION =
-  "Newest first. Someone marked Provisioning identity was already approved and needs no decision, so the tab's count leaves them out.";
+  "Newest first. Members whose identity is still being set up were usually approved already, so the tab's count leaves them out, even one re-invited before their identity was first set up, who reads Awaiting approval here. Each one's page shows where they stand.";
 export const BRANCH_QUEUE_DESCRIPTION = 'Branches submitted for activation.';
 export const NO_USERS_WAITING = 'No users are waiting for approval';
 export const NO_BRANCHES_WAITING = 'No branches are waiting for activation';

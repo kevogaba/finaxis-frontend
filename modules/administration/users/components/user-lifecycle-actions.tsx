@@ -10,7 +10,10 @@ import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { ReasonDialog } from '@/components/data-display/reason-dialog';
 import { useToast } from '@/components/providers/toast-provider';
 import type { FormAction } from '@/lib/api/action-result';
-import { APPROVAL_REMARK } from '@/modules/administration/approvals/approval-copy';
+import {
+  APPROVAL_REMARK,
+  REJECT_AND_REVOKE_DESCRIPTION,
+} from '@/modules/administration/approvals/approval-copy';
 import {
   approveMembership,
   reactivateMembership,
@@ -37,7 +40,7 @@ interface ActionCopy {
   /** The reason field's label and helper text, when not "Reason" (Approve's remark). */
   reasonLabel?: string;
   reasonHelperText?: string;
-  /** Irreversible: an error-toned trigger and dialog. */
+  /** Destructive: an error-toned trigger and dialog. */
   destructive: boolean;
   success: string;
   action: FormAction;
@@ -84,8 +87,7 @@ function copyFor(id: MembershipAction, name: string): ActionCopy {
       return {
         label: 'Reject & revoke',
         title: `Reject and revoke ${name}?`,
-        description:
-          'This is permanent. The membership is revoked, and this email can never be invited to this institution again.',
+        description: REJECT_AND_REVOKE_DESCRIPTION,
         reason: 'required',
         destructive: true,
         success: 'Membership revoked',
@@ -115,8 +117,8 @@ function copyFor(id: MembershipAction, name: string): ActionCopy {
       return {
         label: 'Revoke',
         title: `Revoke ${name}'s membership?`,
-        description:
-          'This is permanent. Every role and branch assignment here is revoked with it, and this email can never be invited to this institution again.',
+        // BG-28: a revoked member can be invited again, on the same membership.
+        description: `${name} loses access to this institution, and every role and branch assignment here is revoked with it. They can be invited again later.`,
         reason: 'required',
         destructive: true,
         success: 'Membership revoked',

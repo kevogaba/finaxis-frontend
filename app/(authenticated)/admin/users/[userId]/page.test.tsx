@@ -506,7 +506,8 @@ describe('UserOverviewPage: the onboarding card', () => {
     const onboarding = card('Onboarding');
     expect(within(onboarding).queryByRole('list')).not.toBeInTheDocument();
     expect(
-      within(onboarding).getByText(/The membership is revoked\. This is permanent/),
+      // BG-28: a revoked member can be invited again, so the note says how, never "permanent".
+      within(onboarding).getByText(/The membership is revoked, .* Inviting this email again/),
     ).toBeInTheDocument();
   });
 });

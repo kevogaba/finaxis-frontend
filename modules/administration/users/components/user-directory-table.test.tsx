@@ -92,6 +92,23 @@ describe('UserDirectoryTable', () => {
     expect(onboardingOf('Felix Omondi')).toHaveTextContent('Awaiting approval');
   });
 
+  // BG-28: a row awaiting an identity is exact only with its invitation, read per row by the page.
+  it('labels a row awaiting an identity by its invitation, when the page read one', () => {
+    const onboardingOf = (name: string) => within(rowOf(name)).getAllByRole('cell')[2];
+    const { unmount } = renderWithProviders(
+      <UserDirectoryTable users={USERS} invitations={{ [GRACE]: 'AWAITING_APPROVAL' }} />,
+    );
+    // Re-invited, never provisioned: she still awaits approval; her account column says why not.
+    expect(onboardingOf('Grace Wanjiru')).toHaveTextContent('Awaiting approval');
+    expect(within(rowOf('Grace Wanjiru')).getAllByRole('cell')[4]).toHaveTextContent(
+      'Provisioning identity',
+    );
+    unmount();
+
+    renderWithProviders(<UserDirectoryTable users={USERS} invitations={{ [GRACE]: 'FAILED' }} />);
+    expect(onboardingOf('Grace Wanjiru')).toHaveTextContent('Identity failed');
+  });
+
   it('humanizes the membership and user statuses, each in its own column', () => {
     renderWithProviders(<UserDirectoryTable users={USERS} />);
 

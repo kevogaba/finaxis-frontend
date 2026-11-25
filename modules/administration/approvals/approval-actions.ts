@@ -109,10 +109,11 @@ export async function approveUser(
   return explained.ok ? { ok: true, outcome: seen.outcome } : explained;
 }
 
-/** D12: Reject & revoke is the revoke endpoint: terminal (BG-28). Refused before any write unless
- * the membership is still pending (or already revoked: a replay), so a stale page never revokes
- * someone another administrator approved meanwhile (Ruling 5); a provisioning membership takes no
- * decision here (Ruling 12). It fails closed without a resolved profile, as Approve does. */
+/** D12: Reject & revoke is the revoke endpoint: only a new invitation and approval undo it (BG-28).
+ * Refused before any write unless the membership is still pending (or already revoked: a replay),
+ * so a stale page never revokes someone another administrator approved meanwhile (Ruling 5); a
+ * provisioning membership takes no decision here (Ruling 12). It fails closed without a resolved
+ * profile, as Approve does. */
 export async function rejectUser(
   _previous: ActionResult | null,
   formData: FormData,

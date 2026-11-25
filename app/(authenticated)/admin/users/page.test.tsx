@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
 import { INVITE_CODES } from '@/modules/administration/users/invite-rules';
 import { USERS_BRANCH_SCOPED } from '@/modules/administration/users/user-rules';
 import { renderWithProviders } from '@/test/test-utils';
 import { permissionScopes } from '@/test/permission-scopes';
 
-const { getCurrentContextProfile, listUsers, redirect } = vi.hoisted(() => ({
+const { getCurrentContextProfile, listUsers, readRowInvitations, redirect } = vi.hoisted(() => ({
   getCurrentContextProfile: vi.fn(),
   listUsers: vi.fn(),
+  readRowInvitations: vi.fn(),
   redirect: vi.fn(),
 }));
 
@@ -29,6 +30,7 @@ vi.mock('@/auth/context-service', () => ({
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
   listUsers: (...args: unknown[]) => listUsers(...args) as unknown,
+  readRowInvitations: (...args: unknown[]) => readRowInvitations(...args) as unknown,
 }));
 
 const { default: UsersPage } = await import('./page');
@@ -58,6 +60,7 @@ beforeEach(() => {
     throw new Error(`NEXT_REDIRECT:${to}`);
   });
   listUsers.mockResolvedValue(EMPTY);
+  readRowInvitations.mockResolvedValue({});
 });
 
 describe('UsersPage: the Invite user entry (Ruling 4)', () => {
@@ -105,6 +108,30 @@ describe('UsersPage: the Invite user entry (Ruling 4)', () => {
     expect(screen.getByText("You don't have permission")).toBeInTheDocument();
     expect(screen.getByText(USERS_BRANCH_SCOPED)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Invite user' })).toBeNull();
+  });
+
+  it("labels a re-invited member's row by their invitation (BG-28)", async () => {
+    getCurrentContextProfile.mockResolvedValue(resolved(INVITE_CODES));
+    const reinvited = {
+      id: '10000000-0000-4000-8000-0000000000b1',
+      membershipId: '10000000-0000-4000-8000-0000000000b2',
+      username: 'kamau.njoroge',
+      email: 'kamau.njoroge@greenfield.example',
+      displayName: 'Kamau Njoroge',
+      userStatus: 'PROVISIONING_IDP',
+      membershipStatus: 'PENDING_APPROVAL',
+    };
+    const page = { ...EMPTY, items: [reinvited], page: { ...EMPTY.page, totalItems: 1 } };
+    listUsers.mockResolvedValue(page);
+    readRowInvitations.mockResolvedValue({ [reinvited.id]: 'AWAITING_APPROVAL' });
+    await render();
+
+    expect(readRowInvitations).toHaveBeenCalledExactlyOnceWith(
+      page.items,
+      expect.objectContaining({ permissions: INVITE_CODES }),
+    );
+    const row = screen.getByRole('row', { name: /Kamau Njoroge/ });
+    expect(within(row).getByText('Awaiting approval')).toBeInTheDocument();
   });
 
   it('stays in the header when the directory read fails', async () => {
