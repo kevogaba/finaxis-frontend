@@ -63,6 +63,55 @@ describe('RoleLifecycleActions', () => {
     },
   );
 
+  // #342: re-enabling a role you hold adds to your own access, so Activate shows disabled.
+  it('shows a blocked Activate disabled with its reason, keeping Edit', () => {
+    renderWithProviders(
+      <RoleLifecycleActions
+        roleId={ROLE}
+        roleName="Loans officer"
+        editHref="/admin/roles/x/edit"
+        action="activate"
+        blocked="Held, so no."
+        heldByMe
+      />,
+    );
+
+    const activate = screen.getByRole('button', { name: 'Activate' });
+    expect(activate).toBeDisabled();
+    expect(activate).toHaveAccessibleDescription('Held, so no.');
+    expect(screen.getByRole('link', { name: 'Edit' })).toBeInTheDocument();
+  });
+
+  it('falls back to the record title when the toggle that remains is blocked (I3)', async () => {
+    const user = userEvent.setup();
+    deactivateRole.mockResolvedValueOnce({ ok: true });
+    const actions = (action: 'activate' | 'deactivate', blocked?: string) => (
+      <main>
+        <h1>Teller</h1>
+        <RoleLifecycleActions
+          roleId={ROLE}
+          roleName="Teller"
+          action={action}
+          blocked={blocked}
+          heldByMe
+        />
+      </main>
+    );
+    const { rerender } = renderWithProviders(actions('deactivate'));
+
+    await user.click(screen.getByRole('button', { name: 'Deactivate' }));
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Deactivate' }),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Role deactivated');
+
+    // You held it, so the refreshed hero offers Activate disabled: it can't take focus.
+    rerender(actions('activate', 'Held, so no.'));
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Teller' })).toHaveFocus();
+    });
+  });
+
   it('falls back to the record title when no toggle remains (I3)', async () => {
     const user = userEvent.setup();
     activateRole.mockResolvedValueOnce({ ok: true });

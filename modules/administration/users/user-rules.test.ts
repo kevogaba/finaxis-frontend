@@ -12,6 +12,7 @@ import {
   MEMBERSHIP_UNAVAILABLE,
   NO_ACTIVE_ROLES,
   NO_MEMBERSHIP_VIEW,
+  OWN_ACCESS,
   OWN_MEMBERSHIP,
   PARTIAL_SCAN_NOTE,
   PROVISIONING_NOTE,
@@ -31,6 +32,7 @@ import {
   membershipActionsNote,
   onboardingProgress,
   onboardingState,
+  ownAccessBlocked,
   pageOfItems,
   parseUserId,
   roleScopeBranches,
@@ -516,38 +518,91 @@ describe('branchContextNote', () => {
 describe('role and branch assignment gates', () => {
   it('refuses a role assignment on a revoked membership or without role.view', () => {
     const holder = { permissions: ['user.assign_role', 'role_assignment.view', 'role.view'] };
-    expect(canAssignUserRole('REVOKED', holder)).toBe(false);
+    expect(canAssignUserRole('REVOKED', holder, false)).toBe(false);
     expect(
-      canAssignUserRole('ACTIVE', { permissions: ['user.assign_role', 'role_assignment.view'] }),
+      canAssignUserRole(
+        'ACTIVE',
+        { permissions: ['user.assign_role', 'role_assignment.view'] },
+        false,
+      ),
     ).toBe(false);
-    expect(canAssignUserRole('ACTIVE', { permissions: ['role.view'] })).toBe(false);
+    expect(canAssignUserRole('ACTIVE', { permissions: ['role.view'] }, false)).toBe(false);
     // Review Focus 3: user.assign_role implies role_assignment.view (ADR 0030).
-    expect(canAssignUserRole('ACTIVE', { permissions: ['user.assign_role', 'role.view'] })).toBe(
-      false,
-    );
-    expect(canAssignUserRole('SUSPENDED', holder)).toBe(true);
-    expect(canAssignUserRole('PENDING_APPROVAL', holder)).toBe(true);
+    expect(
+      canAssignUserRole('ACTIVE', { permissions: ['user.assign_role', 'role.view'] }, false),
+    ).toBe(false);
+    expect(canAssignUserRole('SUSPENDED', holder, false)).toBe(true);
+    expect(canAssignUserRole('PENDING_APPROVAL', holder, false)).toBe(true);
   });
 
   it('refuses a branch assignment on a revoked membership or without branch.view', () => {
     const codes = ['user.assign_branch', 'branch_assignment.view', 'branch.view'];
-    expect(canAssignUserBranch('REVOKED', { permissions: codes })).toBe(false);
+    expect(canAssignUserBranch('REVOKED', { permissions: codes }, false)).toBe(false);
     expect(
-      canAssignUserBranch('ACTIVE', {
-        permissions: codes.filter((code) => code !== 'branch.view'),
-      }),
+      canAssignUserBranch(
+        'ACTIVE',
+        { permissions: codes.filter((code) => code !== 'branch.view') },
+        false,
+      ),
     ).toBe(false);
     expect(
-      canAssignUserBranch('ACTIVE', {
-        permissions: codes.filter((code) => code !== 'branch_assignment.view'),
-      }),
+      canAssignUserBranch(
+        'ACTIVE',
+        { permissions: codes.filter((code) => code !== 'branch_assignment.view') },
+        false,
+      ),
     ).toBe(false);
     expect(
-      canAssignUserBranch('ACTIVE', {
-        permissions: codes.filter((code) => code !== 'user.assign_branch'),
-      }),
+      canAssignUserBranch(
+        'ACTIVE',
+        { permissions: codes.filter((code) => code !== 'user.assign_branch') },
+        false,
+      ),
     ).toBe(false);
-    expect(canAssignUserBranch('PENDING_APPROVAL', { permissions: codes })).toBe(true);
+    expect(canAssignUserBranch('PENDING_APPROVAL', { permissions: codes }, false)).toBe(true);
+  });
+
+  // Platform #342 (ADR 0044): adding to your own access also needs user.assign_self, and its
+  // view, tenant-wide; only the seeded administrators hold it (Review Focus 3).
+  const ASSIGNER = [
+    'user.view',
+    'user.assign_role',
+    'role_assignment.view',
+    'role.view',
+    'user.assign_branch',
+    'branch_assignment.view',
+    'branch.view',
+  ];
+  const iamAdmin = { permissions: ASSIGNER, tenantPermissions: ASSIGNER };
+  const tenantAdmin = {
+    permissions: [...ASSIGNER, 'user.assign_self'],
+    tenantPermissions: [...ASSIGNER, 'user.assign_self'],
+  };
+
+  it.each([
+    ['an IAM_ADMIN-shaped holder', true, iamAdmin],
+    [
+      'user.assign_self held only at branch scope',
+      true,
+      { permissions: [...ASSIGNER, 'user.assign_self'], tenantPermissions: ASSIGNER },
+    ],
+    [
+      'user.assign_self without user.view tenant-wide',
+      true,
+      { permissions: [...ASSIGNER, 'user.assign_self'], tenantPermissions: ['user.assign_self'] },
+    ],
+    ['a tenant administrator', false, tenantAdmin],
+  ] as const)('blocks your own access for %s → %s', (_case, blocked, holder) => {
+    expect(ownAccessBlocked(true, holder)).toBe(blocked);
+    expect(canAssignUserRole('ACTIVE', holder, true)).toBe(!blocked);
+    expect(canAssignUserBranch('ACTIVE', holder, true)).toBe(!blocked);
+  });
+
+  it("never blocks someone else's access", () => {
+    expect(ownAccessBlocked(false, iamAdmin)).toBe(false);
+    expect(canAssignUserRole('ACTIVE', iamAdmin, false)).toBe(true);
+    expect(canAssignUserBranch('ACTIVE', iamAdmin, false)).toBe(true);
+    expect(OWN_ACCESS).toBe("You can't add to your own access. A tenant administrator can.");
   });
 });
 

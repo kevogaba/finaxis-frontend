@@ -56,6 +56,19 @@ describe('role service', () => {
     await expect(service.countRolePermissions(ROLE)).resolves.toBeNull();
   });
 
+  it('answers whether a user holds a role with one size=1 ACTIVE read, false when unreadable', async () => {
+    apiGet.mockResolvedValueOnce({ items: [{}], page: { totalItems: 1 } });
+    await expect(service.holdsRole(ROLE, USER)).resolves.toBe(true);
+    expect(apiGet).toHaveBeenLastCalledWith(
+      `/api/v1/tenant/role-assignments?user_id=${USER}&role_id=${ROLE}&status=ACTIVE&page=0&size=1`,
+      expect.anything(),
+    );
+    apiGet.mockResolvedValueOnce({ items: [], page: { totalItems: 0 } });
+    await expect(service.holdsRole(ROLE, USER)).resolves.toBe(false);
+    apiGet.mockRejectedValueOnce(new Error('forbidden'));
+    await expect(service.holdsRole(ROLE, USER)).resolves.toBe(false);
+  });
+
   it('reads the whole catalogue in one bounded, code-sorted read — or null', async () => {
     const page = { items: [], page: { hasNext: false } };
     apiGet.mockResolvedValueOnce(page);

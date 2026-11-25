@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { PERMISSION_VIEWS, requiredViews } from '../auth/permission-views';
-import { IDS, ROLE_SCENARIO_IDS } from './fake-api/scenarios.mts';
+import { IDS, ROLE_SCENARIO_IDS, USER_SCENARIO_IDS } from './fake-api/scenarios.mts';
 import { api, contextFor } from './support/fake-api';
 
 test.describe('fake API roles (contract §E.3)', () => {
@@ -242,6 +242,96 @@ test.describe('fake API roles (contract §E.3)', () => {
       { headers: atHeadOffice },
     );
     expect(await tenantScoped.json()).toMatchObject({ status: 'REVOKED' });
+  });
+
+  // Platform #342 (ADR 0044): below the tenant administrator, nobody adds to their own access.
+  test('refuses user.assign_self as a grant, then a held role, in the platform order', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'roles-self', null);
+    const grant = (roleId: string, code: string) =>
+      request.post(api(`/tenant/roles/${roleId}/permissions`), {
+        headers,
+        data: { permission_code: code },
+      });
+
+    // 409 for a system role comes first, then the 422 for user.assign_self on any role.
+    expect((await grant(IDS.tenantAdminRole, 'user.assign_self')).status()).toBe(409);
+    const notGrantable = await grant(ROLE_SCENARIO_IDS.compliance, 'user.assign_self');
+    expect(notGrantable.status()).toBe(422);
+    expect(await notGrantable.json()).toMatchObject({ code: 'invalid_operation' });
+    // Jane holds Compliance: even a re-grant, even an unknown code, is the holder 403.
+    for (const code of ['audit.view', 'nope.view']) {
+      const held = await grant(ROLE_SCENARIO_IDS.compliance, code);
+      expect(held.status(), code).toBe(403);
+      expect(await held.json()).toMatchObject({
+        code: 'forbidden',
+        detail: 'Missing permission: user.assign_self.',
+      });
+    }
+    // A role she doesn't hold takes the grant.
+    expect((await grant(ROLE_SCENARIO_IDS.teller, 'cob.start')).status()).toBe(201);
+  });
+
+  test('refuses re-enabling a held role, and nothing else about its status', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'roles-self', null);
+    const status = async (roleId: string, path: 'activate' | 'deactivate') =>
+      (await request.post(api(`/tenant/roles/${roleId}/${path}`), { headers, data: {} })).status();
+
+    // Jane holds the DISABLED Loans officer in this scenario.
+    expect(await status(ROLE_SCENARIO_IDS.loansOfficer, 'activate')).toBe(403);
+    // Deactivating a held role is allowed; re-enabling it is not.
+    expect(await status(ROLE_SCENARIO_IDS.compliance, 'deactivate')).toBe(200);
+    expect(await status(ROLE_SCENARIO_IDS.compliance, 'activate')).toBe(403);
+    // A role she doesn't hold is re-enabled as before.
+    expect(await status(ROLE_SCENARIO_IDS.teller, 'deactivate')).toBe(200);
+    expect(await status(ROLE_SCENARIO_IDS.teller, 'activate')).toBe(200);
+  });
+
+  test('refuses assigning yourself a role or a branch without user.assign_self', async ({
+    request,
+  }) => {
+    const self = await contextFor(request, 'roles-self', null);
+    const admin = await contextFor(request, 'roles', null);
+    // The roles data has no user.assign_branch; the users data does.
+    const usersSelf = await contextFor(request, 'users-self', null);
+    const usersAdmin = await contextFor(request, 'users', null);
+    const role = (headers: Record<string, string>, userId: string) =>
+      request.post(api('/tenant/role-assignments'), {
+        headers,
+        data: {
+          user_id: userId,
+          role_id: ROLE_SCENARIO_IDS.opsSupervisor,
+          scope_type: 'TENANT',
+          branch_id: null,
+        },
+      });
+    const branch = (headers: Record<string, string>, userId: string) =>
+      request.post(api('/tenant/branch-assignments'), {
+        headers,
+        data: { user_id: userId, branch_id: IDS.headOffice, assignment_type: 'OPERATE' },
+      });
+
+    for (const refused of [await role(self, IDS.jane), await branch(usersSelf, IDS.jane)]) {
+      expect(refused.status()).toBe(403);
+      expect(await refused.json()).toMatchObject({
+        code: 'forbidden',
+        detail: 'Missing permission: user.assign_self.',
+      });
+    }
+    // Someone else, or a tenant administrator assigning themselves, goes through.
+    expect((await role(self, ROLE_SCENARIO_IDS.tom)).status()).toBe(201);
+    expect((await branch(usersSelf, USER_SCENARIO_IDS.felix)).status()).toBe(201);
+    expect((await role(admin, IDS.jane)).status()).toBe(201);
+    expect((await branch(usersAdmin, IDS.jane)).status()).toBe(201);
+    // The tenant administrator can't grant user.assign_self either.
+    const grant = await request.post(api(`/tenant/roles/${ROLE_SCENARIO_IDS.teller}/permissions`), {
+      headers: admin,
+      data: { permission_code: 'user.assign_self' },
+    });
+    expect(grant.status()).toBe(422);
   });
 
   test('rejects unknown properties and lists the catalogue', async ({ request }) => {

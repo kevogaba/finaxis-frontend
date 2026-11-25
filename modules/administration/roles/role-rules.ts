@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { canAll, canAllTenantWide, canTenantWide, type PermissionHolder } from '@/auth/permissions';
+import {
+  canAll,
+  canAllTenantWide,
+  canTenantWide,
+  ownAccessBlocked,
+  type PermissionHolder,
+} from '@/auth/permissions';
 import { requiredViews, withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import type { Permission, RoleScopeType, RoleStatus } from './role-contract';
@@ -27,15 +33,24 @@ export function canCreateRole(holder: PermissionHolder): boolean {
   return holdsRoleMutation(holder, 'role.create');
 }
 
+export const HELD_ROLE =
+  'You hold this role, so adding to it or re-enabling it needs a tenant administrator.';
+
 /** The one status toggle on offer — custom roles only, since a system role answers 409 (contract
- * §E.3). Activate and deactivate work from any state, so an ARCHIVED role offers Activate. */
+ * §E.3). Activate and deactivate work from any state, so an ARCHIVED role offers Activate.
+ * `heldByMe`: re-enabling a role you hold adds to your own access (#342). */
 export function roleStatusAction(
   role: RoleShape,
   holder: PermissionHolder,
+  heldByMe: boolean,
 ): RoleLifecycleAction | null {
   if (role.systemRole) return null;
-  const action = role.status === 'ACTIVE' ? 'deactivate' : 'activate';
-  return holdsRoleMutation(holder, `role.${action}`) ? action : null;
+  if (role.status === 'ACTIVE') {
+    return holdsRoleMutation(holder, 'role.deactivate') ? 'deactivate' : null;
+  }
+  return holdsRoleMutation(holder, 'role.activate') && !ownAccessBlocked(heldByMe, holder)
+    ? 'activate'
+    : null;
 }
 
 export function canEditRole(role: RoleShape, holder: PermissionHolder): boolean {
@@ -43,11 +58,16 @@ export function canEditRole(role: RoleShape, holder: PermissionHolder): boolean 
 }
 
 /** The drawer browses the catalogue, so granting also needs `permission.view`, which the catalogue
- * route also checks tenant-wide. */
-export function canGrantPermissions(role: RoleShape, holder: PermissionHolder): boolean {
+ * route also checks tenant-wide. Adding to a role you hold adds to your own access (#342). */
+export function canGrantPermissions(
+  role: RoleShape,
+  holder: PermissionHolder,
+  heldByMe: boolean,
+): boolean {
   return (
     !role.systemRole &&
-    canAllTenantWide(holder, [...withViews(['role.assign_permission']), 'permission.view'])
+    canAllTenantWide(holder, [...withViews(['role.assign_permission']), 'permission.view']) &&
+    !ownAccessBlocked(heldByMe, holder)
   );
 }
 
@@ -76,6 +96,8 @@ export function grantableOptions(
     (permission) =>
       permission.status === 'ACTIVE' &&
       permission.grantScope === 'TENANT' &&
+      // Refused for every role (422, #342): only the seeded administrators hold it.
+      permission.code !== 'user.assign_self' &&
       !granted.has(permission.code),
   );
 }

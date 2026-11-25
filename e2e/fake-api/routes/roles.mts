@@ -1,5 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { requireContext, requirePermission, requireTenantContext } from '../access.mts';
+import {
+  holdsRole,
+  requireAssignSelf,
+  requireContext,
+  requirePermission,
+  requireTenantContext,
+} from '../access.mts';
 import type { AccessContext } from '../access.mts';
 import { recordAuditEvent } from '../audit-log.mts';
 import { objectBody, pageOf, problem, readBody, sendJson, sortKey, stringField } from '../http.mts';
@@ -151,7 +157,8 @@ const ASSIGNMENT_FILTERS: Record<string, (row: FakeRoleAssignment) => string | n
   status: (row) => row.status,
 };
 
-/** Activate / deactivate: any state → ACTIVE / DISABLED, custom roles only (contract §E.3). */
+/** Activate / deactivate: any state → ACTIVE / DISABLED, custom roles only (contract §E.3).
+ * Re-enabling a DISABLED role the caller holds is the #342 403. */
 function statusRoute(path: 'activate' | 'deactivate', status: 'ACTIVE' | 'DISABLED'): Route {
   return route('POST', `/api/v1/tenant/roles/:role_id/${path}`, (context) => {
     const access = tenantAccess(context);
@@ -160,6 +167,10 @@ function statusRoute(path: 'activate' | 'deactivate', status: 'ACTIVE' | 'DISABL
     // The endpoint takes no input (contract §E.3), so every request fingerprints as `{}`.
     sendIdempotent(context, {}, () => {
       if (role.systemRole) throw immutable();
+      requireAssignSelf(
+        access,
+        status === 'ACTIVE' && role.status === 'DISABLED' && holdsRole(access, role.id),
+      );
       role.status = status;
       role.updatedAt = new Date().toISOString();
       recordAuditEvent(context.state, access, {
@@ -298,6 +309,16 @@ export const roleRoutes: Route[] = [
       body,
       () => {
         if (role.systemRole) throw immutable();
+        // #342, in the platform's order: no role may be granted it, then a role the caller holds
+        // can't be widened (a re-grant included), before the permission lookup.
+        if (code === 'user.assign_self') {
+          throw problem(
+            422,
+            'invalid_operation',
+            'user.assign_self is held only by the seeded administrator roles and cannot be granted.',
+          );
+        }
+        requireAssignSelf(access, holdsRole(access, role.id));
         if (!PERMISSIONS.some((entry) => entry.code === code)) {
           throw problem(404, 'resource_not_found', 'Permission not found.');
         }
@@ -424,6 +445,8 @@ export const roleRoutes: Route[] = [
       }
     }
     requirePermission(access, 'user.assign_role', scope === 'BRANCH' ? 'branch' : 'tenant');
+    // #342: before any lookup, so even a repeat of an existing self-assignment is refused.
+    requireAssignSelf(access, userId === access.claims.userId);
     sendIdempotent(
       context,
       body,

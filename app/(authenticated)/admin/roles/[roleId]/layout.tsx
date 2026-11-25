@@ -15,10 +15,11 @@ import { load } from '@/lib/api/load';
 import { UUID_PATTERN } from '@/lib/api/wire';
 import {
   canEditRole,
+  HELD_ROLE,
   roleStatusAction,
   roleTypeLabel,
 } from '@/modules/administration/roles/role-rules';
-import { getRole } from '@/modules/administration/roles/role-service';
+import { getRole, holdsRole } from '@/modules/administration/roles/role-service';
 import { RoleLifecycleActions } from '@/modules/administration/roles/components/role-lifecycle-actions';
 
 export const metadata: Metadata = { title: 'Role record' };
@@ -56,8 +57,21 @@ export default async function RoleRecordLayout({ children, params }: RoleRecordL
   }
 
   const record = role.value;
-  const holder = permissionHolder(resolved?.profile);
-  const action = roleStatusAction(record, holder);
+  const profile = resolved?.profile;
+  const holder = permissionHolder(profile);
+  const offered = roleStatusAction(record, holder, false);
+  // Whether you hold it, as the platform counts it (#342): `/auth/me` lists ACTIVE roles only, so
+  // a DISABLED one takes the one read. The backend's id, not the URL's: UUID_PATTERN is
+  // case-insensitive, and a mixed-case URL must still warn the holder (Ruling 12).
+  const heldByMe =
+    offered !== null &&
+    profile !== undefined &&
+    (profile.roles.some((held) => held.id === record.id) ||
+      (record.status === 'DISABLED' &&
+        can(holder, 'role_assignment.view') &&
+        (await holdsRole(record.id, profile.user_id))));
+  // Offered to your codes but refused because you hold it: shown disabled with the reason.
+  const blocked = offered !== null && roleStatusAction(record, holder, heldByMe) === null;
   const editable = canEditRole(record, holder);
   const base = `/admin/roles/${roleId}`;
 
@@ -73,15 +87,14 @@ export default async function RoleRecordLayout({ children, params }: RoleRecordL
         actions={
           // Undefined, not an empty component: RecordHero (frozen kit) renders its actions box
           // whenever this is truthy, which would leave an empty band at 375 px (08's layout).
-          editable || action ? (
+          editable || offered ? (
             <RoleLifecycleActions
               roleId={roleId}
               roleName={record.roleName}
               editHref={editable ? `${base}/edit` : undefined}
-              action={action}
-              // The backend's id, not the URL's: UUID_PATTERN is case-insensitive, and a
-              // mixed-case URL must still warn the holder (Ruling 12).
-              heldByMe={resolved?.profile.roles.some((held) => held.id === record.id) ?? false}
+              action={offered}
+              blocked={blocked ? HELD_ROLE : undefined}
+              heldByMe={heldByMe}
               contextOrganisationId={resolved?.context.organization.id}
             />
           ) : undefined

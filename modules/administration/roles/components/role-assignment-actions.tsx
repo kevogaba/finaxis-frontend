@@ -89,6 +89,9 @@ interface AssignRoleButtonProps {
   roleId: string;
   roleName: string;
   branches: readonly BranchOption[];
+  /** Left out of the user search: the signed-in user, where they can't add to their own access
+   * (#342). */
+  excludeUserId?: string;
   /** I2: forwarded to the drawer as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -97,6 +100,7 @@ export function AssignRoleButton({
   roleId,
   roleName,
   branches,
+  excludeUserId,
   contextOrganisationId,
 }: AssignRoleButtonProps) {
   const notify = useToast();
@@ -130,7 +134,13 @@ export function AssignRoleButton({
         {(fieldErrors) => (
           <>
             <input type="hidden" name="roleId" value={roleId} />
-            <UserPicker name="userId" label="User" required error={fieldErrors.userId} />
+            <UserPicker
+              name="userId"
+              label="User"
+              required
+              error={fieldErrors.userId}
+              excludeUserId={excludeUserId}
+            />
             <RoleScopeFields branches={branches} fieldErrors={fieldErrors} />
           </>
         )}

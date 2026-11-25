@@ -196,6 +196,25 @@ export function requirePermission(
   }
 }
 
+/** Adding to your own access also needs `user.assign_self` (and its view) tenant-wide, which
+ * only the seeded administrators hold (#342, ADR 0044): a self-assignment, or widening a role
+ * the caller holds. */
+export function requireAssignSelf(access: AccessContext, own: boolean): void {
+  if (own) requirePermission(access, 'user.assign_self');
+}
+
+/** `RoleManagementService.requireMayWidenHeldRole`: the caller holds the role through an ACTIVE
+ * assignment at any scope. */
+export function holdsRole(access: AccessContext, roleId: string): boolean {
+  return access.state.roleAssignments.some(
+    (row) =>
+      row.userId === access.claims.userId &&
+      row.organisationId === access.organisation.id &&
+      row.roleId === roleId &&
+      row.status === 'ACTIVE',
+  );
+}
+
 /** Mirrors `WrongContext` (BG-30): a stable code, with the sentence in the detail. */
 export function requirePlatformContext(access: AccessContext): void {
   if (access.organisation.id !== PLATFORM_ORGANISATION_ID) {

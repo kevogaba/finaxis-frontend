@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
 import type { UserBranchAssignmentsTable } from '@/modules/administration/users/components/user-branch-assignments-table';
-import { PARTIAL_SCAN_NOTE } from '@/modules/administration/users/user-rules';
+import { OWN_ACCESS, PARTIAL_SCAN_NOTE } from '@/modules/administration/users/user-rules';
 import { resolvedStyle } from '@/test/resolved-style';
 import { renderWithProviders } from '@/test/test-utils';
 
@@ -124,6 +124,8 @@ interface Row {
 }
 interface Setup {
   permissions?: string[];
+  /** The codes held tenant-wide (`/auth/me` scopes); defaults to every code in `permissions`. */
+  tenantWide?: string[];
   selectedBranch?: { id: string; name: string } | null;
   profileBranches?: Branch[];
   membershipStatus?: string;
@@ -142,6 +144,7 @@ interface Setup {
 /** Programs every service the page reads. A test names only what it varies. */
 function setup({
   permissions = ALL_CODES,
+  tenantWide = permissions,
   selectedBranch = null,
   profileBranches = [
     { id: HEAD_OFFICE, status: 'ACTIVE' },
@@ -167,7 +170,12 @@ function setup({
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions, user_id: signedInAs, branches: profileBranches },
+    profile: {
+      permissions,
+      permission_scopes: tenantWide.map((code) => ({ code, scope: 'TENANT' })),
+      user_id: signedInAs,
+      branches: profileBranches,
+    },
     context: { organization: { id: ORG, name: 'Greenfield' }, branch: selectedBranch },
   });
   if (userError) getUser.mockRejectedValue(userError);
@@ -718,6 +726,26 @@ describe('UserBranchesPage: the empty state says only what could be seen (1c)', 
 
     expect(screen.getByRole('table')).toBeInTheDocument();
     expect(screen.queryByText(/^No (branch assignments|assignment at)/)).toBeNull();
+  });
+});
+
+describe('UserBranchesPage: your own record (#342)', () => {
+  it('shows Assign branch disabled with the reason, and reads no branch list', async () => {
+    setup({ signedInAs: FELIX });
+    await show();
+
+    const button = screen.getByRole('button', { name: 'Assign branch' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription(OWN_ACCESS);
+    expect(listBranches).not.toHaveBeenCalled();
+  });
+
+  it('offers it on your own record with user.assign_self tenant-wide (the control)', async () => {
+    setup({ signedInAs: FELIX, permissions: [...ALL_CODES, 'user.assign_self'] });
+    await show();
+
+    expect(screen.getByRole('button', { name: 'Assign branch' })).toBeEnabled();
+    expect(screen.queryByText(OWN_ACCESS)).toBeNull();
   });
 });
 

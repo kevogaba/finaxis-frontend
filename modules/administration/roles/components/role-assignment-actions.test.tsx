@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
@@ -143,6 +143,38 @@ describe('AssignRoleButton', () => {
     const drawer = screen.getByRole('dialog', { name: 'Assign this role' });
     expect(hidden('contextOrganisationId', drawer)).toBe(ORG);
     expect(hidden('roleId', drawer)).toBe(ROLE);
+  });
+});
+
+describe('AssignRoleButton: your own access (#342)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('leaves the excluded user out of the user search', async () => {
+    const ME = '09000000-0000-4000-8000-0000000000aa';
+    const option = (id: string, displayName: string) => ({
+      id,
+      displayName,
+      email: `${id}@greenfield.example`,
+      username: id,
+      membershipStatus: 'ACTIVE',
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(
+        Response.json({ items: [option(ME, 'Jane Self'), option(ASSIGNMENT, 'Tom Other')] }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(
+      <AssignRoleButton roleId={ROLE} roleName="Teller" branches={[]} excludeUserId={ME} />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Assign role' }));
+    await user.type(screen.getByRole('combobox', { name: /^User/ }), 'o');
+
+    expect(await screen.findByRole('option', { name: /Tom Other/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Jane Self/ })).toBeNull();
   });
 });
 

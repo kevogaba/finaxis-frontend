@@ -97,6 +97,22 @@ export async function countActiveRoleAssignments(roleId: string): Promise<number
   }
 }
 
+/** Whether `userId` holds the role through an ACTIVE assignment at any scope, as the platform's
+ * own-access check counts it (#342): one `size=1` read, which needs `role_assignment.view`. False
+ * when unreadable. `/auth/me` lists ACTIVE roles only, so this is how a DISABLED one is known.
+ * Cached: the record layout and its Permissions tab share it. */
+export const holdsRole = cache(async (roleId: string, userId: string): Promise<boolean> => {
+  try {
+    const page = await listRoleAssignments(
+      { roleId, userId, status: 'ACTIVE' },
+      { page: 0, size: 1 },
+    );
+    return page.page.totalItems > 0;
+  } catch {
+    return false;
+  }
+});
+
 // ponytail: the catalogue is 80 codes (contract §F), so a page of 100 holds it. Past that, the
 // rest render as codes and the drawer says the list is truncated.
 const CATALOGUE_PATH =

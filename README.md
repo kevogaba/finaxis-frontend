@@ -543,6 +543,11 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - A mutation needs the views the platform pairs with it (`auth/permission-views.ts`, BG-31). The
     grant drawer adds them ("Also grants …") and posts them first, Remove is disabled on a view a
     granted mutation needs ("Needed by …"), and platform-scope codes aren't offered.
+  - Below the tenant administrator, nobody adds to their own access (platform #342): on a role you
+    hold, Grant permissions and Activate show disabled with the reason, the Assign role search and
+    a branch's Assign user search leave you out, and the grant drawer never offers
+    `user.assign_self`. The user record does the
+    same for Assign role and Assign branch on your own record.
   - "Active assignments" counts assignments, not distinct users (BG-15).
   - A branch-scoped assignment needs the user's existing assignment at that branch, and a branch
     context offers only its own branch.

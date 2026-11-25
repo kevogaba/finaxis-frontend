@@ -5,6 +5,7 @@ import { BackendApiError } from '@/auth/backend-api';
 import {
   ACCESS_DESCRIPTION,
   NO_ACTIVE_ROLES,
+  OWN_ACCESS,
   ROLES_UNAVAILABLE,
 } from '@/modules/administration/users/user-rules';
 import { renderWithProviders } from '@/test/test-utils';
@@ -131,6 +132,8 @@ const assignment = (
 
 interface Setup {
   permissions?: string[];
+  /** The codes held tenant-wide (`/auth/me` scopes); defaults to every code in `permissions`. */
+  tenantWide?: string[];
   /** The role index the page reads: empty on any failure (lib/api/lookups.ts). */
   index?: RoleIndex;
   /** The scan stopped at its ceiling with more roles unread. */
@@ -155,6 +158,7 @@ interface Setup {
 /** Programs every service the page reads. A test names only what it varies. */
 function setup({
   permissions = ALL_CODES,
+  tenantWide = permissions,
   index = TELLER_ROLE,
   rolesTruncated = false,
   branchIndex = BRANCH_INDEX,
@@ -171,7 +175,12 @@ function setup({
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions, user_id: profileUserId, branches: [] },
+    profile: {
+      permissions,
+      permission_scopes: tenantWide.map((code) => ({ code, scope: 'TENANT' })),
+      user_id: profileUserId,
+      branches: [],
+    },
     context: { organization: { id: ORG, name: 'Greenfield' }, branch: selectedBranch },
   });
   if (userError) getUser.mockRejectedValue(userError);
@@ -383,6 +392,54 @@ describe('UserAccessPage: when no role can be offered (1b)', () => {
       expect(assignButton()).toBeNull();
     },
   );
+});
+
+describe('UserAccessPage: your own record (#342)', () => {
+  it('shows Assign role disabled with the reason, and reads no branch assignments', async () => {
+    setup({ profileUserId: FELIX });
+
+    await show();
+
+    const button = screen.getByRole('button', { name: 'Assign role' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription(OWN_ACCESS);
+    expect(listUserBranchAssignments).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('offers it on your own record with user.assign_self tenant-wide (the control)', async () => {
+    const codes = [...ALL_CODES, 'user.assign_self'];
+    setup({ profileUserId: FELIX, permissions: codes });
+
+    await show();
+
+    expect(screen.getByRole('button', { name: 'Assign role' })).toBeEnabled();
+    expect(screen.queryByText(OWN_ACCESS)).toBeNull();
+  });
+
+  it('is not rescued by user.assign_self held only at branch scope', async () => {
+    setup({
+      profileUserId: FELIX,
+      permissions: [...ALL_CODES, 'user.assign_self'],
+      tenantWide: ALL_CODES,
+    });
+
+    await show();
+
+    expect(screen.getByRole('button', { name: 'Assign role' })).toBeDisabled();
+  });
+
+  it('shows nothing when the assignment would not be offered anyway', async () => {
+    setup({
+      profileUserId: FELIX,
+      permissions: ALL_CODES.filter((code) => code !== 'user.assign_role'),
+    });
+
+    await show();
+
+    expect(assignButton()).toBeNull();
+    expect(screen.queryByText(OWN_ACCESS)).toBeNull();
+  });
 });
 
 describe('UserAccessPage: offering the assignment', () => {

@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
+import AddOutlined from '@mui/icons-material/AddOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can } from '@/auth/permissions';
+import { can, permissionHolder } from '@/auth/permissions';
+import { BlockedButton } from '@/components/data-display/blocked-button';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -24,6 +26,8 @@ import {
   ACCESS_DESCRIPTION,
   canAssignUserRole,
   NO_ACTIVE_ROLES,
+  OWN_ACCESS,
+  ownAccessBlocked,
   parseUserId,
   ROLES_UNAVAILABLE,
   roleScopeBranches,
@@ -56,7 +60,8 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
   const { index: roles, truncated: rolesTruncated } = roleScan;
   const record = user.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
-  const holder = { permissions: resolved?.profile.permissions ?? [] };
+  const holder = resolved ? permissionHolder(resolved.profile) : { permissions: [] };
+  const self = record.id === resolved?.profile.user_id;
   // I2: the organisation this page rendered with, carried by every mutation surface below.
   const contextOrganisationId = resolved?.context.organization.id;
   const selectedBranch = resolved?.context.branch ?? null;
@@ -68,7 +73,11 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
   const roleOptions = [...roles]
     .filter(([, role]) => role.status === 'ACTIVE')
     .map(([id, role]) => ({ id, label: `${role.name} (${role.code})` }));
-  const canAssign = canAssignUserRole(record.membershipStatus, holder);
+  const canAssign = canAssignUserRole(record.membershipStatus, holder, self);
+  // Your own record (#342): offered to your codes, but only a tenant administrator may add to your
+  // own access, so it shows disabled with the reason.
+  const ownBlocked =
+    ownAccessBlocked(self, holder) && canAssignUserRole(record.membershipStatus, holder, false);
   // Branch scope needs the user's own ACTIVE assignment at that branch, else a 409.
   const scan =
     canAssign && can(holder, 'branch_assignment.view')
@@ -113,6 +122,8 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
             branchHint={branchHint}
             contextOrganisationId={contextOrganisationId}
           />
+        ) : ownBlocked ? (
+          <BlockedButton label="Assign role" reason={OWN_ACCESS} startIcon={<AddOutlined />} />
         ) : undefined
       }
     >
@@ -150,7 +161,7 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
       <>
         <UserRoleAssignmentsTable
           userName={record.displayName}
-          self={record.id === resolved?.profile.user_id}
+          self={self}
           canRevoke={canRevokeRoleAssignments(holder)}
           contextOrganisationId={contextOrganisationId}
           rows={assignments.value.items.map((row) => {

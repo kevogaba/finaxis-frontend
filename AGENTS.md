@@ -181,6 +181,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   `canAllTenantWide` on `permissionHolder(profile)` (BG-33); a target-branch check stays on `can`.
   A permission migration that adds a mutation adds its pair to that map;
   `e2e/fake-api-roles.spec.ts` pins it to the fake catalogue.
+  Adding to your own access (assigning yourself a role or branch, granting to or re-enabling a role
+  you hold) also needs `user.assign_self` tenant-wide (platform #342): gate it with
+  `ownAccessBlocked` and show the action disabled with its reason, and a new assign path does too.
 - `ApplicationContext.branch` is nullable: `null` means All branches (institution level), not "no
   branch selected yet." Render it as `branch?.name ?? 'All branches'`, never assume a branch exists.
 

@@ -66,6 +66,23 @@ describe('UserPicker', () => {
     expect(onChange).toHaveBeenLastCalledWith(null);
   });
 
+  // #342: the assign drawers leave out the signed-in user when they can't add to their own access.
+  it('leaves out the excluded user from the matches', async () => {
+    const JANE = {
+      ...PETER,
+      id: '08000000-0000-4000-8000-000000000009',
+      displayName: 'Peter Jane',
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(respond({ items: [JANE, PETER] }));
+    const user = userEvent.setup();
+    renderWithProviders(<UserPicker name="userId" label="User" excludeUserId={JANE.id} />);
+
+    await user.type(screen.getByRole('combobox', { name: 'User' }), 'pet');
+
+    expect(await screen.findByRole('option', { name: /Peter Otieno/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Peter Jane/ })).toBeNull();
+  });
+
   it('explains a failed search instead of showing an empty list', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(respond({ message: 'down' }, 502));
     const user = userEvent.setup();

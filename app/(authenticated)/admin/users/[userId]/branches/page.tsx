@@ -3,8 +3,11 @@ import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
+import AddOutlined from '@mui/icons-material/AddOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { permissionHolder } from '@/auth/permissions';
 import { SwitchToAllBranchesButton } from '@/components/context/switch-to-all-branches-button';
+import { BlockedButton } from '@/components/data-display/blocked-button';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -23,6 +26,8 @@ import {
   branchAssignmentsEmptyState,
   branchContextNote,
   canAssignUserBranch,
+  OWN_ACCESS,
+  ownAccessBlocked,
   pageOfItems,
   PARTIAL_SCAN_NOTE,
   parseUserId,
@@ -56,11 +61,15 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
 
   const record = user.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
-  const holder = { permissions: resolved?.profile.permissions ?? [] };
+  const holder = resolved ? permissionHolder(resolved.profile) : { permissions: [] };
+  const self = record.id === resolved?.profile.user_id;
   // I2: the organisation this page rendered with, carried by every mutation surface below.
   const contextOrganisationId = resolved?.context.organization.id;
   const selectedBranch = resolved?.context.branch ?? null;
-  const canAssign = canAssignUserBranch(record.membershipStatus, holder);
+  const canAssign = canAssignUserBranch(record.membershipStatus, holder, self);
+  // Your own record (#342): shown disabled with the reason, like the access tab's Assign role.
+  const ownBlocked =
+    ownAccessBlocked(self, holder) && canAssignUserBranch(record.membershipStatus, holder, false);
   // ACTIVE branches only (an inactive one is a 409); with a branch selected, only that branch is
   // reachable (§E.4).
   // ponytail: one page of 100 ACTIVE branches; past it the rest aren't offered and the drawer says
@@ -106,6 +115,8 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
             truncated={active?.ok === true && active.value.page.hasNext}
             contextOrganisationId={contextOrganisationId}
           />
+        ) : ownBlocked ? (
+          <BlockedButton label="Assign branch" reason={OWN_ACCESS} startIcon={<AddOutlined />} />
         ) : undefined
       }
     >
@@ -198,7 +209,7 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
       ) : (
         <UserBranchAssignmentsTable
           userName={record.displayName}
-          self={record.id === resolved?.profile.user_id}
+          self={self}
           canRevoke={canRevokeAssignments(holder)}
           contextOrganisationId={contextOrganisationId}
           rows={paged.items}

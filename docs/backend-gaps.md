@@ -117,6 +117,12 @@ miscount things today.
       (`admin/roles/[roleId]/permissions`), now including `user.assign_self`. Every role refuses it
       with 422 `invalid_operation`, so a selection that includes it fails at that code. The
       catalogue now holds 86 codes.
+    - **Adopted** (frontend #111): `ownAccessBlocked` (`user-rules.ts`) checks `user.assign_self`
+      and its view tenant-wide. Without it, Assign role and Assign branch on your own record, and
+      Grant permissions and Activate on a role you hold (an ACTIVE assignment at any scope; `/auth/me`
+      lists ACTIVE roles only, so a `DISABLED` one takes one `size=1` role-assignment read), show
+      disabled with the reason. The assign drawers' user search leaves you out, and the grant
+      drawer never lists `user.assign_self`.
 14. **A blank role description now removes it** (platform #343, BG-34). `updateRole` sends `null`
     for a blank description field. That used to keep the description and now clears it, so the
     edit form's help text ("can be replaced but not removed") and the action's comment are wrong.

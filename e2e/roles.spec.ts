@@ -16,6 +16,9 @@ import { ROLE_SCENARIO_IDS } from './fake-api/scenarios.mts';
 const ALL_BRANCHES = /All branches \(institution level\)/;
 const COMPLIANCE =
   'Compliance, risk and internal audit reviewer for member savings and credit operations';
+// The app's copy, repeated here: an E2E imports only import-free modules.
+const HELD_ROLE =
+  'You hold this role, so adding to it or re-enabling it needs a tenant administrator.';
 
 async function openDirectory(page: Page, branch: RegExp | null = ALL_BRANCHES) {
   await enterAdmin(page, '/admin/roles', { heading: 'Roles & permissions', branch });
@@ -402,6 +405,53 @@ test.describe('roles', () => {
     await expect(page.getByRole('button', { name: 'Assign role' })).toHaveCount(0);
   });
 
+  // #342: `roles-self` is Jane without user.assign_self, holding Compliance and the DISABLED Loans
+  // officer.
+  test('disables Grant permissions and Activate on a role you hold, and says why', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'roles-self');
+    await openDirectory(page);
+    await openRecord(page, 'Roles', COMPLIANCE);
+    await openTab(page, 'Permissions');
+
+    const grant = page.getByRole('button', { name: 'Grant permissions' });
+    await expect(grant).toBeDisabled();
+    await expect(grant).toHaveAccessibleDescription(HELD_ROLE);
+    await expect(mainText(page, HELD_ROLE)).toBeVisible();
+
+    await page.getByRole('link', { name: 'Back to roles' }).click();
+    await openRecord(page, 'Roles', 'Loans officer');
+    const activate = page.getByRole('button', { name: 'Activate', exact: true });
+    await expect(activate).toBeDisabled();
+    await expect(activate).toHaveAccessibleDescription(HELD_ROLE);
+  });
+
+  test('leaves you out of the Assign role user search when you cannot assign yourself', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'roles-self');
+    await openDirectory(page);
+    await openRecord(page, 'Roles', 'Teller');
+    // A role you don't hold: Grant permissions is on offer (the control for the case above).
+    await openTab(page, 'Permissions');
+    await expect(page.getByRole('button', { name: 'Grant permissions' })).toBeEnabled();
+    await openTab(page, 'Assignments');
+
+    await page.getByRole('button', { name: 'Assign role' }).click();
+    const drawer = page.getByRole('dialog', { name: 'Assign this role' });
+    const user = drawer.getByRole('combobox', { name: /^User/ });
+    await user.fill('tom');
+    await expect(page.getByRole('option', { name: /Tom Kiprop/ })).toBeVisible();
+    // The search matches Jane (the audit actor filter picks her the same way), but she is left out.
+    await user.fill('Backend Jane');
+    await expect(
+      page.locator('.MuiAutocomplete-popper').getByText('No matching users', { exact: true }),
+    ).toBeVisible();
+  });
+
   test('offers no mutations without the permissions', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo); // default: role reads only
     await openDirectory(page);
@@ -413,7 +463,7 @@ test.describe('roles', () => {
     await openRecord(page, 'Roles', 'Tenant admin');
     await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
     await openTab(page, 'Permissions');
-    // Default TENANT_ADMIN holds 19 codes: page 1 of 2 at the default size of 10.
+    // Default TENANT_ADMIN holds 20 codes: page 1 of 2 at the default size of 10.
     await expect(rowsOf(page, 'Granted permissions')).toHaveCount(11);
     await expect(page.getByRole('button', { name: /^Remove / })).toHaveCount(0);
     await openTab(page, 'Assignments');
@@ -518,6 +568,26 @@ test.describe('roles', () => {
         await expect(assign).toBeHidden();
 
         await scan(`${COMPLIANCE_PATH}/audit`, COMPLIANCE_HEADING);
+      });
+
+      // #342: Grant permissions and Activate disabled with their reasons, on roles you hold.
+      test(`has no serious or critical accessibility violations where a held role is blocked (${a11yCase.colorScheme}, ${a11yCase.label})`, async ({
+        context,
+        page,
+      }, testInfo) => {
+        await applyA11yCase(page, a11yCase);
+        await authenticate(context, testInfo, 'roles-self');
+        await openDirectory(page);
+        for (const [path, heading, label] of [
+          [`${COMPLIANCE_PATH}/permissions`, COMPLIANCE_HEADING, 'Grant permissions'],
+          [`/admin/roles/${ROLE_SCENARIO_IDS.loansOfficer}`, 'Loans officer', 'Activate'],
+        ] as const) {
+          await page.goto(path);
+          await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+          await expect(page.getByRole('button', { name: label, exact: true })).toBeDisabled();
+          await expectA11yCaseApplied(page, a11yCase);
+          await expectNoSeriousOrCriticalViolations(page);
+        }
       });
     }
   });
