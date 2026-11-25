@@ -60,8 +60,39 @@ export type BranchSummary = z.output<typeof branchSummarySchema>;
 
 export const branchPageSchema = pageSchema(branchSummarySchema);
 
-/** `address` is always `{}` and isn't mapped (BG-13). `opened_on`/`closed_on` ARE mapped through
- * to `openedOn`/`closedOn` below, and shown when set: a discarded draft has a `closed_on` (BG-01). */
+/** The address fields a form offers, in display order (decision Q9). A stored address is a flat
+ * map of strings and may hold other keys, which are shown and kept as they are. */
+export const ADDRESS_KEYS = ['line_1', 'line_2', 'city', 'region', 'postal_code'] as const;
+export type AddressKey = (typeof ADDRESS_KEYS)[number];
+
+/** A stored address's keys outside the five, with their values, as stored. */
+export function otherAddressEntries(address: Readonly<Record<string, string>>): [string, string][] {
+  const known: readonly string[] = ADDRESS_KEYS;
+  return Object.entries(address).filter(([key]) => !known.includes(key));
+}
+
+/** The wire's address (decision Q9): the five fields' non-blank values, then the stored keys
+ * outside the five from `stored`, so a save keeps them (PATCH replaces the address whole). */
+export function addressWire(
+  fields: Partial<Record<AddressKey, string>>,
+  stored: Readonly<Record<string, string>> = {},
+): Record<string, string> {
+  const known = ADDRESS_KEYS.flatMap((key) => (fields[key] ? [[key, fields[key]] as const] : []));
+  return Object.fromEntries([...known, ...otherAddressEntries(stored)]);
+}
+
+/** One line: the known keys in order, then the others as stored, blanks skipped; null if none. */
+export function formatAddress(address: Readonly<Record<string, string>>): string | null {
+  const values = [
+    ...ADDRESS_KEYS.map((key) => address[key]),
+    ...otherAddressEntries(address).map(([, value]) => value),
+  ];
+  const parts = values.map((value) => value?.trim()).filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
+/** `opened_on` is the business date of the first activation, `closed_on` that of the closure (a
+ * discarded draft has one too, BG-01); each is shown once set. */
 export const branchDetailSchema = z
   .object({
     id: uuidSchema,
@@ -71,6 +102,8 @@ export const branchDetailSchema = z
     parent_branch_id: uuidSchema.nullable(),
     status: z.enum(BRANCH_STATUSES),
     timezone: z.string(),
+    // `{}` when none; echoes exactly the stored keys (BG-13).
+    address: z.record(z.string(), z.string()),
     opened_on: businessDateSchema.nullable(),
     closed_on: businessDateSchema.nullable(),
     status_reason: z.string().nullable(),
@@ -89,6 +122,7 @@ export const branchDetailSchema = z
     parentBranchId: branch.parent_branch_id,
     status: branch.status,
     timezone: branch.timezone,
+    address: branch.address,
     openedOn: branch.opened_on,
     closedOn: branch.closed_on,
     statusReason: branch.status_reason,

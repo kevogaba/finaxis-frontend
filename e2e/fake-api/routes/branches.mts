@@ -14,6 +14,7 @@ import {
 import type { AccessContext } from '../access.mts';
 import { recordAuditEvent } from '../audit-log.mts';
 import {
+  isIanaZone,
   objectBody,
   pageOf,
   problem,
@@ -69,9 +70,9 @@ export const branchDetailWire = (access: AccessContext, branch: FakeBranch) => (
   parent_branch_id: branch.parentBranchId,
   status: branch.status,
   timezone: branch.timezone,
-  address: {}, // stored, never returned (BG-13)
-  opened_on: null, // never set by the API (BG-13)
-  closed_on: branch.closedOn ?? null, // only a discarded draft's, so far (#222)
+  address: branch.address ?? {},
+  opened_on: branch.openedOn ?? null,
+  closed_on: branch.closedOn ?? null,
   status_reason: branch.statusReason,
   created_at: branch.createdAt,
   updated_at: branch.updatedAt,
@@ -87,6 +88,25 @@ export const BRANCH_DRAFT_KEYS = [
   'address',
 ];
 
+const malformed = () => problem(400, 'invalid_json', 'Malformed request body.');
+
+/** `address`, a flat map of strings (BG-13), or `null` when absent or `null`. ApiJsonCodec's mapper
+ * keeps Jackson's default scalar coercion, so a number or boolean value is stored as its text
+ * (`{"floor": 3}` → `"3"`); a nested object or array fails the DTO's decode. A `null` value, which
+ * the UI never sends (it builds the map from its text fields), is refused here. */
+function addressField(body: Record<string, unknown>): Record<string, string> | null {
+  const value = body.address;
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) throw malformed();
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => {
+      if (typeof entry === 'string') return [key, entry];
+      if (typeof entry === 'number' || typeof entry === 'boolean') return [key, String(entry)];
+      throw malformed();
+    }),
+  );
+}
+
 /** CreateBranch (contract §D): required strings are `invalid_json` when missing, and so is a
  * `parent_branch_id` that is no UUID (the DTO's decode fails); the code pattern and name size are
  * `validation_failed`. A parent is returned in its canonical lower-case form, as the decode would
@@ -97,10 +117,9 @@ export function draftBranchFields(body: Record<string, unknown>) {
   const type = stringField(body, 'branch_type', { required: true }) ?? '';
   const timezone = stringField(body, 'timezone', { required: true }) ?? '';
   const rawParent = stringField(body, 'parent_branch_id', { required: false });
-  if (rawParent !== null && !UUID.test(rawParent)) {
-    throw problem(400, 'invalid_json', 'Malformed request body.');
-  }
+  if (rawParent !== null && !UUID.test(rawParent)) throw malformed();
   const parentId = rawParent?.toLowerCase() ?? null;
+  const address = addressField(body) ?? {};
   const violations: Violation[] = [];
   if (!BRANCH_CODE.test(code)) {
     violations.push({
@@ -119,7 +138,63 @@ export function draftBranchFields(body: Record<string, unknown>) {
   if (violations.length > 0) {
     throw problem(400, 'validation_failed', 'Validation failed.', violations);
   }
-  return { code, name, type, timezone, parentId };
+  return { code, name, type, timezone, parentId, address };
+}
+
+const UPDATE_KEYS = ['branch_name', 'parent_branch_id', 'timezone', 'address'];
+
+/** UpdateBranchRequest's decode and bean validation, which run while the argument resolves, before
+ * the route's gate: a name of 2–100 characters, not blank, and a zone that isn't blank. A parent
+ * that is no UUID fails the decode. */
+function updateFields(body: Record<string, unknown>) {
+  const name = stringField(body, 'branch_name', { required: false });
+  const timezone = stringField(body, 'timezone', { required: false });
+  const address = addressField(body);
+  // `parent_branch_id`: absent keeps the parent, an explicit null detaches it.
+  const changesParent = 'parent_branch_id' in body;
+  const rawParent = stringField(body, 'parent_branch_id', { required: false });
+  if (rawParent !== null && !UUID.test(rawParent)) throw malformed();
+  const parentId = rawParent?.toLowerCase() ?? null;
+  const violations: Violation[] = [];
+  const blank = (field: string) =>
+    violations.push({ field, code: 'Pattern', message: 'must not be blank' });
+  if (name !== null && name.trim() === '') blank('branch_name');
+  if (name !== null && (name.length < 2 || name.length > 100)) {
+    violations.push({
+      field: 'branch_name',
+      code: 'Size',
+      message: 'size must be between 2 and 100',
+    });
+  }
+  if (timezone !== null && timezone.trim() === '') blank('timezone');
+  if (violations.length > 0) {
+    throw problem(400, 'validation_failed', 'Validation failed.', violations);
+  }
+  const empty = name === null && timezone === null && address === null && !changesParent;
+  return { name, timezone, address, changesParent, parentId, empty };
+}
+
+/** BranchProvisioningService.requireAcyclicParent: not itself (422), of this organisation (404),
+ * not below it (422), and not closed or archived (409). */
+function requireParent(access: AccessContext, branch: FakeBranch, parentId: string): void {
+  const notAccepted = () =>
+    problem(422, 'invalid_operation', 'The parent branch would create a cycle.');
+  if (parentId === branch.id) throw notAccepted();
+  const inOrganisation = (id: string) =>
+    access.state.branches.find(
+      (candidate) => candidate.id === id && candidate.organisationId === branch.organisationId,
+    );
+  const parent = inOrganisation(parentId);
+  if (!parent) throw problem(404, 'resource_not_found', 'Parent branch not found.');
+  const visited = new Set<string>();
+  for (let at: string | null = parentId; at !== null && !visited.has(at);) {
+    if (at === branch.id) throw notAccepted();
+    visited.add(at);
+    at = inOrganisation(at)?.parentBranchId ?? null;
+  }
+  if (parent.status === 'CLOSED' || parent.status === 'ARCHIVED') {
+    throw problem(409, 'conflict', 'A closed or archived branch cannot be a parent.');
+  }
 }
 
 const assignmentWire = (row: FakeBranchAssignment) => ({
@@ -136,11 +211,24 @@ type Guard = (
   branch: FakeBranch,
 ) => ((reason: string | null) => void) | undefined;
 
-/** BG-08: the drafter is refused by name, before the state check (BranchProvisioningService). The
- * tenant route doesn't refuse the submitter; the fake keeps no amenders yet. A stored `false`
- * switch lets the drafter activate, with an extra `branch.self_approve` row, HIGH (ADR 0032). */
+/** BG-08: the drafter, then anyone with a successful `branch.update` on it, is refused by name,
+ * before the state check (BranchProvisioningService.requireApproverIsNotBranchMaker), with a
+ * `DENIED` `branch.activate` row (HIGH, about the target branch, the code as its reason) that
+ * `recordIndependently` keeps through the rollback (#251). The tenant route doesn't refuse the
+ * submitter. A stored `false` switch lets them activate, with an extra `branch.self_approve` row,
+ * HIGH (ADR 0032). */
 const makerChecker: Guard = (access, branch) => {
-  if (branch.draftedBy !== access.claims.userId) return undefined;
+  const me = access.claims.userId;
+  const drafted = branch.draftedBy === me;
+  const amended = access.state.auditEvents.some(
+    (event) =>
+      event.organisationId === branch.organisationId &&
+      event.entityId === branch.id &&
+      event.action === 'branch.update' &&
+      event.outcome === 'SUCCESS' &&
+      event.actorUserId === me,
+  );
+  if (!drafted && !amended) return undefined;
   if (
     makerCheckerRequired(
       access.state,
@@ -148,11 +236,25 @@ const makerChecker: Guard = (access, branch) => {
       'require_maker_checker_for_branch_creation',
     )
   ) {
-    throw problem(
-      403,
-      'lifecycle.approver_is_branch_maker',
-      "The approver cannot be the branch's creator or submitter.",
-    );
+    const [code, detail] = drafted
+      ? [
+          'lifecycle.approver_is_branch_maker',
+          "The approver cannot be the branch's creator or submitter.",
+        ]
+      : [
+          'lifecycle.approver_is_branch_modifier',
+          'The approver cannot be someone who amended the branch.',
+        ];
+    recordAuditEvent(access.state, access, {
+      entityType: 'BRANCH',
+      entityId: branch.id,
+      action: 'branch.activate',
+      reason: code,
+      severity: 'HIGH',
+      outcome: 'DENIED',
+      branchId: branch.id,
+    });
+    throw problem(403, code, detail);
   }
   return (reason) => {
     recordAuditEvent(access.state, access, {
@@ -250,12 +352,13 @@ function transition(
       }
       branch.status = to;
       if (path === 'submit') branch.submittedBy = access.claims.userId; // the latest submitter
-      // The tenant's business date (#222); opened_on stays null.
-      if (path === 'discard') {
-        branch.closedOn = access.state.businessDates.find(
-          (row) => row.organisationId === branch.organisationId,
-        )?.date;
-      }
+      // The tenant's business date (#165): the first activation's, kept on reactivation, and the
+      // closure's (a discarded draft's too, #222).
+      const businessDate = access.state.businessDates.find(
+        (row) => row.organisationId === branch.organisationId,
+      )?.date;
+      if (to === 'ACTIVE') branch.openedOn ??= businessDate;
+      if (to === 'CLOSED') branch.closedOn = businessDate;
       branch.statusReason = reason; // overwritten by every transition (contract §C)
       branch.updatedAt = new Date().toISOString();
       recordAuditEvent(context.state, access, {
@@ -282,7 +385,7 @@ export const branchRoutes: Route[] = [
     const access = tenantAccess(context);
     requirePermission(access, 'branch.create');
     const body = objectBody(await readBody(context.req), BRANCH_DRAFT_KEYS);
-    const { code, name, type, timezone, parentId } = draftBranchFields(body);
+    const { code, name, type, timezone, parentId, address } = draftBranchFields(body);
     sendIdempotent(
       context,
       body,
@@ -306,6 +409,7 @@ export const branchRoutes: Route[] = [
           type,
           status: 'DRAFT',
           timezone,
+          address,
           parentBranchId: parentId,
           statusReason: null,
           createdAt: now,
@@ -323,6 +427,63 @@ export const branchRoutes: Route[] = [
       },
       201,
     );
+  }),
+
+  // PATCH /branches/{id} (BG-13): a DRAFT or ACTIVE branch, only the fields sent; the address is
+  // replaced whole. Not an FSM transition: the status stays. BranchController.update's order: the
+  // `@Valid` body (decoded and validated while the argument resolves), the route's own
+  // `@PreAuthorize`, the controller's `{}` check, then the service's target check, 404 and state.
+  route('PATCH', '/api/v1/branches/:branch_id', async (context) => {
+    const access = tenantAccess(context);
+    const raw = await readBody(context.req);
+    if (raw === undefined) throw malformed();
+    const body = objectBody(raw, UPDATE_KEYS);
+    const fields = updateFields(body);
+    requireAuthority(access, ['branch.update']);
+    if (fields.empty) throw problem(400, 'validation_failed', 'At least one field is required.');
+    const branch = targetBranch(access, context.params.branch_id ?? '', 'branch.update');
+    sendIdempotent(context, body, () => {
+      if (branch.status !== 'DRAFT' && branch.status !== 'ACTIVE') {
+        throw problem(409, 'conflict', 'The branch must be DRAFT or ACTIVE.');
+      }
+      if (fields.timezone !== null && !isIanaZone(fields.timezone)) {
+        throw problem(
+          422,
+          'invalid_operation',
+          'timezone must be an IANA time-zone id, for example Africa/Nairobi.',
+        );
+      }
+      if (fields.changesParent && fields.parentId !== null) {
+        requireParent(access, branch, fields.parentId);
+      }
+      const changed: string[] = [];
+      if (fields.name !== null) {
+        branch.name = fields.name;
+        changed.push('branch_name');
+      }
+      if (fields.changesParent) {
+        branch.parentBranchId = fields.parentId;
+        changed.push('parent_branch_id');
+      }
+      if (fields.timezone !== null) {
+        branch.timezone = fields.timezone;
+        changed.push('timezone');
+      }
+      if (fields.address !== null) {
+        branch.address = fields.address;
+        changed.push('address');
+      }
+      branch.updatedAt = new Date().toISOString();
+      // Field names only: an address is personal data.
+      recordAuditEvent(context.state, access, {
+        entityType: 'BRANCH',
+        entityId: branch.id,
+        action: 'branch.update',
+        reason: null,
+        metadata: { changedFields: changed.join(',') },
+      });
+      return branchDetailWire(access, branch);
+    });
   }),
 
   transition('submit', 'branch.create', ['DRAFT'], 'PENDING_APPROVAL', 'branch.submit', false),

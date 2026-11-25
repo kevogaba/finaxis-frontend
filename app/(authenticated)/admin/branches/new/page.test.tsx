@@ -36,6 +36,10 @@ describe('NewBranchPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Create branch' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /Branch code/ })).toBeInTheDocument();
     expect(screen.queryByText(/All branches/)).toBeNull();
+    // The form needs branch.view tenant-wide, so its parents are every branch: no scoped note.
+    expect(screen.getByRole('combobox', { name: 'Parent branch' })).toHaveAccessibleDescription(
+      'Optional.',
+    );
   });
 
   // The platform checks branch.create and its view tenant-wide (requireTenantPermission).

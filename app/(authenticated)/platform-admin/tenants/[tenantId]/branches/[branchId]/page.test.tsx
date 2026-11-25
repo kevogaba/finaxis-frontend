@@ -50,6 +50,7 @@ const MOMBASA = {
   parentBranchId: HEAD as string | null,
   status: 'ACTIVE',
   timezone: 'Africa/Nairobi',
+  address: {} as Record<string, string>,
   openedOn: null as string | null,
   closedOn: null as string | null,
   statusReason: null as string | null,
@@ -135,6 +136,17 @@ describe('InstitutionBranchPage: the record', () => {
     expect(screen.getByText(BRANCH_DETAIL_DESCRIPTION)).toBeVisible();
     expect(getInstitutionBranch).toHaveBeenCalledWith(T, B);
     expect(getInstitutionBranchIndex).toHaveBeenCalledWith(T);
+  });
+
+  it('shows the stored address on one line, and "—" when there is none (BG-13)', async () => {
+    setup({ branch: { address: { city: 'Mombasa', line_1: 'Moi Avenue', floor: '2' } } });
+    const { unmount } = await open();
+    expect(fact('Address')).toHaveTextContent('Moi Avenue, Mombasa, 2');
+    unmount();
+
+    setup();
+    await open();
+    expect(fact('Address')).toHaveTextContent('—');
   });
 
   it('shows no parent, and reads no branch names, for a top-level branch', async () => {

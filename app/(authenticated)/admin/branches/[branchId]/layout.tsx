@@ -21,6 +21,7 @@ import {
 import {
   availableBranchActions,
   branchTypeLabel,
+  canEditBranch,
   sentBackNote,
 } from '@/modules/administration/branches/branch-rules';
 import { getBranch } from '@/modules/administration/branches/branch-service';
@@ -66,6 +67,7 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
   const holder = permissionHolder(resolved?.profile);
   const me = resolved?.profile.user_id ?? '';
   const actions = availableBranchActions(record, holder, me);
+  const editable = canEditBranch(record, holder);
   // Only the copy needs it: suspending or closing the selected branch ends the working context.
   const selectedHere = resolved?.context.branch?.id === record.id;
   // BG-08: the tenant route refuses the record's creator (`created_by`), not its submitter. The
@@ -97,9 +99,10 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
           // Keep RecordHero's actions prop undefined (not an empty component) when there are no
           // actions: RecordHero (frozen kit) renders its actions box whenever it is truthy, which
           // would leave an empty band at 375px.
-          actions.length > 0 ? (
+          actions.length > 0 || editable ? (
             <BranchLifecycleActions
               branchId={branchId}
+              editHref={editable ? `${base}/edit` : undefined}
               branchCode={record.branchCode}
               branchName={record.branchName}
               actions={actions}

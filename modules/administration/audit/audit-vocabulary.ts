@@ -49,6 +49,7 @@ export const AUDIT_ACTIONS = [
   { value: 'role.assign_permission', label: 'Granted permission', entityType: 'ROLE' },
   { value: 'role.remove_permission', label: 'Removed permission', entityType: 'ROLE' },
   { value: 'branch.create_draft', label: 'Drafted branch', entityType: 'BRANCH' },
+  { value: 'branch.update', label: 'Edited branch', entityType: 'BRANCH' },
   { value: 'branch.submit', label: 'Submitted branch', entityType: 'BRANCH' },
   { value: 'branch.activate', label: 'Activated branch', entityType: 'BRANCH' },
   {

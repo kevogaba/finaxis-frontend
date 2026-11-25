@@ -507,9 +507,11 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   creates a draft, and drives the lifecycle (submit, discard, activate, withdraw or return,
   suspend, reactivate, close) and user assignments (assign/revoke) as Server Actions behind
   `ReasonDialog`/`ConfirmDialog`/`AssignmentDrawer`. The record page (`RecordHero` + `RecordTabs`) renders Overview, Users, and
-  Audit tabs. Known limits:
-  - No address, edit, or opened/closed-date fields, which the platform now provides
-    (`docs/backend-gaps.md` BG-13).
+  Audit tabs. A draft or active branch is edited on `/admin/branches/{id}/edit` (the create form's
+  fields with the code and type fixed; only changed fields are sent), and both create forms take
+  an optional address (`docs/backend-gaps.md` BG-13). Known limits:
+  - The platform has no branch edit route, so the platform workspace shows the address read-only,
+    and list items carry no address (BG-13).
   - Activate is disabled for the branch's creator (`created_by`) only while maker-checker for
     branch creation is known to be on (`docs/backend-gaps.md` BG-08); the tenant route doesn't
     refuse its submitter, and an editor's refusal is explained after it comes.
@@ -665,9 +667,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     tabs, though the platform now has both routes (BG-12, BG-06).
   - The toolbar search commits on Enter or blur, not as you type.
   - The record's Branches and Users tabs list an institution's branches and users; a branch record
-    is read-only (no address, BG-13), and "Create branch draft" is offered for an active
-    institution with a warning that the platform refuses it unless you are also a member there,
-    which it no longer does (BG-18).
+    is read-only (its address shown, no edit, BG-13), and "Create branch draft" is offered for an
+    active institution with a warning that the platform refuses it unless you are also a member
+    there, which it no longer does (BG-18).
   - A user's record (an institution's, or a platform user's) suspends, reactivates or deactivates
     their sign-in account on the whole platform. Deactivate asks for the username typed back and
     can't be undone; your own account can't be suspended or deactivated (BG-35).

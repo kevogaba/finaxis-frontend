@@ -4,6 +4,7 @@ import {
   branchDetailSchema,
   branchDraftResultSchema,
   branchPageSchema,
+  formatAddress,
 } from './branch-contract';
 
 const WESTLANDS = '44444444-4444-4444-8444-444444444444';
@@ -38,8 +39,10 @@ const DETAIL = {
 };
 
 describe('branch contract', () => {
-  it('maps a branch detail, ignoring the always-empty address (BG-13)', () => {
-    expect(branchDetailSchema.parse(DETAIL)).toEqual({
+  it('maps a branch detail, with its stored address as sent (BG-13)', () => {
+    expect(
+      branchDetailSchema.parse({ ...DETAIL, address: { city: 'Nairobi', building: 'Block B' } }),
+    ).toEqual({
       id: WESTLANDS,
       branchCode: 'WESTLANDS',
       branchName: 'Westlands Branch',
@@ -47,6 +50,7 @@ describe('branch contract', () => {
       parentBranchId: HEAD_OFFICE,
       status: 'SUSPENDED',
       timezone: 'Africa/Nairobi',
+      address: { city: 'Nairobi', building: 'Block B' },
       openedOn: null,
       closedOn: '30-09-2026',
       statusReason: 'Cash audit',
@@ -118,6 +122,31 @@ describe('branch contract', () => {
       assignmentType: 'HOME',
       status: 'ACTIVE',
     });
+  });
+
+  it('refuses an address that is no flat map of strings (schema drift → error state)', () => {
+    expect(branchDetailSchema.parse(DETAIL)).toMatchObject({ address: {} });
+    expect(branchDetailSchema.safeParse({ ...DETAIL, address: { city: 3 } }).success).toBe(false);
+    expect(branchDetailSchema.safeParse({ ...DETAIL, address: undefined }).success).toBe(false);
+  });
+
+  // Decision Q9: the five known keys in their order, then any other stored key as stored.
+  it('formats an address: known keys in order, then the others, blanks skipped', () => {
+    expect(
+      formatAddress({
+        postal_code: '00100',
+        building: 'Block B',
+        city: 'Nairobi',
+        line_1: 'Kenyatta Avenue',
+        line_2: ' ',
+        region: 'Nairobi County',
+      }),
+    ).toBe('Kenyatta Avenue, Nairobi, Nairobi County, 00100, Block B');
+  });
+
+  it('formats an empty address as null', () => {
+    expect(formatAddress({})).toBeNull();
+    expect(formatAddress({ line_1: '', city: '  ' })).toBeNull();
   });
 
   it('reads the new draft id', () => {

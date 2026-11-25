@@ -58,8 +58,11 @@ export interface FakeBranch {
   /** `created_by` and the latest submitter, `submitted_by` (BG-08); absent = the system. */
   draftedBy?: string;
   submittedBy?: string;
-  /** The business date a draft was discarded (#222); absent = `null`. */
+  /** The business dates of the first activation and of closure (BG-13); absent = `null`. */
+  openedOn?: string;
   closedOn?: string;
+  /** The stored address, a flat map of strings (BG-13); absent = `{}`. */
+  address?: Record<string, string>;
 }
 
 export interface FakeBranchAssignment {

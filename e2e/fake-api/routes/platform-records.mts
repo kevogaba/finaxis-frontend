@@ -169,6 +169,7 @@ export const platformRecordRoutes: Route[] = [
           type: draft.type,
           status: 'DRAFT',
           timezone: draft.timezone,
+          address: draft.address,
           parentBranchId: draft.parentId,
           statusReason: null,
           createdAt: now,

@@ -9,14 +9,43 @@ import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 import NextLink from '@/components/navigation/next-link';
 import type { ActionResult, FormAction } from '@/lib/api/action-result';
 import { applyFieldErrors } from '@/lib/apply-field-errors';
-import { createBranchDraft } from '../branch-actions';
-import { BRANCH_TYPE_SUGGESTIONS } from '../branch-contract';
-import { branchDraftSchema, timeZones, type BranchDraftValues } from '../branch-rules';
+import { createBranchDraft, updateBranch } from '../branch-actions';
+import {
+  ADDRESS_KEYS,
+  BRANCH_TYPE_SUGGESTIONS,
+  otherAddressEntries,
+  type AddressKey,
+  type BranchDetail,
+} from '../branch-contract';
+import {
+  branchDraftSchema,
+  branchEditSchema,
+  changedBranchFields,
+  timeZones,
+  type BranchDraftValues,
+} from '../branch-rules';
 
-const FIELDS = ['branchCode', 'branchName', 'branchType', 'parentBranchId', 'timezone'] as const;
+const FIELDS = [
+  'branchCode',
+  'branchName',
+  'branchType',
+  'parentBranchId',
+  'timezone',
+  ...ADDRESS_KEYS,
+] as const;
+
+/** Decision Q9's labels. */
+const ADDRESS_LABELS: Record<AddressKey, string> = {
+  line_1: 'Address line 1',
+  line_2: 'Address line 2',
+  city: 'City or town',
+  region: 'Region',
+  postal_code: 'Postal code',
+};
 
 const FIELD_LABELS: Record<(typeof FIELDS)[number], string> = {
   branchCode: 'Branch code',
@@ -24,7 +53,10 @@ const FIELD_LABELS: Record<(typeof FIELDS)[number], string> = {
   branchType: 'Branch type',
   parentBranchId: 'Parent branch',
   timezone: 'Timezone',
+  ...ADDRESS_LABELS,
 };
+
+const NOTHING_CHANGED = "You haven't changed anything yet.";
 
 // Mirrors ReasonDialog's own I1 catch (components/data-display/reason-dialog.tsx): never
 // `caught.message` (a network drop, a proxy's non-RSC 502/504, or a stale deployment's
@@ -33,6 +65,12 @@ const SUBMIT_FAILED =
   "We couldn't confirm this change. Try again; it's safe to retry. If it keeps failing, reload the page.";
 
 interface BranchDraftFormProps {
+  /** Edit mode (BG-13): the branch's stored values. The code and type show read-only and are never
+   * sent; only changed fields go to `updateBranch`, and Cancel returns to the record. */
+  branch?: Pick<
+    BranchDetail,
+    'id' | 'branchCode' | 'branchName' | 'branchType' | 'parentBranchId' | 'timezone' | 'address'
+  >;
   /** Every branch the index resolved (≤ 500), as `Name (CODE)`. */
   parents: readonly { id: string; label: string }[];
   /** The organisation's zone (or UTC) — listed even where Intl omits it (V8 has no `UTC`). */
@@ -54,10 +92,11 @@ interface BranchDraftFormProps {
 /**
  * Create branch draft (spec §10.3) — the first multi-field form, so React Hook Form + the zod
  * resolver (spec §6.4); server field errors merge back with `applyFieldErrors`. One idempotency
- * key per mount: a retry after a failure replays safely; success redirects to the record.
- * No address field: it's stored but never returned (BG-13).
+ * key per mount: a retry after a failure replays safely; success redirects to the record. With
+ * `branch`, the same fields edit it (BG-13).
  */
 export function BranchDraftForm({
+  branch,
   parents,
   defaultTimeZone,
   contextOrganisationId,
@@ -67,7 +106,8 @@ export function BranchDraftForm({
   parentsNote,
 }: BranchDraftFormProps) {
   const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const [zones] = useState(() => timeZones(defaultTimeZone));
+  const [zones] = useState(() => timeZones(branch?.timezone ?? defaultTimeZone));
+  const [schema] = useState(() => (branch ? branchEditSchema(branch) : branchDraftSchema));
   const {
     control,
     register,
@@ -75,20 +115,22 @@ export function BranchDraftForm({
     setError,
     formState: { errors },
   } = useForm<BranchDraftValues>({
-    resolver: zodResolver(branchDraftSchema),
+    resolver: zodResolver(schema),
     defaultValues: {
-      branchCode: '',
-      branchName: '',
-      branchType: 'OPERATIONS',
-      parentBranchId: '',
-      timezone: defaultTimeZone,
+      branchCode: branch?.branchCode ?? '',
+      branchName: branch?.branchName ?? '',
+      branchType: branch?.branchType ?? 'OPERATIONS',
+      parentBranchId: branch?.parentBranchId ?? '',
+      timezone: branch?.timezone ?? defaultTimeZone,
+      ...Object.fromEntries(ADDRESS_KEYS.map((key) => [key, branch?.address[key] ?? ''])),
     },
   });
+  const otherAddress = otherAddressEntries(branch?.address ?? {});
   const submitRef = useRef<HTMLButtonElement>(null);
   const [state, formAction, pending] = useActionState<ActionResult | null, FormData>(
     async (previous, formData) => {
       try {
-        return await action(previous, formData);
+        return await (branch ? updateBranch : action)(previous, formData);
       } catch (caught) {
         // The success path is a Server Action redirect(), which must keep propagating rather
         // than being swallowed as a form failure (07 I1's defect class).
@@ -126,7 +168,18 @@ export function BranchDraftForm({
   const onValid = (values: BranchDraftValues) => {
     const formData = new FormData();
     formData.set('idempotencyKey', idempotencyKey);
-    for (const name of FIELDS) formData.set(name, values[name]);
+    if (branch) {
+      const changes = changedBranchFields(branch, values);
+      // Cleared on the next submit (react-hook-form's root errors don't persist).
+      if (Object.keys(changes).length === 0) {
+        setError('root', { message: NOTHING_CHANGED });
+        return;
+      }
+      formData.set('branchId', branch.id);
+      for (const [name, value] of Object.entries(changes)) formData.set(name, value);
+    } else {
+      for (const name of FIELDS) formData.set(name, values[name] ?? '');
+    }
     for (const [name, value] of Object.entries(hiddenFields ?? {})) formData.set(name, value);
     if (contextOrganisationId) formData.set('contextOrganisationId', contextOrganisationId);
     startTransition(() => {
@@ -155,17 +208,25 @@ export function BranchDraftForm({
           {clientErrorFields.map((name) => FIELD_LABELS[name]).join(', ')}.
         </Alert>
       )}
+      {errors.root?.message && <Alert severity="info">{errors.root.message}</Alert>}
       <TextField
         label="Branch code"
-        required
+        required={!branch}
         {...register('branchCode')}
         error={Boolean(errors.branchCode)}
         helperText={
           errors.branchCode?.message ??
-          '2–20 capital letters, digits, underscores or hyphens, e.g. WESTLANDS.'
+          (branch
+            ? "A branch's code can't change."
+            : '2–20 capital letters, digits, underscores or hyphens, e.g. WESTLANDS.')
         }
         slotProps={{
-          htmlInput: { maxLength: 20, autoCapitalize: 'characters', spellCheck: false },
+          htmlInput: {
+            maxLength: 20,
+            autoCapitalize: 'characters',
+            spellCheck: false,
+            readOnly: Boolean(branch),
+          },
         }}
       />
       <TextField
@@ -176,35 +237,44 @@ export function BranchDraftForm({
         helperText={errors.branchName?.message}
         slotProps={{ htmlInput: { maxLength: 100 } }}
       />
-      <Controller
-        name="branchType"
-        control={control}
-        render={({ field }) => (
-          <Autocomplete
-            freeSolo
-            options={BRANCH_TYPE_SUGGESTIONS}
-            value={field.value}
-            inputValue={field.value}
-            onInputChange={(_event, next) => {
-              field.onChange(next);
-            }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Branch type"
-                required
-                inputRef={field.ref}
-                onBlur={field.onBlur}
-                error={Boolean(errors.branchType)}
-                helperText={
-                  errors.branchType?.message ??
-                  'Free text. The platform itself uses HEAD_OFFICE and OPERATIONS.'
-                }
-              />
-            )}
-          />
-        )}
-      />
+      {branch ? (
+        <TextField
+          label="Branch type"
+          {...register('branchType')}
+          helperText="A branch's type can't change."
+          slotProps={{ htmlInput: { readOnly: true } }}
+        />
+      ) : (
+        <Controller
+          name="branchType"
+          control={control}
+          render={({ field }) => (
+            <Autocomplete
+              freeSolo
+              options={BRANCH_TYPE_SUGGESTIONS}
+              value={field.value}
+              inputValue={field.value}
+              onInputChange={(_event, next) => {
+                field.onChange(next);
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Branch type"
+                  required
+                  inputRef={field.ref}
+                  onBlur={field.onBlur}
+                  error={Boolean(errors.branchType)}
+                  helperText={
+                    errors.branchType?.message ??
+                    'Free text. The platform itself uses HEAD_OFFICE and OPERATIONS.'
+                  }
+                />
+              )}
+            />
+          )}
+        />
+      )}
       <Controller
         name="parentBranchId"
         control={control}
@@ -254,12 +324,45 @@ export function BranchDraftForm({
           />
         )}
       />
+      <Box
+        component="fieldset"
+        sx={{ m: 0, p: 0, border: 0, minWidth: 0, display: 'grid', gap: 4 }}
+      >
+        <Typography component="legend" variant="subtitle1" sx={{ p: 0, mb: 4 }}>
+          Address (optional)
+        </Typography>
+        {ADDRESS_KEYS.map((key) => (
+          <TextField
+            key={key}
+            label={ADDRESS_LABELS[key]}
+            {...register(key)}
+            error={Boolean(errors[key])}
+            helperText={errors[key]?.message}
+            slotProps={{ htmlInput: { maxLength: 120 } }}
+          />
+        ))}
+        {otherAddress.map(([key, value]) => (
+          // Decision Q9: a key outside the five is shown and kept as stored, never edited here.
+          <TextField
+            key={key}
+            label={key}
+            value={value}
+            helperText="Kept as stored."
+            slotProps={{ htmlInput: { readOnly: true } }}
+          />
+        ))}
+      </Box>
       <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 2 }}>
-        <Button component={NextLink} href={cancelHref} variant="outlined" disabled={pending}>
+        <Button
+          component={NextLink}
+          href={branch ? `/admin/branches/${branch.id}` : cancelHref}
+          variant="outlined"
+          disabled={pending}
+        >
           Cancel
         </Button>
         <Button ref={submitRef} type="submit" variant="contained" loading={pending}>
-          Create draft
+          {branch ? 'Save changes' : 'Create draft'}
         </Button>
       </Box>
     </Box>

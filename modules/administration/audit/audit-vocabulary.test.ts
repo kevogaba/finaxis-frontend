@@ -30,6 +30,11 @@ describe('audit vocabulary', () => {
     );
   });
 
+  it('names a branch edit (BG-13)', () => {
+    expect(actionLabel('branch.update')).toBe('Edited branch');
+    expect(actionsForEntityType('BRANCH').map((action) => action.value)).toContain('branch.update');
+  });
+
   it('labels entity types', () => {
     expect(entityTypeLabel('USER_ROLE_ASSIGNMENT')).toBe('Role assignment');
     expect(entityTypeLabel('GL_ACCOUNT')).toBe('Gl account');

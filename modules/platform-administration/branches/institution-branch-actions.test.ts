@@ -130,7 +130,7 @@ describe('institution branch actions', () => {
       },
       KEY,
     );
-    // No `address`: it is stored but never returned (BG-13). Only the five fields are sent.
+    // No `address` when its fields are blank or absent: only the five fields are sent.
     expect(Object.keys(apiPost.mock.calls[0]?.[1] ?? {})).toEqual([
       'branch_code',
       'branch_name',
@@ -138,6 +138,18 @@ describe('institution branch actions', () => {
       'parent_branch_id',
       'timezone',
     ]);
+  });
+
+  it('sends the address with its non-blank fields (BG-13)', async () => {
+    await expect(
+      actions.createInstitutionBranchDraft(
+        null,
+        form({ ...FIELDS, line_1: ' 3 Lake Road ', line_2: '', city: 'Thika' }),
+      ),
+    ).rejects.toThrow('NEXT_REDIRECT');
+    expect(apiPost.mock.calls[0]?.[1]).toMatchObject({
+      address: { line_1: '3 Lake Road', city: 'Thika' },
+    });
   });
 
   it('posts to the institution by its lower-cased id (contract §A: ids are case-insensitive)', async () => {
