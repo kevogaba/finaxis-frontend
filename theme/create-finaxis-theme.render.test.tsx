@@ -12,6 +12,7 @@ import TablePagination from '@mui/material/TablePagination';
 import TextField from '@mui/material/TextField';
 import DialogActions from '@mui/material/DialogActions';
 import Typography from '@mui/material/Typography';
+import { resolvedStyle } from '@/test/resolved-style';
 import { renderWithProviders } from '@/test/test-utils';
 import { createFinaxisTheme } from './create-finaxis-theme';
 
@@ -24,10 +25,10 @@ import { createFinaxisTheme } from './create-finaxis-theme';
 
 const theme = createFinaxisTheme();
 
-/** Emotion serializes CSS custom properties with a fallback, e.g. `var(--x, #fff)`; jsdom's
- * CSSOM strips the fallback back off when it re-serializes a computed value. Compare on the
- * bare `--custom-property` name instead of the exact string so the assertion doesn't depend on
- * that round-trip detail. */
+/** The `--custom-property` a declaration in the emitted CSS text refers to. Emotion serializes
+ * CSS custom properties with a fallback, e.g. `var(--x, #fff)`; compare on the bare name so the
+ * assertion doesn't depend on it. Computed styles resolve `var()` (jsdom 31), so they are compared
+ * with `resolvedStyle` instead. */
 function varName(value: string): string {
   const name = /var\((--[\w-]+)/.exec(value)?.[1];
   if (!name) {
@@ -120,8 +121,8 @@ function propertyValue(declarations: string, property: string): string | undefin
 describe('MuiIconButton colour (finding 1)', () => {
   it('gives an uncoloured IconButton the neutral text colour', () => {
     const { getByLabelText } = renderWithProviders(<IconButton aria-label="default" />);
-    expect(varName(getComputedStyle(getByLabelText('default')).color)).toBe(
-      varName(theme.vars.palette.text.secondary),
+    expect(getComputedStyle(getByLabelText('default')).color).toBe(
+      resolvedStyle('color', theme.vars.palette.text.secondary),
     );
   });
 
@@ -135,13 +136,13 @@ describe('MuiIconButton colour (finding 1)', () => {
 
     const primaryColor = getComputedStyle(getByLabelText('primary')).color;
     const inheritColor = getComputedStyle(getByLabelText('inherit')).color;
-    const secondaryVar = varName(theme.vars.palette.text.secondary);
+    const secondary = resolvedStyle('color', theme.vars.palette.text.secondary);
 
     // Root cause was `root` unconditionally setting `color`, which stomps every MUI colour
     // variant (probe from the finding: Alert's close button, TablePagination's arrows).
-    expect(primaryColor.includes(secondaryVar)).toBe(false);
-    expect(inheritColor.includes(secondaryVar)).toBe(false);
-    expect(varName(primaryColor)).toBe(varName(theme.vars.palette.primary.main));
+    expect(primaryColor).not.toBe(secondary);
+    expect(inheritColor).not.toBe(secondary);
+    expect(primaryColor).toBe(resolvedStyle('color', theme.vars.palette.primary.main));
   });
 });
 
@@ -220,21 +221,22 @@ describe.each(['success', 'warning', 'error', 'info'] as const)(
       if (!chip) throw new Error('Chip root not found');
 
       const softBgVar = varName(theme.vars.palette.status[softBackgroundKey]);
-      const darkVar = varName(theme.vars.palette[color].dark);
+      const softBg = resolvedStyle('backgroundColor', theme.vars.palette.status[softBackgroundKey]);
+      const dark = resolvedStyle('backgroundColor', theme.vars.palette[color].dark);
 
       // `.Mui-focusVisible` is a plain DOM class (not a pseudo-class), so jsdom's cssstyle
       // engine resolves it via ordinary class-selector cascade rules — unlike `:hover`.
       chip.classList.add('Mui-focusVisible');
       const focusBg = getComputedStyle(chip).backgroundColor;
-      expect(focusBg.includes(softBgVar)).toBe(true);
-      expect(focusBg.includes(darkVar)).toBe(false);
+      expect(focusBg).toBe(softBg);
+      expect(focusBg).not.toBe(dark);
 
       // MUI 9.4's `focusVisible` theme option also paints `.Mui-focusVisible` with
       // `box-shadow: var(--_focusVisible-shadow, 0 0)` — prove the soft variant's own inset ring
       // (emitted after, per the comment above) still wins the cascade instead of that empty shadow.
       const focusBoxShadow = getComputedStyle(chip).boxShadow;
       expect(focusBoxShadow).toContain('inset');
-      expect(focusBoxShadow.includes(varName(theme.vars.palette[color].main))).toBe(true);
+      expect(focusBoxShadow).toContain(resolvedStyle('color', theme.vars.palette[color].main));
 
       // jsdom never matches real `:hover` (no mouse state), so prove the hover fix the way
       // the browser actually resolves it: by cascade over the emitted CSS text. MUI's own
@@ -254,11 +256,9 @@ describe.each(['success', 'warning', 'error', 'info'] as const)(
       const deleteIcon = container.querySelector('.MuiChip-deleteIcon');
       if (!deleteIcon) throw new Error('Delete icon not found');
 
-      const mainVar = varName(theme.vars.palette[color].main);
-      const contrastVar = varName(theme.vars.palette[color].contrastText);
       const restColor = getComputedStyle(deleteIcon).color;
-      expect(restColor.includes(mainVar)).toBe(true);
-      expect(restColor.includes(contrastVar)).toBe(false);
+      expect(restColor).toBe(resolvedStyle('color', theme.vars.palette[color].main));
+      expect(restColor).not.toBe(resolvedStyle('color', theme.vars.palette[color].contrastText));
     });
   },
 );

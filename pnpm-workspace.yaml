@@ -3,6 +3,16 @@ overrides:
   # (XSS via unescaped </style> in CSS stringify output). Force the patched 8.x release
   # everywhere in the tree — a same-major bump, not a next.js version change.
   postcss: '^8.5.10'
+peerDependencyRules:
+  # Every eslint@9 release is deprecated on npm ("no longer supported"), so the repo is on
+  # eslint@10. eslint-config-next@16.4.6 (the latest) bundles three plugins whose peer ranges
+  # stop at eslint 9, although they run on eslint 10: `pnpm lint` passes and their rules still
+  # report (import/no-anonymous-default-export, jsx-a11y/alt-text, react/jsx-key were checked).
+  # Remove each entry once that plugin declares eslint 10 support.
+  allowedVersions:
+    eslint-plugin-import>eslint: '10'
+    eslint-plugin-jsx-a11y>eslint: '10'
+    eslint-plugin-react>eslint: '10'
 allowBuilds:
   sharp: true
   unrs-resolver: true

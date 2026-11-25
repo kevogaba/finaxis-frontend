@@ -5,6 +5,7 @@ import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
 import type { UserBranchAssignmentsTable } from '@/modules/administration/users/components/user-branch-assignments-table';
 import { PARTIAL_SCAN_NOTE } from '@/modules/administration/users/user-rules';
+import { resolvedStyle } from '@/test/resolved-style';
 import { renderWithProviders } from '@/test/test-utils';
 
 const {
@@ -542,10 +543,13 @@ describe('UserBranchesPage: what the list says about itself', () => {
 
     await show();
 
-    // Three steps of the theme's spacing under the notes, as above them.
-    const step3 = 'calc(3 * var(--finaxis-spacing))';
+    // Three steps of the theme's spacing under the notes, as above them. jsdom 31 resolves the
+    // computed padding, so compare it with what three steps resolve to.
+    const step3 = resolvedStyle('paddingTop', 'calc(3 * var(--finaxis-spacing))');
     const notes = alerts()[0]?.parentElement;
-    expect(notes).toHaveStyle({ paddingTop: step3, paddingBottom: step3 });
+    if (!notes) throw new Error('Notes container not found');
+    expect(getComputedStyle(notes).paddingTop).toBe(step3);
+    expect(getComputedStyle(notes).paddingBottom).toBe(step3);
   });
 
   it('shows only the branch note in a branch context when the scan was complete', async () => {
