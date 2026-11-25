@@ -1,17 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
+  INVITATION_STATUSES,
   MEMBERSHIP_STATUSES,
   USER_STATUSES,
+  type Invitation,
   type MembershipStatus,
   type UserStatus,
 } from './user-contract';
 import {
   ACCESS_DESCRIPTION,
+  IDENTITY_FAILED_NOTE,
+  IDENTITY_IN_PROGRESS_NOTE,
+  INVITATION_ERROR_COPY,
+  INVITATION_RETRY_COPY,
   NO_ACTIVE_ROLES,
   NO_MEMBERSHIP_VIEW,
   OWN_ACCESS,
   OWN_MEMBERSHIP,
-  PROVISIONING_NOTE,
+  RETRY_CONFLICT,
   ROLE_SCOPE_ASSIGNMENTS_PAGE,
   ROLES_UNAVAILABLE,
   SCOPED_ASSIGNMENTS_NOTE,
@@ -25,6 +31,8 @@ import {
   branchAssignmentsEmptyState,
   canAssignUserBranch,
   canAssignUserRole,
+  invitationErrorText,
+  invitationFacts,
   membershipActionsNote,
   onboardingProgress,
   onboardingState,
@@ -187,6 +195,41 @@ describe('onboardingState', () => {
   });
 });
 
+describe('onboardingState with the invitation (BG-11)', () => {
+  it.each([
+    [undefined, 'PROVISIONING_IDENTITY', 'Provisioning identity', 'warning'],
+    [null, 'PROVISIONING_IDENTITY', 'Provisioning identity', 'warning'],
+    ['IN_PROGRESS', 'IDENTITY_IN_PROGRESS', 'Identity in progress', 'warning'],
+    ['FAILED', 'IDENTITY_FAILED', 'Identity failed', 'error'],
+    // No approval of this life queued it yet (a re-invite, ADR 0037): it waits for one.
+    ['AWAITING_APPROVAL', 'AWAITING_APPROVAL', 'Awaiting approval', 'warning'],
+    // A dispatch that just succeeded, before the account moved on: still in progress.
+    ['COMPLETED', 'IDENTITY_IN_PROGRESS', 'Identity in progress', 'warning'],
+    ['NOT_REQUIRED', 'IDENTITY_IN_PROGRESS', 'Identity in progress', 'warning'],
+  ] as const)('a pending member provisioning, with %s, is %s', (invitation, key, label, tone) => {
+    expect(onboardingState('PENDING_APPROVAL', 'PROVISIONING_IDP', invitation)).toEqual({
+      key,
+      label,
+      tone,
+    });
+  });
+
+  // A REVOKED membership whose last dispatch failed still reads FAILED (often CANCELLED): the
+  // invitation never outranks the statuses outside a provisioning pending member.
+  it('changes nothing outside a pending member whose identity is provisioning', () => {
+    for (const membership of MEMBERSHIP_STATUSES) {
+      for (const user of USER_STATUSES) {
+        if (membership === 'PENDING_APPROVAL' && user === 'PROVISIONING_IDP') continue;
+        for (const invitation of INVITATION_STATUSES) {
+          expect(onboardingState(membership, user, invitation), `${membership} ${user}`).toEqual(
+            onboardingState(membership, user),
+          );
+        }
+      }
+    }
+  });
+});
+
 describe('userStatusLabel', () => {
   it('words PROVISIONING_IDP as an identity, never the acronym', () => {
     expect(userStatusLabel('PROVISIONING_IDP')).toBe('Provisioning identity');
@@ -242,13 +285,39 @@ describe('onboardingProgress', () => {
   it('explains a provisioning identity under the steps (BG-11)', () => {
     expect(onboardingProgress('PENDING_APPROVAL', 'PROVISIONING_IDP')).toMatchObject({
       kind: 'steps',
-      note: PROVISIONING_NOTE,
+      note: IDENTITY_IN_PROGRESS_NOTE,
     });
     expect(onboardingProgress('ACTIVE', 'ACTIVE')).toMatchObject({ kind: 'steps', note: null });
     expect(onboardingProgress('PENDING_APPROVAL', 'DRAFT')).toMatchObject({
       kind: 'steps',
       note: null,
     });
+  });
+
+  it('marks the third step failed, with its own note, once provisioning failed (BG-11)', () => {
+    const failed = onboardingProgress('PENDING_APPROVAL', 'PROVISIONING_IDP', 'FAILED');
+    if (failed.kind !== 'steps') throw new Error('expected the steps');
+    expect(failed.steps.map((step) => step.state)).toEqual([
+      { label: 'Done', tone: 'success' },
+      { label: 'Done', tone: 'success' },
+      { label: 'Failed', tone: 'error' },
+      { label: 'Not started', tone: 'default' },
+    ]);
+    expect(failed.note).toBe(IDENTITY_FAILED_NOTE);
+    expect(onboardingProgress('PENDING_APPROVAL', 'PROVISIONING_IDP', 'IN_PROGRESS')).toEqual(
+      onboardingProgress('PENDING_APPROVAL', 'PROVISIONING_IDP'),
+    );
+    // A re-invite's provisioning user waits for this life's approval (ADR 0037).
+    expect(onboardingProgress('PENDING_APPROVAL', 'PROVISIONING_IDP', 'AWAITING_APPROVAL')).toEqual(
+      onboardingProgress('PENDING_APPROVAL', 'DRAFT'),
+    );
+    // The retired note said provisioning "can't be retried from here"; it can now.
+    expect(IDENTITY_IN_PROGRESS_NOTE).toBe(
+      'Approval ran, and their sign-in identity is being created. The invitation is sent when it completes.',
+    );
+    expect(IDENTITY_FAILED_NOTE).toBe(
+      "Approval ran, but their sign-in identity couldn't be created. Once the reason below is dealt with, provisioning can be retried.",
+    );
   });
 
   it('replaces the steps with a sentence once onboarding has stopped', () => {
@@ -289,7 +358,7 @@ describe('onboardingProgress', () => {
           expect(progress.steps, label).toHaveLength(4);
           // The only text a timeline carries is the provisioning note, under the third step.
           const provisioning = membership === 'PENDING_APPROVAL' && user === 'PROVISIONING_IDP';
-          expect(progress.note, label).toBe(provisioning ? PROVISIONING_NOTE : null);
+          expect(progress.note, label).toBe(provisioning ? IDENTITY_IN_PROGRESS_NOTE : null);
         } else {
           expect('steps' in progress, label).toBe(false);
           expect(progress.note.length, label).toBeGreaterThan(0);
@@ -393,6 +462,241 @@ describe('availableMembershipActions', () => {
     const active = { membershipStatus: 'ACTIVE', userStatus: 'ACTIVE' } as const;
     expect(availableMembershipActions(active, holder)).not.toContain('suspend');
     expect(availableMembershipActions(active, wide(ALL))).toContain('suspend');
+  });
+});
+
+describe('Retry provisioning and Resend invitation (BG-11)', () => {
+  const RECOVERY = [...ALL, 'user.invite'];
+  const provisioning = (invitation?: Invitation['status'] | null) =>
+    ({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'PROVISIONING_IDP', invitation }) as const;
+  const invited = { membershipStatus: 'ACTIVE', userStatus: 'INVITED' } as const;
+
+  it.each([
+    [undefined, ['reject']],
+    [null, ['reject']],
+    ['IN_PROGRESS', ['reject']],
+    ['FAILED', ['retry', 'reject']],
+    // A re-invite's provisioning user: this life's approval hasn't run, so Approve queues it.
+    ['AWAITING_APPROVAL', ['approve', 'reject']],
+  ] as const)('a provisioning pending member with %s offers %j', (invitation, expected) => {
+    expect(availableMembershipActions(provisioning(invitation), wide(RECOVERY))).toEqual(expected);
+  });
+
+  it('offers Retry, never beside Approve, and only with user.approve and its view tenant-wide', () => {
+    const failed = provisioning('FAILED');
+    expect(availableMembershipActions(failed, wide(RECOVERY))).not.toContain('approve');
+    expect(availableMembershipActions(failed, wide(['membership.view', 'user.approve']))).toEqual([
+      'retry',
+    ]);
+    expect(availableMembershipActions(failed, wide(['membership.view']))).toEqual([]);
+    // Review Focus 3: InvitationRecoveryService checks it tenant-wide.
+    const branchOnly = {
+      permissions: ['membership.view', 'user.approve'],
+      tenantPermissions: ['membership.view'],
+    };
+    expect(availableMembershipActions(failed, branchOnly)).toEqual([]);
+  });
+
+  it('offers Retry for a failed invitation only while the member is pending and provisioning', () => {
+    for (const membershipStatus of MEMBERSHIP_STATUSES) {
+      for (const userStatus of USER_STATUSES) {
+        const retry = availableMembershipActions(
+          { membershipStatus, userStatus, invitation: 'FAILED' },
+          wide(RECOVERY),
+        ).includes('retry');
+        expect(retry, `${membershipStatus} ${userStatus}`).toBe(
+          membershipStatus === 'PENDING_APPROVAL' && userStatus === 'PROVISIONING_IDP',
+        );
+      }
+    }
+  });
+
+  it('offers Resend first to an invited account with an active membership, whatever the invitation', () => {
+    expect(availableMembershipActions(invited, wide(RECOVERY))).toEqual([
+      'resend',
+      'suspend',
+      'revoke',
+    ]);
+    for (const invitation of [...INVITATION_STATUSES, null]) {
+      expect(
+        availableMembershipActions({ ...invited, invitation }, wide(RECOVERY)),
+        String(invitation),
+      ).toContain('resend');
+    }
+    for (const membershipStatus of MEMBERSHIP_STATUSES) {
+      for (const userStatus of USER_STATUSES) {
+        const resend = availableMembershipActions(
+          { membershipStatus, userStatus },
+          wide(RECOVERY),
+        ).includes('resend');
+        expect(resend, `${membershipStatus} ${userStatus}`).toBe(
+          membershipStatus === 'ACTIVE' && userStatus === 'INVITED',
+        );
+      }
+    }
+  });
+
+  it.each([
+    ['user.invite alone', ['membership.view', 'user.invite'], false],
+    ['user.invite without membership.view', ['user.view', 'user.invite'], false],
+    ['user.invite with both views', ['membership.view', 'user.view', 'user.invite'], true],
+  ] as const)('offers Resend for %s → %s', (_case, codes, offered) => {
+    expect(availableMembershipActions(invited, wide(codes)).includes('resend')).toBe(offered);
+  });
+
+  it('offers no Resend while user.view is held only at branch scope (BG-33)', () => {
+    const holder = {
+      permissions: ['membership.view', 'user.view', 'user.invite'],
+      tenantPermissions: ['membership.view', 'user.invite'],
+    };
+    expect(availableMembershipActions(invited, holder)).toEqual([]);
+  });
+
+  it('never blocks Retry or Resend: neither is a decision (no maker-checker, no own-record rule)', () => {
+    expect(
+      blockedMembershipActions(['retry', 'resend', 'reject'], {
+        ...provisioning('FAILED'),
+        self: true,
+        makerGate: 'blocked',
+      }),
+    ).toEqual({});
+  });
+
+  it('words every failure code, and an unknown or missing one as unrecorded', () => {
+    expect(INVITATION_ERROR_COPY).toEqual({
+      IDENTITY_PROVIDER_FAILED:
+        "The identity provider refused the request. Check that it's configured.",
+      CONFLICT: 'An account with these details already exists at the identity provider.',
+      NOT_FOUND: "The account wasn't found at the identity provider.",
+      INVALID_STATE: "The account was in a state the identity provider couldn't use.",
+      DATABASE_ERROR: "The platform couldn't save the result.",
+      UNEXPECTED: 'Something unexpected went wrong.',
+      CANCELLED: 'Provisioning was cancelled.',
+      UNKNOWN: "The reason wasn't recorded.",
+    });
+    expect(invitationErrorText('CONFLICT')).toBe(INVITATION_ERROR_COPY.CONFLICT);
+    expect(invitationErrorText('SOMETHING_NEW')).toBe("The reason wasn't recorded.");
+    expect(invitationErrorText(null)).toBe("The reason wasn't recorded.");
+    // Never the platform's own text.
+    expect(invitationErrorText('ERROR: duplicate key')).toBe("The reason wasn't recorded.");
+    expect(RETRY_CONFLICT).toBe(
+      "Provisioning can't be retried now. Refresh to see where it stands.",
+    );
+  });
+
+  // Review (nit 6): a revoked membership's failed invitation, or a reader who can't retry, is never
+  // told to retry.
+  it('says to retry only where Retry is on offer', () => {
+    expect(INVITATION_RETRY_COPY).toEqual({
+      IDENTITY_PROVIDER_FAILED:
+        "The identity provider refused the request. Check that it's configured, then retry.",
+    });
+    expect(invitationErrorText('IDENTITY_PROVIDER_FAILED', true)).toBe(
+      "The identity provider refused the request. Check that it's configured, then retry.",
+    );
+    expect(invitationErrorText('IDENTITY_PROVIDER_FAILED')).toBe(
+      "The identity provider refused the request. Check that it's configured.",
+    );
+    // A code with nothing to do first reads the same either way.
+    expect(invitationErrorText('CONFLICT', true)).toBe(INVITATION_ERROR_COPY.CONFLICT);
+    expect(invitationErrorText('SOMETHING_NEW', true)).toBe("The reason wasn't recorded.");
+    expect(invitationErrorText(null, true)).toBe("The reason wasn't recorded.");
+    for (const copy of Object.values(INVITATION_ERROR_COPY)) expect(copy).not.toMatch(/retry/i);
+  });
+
+  // Review (nit 5): the code is the platform's text, so an Object.prototype name finds no method.
+  it.each(['toString', 'constructor', 'hasOwnProperty', 'valueOf', '__proto__'])(
+    'words %s as unrecorded, never a prototype member',
+    (code) => {
+      expect(invitationErrorText(code)).toBe("The reason wasn't recorded.");
+      expect(invitationErrorText(code, true)).toBe("The reason wasn't recorded.");
+    },
+  );
+});
+
+describe('invitationFacts (BG-11)', () => {
+  const ZONE = 'Africa/Nairobi';
+  const LABEL = 'Identity provisioning';
+  const failed: Invitation = {
+    status: 'FAILED',
+    attempts: 3,
+    lastErrorCode: 'IDENTITY_PROVIDER_FAILED',
+    updatedAt: '2026-11-24T06:14:00Z',
+  };
+
+  it('says it failed after its attempts, why, and when, in the organisation zone', () => {
+    expect(invitationFacts(failed, ZONE, { retryable: true })).toEqual([
+      { label: LABEL, value: 'Failed after 3 attempts' },
+      {
+        label: 'Reason',
+        value: "The identity provider refused the request. Check that it's configured, then retry.",
+      },
+      { label: 'Last update (Africa/Nairobi)', value: '24 Nov 2026 · 09:14' },
+    ]);
+  });
+
+  // A REVOKED membership's last dispatch can still read FAILED, with no Retry beside it.
+  it('drops "then retry" from the reason where Retry is not on offer', () => {
+    for (const facts of [invitationFacts(failed, ZONE), invitationFacts(failed, ZONE, {})]) {
+      expect(facts[1]).toEqual({
+        label: 'Reason',
+        value: "The identity provider refused the request. Check that it's configured.",
+      });
+    }
+  });
+
+  it('names one attempt by its status alone, and gives no reason unless it failed', () => {
+    expect(
+      invitationFacts(
+        { status: 'IN_PROGRESS', attempts: 1, lastErrorCode: null, updatedAt: failed.updatedAt },
+        ZONE,
+      ).map((fact) => fact.value),
+    ).toEqual(['In progress', '24 Nov 2026 · 09:14']);
+    expect(
+      invitationFacts(
+        { status: 'IN_PROGRESS', attempts: 3, lastErrorCode: null, updatedAt: failed.updatedAt },
+        ZONE,
+      )[0],
+    ).toEqual({ label: LABEL, value: 'In progress after 3 attempts' });
+  });
+
+  // Review (should-fix 1): a resend adds one to a succeeded dispatch's attempts (platform #274), so
+  // a count there would read one resend as a failed attempt.
+  it.each([
+    ['COMPLETED', 'Completed'],
+    ['NOT_REQUIRED', 'Not required'],
+    ['AWAITING_APPROVAL', 'Awaiting approval'],
+  ] as const)('gives a %s invitation no attempts, however many it counts', (status, value) => {
+    expect(
+      invitationFacts(
+        { status, attempts: 2, lastErrorCode: null, updatedAt: failed.updatedAt },
+        ZONE,
+      )[0],
+    ).toEqual({ label: LABEL, value });
+  });
+
+  // Review Focus 4: a null code or time is worded or left out, never "undefined".
+  it('leaves out a time it has none of, and words a FAILED invitation with no code', () => {
+    expect(
+      invitationFacts(
+        { status: 'AWAITING_APPROVAL', attempts: 0, lastErrorCode: null, updatedAt: null },
+        ZONE,
+      ),
+    ).toEqual([{ label: LABEL, value: 'Awaiting approval' }]);
+    expect(
+      invitationFacts(
+        { status: 'NOT_REQUIRED', attempts: 0, lastErrorCode: null, updatedAt: null },
+        ZONE,
+      ),
+    ).toEqual([{ label: LABEL, value: 'Not required' }]);
+    const facts = invitationFacts({ ...failed, lastErrorCode: null, updatedAt: null }, ZONE, {
+      retryable: true,
+    });
+    expect(facts).toEqual([
+      { label: LABEL, value: 'Failed after 3 attempts' },
+      { label: 'Reason', value: "The reason wasn't recorded." },
+    ]);
+    expect(JSON.stringify(facts)).not.toMatch(/undefined|null/);
   });
 });
 

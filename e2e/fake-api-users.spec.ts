@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
 import {
+  DISPATCH_EDGE_IDS as EDGES,
   IDS,
   seedScenario,
   USER_SCENARIO_IDS as USERS,
@@ -219,9 +220,228 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       'created_at',
       'updated_at',
       'created_by',
+      'invitation',
     ]);
+    // Felix's account already had an identity: nothing was provisioned (BG-11).
+    expect(detail.invitation).toEqual({
+      status: 'NOT_REQUIRED',
+      attempts: 0,
+      last_error_code: null,
+      updated_at: null,
+    });
 
     await expectProblem(await get(membershipPath(randomUUID())), 404, 'resource_not_found');
+  });
+
+  // BG-11 (platform #274, deriveInvitationStatus): every detail carries `invitation`.
+  test('derives each member invitation from its provisioning dispatch', async ({ request }) => {
+    const { get } = await signIn(request);
+    const invitation = async (membershipId: string) =>
+      (await read<{ invitation: unknown }>(await get(membershipPath(membershipId)))).invitation;
+
+    expect(await invitation(USERS.aminaMembership)).toEqual({
+      status: 'AWAITING_APPROVAL',
+      attempts: 0,
+      last_error_code: null,
+      updated_at: null,
+    });
+    expect(await invitation(USERS.danielMembership)).toEqual({
+      status: 'FAILED',
+      attempts: 3,
+      last_error_code: 'IDENTITY_PROVIDER_FAILED',
+      updated_at: '2026-11-24T06:14:00Z',
+    });
+    expect(await invitation(USERS.estherMembership)).toEqual({
+      status: 'COMPLETED',
+      attempts: 1,
+      last_error_code: null,
+      updated_at: '2026-08-02T09:00:00Z',
+    });
+    // Revoked with no dispatch: nothing was provisioned.
+    expect(await invitation(USERS.hassanMembership)).toMatchObject({ status: 'NOT_REQUIRED' });
+  });
+
+  test('retries a failed provisioning: IN_PROGRESS, no maker-checker, a queued one left alone, audited', async ({
+    request,
+  }) => {
+    const { get, post } = await signIn(request);
+    const retry = `${membershipPath(USERS.danielMembership)}/invitation/retry`;
+    const key = randomUUID();
+
+    // Jane didn't invite Daniel, but a retry isn't a decision anyway: no body is read.
+    const first = await post(retry, undefined, key);
+    expect(first.status()).toBe(200);
+    const detail = await read<{ invitation: { status: string; updated_at: string } }>(first);
+    expect(detail).toMatchObject({
+      id: USERS.danielMembership,
+      membership_status: 'PENDING_APPROVAL',
+      user_status: 'PROVISIONING_IDP',
+      // The attempts stay until the job runs; the code goes with FAILED.
+      invitation: { status: 'IN_PROGRESS', attempts: 3, last_error_code: null },
+    });
+    expect(detail.invitation.updated_at).not.toBe('2026-11-24T06:14:00Z');
+
+    const replay = await post(retry, undefined, key);
+    expect(replay.headers()['idempotency-replayed']).toBe('true');
+    // A new key while the job is queued: a 200 that changes nothing.
+    const again = await post(retry);
+    expect(again.status()).toBe(200);
+    expect(await read(again)).toMatchObject({ invitation: { status: 'IN_PROGRESS' } });
+
+    const rows = await read<Paged<AuditRow & { metadata_json?: string }>>(
+      await get(
+        `/tenant/audit-events?entity_type=USER&entity_id=${USERS.daniel}&action=user.invitation_retry`,
+      ),
+    );
+    expect(rows.page.total_items).toBe(2);
+  });
+
+  test('refuses a retry with nothing to retry (409 conflict), an unknown id (404), and without user.approve (403 first)', async ({
+    request,
+  }) => {
+    const { post } = await signIn(request);
+    const retry = (membershipId: string) =>
+      post(`${membershipPath(membershipId)}/invitation/retry`);
+
+    // Awaiting approval, active, revoked: none is provisioning.
+    for (const membershipId of [
+      USERS.aminaMembership,
+      USERS.estherMembership,
+      USERS.hassanMembership,
+    ]) {
+      await expectProblem(await retry(membershipId), 409, 'conflict');
+    }
+    await expectProblem(await retry(randomUUID()), 404, 'resource_not_found');
+
+    const readOnly = await signIn(request, 'users-read-only');
+    await expectProblem(
+      await readOnly.post(`${membershipPath(randomUUID())}/invitation/retry`),
+      403,
+      'forbidden',
+    );
+  });
+
+  test('approving a failed provisioning again requeues it: a 202, IN_PROGRESS', async ({
+    request,
+  }) => {
+    const { post } = await signIn(request);
+    const approved = await post(`${membershipPath(USERS.danielMembership)}/activate`, {});
+    expect(approved.status()).toBe(202);
+    expect(await read(approved)).toMatchObject({
+      membership_status: 'PENDING_APPROVAL',
+      user_status: 'PROVISIONING_IDP',
+      invitation: { status: 'IN_PROGRESS', attempts: 3 },
+    });
+  });
+
+  test('resends an invited member invitation once per cooldown, counting the attempt, audited', async ({
+    request,
+  }) => {
+    const { get, post } = await signIn(request, 'users-invite');
+    const resend = `${membershipPath(USERS.estherMembership)}/invitation/resend`;
+    const key = randomUUID();
+
+    const first = await post(resend, undefined, key);
+    expect(first.status()).toBe(200);
+    expect(await read(first)).toMatchObject({
+      id: USERS.estherMembership,
+      membership_status: 'ACTIVE',
+      user_status: 'INVITED',
+      invitation: { status: 'COMPLETED', attempts: 2, last_error_code: null },
+    });
+    // The same key replays; a new one inside the five minutes is too soon.
+    expect((await post(resend, undefined, key)).headers()['idempotency-replayed']).toBe('true');
+    await expectProblem(await post(resend), 409, 'lifecycle.invitation_resend_too_soon');
+
+    const rows = await read<Paged<AuditRow>>(
+      await get(
+        `/tenant/audit-events?entity_type=USER&entity_id=${USERS.esther}&action=user.invitation_resend`,
+      ),
+    );
+    expect(rows.page.total_items).toBe(1);
+  });
+
+  test('refuses a resend to anyone not invited with an active membership, and without user.invite', async ({
+    request,
+  }) => {
+    const { post } = await signIn(request, 'users-invite');
+    const resend = (membershipId: string) =>
+      post(`${membershipPath(membershipId)}/invitation/resend`);
+
+    // An active account, a pending one, one still provisioning, a revoked membership.
+    for (const membershipId of [
+      USERS.felixMembership,
+      USERS.aminaMembership,
+      USERS.danielMembership,
+      USERS.hassanMembership,
+    ]) {
+      await expectProblem(
+        await resend(membershipId),
+        409,
+        'lifecycle.invitation_resend_not_applicable',
+      );
+    }
+    await expectProblem(await resend(randomUUID()), 404, 'resource_not_found');
+
+    // `users` holds no user.invite: refused before the lookup.
+    const noInvite = await signIn(request);
+    await expectProblem(
+      await noInvite.post(`${membershipPath(randomUUID())}/invitation/resend`),
+      403,
+      'forbidden',
+    );
+  });
+
+  // The platform's two dispatch edges (InvitationRecoveryService): an invited member with an ACTIVE
+  // membership and no succeeded dispatch anywhere has nothing to resend, and a dispatch that already
+  // SUCCEEDED has nothing to retry, though the statuses alone would allow both.
+  test('refuses a resend with no succeeded dispatch, and a retry of one that succeeded, changing nothing', async ({
+    request,
+  }) => {
+    const { get, post } = await signIn(request, 'users-invite-dispatch-edges');
+    const detail = async (membershipId: string) =>
+      read<{ membership_status: string; user_status: string; invitation: unknown }>(
+        await get(membershipPath(membershipId)),
+      );
+    const audited = async (userId: string, action: string) =>
+      (
+        await read<Paged<AuditRow>>(
+          await get(`/tenant/audit-events?entity_type=USER&entity_id=${userId}&action=${action}`),
+        )
+      ).page.total_items;
+
+    const grace = await detail(EDGES.graceMembership);
+    expect(grace).toMatchObject({
+      membership_status: 'ACTIVE',
+      user_status: 'INVITED',
+      invitation: { status: 'NOT_REQUIRED', attempts: 0, last_error_code: null, updated_at: null },
+    });
+    await expectProblem(
+      await post(`${membershipPath(EDGES.graceMembership)}/invitation/resend`),
+      409,
+      'lifecycle.invitation_resend_not_applicable',
+    );
+    expect(await detail(EDGES.graceMembership)).toEqual(grace);
+    expect(await audited(EDGES.grace, 'user.invitation_resend')).toBe(0);
+
+    const kevin = await detail(EDGES.kevinMembership);
+    expect(kevin).toMatchObject({
+      membership_status: 'PENDING_APPROVAL',
+      user_status: 'PROVISIONING_IDP',
+      invitation: {
+        status: 'COMPLETED',
+        attempts: 1,
+        last_error_code: null,
+        updated_at: '2026-11-24T06:14:00Z',
+      },
+    });
+    await expectProblem(
+      await post(`${membershipPath(EDGES.kevinMembership)}/invitation/retry`),
+      409,
+      'conflict',
+    );
+    expect(await detail(EDGES.kevinMembership)).toEqual(kevin);
+    expect(await audited(EDGES.kevin, 'user.invitation_retry')).toBe(0);
   });
 
   test("approves: 202 queues identity provisioning, a replay returns the stored 202, and a new key's re-approval requeues it", async ({
@@ -239,6 +459,8 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       id: USERS.aminaMembership,
       membership_status: 'PENDING_APPROVAL',
       user_status: 'PROVISIONING_IDP',
+      // Queued, with no attempt yet (BG-11).
+      invitation: { status: 'IN_PROGRESS', attempts: 0, last_error_code: null },
     });
 
     const replay = await post(activate, {}, key);

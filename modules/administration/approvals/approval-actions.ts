@@ -39,7 +39,9 @@ const optionalRemark = z.string().trim().max(500, APPROVAL_REMARK_TOO_LONG).opti
 const approveInput = membershipDecisionInput.extend({ reason: optionalRemark });
 
 /** Ruling 5: the membership the request writes, read back by its own id, and its user by the
- * membership's `user_id` (the backend's ids, never the form's): its state decides what may run. */
+ * membership's `user_id` (the backend's ids, never the form's): its state decides what may run.
+ * Its `invitation` is left out on purpose: a provisioning identity, failed or not, is Approve's own
+ * end state (a lost 202's same-key retry replays it), never "changed" (BG-11). */
 async function membershipState(membershipId: string) {
   const membership = await getMembership(membershipId.toLowerCase());
   const user = await getUser(membership.userId);

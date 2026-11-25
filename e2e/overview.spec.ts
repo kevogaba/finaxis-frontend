@@ -18,7 +18,8 @@ const HEAD_OFFICE = /Head Office/;
 // asserted verbatim, so a reworded message fails here (rule 10).
 const NOT_PERMITTED = "Can't be checked with your permissions.";
 const NOTHING_WAITING = 'Nothing is waiting for your approval.';
-const PROVISIONING = '1 identity is still being provisioned: approval already ran.';
+const PROVISIONING =
+  '1 identity is still being provisioned: approval already ran. If provisioning failed, it can be retried from their user record.';
 const ONE_MEMBER =
   'Only 1 member is active. Someone other than the requester must decide each approval (maker-checker): until a second member is active, a platform administrator can approve the first members.';
 const ACTIVE = 'The institution is active.';

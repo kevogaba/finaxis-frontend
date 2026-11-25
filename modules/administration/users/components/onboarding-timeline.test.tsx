@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
-import { onboardingProgress, PROVISIONING_NOTE } from '../user-rules';
+import {
+  IDENTITY_FAILED_NOTE,
+  IDENTITY_IN_PROGRESS_NOTE,
+  invitationFacts,
+  onboardingProgress,
+} from '../user-rules';
 import { OnboardingTimeline } from './onboarding-timeline';
 
 describe('OnboardingTimeline', () => {
@@ -46,9 +51,57 @@ describe('OnboardingTimeline', () => {
     );
 
     const list = screen.getByRole('list', { name: 'Onboarding steps' });
-    const note = screen.getByText(PROVISIONING_NOTE);
+    const note = screen.getByText(IDENTITY_IN_PROGRESS_NOTE);
     // Under the steps, not above them or inside the list: exactly "follows".
     expect(list.compareDocumentPosition(note)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  // BG-11: the design's "Identity failed" card.
+  it('marks the third step failed, says why under the note, and when it last changed', () => {
+    renderWithProviders(
+      <OnboardingTimeline
+        progress={onboardingProgress('PENDING_APPROVAL', 'PROVISIONING_IDP', 'FAILED')}
+        facts={invitationFacts(
+          {
+            status: 'FAILED',
+            attempts: 3,
+            lastErrorCode: 'IDENTITY_PROVIDER_FAILED',
+            updatedAt: '2026-11-24T06:14:00Z',
+          },
+          'Africa/Nairobi',
+          { retryable: true },
+        )}
+      />,
+    );
+
+    const list = screen.getByRole('list', { name: 'Onboarding steps' });
+    const third = within(list).getAllByRole('listitem')[2];
+    expect(third).toHaveTextContent('3. Identity provisioned');
+    expect(third).toHaveTextContent('Failed');
+    const note = screen.getByText(IDENTITY_FAILED_NOTE);
+    expect(list.compareDocumentPosition(note)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    // The facts, a description list after the note: label and value tied by dt/dd.
+    const facts = Object.fromEntries(
+      screen
+        .getAllByRole('term')
+        .map((term) => [term.textContent, term.nextElementSibling?.textContent]),
+    );
+    expect(facts).toEqual({
+      'Identity provisioning': 'Failed after 3 attempts',
+      Reason: "The identity provider refused the request. Check that it's configured, then retry.",
+      'Last update (Africa/Nairobi)': '24 Nov 2026 · 09:14',
+    });
+    const dl = screen.getAllByRole('term')[0]?.closest('dl');
+    if (!dl) throw new Error('expected the facts in a description list');
+    expect(note.compareDocumentPosition(dl)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('shows no facts when the invitation was not read', () => {
+    renderWithProviders(
+      <OnboardingTimeline progress={onboardingProgress('PENDING_APPROVAL', 'PROVISIONING_IDP')} />,
+    );
+    expect(screen.queryByRole('term')).not.toBeInTheDocument();
   });
 
   it('shows only the sentence once onboarding has stopped', () => {

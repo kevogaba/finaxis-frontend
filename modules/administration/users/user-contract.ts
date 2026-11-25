@@ -82,7 +82,42 @@ export type MembershipSummary = z.output<typeof membershipSummarySchema>;
 
 export const membershipPageSchema = pageSchema(membershipSummarySchema);
 
-/** MembershipDetail: the identity fields repeat the user read and aren't mapped. */
+/** Where a member's identity provisioning stands (BG-11, platform #274): a view the platform
+ * derives from the membership and its current provisioning dispatch, not a state machine. A FAILED
+ * dispatch behind an ACTIVE or SUSPENDED membership reads COMPLETED; a REVOKED one still reads
+ * FAILED (often `CANCELLED`). */
+export const INVITATION_STATUSES = [
+  'AWAITING_APPROVAL',
+  'IN_PROGRESS',
+  'FAILED',
+  'COMPLETED',
+  'NOT_REQUIRED',
+] as const;
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number];
+
+/** `last_error_code` is a closed code, only while FAILED (`INVITATION_ERROR_COPY` words each); an
+ * unknown one is kept and worded as unknown, so a new code never fails the read. `attempts` counts
+ * provisioning attempts plus resends. */
+const invitationSchema = z
+  .object({
+    status: z.enum(INVITATION_STATUSES),
+    attempts: z.number().int().nonnegative(),
+    last_error_code: z.string().nullable(),
+    updated_at: instantSchema.nullable(),
+  })
+  .transform((invitation) => ({
+    status: invitation.status,
+    attempts: invitation.attempts,
+    lastErrorCode: invitation.last_error_code,
+    updatedAt: invitation.updated_at,
+  }));
+
+export type Invitation = z.output<typeof invitationSchema>;
+
+/** MembershipDetail: the identity fields repeat the user read and aren't mapped. `invitation` is
+ * always present on a read and on every membership mutation's answer (BG-11); the platform
+ * documents it nullable ("`null` on the result of a mutation that does not read it"), so a null
+ * parses and reads as unknown. */
 export const membershipDetailSchema = z
   .object({
     id: uuidSchema,
@@ -98,6 +133,7 @@ export const membershipDetailSchema = z
     created_at: instantSchema,
     updated_at: instantSchema,
     created_by: actorRefSchema,
+    invitation: invitationSchema.nullable(),
   })
   .transform((membership) => ({
     id: membership.id,
@@ -108,6 +144,7 @@ export const membershipDetailSchema = z
     createdAt: membership.created_at,
     updatedAt: membership.updated_at,
     createdBy: membership.created_by,
+    invitation: membership.invitation,
   }));
 
 export type MembershipDetail = z.output<typeof membershipDetailSchema>;

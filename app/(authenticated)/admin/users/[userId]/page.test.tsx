@@ -416,6 +416,88 @@ describe('UserOverviewPage: the onboarding card', () => {
     ]);
   });
 
+  // BG-11: the design's "Identity failed" card.
+  const FAILED_INVITATION = {
+    status: 'FAILED',
+    attempts: 3,
+    lastErrorCode: 'IDENTITY_PROVIDER_FAILED',
+    updatedAt: '2026-11-24T06:14:00Z',
+  };
+
+  it('marks the identity step failed and says why, attempts and last update in the organisation zone', async () => {
+    setup({
+      // Retry provisioning is on offer (user.approve and its view, tenant-wide).
+      permissions: [...ALL_CODES, 'user.approve'],
+      membershipStatus: 'PENDING_APPROVAL',
+      userStatus: 'PROVISIONING_IDP',
+      detail: { ...DETAIL, status: 'PENDING_APPROVAL', invitation: FAILED_INVITATION },
+    });
+
+    await show();
+
+    const onboarding = card('Onboarding');
+    expect(
+      within(within(onboarding).getByRole('list', { name: 'Onboarding steps' })).getAllByRole(
+        'listitem',
+      )[2],
+    ).toHaveTextContent(/^3\. Identity provisioned.*Failed$/);
+    expect(fact(onboarding, 'Identity provisioning')).toHaveTextContent('Failed after 3 attempts');
+    expect(fact(onboarding, 'Reason')).toHaveTextContent(
+      "The identity provider refused the request. Check that it's configured, then retry.",
+    );
+    expect(fact(onboarding, 'Last update (Asia/Kolkata)')).toHaveTextContent('24 Nov 2026 · 11:44');
+  });
+
+  // Review (nit 6): "then retry" only beside a Retry the hero offers.
+  it.each([
+    ['a revoked membership', 'REVOKED', [...ALL_CODES, 'user.approve']],
+    ['a reader without user.approve', 'PENDING_APPROVAL', ALL_CODES],
+  ])('never tells %s to retry a failed provisioning', async (_case, status, permissions) => {
+    setup({
+      permissions,
+      membershipStatus: status,
+      userStatus: 'PROVISIONING_IDP',
+      detail: { ...DETAIL, status, invitation: FAILED_INVITATION },
+    });
+
+    await show();
+
+    expect(fact(card('Onboarding'), 'Reason')).toHaveTextContent(
+      /^The identity provider refused the request\. Check that it's configured\.$/,
+    );
+  });
+
+  it('shows an invitation in progress without a reason or a time it lacks', async () => {
+    setup({
+      membershipStatus: 'PENDING_APPROVAL',
+      userStatus: 'PROVISIONING_IDP',
+      detail: {
+        ...DETAIL,
+        status: 'PENDING_APPROVAL',
+        invitation: { status: 'IN_PROGRESS', attempts: 0, lastErrorCode: null, updatedAt: null },
+      },
+    });
+
+    await show();
+
+    const onboarding = card('Onboarding');
+    expect(fact(onboarding, 'Identity provisioning')).toHaveTextContent(/^In progress$/);
+    expect(hasFact(onboarding, 'Reason')).toBe(false);
+    expect(hasFact(onboarding, 'Last update (Asia/Kolkata)')).toBe(false);
+    expect(within(onboarding).queryByText(/undefined|null/)).not.toBeInTheDocument();
+  });
+
+  it('shows no invitation facts without membership.view', async () => {
+    setup({
+      membershipStatus: 'PENDING_APPROVAL',
+      userStatus: 'PROVISIONING_IDP',
+      permissions: without('membership.view'),
+    });
+    await show();
+    expect(hasFact(card('Onboarding'), 'Identity provisioning')).toBe(false);
+    expect(within(card('Onboarding')).getByText(/being created/)).toBeInTheDocument();
+  });
+
   it('says why onboarding stopped, instead of listing steps, for a revoked membership', async () => {
     setup({ membershipStatus: 'REVOKED', userStatus: 'ACTIVE' });
 

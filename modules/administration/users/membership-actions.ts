@@ -14,6 +14,7 @@ import {
   APPROVE_NOT_FOUND,
   MEMBERSHIP_CHANGED,
   MEMBERSHIP_CHANGED_CODE,
+  RETRY_CONFLICT,
   REVOKE_CONFLICT,
 } from './user-rules';
 import { getMembership, getUser } from './user-service';
@@ -135,5 +136,39 @@ export async function revokeMembership(
     explain(result, MEMBERSHIP_CHANGED_CODE, MEMBERSHIP_CHANGED),
     'conflict',
     REVOKE_CONFLICT,
+  );
+}
+
+/** Retry provisioning (BG-11, `InvitationRecoveryService.retry`): no body, and no approval, so no
+ * maker-checker rule; a job still running makes it a 200 that changes nothing. A membership no
+ * longer pending with its identity provisioning, or one whose provisioning succeeded, is a 409
+ * `conflict`: RETRY_CONFLICT. The refreshed record shows where it stands. */
+export async function retryInvitation(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const result = await runServerAction(membershipInput, formData, (input) =>
+    apiPost(
+      `/api/v1/tenant/memberships/${input.membershipId}/invitation/retry`,
+      {},
+      input.idempotencyKey,
+    ),
+  );
+  return explain(result, 'conflict', RETRY_CONFLICT);
+}
+
+/** Resend invitation (BG-11, `InvitationRecoveryService.resend`): no body. Its two 409s, an account
+ * that isn't invited and a resend inside the cooldown, are named by their codes
+ * (`describeProblem`). */
+export async function resendInvitation(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  return runServerAction(membershipInput, formData, (input) =>
+    apiPost(
+      `/api/v1/tenant/memberships/${input.membershipId}/invitation/resend`,
+      {},
+      input.idempotencyKey,
+    ),
   );
 }

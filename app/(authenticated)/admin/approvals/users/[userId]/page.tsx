@@ -103,7 +103,6 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
   // BG-03: a search by user lists every branch to a tenant-wide view, the grant's branches else.
   const scopedView = scopedAssignmentView(holder);
   const rolesScoped = scopedRoleAssignmentView(holder);
-  const state = userApprovalState(record.membershipStatus, record.userStatus);
   // BG-08: the inviter is the record's own `created_by`; the switch is read only for them.
   const makers = [record.createdBy?.id];
   // Each read only with its own code; load() redirects on a lost session or a stale context, and
@@ -121,6 +120,10 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
       isMaker(makers, me) ? readMakerCheckerSwitch('user_invites', holder) : ('unknown' as const),
     ]);
 
+  // BG-11: the membership's `invitation` splits a provisioning identity into in progress and
+  // failed, where it was read.
+  const invitation = membership?.ok ? membership.value.invitation?.status : undefined;
+  const state = userApprovalState(record.membershipStatus, record.userStatus, invitation);
   const decisions = availableUserDecisions(state, holder);
   const gate = makerGate({ makerIds: makers, callerId: me, switchState });
   const blocked = blockedUserDecisions(decisions, {
@@ -134,7 +137,7 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
       : null;
   const outcome = userOutcomeNote(state, record.membershipStatus);
   const note = outcome === null ? membershipActionsNote(holder) : null;
-  const onboarding = onboardingState(record.membershipStatus, record.userStatus);
+  const onboarding = onboardingState(record.membershipStatus, record.userStatus, invitation);
   const invitedAt = formatInstant(record.membershipCreatedAt, timeZone);
 
   return (
@@ -171,7 +174,8 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
       />
       <Box sx={{ display: 'grid', gap: 3, mt: 4 }}>
         {outcome && (
-          <Alert severity="info" role="note">
+          // A failed provisioning needs someone to act on the record (BG-11): a warning, not news.
+          <Alert severity={state === 'provisioning-failed' ? 'warning' : 'info'} role="note">
             {outcome}{' '}
             <Link component={NextLink} href={`/admin/users/${record.id}`} underline="always">
               Open their user record

@@ -20,16 +20,22 @@ const CONTEXT_NOT_SELECTED = {
   reason: 'invalid-context',
 } satisfies SelectedContextProfile;
 
-const { getCurrentContextProfile, getUser, readMakerCheckerSwitch, redirect, router } = vi.hoisted(
-  () => ({
-    getCurrentContextProfile: vi.fn(),
-    getUser: vi.fn(),
-    readMakerCheckerSwitch: vi.fn(),
-    redirect: vi.fn(),
-    // One stable router object, as in table-pagination-bar.test.tsx.
-    router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
-  }),
-);
+const {
+  getCurrentContextProfile,
+  getMembership,
+  getUser,
+  readMakerCheckerSwitch,
+  redirect,
+  router,
+} = vi.hoisted(() => ({
+  getCurrentContextProfile: vi.fn(),
+  getMembership: vi.fn(),
+  getUser: vi.fn(),
+  readMakerCheckerSwitch: vi.fn(),
+  redirect: vi.fn(),
+  // One stable router object, as in table-pagination-bar.test.tsx.
+  router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
+}));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('next/navigation', async (importOriginal) => ({
@@ -45,6 +51,7 @@ vi.mock('@/auth/context-service', () => ({
   getCurrentContextProfile: () => getCurrentContextProfile() as unknown,
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
+  getMembership: (...args: unknown[]) => getMembership(...args) as unknown,
   getUser: (...args: unknown[]) => getUser(...args) as unknown,
 }));
 vi.mock('@/modules/administration/settings/settings-service', () => ({
@@ -54,6 +61,8 @@ vi.mock('@/modules/administration/settings/settings-service', () => ({
 vi.mock('@/modules/administration/users/membership-actions', () => ({
   approveMembership: vi.fn(),
   reactivateMembership: vi.fn(),
+  resendInvitation: vi.fn(),
+  retryInvitation: vi.fn(),
   revokeMembership: vi.fn(),
   suspendMembership: vi.fn(),
 }));
@@ -91,6 +100,8 @@ interface Setup {
   inviter?: string | null;
   /** `require_maker_checker_for_user_invites`, as the reader answers it. */
   switchState?: 'on' | 'off' | 'unknown';
+  /** The membership's `invitation.status` (BG-11), or an Error that rejects its read. */
+  invitation?: string | null | Error;
 }
 
 /** Programs every service the layout reads. A test names only what it varies. */
@@ -102,6 +113,7 @@ function setup({
   userStatus = 'ACTIVE',
   inviter = null,
   switchState = 'on',
+  invitation = 'IN_PROGRESS',
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
@@ -126,6 +138,17 @@ function setup({
     createdBy: inviter === null ? null : { id: inviter, displayName: null },
   });
   readMakerCheckerSwitch.mockResolvedValue(switchState);
+  if (invitation instanceof Error) getMembership.mockRejectedValue(invitation);
+  else {
+    getMembership.mockResolvedValue({
+      id: MEMBERSHIP,
+      status: membershipStatus,
+      invitation:
+        invitation === null
+          ? null
+          : { status: invitation, attempts: 3, lastErrorCode: 'CONFLICT', updatedAt: null },
+    });
+  }
 }
 
 async function show(userId = FELIX, children: ReactNode = <p>Tab body</p>) {
@@ -189,13 +212,58 @@ describe('UserRecordLayout: the record', () => {
   );
 
   it('names a user whose identity is still being provisioned in words, never "Provisioning idp"', async () => {
-    setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'PROVISIONING_IDP' });
+    // An invitation that couldn't be read: the account's own status is all that is known.
+    setup({
+      membershipStatus: 'PENDING_APPROVAL',
+      userStatus: 'PROVISIONING_IDP',
+      invitation: null,
+    });
 
     await show();
 
     expect(screen.getByText('Provisioning identity')).toBeInTheDocument();
     expect(screen.getByText('Membership pending approval')).toBeInTheDocument();
     expect(screen.queryByText(/idp/i)).not.toBeInTheDocument();
+  });
+
+  // BG-11: the membership's invitation splits it, read only for a provisioning pending member.
+  it.each([
+    ['IN_PROGRESS', 'Identity in progress'],
+    ['FAILED', 'Identity failed'],
+    [null, 'Provisioning identity'],
+    [new BackendApiError(500, {}), 'Provisioning identity'],
+  ])('heads a provisioning member whose invitation is %s with "%s"', async (invitation, chip) => {
+    setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'PROVISIONING_IDP', invitation });
+
+    await show();
+
+    expect(getMembership).toHaveBeenCalledWith(MEMBERSHIP);
+    expect(
+      screen.getAllByText(/./, { selector: '.MuiChip-label' }).map((label) => label.textContent),
+    ).toEqual([chip, 'Membership pending approval']);
+  });
+
+  it('reads no membership for any other member, or without membership.view tenant-wide', async () => {
+    setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'DRAFT' });
+    await show();
+    setup({ membershipStatus: 'ACTIVE', userStatus: 'INVITED' });
+    await show();
+    setup({
+      membershipStatus: 'PENDING_APPROVAL',
+      userStatus: 'PROVISIONING_IDP',
+      permissions: without('membership.view'),
+    });
+    await show();
+    // BG-33: the platform checks it tenant-wide, so a branch grant reads nothing.
+    setup({
+      membershipStatus: 'PENDING_APPROVAL',
+      userStatus: 'PROVISIONING_IDP',
+      permissions: without('membership.view'),
+      elsewhere: ['membership.view'],
+    });
+    await show();
+
+    expect(getMembership).not.toHaveBeenCalled();
   });
 
   it('answers a record the backend does not have with not-found', async () => {
@@ -335,6 +403,62 @@ describe('UserRecordLayout: the membership actions', () => {
       expect(hidden('expectedUserStatus', dialog)).toBe(userStatus);
     },
   );
+
+  // BG-11: Retry in Approve's place once provisioning failed, never both.
+  it('offers Retry provisioning, not Approve, once creating the identity failed', async () => {
+    const user = userEvent.setup();
+    setup({
+      membershipStatus: 'PENDING_APPROVAL',
+      userStatus: 'PROVISIONING_IDP',
+      invitation: 'FAILED',
+      inviter: ME, // the inviter may retry: it is no approval
+    });
+    await show();
+
+    expect(button('Approve')).toBeNull();
+    expect(button('Retry provisioning')).toBeEnabled();
+    expect(button('Reject & revoke')).toBeEnabled();
+    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Retry provisioning' }));
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Retry identity provisioning for Felix Omondi?',
+    });
+    expect(hidden('membershipId', dialog)).toBe(MEMBERSHIP);
+    expect(hidden('contextOrganisationId', dialog)).toBe(ORG);
+    expect(hidden('idempotencyKey', dialog)).toMatch(UUID);
+  });
+
+  it.each([
+    ['in progress', 'IN_PROGRESS'],
+    ['unread', new BackendApiError(500, {})],
+  ])('offers neither Approve nor Retry while provisioning is %s', async (_case, invitation) => {
+    setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'PROVISIONING_IDP', invitation });
+    await show();
+
+    expect(button('Approve')).toBeNull();
+    expect(button('Retry provisioning')).toBeNull();
+    expect(button('Reject & revoke')).toBeEnabled();
+  });
+
+  it('offers Resend invitation to an invited account with user.invite and its views', async () => {
+    setup({
+      membershipStatus: 'ACTIVE',
+      userStatus: 'INVITED',
+      permissions: [...ALL_CODES, 'user.invite', 'user.view'],
+    });
+    await show();
+
+    expect(button('Resend invitation')).toBeEnabled();
+    setup({
+      membershipStatus: 'ACTIVE',
+      userStatus: 'INVITED',
+      permissions: [...ALL_CODES, 'user.invite'],
+    });
+    await show();
+    // Without user.view, which user.invite implies (ADR 0030), only the first render offers it.
+    expect(screen.getAllByRole('button', { name: 'Resend invitation' })).toHaveLength(1);
+  });
 
   it('names no expected status of any kind in a plain Revoke', async () => {
     const user = userEvent.setup();

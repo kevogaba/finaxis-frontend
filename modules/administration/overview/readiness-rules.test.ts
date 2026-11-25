@@ -140,7 +140,7 @@ describe('Onboarding', () => {
     expect(onboardingItem(ok({ pending: 2, provisioning: 2 }))).toMatchObject({
       state: 'ready',
       detail:
-        'No one is waiting for approval. 2 identities are still being provisioned: approval already ran.',
+        'No one is waiting for approval. 2 identities are still being provisioned: approval already ran. If provisioning failed, it can be retried from their user record.',
     });
   });
 
@@ -148,7 +148,7 @@ describe('Onboarding', () => {
     expect(onboardingItem(ok({ pending: 4, provisioning: 1 }))).toMatchObject({
       state: 'attention',
       detail:
-        '3 users are waiting for approval. 1 identity is still being provisioned: approval already ran.',
+        '3 users are waiting for approval. 1 identity is still being provisioned: approval already ran. If provisioning failed, it can be retried from their user record.',
     });
     expect(onboardingItem(ok({ pending: 1, provisioning: 0 })).detail).toBe(
       '1 user is waiting for approval.',

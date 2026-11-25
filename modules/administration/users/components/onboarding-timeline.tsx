@@ -1,15 +1,19 @@
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import { DescriptionList } from '@/components/data-display/description-list';
 import { StatusChip } from '@/components/data-display/status-chip';
-import type { OnboardingProgress } from '../user-rules';
+import type { InvitationFact, OnboardingProgress } from '../user-rules';
 
 interface OnboardingTimelineProps {
   progress: OnboardingProgress;
+  /** The membership's invitation in words (`invitationFacts`, BG-11); empty when it wasn't read. */
+  facts?: readonly InvitationFact[];
 }
 
 /** Spec §10.5: the onboarding steps in order, each with a worded chip (never colour alone). Once
- * onboarding has stopped there are no steps, only the sentence that says why. */
-export function OnboardingTimeline({ progress }: OnboardingTimelineProps) {
+ * onboarding has stopped there are no steps, only the sentence that says why. The invitation's
+ * facts follow either. */
+export function OnboardingTimeline({ progress, facts = [] }: OnboardingTimelineProps) {
   return (
     <>
       {progress.kind === 'steps' && (
@@ -58,6 +62,7 @@ export function OnboardingTimeline({ progress }: OnboardingTimelineProps) {
           {progress.note}
         </Typography>
       )}
+      {facts.length > 0 && <DescriptionList items={facts} columns={1} />}
     </>
   );
 }

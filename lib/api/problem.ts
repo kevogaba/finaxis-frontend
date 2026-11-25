@@ -96,6 +96,18 @@ const BY_CODE: Record<string, Pick<ProblemView, 'title' | 'message'>> = {
     title: WRONG_WORKSPACE,
     message: 'This page belongs to an institution workspace. Switch workspace to open it.',
   },
+  // BG-11: Resend invitation's refusals. The cooldown (five minutes by default, configurable) runs
+  // from the person's newest succeeded dispatch in any institution: provisioning's own success or
+  // the last resend. Not applicable most often means a stale page: they have since signed in.
+  'lifecycle.invitation_resend_too_soon': {
+    title: 'Too soon to resend',
+    message:
+      'Their account was set up, or an invitation sent, moments ago. Try again in a few minutes.',
+  },
+  'lifecycle.invitation_resend_not_applicable': {
+    title: 'Nothing to resend',
+    message: "There's no invitation to resend for this person. Refresh to see where they stand.",
+  },
   'lifecycle.business_date_lock_timeout': {
     title: 'Busy — try again',
     message: 'Another business date change is in progress. Try again in a moment.',

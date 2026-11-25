@@ -67,6 +67,12 @@ const PROPS: Props = {
       createdAt: '2026-11-01T06:00:00Z',
       updatedAt: '2026-11-01T06:00:00Z',
       createdBy: null,
+      invitation: {
+        status: 'AWAITING_APPROVAL',
+        attempts: 0,
+        lastErrorCode: null,
+        updatedAt: null,
+      },
     },
   },
   roles: {

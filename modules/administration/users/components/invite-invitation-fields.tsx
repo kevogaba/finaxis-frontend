@@ -8,7 +8,7 @@ import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormHelperText from '@mui/material/FormHelperText';
 import type { Theme } from '@mui/material/styles';
-import { INVITATION_NOTE } from '../invite-rules';
+import { IDENTITY_INVITE_DESCRIPTION, INVITATION_NOTE } from '../invite-rules';
 import type { InviteValues } from '../invite-schema';
 
 /** Field groups stay a readable width on a wide screen, as 16's wizard does. */
@@ -65,7 +65,7 @@ export function InviteInvitationFields({ control }: { control: Control<InviteVal
         control={control}
         name="sendIdentityInvite"
         label="Send the identity-provider invitation"
-        description="After approval, once their sign-in identity is created, the identity provider emails them to verify their address."
+        description={IDENTITY_INVITE_DESCRIPTION}
       />
       <Flag
         control={control}

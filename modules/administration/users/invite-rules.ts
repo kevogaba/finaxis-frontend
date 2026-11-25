@@ -164,6 +164,11 @@ export const INVITE_MAY_BE_SENT =
 /** What sending does, and what the tenant can't see (BG-02, BG-07, BG-11; Ruling 3). */
 export const REVIEW_NOTE =
   'Sending creates the invitation now. A different administrator must approve it before they can use this institution. If this email already has a Finaxis account, that account is reused: its name, username and phone stay as they are.';
-/** BG-25: delivery depends on the platform, and a failure isn't readable (Ruling 5). */
+/** BG-25: the identity provider's email asks them to verify their address and set a password,
+ * with a 72-hour link (platform #274); whether it goes out depends on the deployment. A failed
+ * identity provisioning shows on the user record (BG-11); an undelivered email doesn't. */
 export const INVITATION_NOTE =
-  "Whether these emails go out depends on the platform: identity provisioning and email can be switched off there, and a failed delivery isn't shown here.";
+  "Whether these emails go out depends on how the platform is set up. If creating their sign-in identity fails, their user record says so, but an email that isn't delivered isn't shown.";
+/** BG-25: the identity-provider flag's description. */
+export const IDENTITY_INVITE_DESCRIPTION =
+  'After approval, once their sign-in identity is created, the identity provider emails them a link to verify their address and set a password. The link lasts 72 hours.';

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { notFound } from 'next/navigation';
 import Paper from '@mui/material/Paper';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can, canAnywhere, permissionHolder } from '@/auth/permissions';
+import { can, canAnywhere, canTenantWide, permissionHolder } from '@/auth/permissions';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { RecordHero } from '@/components/data-display/record-hero';
@@ -25,7 +25,7 @@ import {
   onboardingState,
   parseUserId,
 } from '@/modules/administration/users/user-rules';
-import { getUser } from '@/modules/administration/users/user-service';
+import { getMembership, getUser } from '@/modules/administration/users/user-service';
 
 export const metadata: Metadata = { title: 'User record' };
 
@@ -61,8 +61,23 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
 
   const record = user.value;
   const holder = permissionHolder(resolved?.profile);
-  const status = { membershipStatus: record.membershipStatus, userStatus: record.userStatus };
-  // The user read carries the membership's id (BG-09): no lookup, so nothing to wait on or fail.
+  // BG-11: a pending member whose identity is provisioning is in progress or failed, which only the
+  // membership's `invitation` says. It is read only then, with `membership.view` tenant-wide as
+  // the platform checks it (BG-33; every membership action needs it too), and shared with the
+  // Overview (`getMembership` is cached per request). Unread or failed, it stays unknown: the chip
+  // says "Provisioning identity", and Retry isn't offered.
+  const provisioning =
+    record.membershipStatus === 'PENDING_APPROVAL' && record.userStatus === 'PROVISIONING_IDP';
+  const membership =
+    provisioning && canTenantWide(holder, 'membership.view')
+      ? await load(getMembership(record.membershipId))
+      : null;
+  const status = {
+    membershipStatus: record.membershipStatus,
+    userStatus: record.userStatus,
+    invitation: membership?.ok ? membership.value.invitation?.status : undefined,
+  };
+  // The user read carries the membership's id (BG-09): the actions post it with no lookup.
   const actions = availableMembershipActions(status, holder);
   // BG-08: the inviter is the record's own `created_by`; the switch is read only when they are
   // the one who could approve (decision Q4: unread, Approve stays on offer for the platform).
@@ -86,7 +101,7 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
       ? SELF_APPROVAL_NOTE_USERS
       : null;
   const note = membershipActionsNote(holder);
-  const onboarding = onboardingState(record.membershipStatus, record.userStatus);
+  const onboarding = onboardingState(record.membershipStatus, record.userStatus, status.invitation);
   const base = `/admin/users/${userId}`;
 
   return (

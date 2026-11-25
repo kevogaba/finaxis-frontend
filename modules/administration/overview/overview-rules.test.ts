@@ -221,7 +221,9 @@ describe('the Pending approvals preview (Ruling 5)', () => {
         linkLabel: 'Review branch activation',
       },
     ]);
-    expect(view.provisioning).toBe('1 identity is still being provisioned: approval already ran.');
+    expect(view.provisioning).toBe(
+      '1 identity is still being provisioned: approval already ran. If provisioning failed, it can be retried from their user record.',
+    );
     expect(view.empty).toBe(false);
     expect(view.failures).toEqual([]);
   });
@@ -316,7 +318,7 @@ describe('the Pending approvals preview (Ruling 5)', () => {
       'Waiting 5',
     ]);
     expect(view.provisioning).toBe(
-      '5 identities are still being provisioned: approval already ran.',
+      '5 identities are still being provisioned: approval already ran. If provisioning failed, it can be retried from their user record.',
     );
   });
 

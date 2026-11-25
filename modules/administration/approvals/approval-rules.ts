@@ -8,11 +8,14 @@ import {
   pendingBranchAction,
   RETURN_ROUTE_CODES,
 } from '@/modules/administration/branches/branch-rules';
-import type { MembershipStatus, UserStatus } from '@/modules/administration/users/user-contract';
+import type {
+  InvitationStatus,
+  MembershipStatus,
+  UserStatus,
+} from '@/modules/administration/users/user-contract';
 import {
   accountBlockedNote,
   onboardingState,
-  PROVISIONING_NOTE,
   USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
 import type { MakerGate } from './maker-checker';
@@ -111,17 +114,24 @@ export function approvalQueueTabs(
 
 /** `awaiting` takes Approve and Reject & revoke; `blocked` (a pending membership whose account is
  * suspended, locked or deactivated: approving it is a 409, contract §F) shows Approve disabled and
- * takes Reject & revoke; `provisioning` was already approved (BG-11) and takes no decision here. */
-export type UserApprovalState = 'awaiting' | 'blocked' | 'provisioning' | 'decided';
+ * takes Reject & revoke; `provisioning` was already approved (BG-11) and takes no decision here,
+ * and `provisioning-failed` is that, once creating the identity failed (the user record retries
+ * it). `invitation`: the membership's `invitation.status`, where it was read. */
+export type UserApprovalState =
+  'awaiting' | 'blocked' | 'provisioning' | 'provisioning-failed' | 'decided';
 
 export function userApprovalState(
   membership: MembershipStatus,
   user: UserStatus,
+  invitation?: InvitationStatus | null,
 ): UserApprovalState {
   if (membership !== 'PENDING_APPROVAL') return 'decided';
-  switch (onboardingState(membership, user).key) {
+  switch (onboardingState(membership, user, invitation).key) {
     case 'PROVISIONING_IDENTITY':
+    case 'IDENTITY_IN_PROGRESS':
       return 'provisioning';
+    case 'IDENTITY_FAILED':
+      return 'provisioning-failed';
     case 'ACCOUNT_BLOCKED':
       return 'blocked';
     default:
@@ -157,12 +167,20 @@ export function blockedUserDecisions(
   return {};
 }
 
+/** Approval ran; the identity is being created (BG-11). */
+export const PROVISIONING_OUTCOME =
+  'Approved: their sign-in identity is being created, and the invitation is sent when it completes. If creating it fails, it can be retried from their user record.';
+/** Approval ran, but creating the identity failed (BG-11): the record says why and retries it. */
+export const PROVISIONING_FAILED_OUTCOME =
+  "Approved, but their sign-in identity couldn't be created. Their user record says why, and provisioning can be retried from there.";
+
 /** Why a user approval offers no decision, shown in place of the bar; null while it waits. */
 export function userOutcomeNote(
   state: UserApprovalState,
   membership: MembershipStatus,
 ): string | null {
-  if (state === 'provisioning') return PROVISIONING_NOTE;
+  if (state === 'provisioning') return PROVISIONING_OUTCOME;
+  if (state === 'provisioning-failed') return PROVISIONING_FAILED_OUTCOME;
   if (state !== 'decided') return null;
   switch (membership) {
     case 'ACTIVE':

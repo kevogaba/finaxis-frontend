@@ -10,13 +10,16 @@ import {
   USER_APPROVAL_FORBIDDEN,
 } from '@/modules/administration/approvals/approval-copy';
 import {
+  PROVISIONING_FAILED_OUTCOME,
+  PROVISIONING_OUTCOME,
+} from '@/modules/administration/approvals/approval-rules';
+import {
   SELF_APPROVAL_NOTE_USERS,
   type SwitchState,
 } from '@/modules/administration/approvals/maker-checker';
 import {
   accountBlockedNote,
   NO_MEMBERSHIP_VIEW,
-  PROVISIONING_NOTE,
   USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
 import { renderWithProviders } from '@/test/test-utils';
@@ -414,12 +417,63 @@ describe('UserApprovalPage: where the request stands (Rulings 7, 12)', () => {
 
     expect(button('Approve')).toBeNull();
     expect(button('Reject & revoke')).toBeNull();
-    expect(screen.getByRole('note')).toHaveTextContent(PROVISIONING_NOTE);
+    expect(screen.getByRole('note')).toHaveTextContent(PROVISIONING_OUTCOME);
     const recordLink = screen.getByRole('link', { name: 'Open their user record' });
     expect(recordLink).toHaveAttribute('href', `/admin/users/${ROSE}`);
     // Underlined, so the link is told apart from the note's text by more than colour (1.4.1).
     expect(recordLink).toHaveClass('MuiLink-underlineAlways');
     expect(screen.queryByRole('region', { name: 'Control checks' })).toBeNull();
+  });
+
+  // BG-11: the membership's invitation splits it; Retry lives on the user record.
+  it('says when creating their identity failed, sending the approver to their record', async () => {
+    setup({
+      userStatus: 'PROVISIONING_IDP',
+      membership: {
+        id: MEMBERSHIP,
+        userId: ROSE,
+        status: 'PENDING_APPROVAL',
+        type: 'STAFF',
+        primaryBranchId: WESTLANDS,
+        invitation: {
+          status: 'FAILED',
+          attempts: 3,
+          lastErrorCode: 'IDENTITY_PROVIDER_FAILED',
+          updatedAt: '2026-11-24T06:14:00Z',
+        },
+      },
+    });
+    await show();
+
+    expect(button('Approve')).toBeNull();
+    expect(button('Reject & revoke')).toBeNull();
+    expect(screen.getByRole('note')).toHaveTextContent(PROVISIONING_FAILED_OUTCOME);
+    // Someone has to act on it: a warning, where an approval still running is information.
+    expect(screen.getByRole('note')).toHaveClass('MuiAlert-colorWarning');
+    expect(screen.getByText('Identity failed')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open their user record' })).toHaveAttribute(
+      'href',
+      `/admin/users/${ROSE}`,
+    );
+  });
+
+  it('reads an identity still in progress as provisioning', async () => {
+    setup({
+      userStatus: 'PROVISIONING_IDP',
+      membership: {
+        id: MEMBERSHIP,
+        userId: ROSE,
+        status: 'PENDING_APPROVAL',
+        type: 'STAFF',
+        primaryBranchId: WESTLANDS,
+        invitation: { status: 'IN_PROGRESS', attempts: 0, lastErrorCode: null, updatedAt: null },
+      },
+    });
+    await show();
+
+    expect(screen.getByRole('note')).toHaveTextContent(PROVISIONING_OUTCOME);
+    expect(screen.getByRole('note')).toHaveClass('MuiAlert-colorInfo');
+    expect(screen.getByText('Identity in progress')).toBeInTheDocument();
   });
 
   it('offers no decision once decided', async () => {

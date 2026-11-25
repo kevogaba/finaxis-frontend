@@ -20,7 +20,9 @@ import {
 import { OnboardingTimeline } from '@/modules/administration/users/components/onboarding-timeline';
 import type { MembershipDetail } from '@/modules/administration/users/user-contract';
 import {
+  availableMembershipActions,
   branchAssignmentCount,
+  invitationFacts,
   onboardingProgress,
   parseUserId,
   scopedAssignmentView,
@@ -61,6 +63,13 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
       ? load(countUserBranchAssignments(record.id))
       : null,
   ]);
+  // BG-11: where the identity provisioning stands, from the membership read (null: unknown).
+  const invitation = membership?.ok ? membership.value.invitation?.status : undefined;
+  // The reason says to retry only where the hero offers Retry provisioning (the layout's rule).
+  const retryable = availableMembershipActions(
+    { membershipStatus: record.membershipStatus, userStatus: record.userStatus, invitation },
+    holder,
+  ).includes('retry');
   const at = (iso: string) => {
     const when = formatInstant(iso, timeZone);
     return `${when.date} · ${when.time}`;
@@ -107,7 +116,12 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
       </SectionCard>
       <SectionCard title="Onboarding">
         <OnboardingTimeline
-          progress={onboardingProgress(record.membershipStatus, record.userStatus)}
+          progress={onboardingProgress(record.membershipStatus, record.userStatus, invitation)}
+          facts={
+            membership?.ok && membership.value.invitation
+              ? invitationFacts(membership.value.invitation, timeZone, { retryable })
+              : []
+          }
         />
       </SectionCard>
     </Box>

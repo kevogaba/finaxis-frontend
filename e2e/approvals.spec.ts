@@ -30,7 +30,9 @@ const APPROVED_PROVISIONING =
   'Approved. Identity provisioning is queued: the invitation is sent when it completes.';
 const MEMBERSHIP_REVOKED = 'Membership revoked';
 const PROVISIONING_NOTE =
-  "Approval ran, and their sign-in identity is being created. The invitation is sent when it completes. If it stays here, identity provisioning may be switched off on the platform, and it can't be retried from here.";
+  'Approved: their sign-in identity is being created, and the invitation is sent when it completes. If creating it fails, it can be retried from their user record.';
+const PROVISIONING_FAILED_NOTE =
+  "Approved, but their sign-in identity couldn't be created. Their user record says why, and provisioning can be retried from there.";
 const APPROVED_NOTE = 'Approved: this membership is active.';
 const REJECTED_NOTE =
   "Rejected: this membership was revoked, and this email can't be invited to this institution again.";
@@ -510,7 +512,8 @@ test.describe('approvals: user onboarding decisions', () => {
     await expect(dialog.getByRole('alert')).toContainText(MEMBERSHIP_CHANGED);
   });
 
-  test('offers no decision while an identity is provisioning', async ({
+  // BG-11: Daniel's provisioning failed, which his membership's invitation says.
+  test('offers no decision once an identity failed to provision, sending the approver to the record', async ({
     context,
     page,
   }, testInfo) => {
@@ -518,7 +521,11 @@ test.describe('approvals: user onboarding decisions', () => {
     await enterQueue(page);
     await openRequest(page, userPath(USERS.daniel), 'Daniel Mutua');
 
-    await expect(mainText(page, PROVISIONING_NOTE)).toBeVisible();
+    await expect(mainText(page, PROVISIONING_FAILED_NOTE)).toBeVisible();
+    await expect(hero(page).getByText('Identity failed', { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('main').getByRole('link', { name: 'Open their user record' }),
+    ).toHaveAttribute('href', `/admin/users/${USERS.daniel}`);
     await expect(decision(page, 'Approve')).toHaveCount(0);
     await expect(decision(page, 'Reject & revoke')).toHaveCount(0);
     await expect(region(page, 'Control checks')).toHaveCount(0);
@@ -726,7 +733,7 @@ const SURFACES = [
     path: userPath(USERS.daniel),
     heading: 'Daniel Mutua',
     open: async (page: Page) => {
-      await expect(mainText(page, PROVISIONING_NOTE)).toBeVisible();
+      await expect(mainText(page, PROVISIONING_FAILED_NOTE)).toBeVisible();
     },
   },
   {
