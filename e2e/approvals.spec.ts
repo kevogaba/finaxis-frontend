@@ -252,21 +252,28 @@ test.describe('approvals: ids', () => {
 });
 
 test.describe('approvals: the notifications bell', () => {
-  test('counts what can be decided, and opens each queue', async ({ context, page }, testInfo) => {
+  // BG-22: the platform counts 8 of the 9 pending members (Carol is Jane's own) and 2 of the 3
+  // pending branches (Naivasha is Jane's own). Its 8 still holds Daniel, whose identity is
+  // provisioning; the User onboarding tab's 8 (9 less Daniel) still holds Carol: the bell shows the
+  // lower of the two, an upper bound (Jane can decide 7) that never reads below what waits.
+  test('counts what the platform counts for the caller, and opens each queue', async ({
+    context,
+    page,
+  }, testInfo) => {
     await authenticate(context, testInfo, 'approvals');
     await enterQueue(page);
 
-    const button = await bell(page, 'Notifications: 11 approvals waiting');
-    await expect(button).toContainText('11');
+    const button = await bell(page, 'Notifications: 10 approvals waiting');
+    await expect(button).toContainText('10');
     await press(button);
     const dialog = page.getByRole('dialog', { name: 'Notifications' });
     await expect(dialog).toContainText('8 users are waiting for approval.');
-    await expect(dialog).toContainText('3 branches are waiting for activation.');
+    await expect(dialog).toContainText('2 branches are waiting for activation.');
     await expect(dialog).not.toContainText('Switch to All branches');
     await clickInMuiPopover(dialog.getByRole('link', { name: 'Review branch activation' }));
     await expect(page).toHaveURL(/\/admin\/approvals\/branches$/);
 
-    await press(await bell(page, 'Notifications: 11 approvals waiting'));
+    await press(await bell(page, 'Notifications: 10 approvals waiting'));
     await clickInMuiPopover(
       page
         .getByRole('dialog', { name: 'Notifications' })
@@ -279,11 +286,11 @@ test.describe('approvals: the notifications bell', () => {
     await authenticate(context, testInfo, 'approvals');
     await enterQueue(page);
     await openRequest(page, branchPath(APPROVALS.kericho), 'Kericho Branch');
-    await bell(page, 'Notifications: 11 approvals waiting');
+    await bell(page, 'Notifications: 10 approvals waiting');
 
     await decide(page, 'Activate');
     await expect(toast(page, BRANCH_ACTIVATED)).toBeVisible();
-    await bell(page, 'Notifications: 10 approvals waiting');
+    await bell(page, 'Notifications: 9 approvals waiting');
   });
 
   test('counts the same with a branch selected, with no advice to switch (BG-03)', async ({
@@ -293,9 +300,9 @@ test.describe('approvals: the notifications bell', () => {
     await authenticate(context, testInfo, 'approvals');
     await enterQueue(page, /Head Office/);
 
-    await press(await bell(page, 'Notifications: 11 approvals waiting'));
+    await press(await bell(page, 'Notifications: 10 approvals waiting'));
     const dialog = page.getByRole('dialog', { name: 'Notifications' });
-    await expect(dialog).toContainText('3 branches are waiting for activation.');
+    await expect(dialog).toContainText('2 branches are waiting for activation.');
     await expect(dialog).not.toContainText('Switch to All branches');
   });
 
@@ -309,7 +316,7 @@ test.describe('approvals: the notifications bell', () => {
       await enterQueue(page);
 
       const banner = page.getByRole('banner');
-      const button = await bell(page, 'Notifications: 11 approvals waiting');
+      const button = await bell(page, 'Notifications: 10 approvals waiting');
       const chip = banner.getByRole('link', { name: /Business date · Open$/ });
       const status = chip.getByText('Open', { exact: true });
       const organisation = banner.getByText('Greenfield SACCO', { exact: true });
@@ -794,7 +801,7 @@ const SURFACES = [
     path: '/admin/approvals/users',
     heading: 'Approval queue',
     open: async (page: Page) => {
-      await press(await bell(page, 'Notifications: 11 approvals waiting'));
+      await press(await bell(page, 'Notifications: 10 approvals waiting'));
       await expect(page.getByRole('dialog', { name: 'Notifications' })).toBeVisible();
       await expect(page.locator('.MuiPopover-paper')).toHaveCSS('opacity', '1');
     },
@@ -819,7 +826,8 @@ test.describe('approvals: accessibility', () => {
         await enterAdmin(page, surface.path, { heading: surface.heading, branch: ALL_BRANCHES });
         // The bell streams behind its own Suspense boundary: every scan and the 375 px page-width
         // check include the finished header.
-        await bell(page, 'Notifications: 11 approvals waiting');
+        // Jane's own requests count only while maker-checker is off (BG-22): Carol and Naivasha.
+        await bell(page, `Notifications: ${'scenario' in surface ? 11 : 10} approvals waiting`);
         if ('open' in surface) await surface.open(page);
         await expectA11yCaseApplied(page, a11yCase);
         await expectNoSeriousOrCriticalViolations(page);

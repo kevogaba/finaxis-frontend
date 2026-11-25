@@ -25,9 +25,9 @@ import type { MakerGate } from './maker-checker';
 
 // ── Who sees what (Ruling 2) ─────────────────────────────────────────────────────────────────────
 
-/** The User onboarding tab and the bell's user count: `user.view` lists the users, `user.approve`
- * decides. The decision also reads the membership back (`membership.view`, BG-31): the detail page
- * says so when it is missing. */
+/** The User onboarding tab: `user.view` lists the users, `user.approve` decides. The decision also
+ * reads the membership back (`membership.view`, BG-31): the detail page says so when it is
+ * missing. */
 export const USER_APPROVAL_CODES = ['user.approve', 'user.view'] as const;
 
 /** `GET /tenant/users` checks `user.view` tenant-wide (BG-33), so a branch-scoped grant reads no
@@ -35,13 +35,29 @@ export const USER_APPROVAL_CODES = ['user.approve', 'user.view'] as const;
 export function canSeeUserApprovals(holder: PermissionHolder): boolean {
   return can(holder, 'user.approve') && canTenantWide(holder, 'user.view');
 }
-/** The Branch activation tab and the bell's branch count: activate reads the branch back (BG-31). */
+/** The Branch activation tab: activate reads the branch back (BG-31). */
 export const BRANCH_ACTIVATION_CODES = ['branch.approve', 'branch.view'] as const;
 
 /** A pending branch grants no branch-scoped permission (platform #242), so only a tenant-wide
  * holder activates one, whichever branch is selected (BG-03). */
 export function canSeeBranchActivations(holder: PermissionHolder): boolean {
   return canAllTenantWide(holder, BRANCH_ACTIVATION_CODES);
+}
+
+/** The bell's user line: the platform's membership count, capped by the User onboarding tab's
+ * totals (`countUserApprovals`), which need `user.view` tenant-wide (BG-33). */
+export function canCountUserApprovals(holder: PermissionHolder): boolean {
+  return canAllTenantWide(holder, [...withViews(['user.approve']), 'user.view']);
+}
+
+/** BG-22: `GET /tenant/approvals/pending-count` counts memberships for `user.approve` and branches
+ * for `branch.approve`, each with its views and tenant-wide (a pending branch has no ACTIVE branch
+ * to hold a branch-scope grant at), and refuses a caller who holds neither (403). The bell asks it
+ * only of a caller it can show a line to: the user line also needs the tab's read, so a holder of
+ * the membership pair alone, with neither `user.view` nor the branch pair, has no bell, never one
+ * that reads "nothing waiting" while members wait. Which lines it shows are the keys sent. */
+export function canCountPendingApprovals(holder: PermissionHolder): boolean {
+  return canCountUserApprovals(holder) || canSeeBranchActivations(holder);
 }
 
 export const APPROVALS_HREF = '/admin/approvals';

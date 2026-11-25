@@ -292,6 +292,8 @@ test.describe('overview: the cards', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'overview-branch-scoped');
     await enterOverview(page, HEAD_OFFICE);
+    // The bell asks the platform's count route, which counts no branches for a holder of
+    // branch.approve at one branch only (BG-22): it shows the three users, not a failure.
     await bell(page, 'Notifications: 3 approvals waiting');
 
     await expect(page.getByRole('main').getByRole('region')).toHaveCount(4);

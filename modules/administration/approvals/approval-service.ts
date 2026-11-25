@@ -1,12 +1,14 @@
 import 'server-only';
 import { cache } from 'react';
 import type { ListSort } from '@/lib/api/list-sort';
+import { apiGet } from '@/lib/api/tenant-api';
 import type { BranchSortField } from '@/modules/administration/branches/branch-contract';
 import { DEFAULT_BRANCH_SORT } from '@/modules/administration/branches/branch-query';
 import { listBranches } from '@/modules/administration/branches/branch-service';
 import { listRoleAssignments } from '@/modules/administration/roles/role-service';
 import { listUsers } from '@/modules/administration/users/user-service';
 import { REQUESTED_ROLES_CEILING } from './approval-copy';
+import { pendingCountSchema, type PendingCounts } from './approval-contract';
 import type { UserApprovalCounts } from './approval-notifications';
 
 /**
@@ -57,11 +59,19 @@ export const countUserApprovals = cache(async (): Promise<UserApprovalCounts> =>
   return { pending: pending.page.totalItems, provisioning: provisioning.page.totalItems };
 });
 
-/** The third `size=1` read (spec §8). */
+/** The Branch activation tab's total: one `size=1` read, which the queue and the overview's
+ * readiness card share per request (the bell reads the count route, BG-22). */
 export const countBranchActivations = cache(async (): Promise<number> => {
   const page = await listBranchActivations({ sort: DEFAULT_BRANCH_SORT, page: 0, size: 1 });
   return page.page.totalItems;
 });
+
+/** The bell's counts (BG-22): one read of the platform's count route, which leaves out the requests
+ * the caller created and omits a kind they can't approve tenant-wide. Ask it only of a caller who
+ * can approve one kind tenant-wide: one who can approve neither is refused (403). */
+export function readPendingCounts(): Promise<PendingCounts> {
+  return apiGet('/api/v1/tenant/approvals/pending-count', pendingCountSchema);
+}
 
 /** Requested access (spec §10.6): the user's ACTIVE role assignments, one bounded page (Ruling 8;
  * `hasNext` says when there are more). */

@@ -147,7 +147,7 @@ miscount things today.
 
 ## Summary
 
-9 backend fixed · 7 partly fixed · 0 open · 2 adopted · 17 closed.
+9 backend fixed · 6 partly fixed · 0 open · 3 adopted · 17 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -172,7 +172,7 @@ miscount things today.
 | BG-19 | P2       | Backend fixed | No global search endpoint                                                                          |
 | BG-20 | P2       | Partly fixed  | No export endpoints                                                                                |
 | BG-21 | P2       | Backend fixed | No close-of-business readiness checks exposed                                                      |
-| BG-22 | P2       | Partly fixed  | No notifications endpoint                                                                          |
+| BG-22 | P2       | Adopted       | No notifications endpoint                                                                          |
 | BG-23 | P2       | Closed        | Context discovery inconsistencies (`total_items` overcount, duplicate branch IDs)                  |
 | BG-24 | P2       | Closed        | Bootstrap status can flip COMPLETED → FAILED from unrelated invitee failures                       |
 | BG-25 | P2       | Partly fixed  | Identity and email delivery defaults (Keycloak admin off, email off, no password step)             |
@@ -914,14 +914,16 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-22 — No notifications · P2
 
-- **Status:** Partly fixed. Platform #169 (ADR 0038).
+- **Status:** Adopted (frontend #121). Platform #169 (ADR 0038).
 - **Gap:** no notification feed.
-- **Frontend handling:** the platform bell counts institutions pending approval with one `size=1`
-  read, for holders of `tenant.approve` and `tenant.view` (layer 17); the administration bell counts
-  users waiting for approval (pending less provisioning: two `size=1` reads) and branches waiting
-  for activation (one), for holders of the matching codes (layer 12). The administration overview's
-  Pending approvals card shows the same counts: the users' from the bell's reads, shared per request,
-  the branches' from its preview's total (layer 14).
+- **Frontend handling:** the platform bell counts the institutions pending approval that its caller
+  could approve (`GET /platform/approvals/pending-count`); the administration bell counts the users
+  waiting for approval and the branches waiting for activation
+  (`GET /tenant/approvals/pending-count`), its user line capped by the User onboarding tab's total
+  (pending less provisioning: two `size=1` reads), for holders of the matching codes tenant-wide
+  (frontend #121; layers 12 and 17 used `size=1` list reads). The administration overview's
+  Pending approvals card shows the queue's tab counts: the users' from those two reads, shared per
+  request, the branches' from its preview's total (layer 14).
 - **Backend resolution:** `GET /tenant/approvals/pending-count` returns `{memberships, branches}`:
   memberships for holders of `user.approve`, branches for holders of `branch.approve` tenant-wide. A
   key is left out, not 0, when the caller can't approve that kind, and a caller who can approve
@@ -933,9 +935,34 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Verified 2026-11-24:** "less the caller's own" means rows the caller **created**: a
   membership's beneficiary and a branch's submitter or amenders are still counted, so each count is
   an upper bound (tenants exclude the requester and submitter).
-- **To adopt:** replace the bells' `size=1` reads with the count routes, keeping the provisioning
-  read if the bell should still leave those out. (The branch count is gated on `branch.approve`
-  since frontend #107.)
+- **Verified 2026-11-25:** both kinds are tenant-wide: `memberships` needs `user.approve` with
+  `membership.view` (`requireTenantPermission`), `branches` needs `branch.approve` with
+  `branch.view` at every branch (`mutationBranchVisibility`), so a holder of either at one branch
+  only gets no key. The 403 for a caller who approves neither is the endpoint gate's `forbidden`
+  when the selected context holds neither code, and otherwise the named refusal
+  (`Missing permission: user.approve.`, or its view). A row with no maker counts
+  (`created_by IS DISTINCT FROM`). The platform route needs `tenant.approve` with `tenant.view` in
+  the platform organisation, never counts the platform organisation, and leaves out a tenant whose
+  requester or latest submitter is the caller whatever any switch says. The users list has no
+  `created_by` filter, so the provisioning read (`user_status=PROVISIONING_IDP`) counts every
+  inviter's requests, the caller's own included.
+- **To adopt:** done in frontend #121. Both bells read the count routes (`readPendingCounts`,
+  `readPlatformPendingCount`), settled with `load()`. The administration bell asks only a caller it
+  can show a line to (`canCountPendingApprovals`): one who approves branches tenant-wide with their
+  view, or members with `membership.view` and the tab's `user.view` tenant-wide (anyone approving
+  neither would get the 403, and the membership pair alone has no line to show). It shows one line
+  per key the platform sends, so a holder of `branch.approve` at one branch only sees no branch
+  count. It doesn't subtract the provisioning read from `memberships`:
+  that read includes the caller's own requests, which the count already left out, so a caller's own
+  provisioning request would be removed twice and the bell could read none while someone waits.
+  The user line is the lower of `memberships` and the User onboarding tab's total (pending less
+  provisioning, the two `size=1` reads the queue and the overview share), both upper bounds on what
+  the caller can decide: exact while the caller has no request of their own pending, and never
+  below what waits (`bellUserApprovals`). It needs `user.view` tenant-wide for that read, as the
+  tab does. The platform bell counts the institutions its caller could approve, so it reads "No
+  institutions are waiting for your approval." when only the caller's own wait. The queue's tab
+  counts, the overview's cards and its Onboarding item keep their list totals. The e2e fake API
+  serves both routes with the platform's gates, exclusions and key omission.
 
 ### BG-23 — Context discovery inconsistencies · P2
 

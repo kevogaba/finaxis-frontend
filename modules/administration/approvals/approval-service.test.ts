@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendApiError } from '@/auth/backend-api';
 import { REQUESTED_ROLES_CEILING } from './approval-copy';
+import { pendingCountSchema } from './approval-contract';
 
-const { listBranches, listRoleAssignments, listUsers } = vi.hoisted(() => ({
+const { apiGet, listBranches, listRoleAssignments, listUsers } = vi.hoisted(() => ({
+  apiGet: vi.fn(),
   listBranches: vi.fn(),
   listRoleAssignments: vi.fn(),
   listUsers: vi.fn(),
+}));
+vi.mock('@/lib/api/tenant-api', () => ({
+  apiGet: (...args: unknown[]) => apiGet(...args) as unknown,
 }));
 vi.mock('@/modules/administration/branches/branch-service', () => ({
   listBranches: (...args: unknown[]) => listBranches(...args) as unknown,
@@ -108,6 +113,22 @@ describe('approval service', () => {
     ).rejects.toBe(error);
     listRoleAssignments.mockRejectedValueOnce(error);
     await expect(service.listRequestedRoles(USER)).rejects.toBe(error);
+  });
+
+  // BG-22: one read of the platform's counts, through the approvals contract.
+  it('reads the pending counts from the count route', async () => {
+    apiGet.mockResolvedValue({ branches: 2 });
+    await expect(service.readPendingCounts()).resolves.toEqual({ branches: 2 });
+    expect(apiGet).toHaveBeenCalledExactlyOnceWith(
+      '/api/v1/tenant/approvals/pending-count',
+      pendingCountSchema,
+    );
+  });
+
+  it('rejects the pending counts with the read’s own error', async () => {
+    const error = new BackendApiError(403, { code: 'forbidden' });
+    apiGet.mockRejectedValue(error);
+    await expect(service.readPendingCounts()).rejects.toBe(error);
   });
 
   it('reads one bounded page of the user’s ACTIVE role assignments', async () => {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { tenantDetailSchema, tenantDraftResultSchema, tenantPageSchema } from './tenant-contract';
+import {
+  platformPendingCountSchema,
+  tenantDetailSchema,
+  tenantDraftResultSchema,
+  tenantPageSchema,
+} from './tenant-contract';
 
 const ACME = '99999999-9999-4999-8999-999999999999';
 const JANE = '55555555-5555-4555-8555-555555555555';
@@ -169,5 +174,22 @@ describe('tenant contract', () => {
     expect(tenantDraftResultSchema.parse({ organisation_id: ACME, status: 'DRAFT' })).toEqual({
       tenantId: ACME,
     });
+  });
+});
+
+// BG-22: `GET /platform/approvals/pending-count` always sends `tenants`.
+describe('platformPendingCountSchema', () => {
+  it('reads the count of institutions the caller could approve', () => {
+    expect(platformPendingCountSchema.parse({ tenants: 2 })).toBe(2);
+    expect(platformPendingCountSchema.parse({ tenants: 0 })).toBe(0);
+  });
+
+  it.each([
+    ['a missing count', {}],
+    ['a null count', { tenants: null }],
+    ['a negative count', { tenants: -1 }],
+    ['a fractional count', { tenants: 0.5 }],
+  ])('rejects %s', (_case, wire) => {
+    expect(platformPendingCountSchema.safeParse(wire).success).toBe(false);
   });
 });

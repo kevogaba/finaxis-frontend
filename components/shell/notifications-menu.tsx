@@ -59,9 +59,15 @@ export function NotificationsMenu({
             setAnchor(event.currentTarget);
           }}
         >
-          <Badge color="primary" badgeContent={total ?? 0} max={99} invisible={!total}>
+          {/* No badge without a count: a hidden MUI Badge keeps its previous number as text (for
+              its exit animation), which the button's name, after a refresh, no longer carries. */}
+          {total ? (
+            <Badge color="primary" badgeContent={total} max={99}>
+              <NotificationsOutlined />
+            </Badge>
+          ) : (
             <NotificationsOutlined />
-          </Badge>
+          )}
         </IconButton>
       </Tooltip>
       <Popover

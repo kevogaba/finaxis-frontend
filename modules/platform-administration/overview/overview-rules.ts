@@ -110,10 +110,12 @@ export const KPI = {
   },
 } as const;
 
-/** The platform badge (spec §8, BG-22). `null`: the read failed, which never reads as "none". */
+/** The platform badge (spec §8, BG-22): the institutions the caller could approve, so one they
+ * requested or submitted waits without counting ("for your approval"). `null`: the read failed,
+ * which never reads as "none". */
 export function pendingApprovalNotifications(count: number | null): NotificationsMenuProps {
   const common = {
-    emptyText: 'No institutions are waiting for approval.',
+    emptyText: 'No institutions are waiting for your approval.',
     unavailableText: "Pending approvals couldn't be loaded. Refresh to try again.",
   };
   if (count === null) {

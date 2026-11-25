@@ -1,5 +1,6 @@
 import 'server-only';
-import type { TenantStatus } from '../tenants/tenant-contract';
+import { apiGet } from '@/lib/api/tenant-api';
+import { platformPendingCountSchema, type TenantStatus } from '../tenants/tenant-contract';
 import { listTenants } from '../tenants/tenant-service';
 import { listPlatformUsers } from '../users/institution-user-service';
 
@@ -18,6 +19,12 @@ export async function countTenantsInStatus(status: TenantStatus): Promise<number
     size: 1,
   });
   return result.page.totalItems;
+}
+
+/** The bell's count (BG-22): the institutions pending approval the caller could approve, from the
+ * platform's count route. Rejects on failure, for the bell's `load()`. */
+export function readPlatformPendingCount(): Promise<number> {
+  return apiGet('/api/v1/platform/approvals/pending-count', platformPendingCountSchema);
 }
 
 /** The people who can work in the platform now: an ACTIVE account with an ACTIVE membership. */

@@ -128,7 +128,7 @@ describe('pendingApprovalNotifications', () => {
           linkLabel: 'Review pending institutions',
         },
       ],
-      emptyText: 'No institutions are waiting for approval.',
+      emptyText: 'No institutions are waiting for your approval.',
       unavailableText: "Pending approvals couldn't be loaded. Refresh to try again.",
     });
     expect(pendingApprovalNotifications(1).entries[0]?.text).toBe(

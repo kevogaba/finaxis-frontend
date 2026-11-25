@@ -434,7 +434,9 @@ Explain these codes, without echoing `detail`.
 
 - **Shell bells** read `GET /tenant/approvals/pending-count` and `GET /platform/approvals/pending-count`.
   - A key left out means the caller can't approve that kind.
-  - The tenant bell keeps its provisioning subtraction, the read that already exists.
+  - The tenant bell keeps its provisioning read. As built it caps the user line with the queue's
+    total instead of subtracting that read, which would remove a caller's own provisioning request
+    twice (see the entry's plan, `2026-11-24-bg-adopt-14-pending-counts.md`, "As built").
 - **Queue tabs** keep their list totals.
 - **Fake API:** both routes, with the platform's exclusions.
 

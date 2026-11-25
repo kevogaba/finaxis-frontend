@@ -574,15 +574,17 @@ test.describe('platform records: platform users, overview and notifications', ()
     await authenticate(context, testInfo, 'platform-records');
     await enterPlatform(page, '/platform-admin', 'Platform overview');
 
+    // Harambee and Mwangaza wait, but Jane submitted Mwangaza: the platform's count leaves out what
+    // the caller requested or submitted (BG-22), so the bell counts Harambee only.
     const bell = page.getByRole('button', {
-      name: 'Notifications: 2 institutions waiting for approval',
+      name: 'Notifications: 1 institution waiting for approval',
     });
     await expect(bell).toBeVisible();
     await expectHydrated(bell);
     await bell.click();
 
     const dialog = page.getByRole('dialog', { name: 'Notifications' });
-    await expect(dialog).toContainText('2 institutions are waiting for approval.');
+    await expect(dialog).toContainText('1 institution is waiting for approval.');
     await clickInMuiPopover(dialog.getByRole('link', { name: 'Review pending institutions' }));
 
     // The link closes the dialog (asserted first: an open modal hides the page's h1 from the
@@ -614,8 +616,9 @@ test.describe('platform records: platform users, overview and notifications', ()
         exact: true,
       }),
     ).toBeVisible();
+    // Mwangaza still waits for someone else's approval: the tile counts it, the bell doesn't.
     await expect(
-      page.getByRole('button', { name: 'Notifications: 1 institution waiting for approval' }),
+      page.getByRole('button', { name: 'Notifications: nothing waiting' }),
     ).toBeVisible();
   });
 });

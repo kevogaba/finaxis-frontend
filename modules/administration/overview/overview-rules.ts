@@ -3,6 +3,7 @@ import type { NotificationEntry } from '@/components/shell/notifications-menu';
 import { formatInstant, shortId } from '@/lib/format';
 import type { Page } from '@/lib/api/wire';
 import {
+  actionableUserApprovals,
   approvalNotifications,
   type UserApprovalCounts,
 } from '@/modules/administration/approvals/approval-notifications';
@@ -195,7 +196,12 @@ export function pendingApprovalsView(reads: PendingApprovalsReads): PendingAppro
     failures.length > 0
       ? []
       : approvalNotifications({
-          users: reads.userCounts,
+          users:
+            reads.userCounts === null
+              ? null
+              : reads.userCounts.ok
+                ? { ok: true, value: actionableUserApprovals(reads.userCounts.value) }
+                : { ok: false },
           branches:
             reads.branches === null
               ? null

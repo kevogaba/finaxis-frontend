@@ -93,7 +93,7 @@ describe('NotificationsMenu', () => {
     );
 
     const bell = screen.getByRole('button', { name: 'Notifications: nothing waiting' });
-    expect(container.querySelector('.MuiBadge-invisible')).not.toBeNull();
+    expect(container.querySelector('.MuiBadge-root')).toBeNull();
     expect(within(bell).queryByText('0')).toBeNull();
     expect(bell).not.toHaveTextContent(/\d/);
 
@@ -101,9 +101,28 @@ describe('NotificationsMenu', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Notifications' });
     expect(
-      within(dialog).getByText('No institutions are waiting for approval.'),
+      within(dialog).getByText('No institutions are waiting for your approval.'),
     ).toBeInTheDocument();
     expect(within(dialog).queryByRole('link')).toBeNull();
+  });
+
+  // A refresh after a decision re-renders the bell in place. MUI's Badge keeps its previous content
+  // while it hides (for its exit animation), so a badge left in the button would keep the old
+  // number as text its name no longer carries (axe: label-content-name-mismatch).
+  it.each([
+    ['nothing is waiting', 0, 'Notifications: nothing waiting'],
+    ["the count couldn't be loaded", null, "Notifications (couldn't be loaded)"],
+  ])('keeps no old number once %s', (_case, total, name) => {
+    const { rerender } = renderWithProviders(
+      <NotificationsMenu {...pendingApprovalNotifications(1)} />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Notifications: 1 institution waiting for approval' }),
+    ).toHaveTextContent('1');
+
+    rerender(<NotificationsMenu {...pendingApprovalNotifications(total)} />);
+
+    expect(screen.getByRole('button', { name })).not.toHaveTextContent(/\d/);
   });
 
   it("says the count couldn't be loaded, never none", async () => {
@@ -113,7 +132,7 @@ describe('NotificationsMenu', () => {
     );
 
     const bell = screen.getByRole('button', { name: "Notifications (couldn't be loaded)" });
-    expect(container.querySelector('.MuiBadge-invisible')).not.toBeNull();
+    expect(container.querySelector('.MuiBadge-root')).toBeNull();
     expect(bell).not.toHaveTextContent(/\d/);
 
     await user.click(bell);
@@ -122,7 +141,7 @@ describe('NotificationsMenu', () => {
     expect(
       within(dialog).getByText("Pending approvals couldn't be loaded. Refresh to try again."),
     ).toBeInTheDocument();
-    expect(within(dialog).queryByText('No institutions are waiting for approval.')).toBeNull();
+    expect(within(dialog).queryByText('No institutions are waiting for your approval.')).toBeNull();
     expect(within(dialog).queryByRole('link')).toBeNull();
   });
 

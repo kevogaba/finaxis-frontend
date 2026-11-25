@@ -3,11 +3,12 @@ import { getCurrentContextProfile } from '@/auth/context-service';
 import { canAll } from '@/auth/permissions';
 import { load } from '@/lib/api/load';
 import { pendingApprovalNotifications } from '@/modules/platform-administration/overview/overview-rules';
-import { countTenantsInStatus } from '@/modules/platform-administration/overview/overview-service';
+import { readPlatformPendingCount } from '@/modules/platform-administration/overview/overview-service';
 import { platformAdministrationModule } from '@/modules/platform-administration/platform-administration-module';
 import { NotificationsMenu } from './notifications-menu';
 
-/** The approver's codes: the badge counts what they can act on (Ruling 11). */
+/** The approver's codes, which the count route checks in the platform organisation: the badge
+ * counts what they can act on (Ruling 11). */
 const BADGE_CODES = ['tenant.approve', 'tenant.view'] as const;
 
 /** Exported for its test. The authenticated layout builds every workspace's slot, so this renders
@@ -17,10 +18,11 @@ export async function PendingInstitutionsNotifications() {
   if (selected.kind !== 'resolved') return null;
   if (selected.context.module.id !== platformAdministrationModule.id) return null;
   if (!canAll({ permissions: selected.profile.permissions }, BADGE_CODES)) return null;
-  // BG-22: no feed; one `size=1` read, settled with load() (rule 21): it keeps a redirect
+  // BG-22: no feed; the platform's count route (the institutions the caller could approve, never
+  // one they requested or submitted), settled with load() (rule 21): it keeps a redirect
   // propagating and sends a lost session to sign-in and a stale context to context selection; any
   // other failure reads as unknown, never as none (rule 9).
-  const read = await load(countTenantsInStatus('PENDING_APPROVAL'));
+  const read = await load(readPlatformPendingCount());
   return <NotificationsMenu {...pendingApprovalNotifications(read.ok ? read.value : null)} />;
 }
 
