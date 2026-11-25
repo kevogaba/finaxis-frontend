@@ -210,7 +210,6 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
       items: { tenant_code: string; status: string }[];
     };
     expect(Object.fromEntries(items.map((tenant) => [tenant.tenant_code, tenant.status]))).toEqual({
-      PLATFORM: 'ACTIVE',
       acme: 'ACTIVE',
       'umoja-teachers': 'DRAFT',
       'harambee-farmers': 'PENDING_APPROVAL',
@@ -219,6 +218,22 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
       'kilimo-bora': 'SUSPENDED',
       'nairobi-metro-teachers': 'REJECTED',
     });
+  });
+
+  test('leaves the platform organisation out of the list and its total unless include_platform=true (platform #283)', async ({
+    request,
+  }) => {
+    const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
+    const read = async (query: string) =>
+      (await (await request.get(api(`/platform/tenants?${query}`), { headers })).json()) as {
+        items: { id: string }[];
+        page: { total_items: number };
+      };
+    const without = await read('size=100&status=ACTIVE');
+    expect(without.items.map((tenant) => tenant.id)).not.toContain(IDS.platformOrganisation);
+    const withIt = await read('size=100&status=ACTIVE&include_platform=true');
+    expect(withIt.items.map((tenant) => tenant.id)).toContain(IDS.platformOrganisation);
+    expect(withIt.page.total_items).toBe(without.page.total_items + 1);
   });
 
   test('answers an off-list sort_by as a 500, including names every object inherits', async ({

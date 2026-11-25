@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { requireContext, requirePermission, requirePlatformContext } from '../access.mts';
+import {
+  PLATFORM_ORGANISATION_ID,
+  requireContext,
+  requirePermission,
+  requirePlatformContext,
+} from '../access.mts';
 import type { AccessContext } from '../access.mts';
 import {
   objectBody,
@@ -301,8 +306,11 @@ export const platformTenantRoutes: Route[] = [
     const country = query.get('country');
     const createdFrom = parseInstantParam(query, 'created_from');
     const createdTo = parseInstantParam(query, 'created_to');
+    // Platform #283: the reserved platform organisation is left out unless asked for.
+    const includePlatform = query.get('include_platform') === 'true';
     const tenants = context.state.organisations.filter(
       (tenant) =>
+        (includePlatform || tenant.id !== PLATFORM_ORGANISATION_ID) &&
         (!q ||
           tenant.code.toLowerCase().includes(q) ||
           tenant.displayName.toLowerCase().includes(q)) &&

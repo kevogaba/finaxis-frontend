@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TenantSummary } from '../tenants/tenant-contract';
 import {
-  activeInstitutionCount,
   attentionView,
   DRAFTS_HREF,
   KPI,
@@ -11,8 +10,6 @@ import {
   type AttentionRead,
 } from './overview-rules';
 
-const PLATFORM = '00000000-0000-0000-0000-000000000000';
-const isPlatform = (id: string) => id === PLATFORM;
 const tenant = (
   id: string,
   displayName: string,
@@ -47,19 +44,9 @@ const MWANGAZA = tenant(
 );
 const UMOJA = tenant('16000000-0000-4000-8000-000000000001', 'Umoja Teachers SACCO', 'DRAFT');
 
-describe('activeInstitutionCount', () => {
-  it.each([
-    [3, 2],
-    [1, 0],
-    [0, 0],
-  ])('subtracts the platform organisation exactly once: %i → %i', (total, expected) => {
-    expect(activeInstitutionCount(total)).toBe(expected);
-  });
-});
-
 describe('attentionView', () => {
   it('lists pending rows, then drafts, with no failure and no empty state', () => {
-    const view = attentionView(page([MWANGAZA]), page([UMOJA]), isPlatform);
+    const view = attentionView(page([MWANGAZA]), page([UMOJA]));
     expect(view.rows.map((row) => row.displayName)).toEqual([
       'Mwangaza Savings SACCO',
       'Umoja Teachers SACCO',
@@ -67,15 +54,8 @@ describe('attentionView', () => {
     expect(view).toMatchObject({ failures: [], more: [], empty: null });
   });
 
-  it('never lists the platform organisation', () => {
-    const platformRow = tenant(PLATFORM, 'Platform', 'PENDING_APPROVAL');
-    expect(attentionView(page([platformRow, MWANGAZA]), page([]), isPlatform).rows).toEqual([
-      MWANGAZA,
-    ]);
-  });
-
   it('links to the rest of each list when it holds more than the preview', () => {
-    const view = attentionView(page([MWANGAZA], 7), page([UMOJA], 6), isPlatform);
+    const view = attentionView(page([MWANGAZA], 7), page([UMOJA], 6));
     expect(view.more).toEqual([
       { href: PENDING_HREF, label: 'View all 7 institutions pending approval' },
       { href: DRAFTS_HREF, label: 'View all 6 drafts' },
@@ -83,15 +63,13 @@ describe('attentionView', () => {
   });
 
   it('names each failed read with its reference, and keeps the other half', () => {
-    const view = attentionView(failed('req-1'), page([UMOJA]), isPlatform);
+    const view = attentionView(failed('req-1'), page([UMOJA]));
     expect(view.failures).toEqual([
       "Institutions pending approval couldn't be loaded. Reference: req-1",
     ]);
     expect(view.rows).toEqual([UMOJA]);
     expect(view.empty).toBeNull();
-    expect(attentionView(page([]), failed(null), isPlatform).failures).toEqual([
-      "Drafts couldn't be loaded.",
-    ]);
+    expect(attentionView(page([]), failed(null)).failures).toEqual(["Drafts couldn't be loaded."]);
   });
 
   it.each([
@@ -115,7 +93,7 @@ describe('attentionView', () => {
   ] as const)(
     'claims only what it knows when nothing is listed (%s)',
     (_case, pending, drafts, empty) => {
-      expect(attentionView(pending, drafts, isPlatform).empty).toEqual(empty);
+      expect(attentionView(pending, drafts).empty).toEqual(empty);
     },
   );
 

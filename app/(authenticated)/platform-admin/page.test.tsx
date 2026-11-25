@@ -97,7 +97,7 @@ function page(items: TenantSummary[], totalItems = items.length): Page<TenantSum
 
 interface Reads {
   permissions?: string[];
-  /** The platform organisation is in this total (BG-29): 3 means two institutions. */
+  /** `status=ACTIVE`'s total; the platform organisation is never in it (BG-29). */
   active?: number | Error;
   suspended?: number | Error;
   pending?: Page<TenantSummary> | Error;
@@ -150,7 +150,7 @@ beforeEach(() => {
 });
 
 describe('PlatformOverviewPage', () => {
-  it('counts institutions by lifecycle, leaving out the platform organisation', async () => {
+  it('counts institutions by lifecycle, as the platform returns them', async () => {
     setup({
       active: 3,
       suspended: 1,
@@ -166,8 +166,7 @@ describe('PlatformOverviewPage', () => {
       screen.getByRole('heading', { level: 1, name: 'Platform overview' }),
     ).toBeInTheDocument();
     expect(screen.getByText(OVERVIEW_DESCRIPTION)).toBeInTheDocument();
-    // Three ACTIVE rows hold the platform organisation once: two institutions.
-    expect(tile('Active institutions').getByText('2')).toBeInTheDocument();
+    expect(tile('Active institutions').getByText('3')).toBeInTheDocument();
     expect(tile('Pending approval').getByText('2')).toBeInTheDocument();
     expect(tile('Drafts').getByText('1')).toBeInTheDocument();
     expect(tile('Suspended').getByText('1')).toBeInTheDocument();
@@ -187,12 +186,10 @@ describe('PlatformOverviewPage', () => {
     );
   });
 
-  it('lists pending approval, then drafts, oldest first, without the platform organisation', async () => {
-    // A draft read that holds the platform organisation (it never should: only ACTIVE does, BG-29),
-    // with a total that counts what is shown, so the filter alone decides the table.
+  it('lists pending approval, then drafts, oldest first', async () => {
     setup({
       pending: page([HARAMBEE, MWANGAZA]),
-      drafts: page([UMOJA, tenant(PLATFORM, 'Platform', 'DRAFT', '2026-09-07T08:00:00Z')], 1),
+      drafts: page([UMOJA]),
     });
 
     await show();
@@ -205,7 +202,6 @@ describe('PlatformOverviewPage', () => {
       'Mwangaza Savings SACCO',
       'Umoja Teachers SACCO',
     ]);
-    expect(screen.queryByRole('link', { name: 'Platform' })).toBeNull();
     expect(screen.getAllByRole('region')).toHaveLength(2);
     expect(screen.getByRole('region', { name: 'Needs attention table' })).toHaveAttribute(
       'tabindex',
@@ -251,7 +247,7 @@ describe('PlatformOverviewPage', () => {
     expect(suspended.getByText('Reference: req-9')).toBeInTheDocument();
     expect(suspended.queryByText('0')).toBeNull();
     // Only that tile degrades: the other four keep their numbers.
-    expect(tile('Active institutions').getByText('2')).toBeInTheDocument();
+    expect(tile('Active institutions').getByText('3')).toBeInTheDocument();
     expect(tile('Pending approval').getByText('2')).toBeInTheDocument();
     expect(tile('Drafts').getByText('1')).toBeInTheDocument();
     expect(tile('Platform operators').getByText('2')).toBeInTheDocument();

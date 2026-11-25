@@ -381,4 +381,6 @@ administration + `audit.view`), `BRANCH_MANAGER` (branch lifecycle, `user.assign
 `business_date.view`, `accounting_report.view`), `BRANCH_OPERATOR` (`business_date.view` + session),
 `ACCOUNTING_OPERATOR`, `ACCOUNTING_APPROVER`. Platform organisation: `PLATFORM_SUPER_ADMIN` (all 80),
 `PLATFORM_SUPPORT` (`audit.view`, `business_date.view` only — cannot enter the platform context).
-The platform organisation is `00000000-0000-0000-0000-000000000000`, code `PLATFORM`.
+The platform organisation is `00000000-0000-0000-0000-000000000000`, code `PLATFORM`. Since platform
+#283 (BG-29), `GET /platform/tenants` and its `total_items` leave it out unless
+`include_platform=true`; reading it by id is unchanged.
