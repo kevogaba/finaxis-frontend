@@ -25,7 +25,7 @@ const selfChange = () =>
     'A member cannot suspend or revoke their own membership.',
   );
 
-interface Member {
+export interface Member {
   membership: FakeMembership;
   user: FakeUser;
 }
@@ -83,6 +83,147 @@ function memberOf(context: RouteContext, access: AccessContext): Member | null {
   const user =
     membership && context.state.users.find((candidate) => candidate.id === membership.userId);
   return membership && user ? { membership, user } : null;
+}
+
+/** ActivateMembershipRequest (platform #179, BG-01), and the platform checker's SubmitBranchRequest
+ * and ActivateBranchRequest: the body is optional, and its one property is an optional decision
+ * remark of at most 500 characters (Bean Validation, on the raw text). Any other property is refused
+ * (ApiJsonCodec). Returns the body and the remark, trimmed, a blank one none
+ * (DecisionRemark.optional). */
+export async function activationRemark(
+  context: RouteContext,
+): Promise<{ body: Record<string, unknown>; remark: string | null }> {
+  const raw = await readBody(context.req);
+  const body = raw === undefined ? {} : objectBody(raw, ['reason']);
+  const reason = reasonField(body, false);
+  if (reason !== null && reason.length > 500) {
+    throw problem(400, 'validation_failed', 'Validation failed.', [
+      { field: 'reason', code: 'Size', message: 'size must be between 0 and 500' },
+    ]);
+  }
+  return { body, remark: reason === null || reason.trim() === '' ? null : reason.trim() };
+}
+
+/** `checker`: the platform checker's window (ADR 0028), which only the platform route has: its
+ * institution, and the check that runs between the maker refusals and the state check. */
+interface PlatformChecker {
+  organisationId: string;
+  requireOpen: () => void;
+}
+
+/**
+ * UserProvisioningService.approve, shared by the tenant route and the platform checker's: the
+ * maker-checker refusals, then (platform only) the window, the state, the prerequisites and the
+ * account, then the `user.approve` row. The platform checker is never relaxed by a switch.
+ */
+export function approveMembership(
+  context: RouteContext,
+  access: AccessContext,
+  target: Member | null,
+  { body, remark }: { body: Record<string, unknown>; remark: string | null },
+  checker: PlatformChecker | null,
+): void {
+  const organisationId = checker?.organisationId ?? access.organisation.id;
+  // Decided from the state before the change, so a replay answers with the stored status: a 202
+  // whenever provisioning is (re)queued, for a user with no identity link or one still
+  // provisioning.
+  const queues =
+    target?.user.identityLinked === false || target?.user.status === 'PROVISIONING_IDP';
+  const status = queues ? 202 : 200;
+  sendIdempotent(
+    context,
+    body,
+    () => {
+      if (!target) throw membershipNotFound();
+      const { membership, user } = target;
+      // Maker-checker (BG-08, MembershipCheckerRule): before the state check, inside `produce`,
+      // so the key rolls back. The inviter first, then the member themself; a stored `false`
+      // switch lets either approve, audited HIGH (ADR 0032), but never the platform checker.
+      const isMaker = membership.invitedBy === access.claims.userId;
+      const isBeneficiary = membership.userId === access.claims.userId;
+      const selfApproved =
+        checker === null &&
+        (isMaker || isBeneficiary) &&
+        !makerCheckerRequired(
+          context.state,
+          organisationId,
+          'require_maker_checker_for_user_invites',
+        );
+      if (isMaker && !selfApproved) {
+        throw problem(
+          403,
+          'lifecycle.approver_is_membership_maker',
+          "The approver cannot be the member's inviter.",
+        );
+      }
+      if (isBeneficiary && !selfApproved) {
+        throw problem(
+          403,
+          'lifecycle.approver_is_membership_beneficiary',
+          'The approver cannot be the invited user.',
+        );
+      }
+      checker?.requireOpen();
+      if (membership.status !== 'PENDING_APPROVAL') {
+        throw conflict('The request conflicts with the current resource state.');
+      }
+      const hasRole = context.state.roleAssignments.some(
+        (row) =>
+          row.userId === user.id &&
+          row.organisationId === organisationId &&
+          row.status === 'ACTIVE',
+      );
+      const hasBranch = activeAssignmentRows(context.state, user.id, organisationId).length > 0;
+      // Missing prerequisites are a 409 (contract §F, BG-07): the branch first, then the role.
+      if (NEED_A_BRANCH.includes(membership.type) && !hasBranch) {
+        throw conflict(
+          'The membership cannot be approved until the user has an active branch assignment.',
+        );
+      }
+      if (!hasRole) {
+        throw conflict(
+          'The membership cannot be approved until the user has an active role assignment.',
+        );
+      }
+      // The account's state, last (UserProvisioningService's requestKeycloakProvisioningIfNeeded,
+      // then activateMembershipIfPossible). A repeat while provisioning requeues it, another 202
+      // that changes nothing (BG-11): the membership stays PENDING_APPROVAL.
+      if (user.status !== 'PROVISIONING_IDP') {
+        if (user.identityLinked === false) {
+          // No identity yet: only a DRAFT or PENDING_APPROVAL account may be provisioned.
+          if (!['DRAFT', 'PENDING_APPROVAL'].includes(user.status)) {
+            throw conflict('The user account is not in a state that allows identity provisioning.');
+          }
+          user.status = 'PROVISIONING_IDP';
+        } else {
+          // Linked: only an ACTIVE or INVITED account's membership may be activated, so a
+          // suspended or deactivated account blocks the approval.
+          if (!['ACTIVE', 'INVITED'].includes(user.status)) {
+            throw conflict(
+              'The user account is not in a state that allows the membership to be activated.',
+            );
+          }
+          membership.status = 'ACTIVE';
+        }
+      }
+      membership.updatedAt = new Date().toISOString();
+      // The remark lands on the `user.approve` row. ponytail: the platform also stores it as the
+      // membership's status reason on a 200, which no read returns (BG-01), so the fake doesn't.
+      // A platform checker's row is written to the institution's log, marked `checkerScope`.
+      recordAuditEvent(context.state, access, {
+        entityType: 'USER',
+        entityId: user.id,
+        action: 'user.approve',
+        reason: remark,
+        organisationId,
+        // UserProvisioningService.selfApprovalMetadata: a relaxed approval is HIGH and says so.
+        ...(selfApproved && { severity: 'HIGH', metadata: { selfApproved: 'true' } }),
+        ...(checker && { metadata: { checkerScope: 'PLATFORM' } }),
+      });
+      return detailWire(access, target);
+    },
+    status,
+  );
 }
 
 /** Suspend, reactivate and revoke: permission (and the BG-31 read-back) before any state check;
@@ -155,118 +296,8 @@ export const membershipRoutes: Route[] = [
   route('POST', '/api/v1/tenant/memberships/:membership_id/activate', async (context) => {
     const access = tenantAccess(context);
     requirePermission(access, 'user.approve');
-    const raw = await readBody(context.req);
-    // ActivateMembershipRequest (platform #179, BG-01): the body is optional, and its one property
-    // is an optional decision remark of at most 500 characters (Bean Validation, on the raw text).
-    // Any other property is refused (ApiJsonCodec).
-    const body = raw === undefined ? {} : objectBody(raw, ['reason']);
-    const reason = reasonField(body, false);
-    if (reason !== null && reason.length > 500) {
-      throw problem(400, 'validation_failed', 'Validation failed.', [
-        { field: 'reason', code: 'Size', message: 'size must be between 0 and 500' },
-      ]);
-    }
-    // DecisionRemark.optional: trimmed, and a blank one is none.
-    const remark = reason === null || reason.trim() === '' ? null : reason.trim();
-    const target = memberOf(context, access);
-    // Decided from the state before the change, so a replay answers with the stored status: a 202
-    // whenever provisioning is (re)queued, for a user with no identity link or one still
-    // provisioning.
-    const queues =
-      target?.user.identityLinked === false || target?.user.status === 'PROVISIONING_IDP';
-    const status = queues ? 202 : 200;
-    sendIdempotent(
-      context,
-      body,
-      () => {
-        if (!target) throw membershipNotFound();
-        const { membership, user } = target;
-        // Maker-checker (BG-08, MembershipCheckerRule): before the state check, inside `produce`,
-        // so the key rolls back. The inviter first, then the member themself; a stored `false`
-        // switch lets either approve, audited HIGH (ADR 0032).
-        const isMaker = membership.invitedBy === access.claims.userId;
-        const isBeneficiary = membership.userId === access.claims.userId;
-        const selfApproved =
-          (isMaker || isBeneficiary) &&
-          !makerCheckerRequired(
-            context.state,
-            access.organisation.id,
-            'require_maker_checker_for_user_invites',
-          );
-        if (isMaker && !selfApproved) {
-          throw problem(
-            403,
-            'lifecycle.approver_is_membership_maker',
-            "The approver cannot be the member's inviter.",
-          );
-        }
-        if (isBeneficiary && !selfApproved) {
-          throw problem(
-            403,
-            'lifecycle.approver_is_membership_beneficiary',
-            'The approver cannot be the invited user.',
-          );
-        }
-        if (membership.status !== 'PENDING_APPROVAL') {
-          throw conflict('The request conflicts with the current resource state.');
-        }
-        const organisationId = access.organisation.id;
-        const hasRole = context.state.roleAssignments.some(
-          (row) =>
-            row.userId === user.id &&
-            row.organisationId === organisationId &&
-            row.status === 'ACTIVE',
-        );
-        const hasBranch = activeAssignmentRows(context.state, user.id, organisationId).length > 0;
-        // Missing prerequisites are a 409 (contract §F, BG-07): the branch first, then the role.
-        if (NEED_A_BRANCH.includes(membership.type) && !hasBranch) {
-          throw conflict(
-            'The membership cannot be approved until the user has an active branch assignment.',
-          );
-        }
-        if (!hasRole) {
-          throw conflict(
-            'The membership cannot be approved until the user has an active role assignment.',
-          );
-        }
-        // The account's state, last (UserProvisioningService's requestKeycloakProvisioningIfNeeded,
-        // then activateMembershipIfPossible). A repeat while provisioning requeues it, another 202
-        // that changes nothing (BG-11): the membership stays PENDING_APPROVAL.
-        if (user.status !== 'PROVISIONING_IDP') {
-          if (user.identityLinked === false) {
-            // No identity yet: only a DRAFT or PENDING_APPROVAL account may be provisioned.
-            if (!['DRAFT', 'PENDING_APPROVAL'].includes(user.status)) {
-              throw conflict(
-                'The user account is not in a state that allows identity provisioning.',
-              );
-            }
-            user.status = 'PROVISIONING_IDP';
-          } else {
-            // Linked: only an ACTIVE or INVITED account's membership may be activated, so a
-            // suspended or deactivated account blocks the approval.
-            if (!['ACTIVE', 'INVITED'].includes(user.status)) {
-              throw conflict(
-                'The user account is not in a state that allows the membership to be activated.',
-              );
-            }
-            membership.status = 'ACTIVE';
-          }
-        }
-        membership.updatedAt = new Date().toISOString();
-        // The remark lands on the `user.approve` row. ponytail: the platform also stores it as the
-        // membership's status reason on a 200, which no read returns (BG-01), so the fake doesn't.
-        recordAuditEvent(context.state, access, {
-          entityType: 'USER',
-          entityId: user.id,
-          action: 'user.approve',
-          reason: remark,
-          // UserProvisioningService.selfApprovalMetadata: a relaxed approval is HIGH and says so.
-          ...(selfApproved && { severity: 'HIGH', metadata: { selfApproved: 'true' } }),
-        });
-        return detailWire(access, target);
-      },
-      status,
-    );
+    const request = await activationRemark(context);
+    approveMembership(context, access, memberOf(context, access), request, null);
   }),
 
   transition('suspend', 'membership.suspend', true, (access, { membership, user }, reason) => {

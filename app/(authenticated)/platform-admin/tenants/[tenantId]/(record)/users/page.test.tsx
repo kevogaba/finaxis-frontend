@@ -8,11 +8,14 @@ import { renderWithProviders } from '@/test/test-utils';
 const T = '17000000-0000-4000-8000-0000000000ac';
 const U = '17000000-0000-4000-8000-0000000000a7';
 
-const { getTenant, listInstitutionUsers, redirect } = vi.hoisted(() => ({
-  getTenant: vi.fn(),
-  listInstitutionUsers: vi.fn(),
-  redirect: vi.fn(),
-}));
+const { getCurrentContextProfile, getTenant, listInstitutionUsers, readActiveMembers, redirect } =
+  vi.hoisted(() => ({
+    getCurrentContextProfile: vi.fn(),
+    getTenant: vi.fn(),
+    listInstitutionUsers: vi.fn(),
+    readActiveMembers: vi.fn(),
+    redirect: vi.fn(),
+  }));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('next/navigation', async (importOriginal) => ({
@@ -30,6 +33,15 @@ vi.mock('next/navigation', async (importOriginal) => ({
 vi.mock('@/config/env.server', () => ({
   serverEnv: { PLATFORM_ORGANISATION_ID: '00000000-0000-0000-0000-000000000000' },
 }));
+vi.mock('@/auth/context-service', () => ({
+  getCurrentContextProfile: (...args: unknown[]) => getCurrentContextProfile(...args) as unknown,
+}));
+vi.mock('@/modules/platform-administration/checker/checker-service', () => ({
+  readActiveMembers: (...args: unknown[]) => readActiveMembers(...args) as unknown,
+}));
+vi.mock('@/modules/platform-administration/checker/checker-actions', () => ({
+  approveAsPlatformChecker: vi.fn(),
+}));
 vi.mock('@/modules/platform-administration/tenants/tenant-service', () => ({
   getTenant: (...args: unknown[]) => getTenant(...args) as unknown,
 }));
@@ -39,6 +51,10 @@ vi.mock('@/modules/platform-administration/users/institution-user-service', () =
 
 const { default: UsersTab } = await import('./page');
 
+const ME = '17000000-0000-4000-8000-0000000000ae';
+const ADMIN = { id: '17000000-0000-4000-8000-0000000000a1', displayName: 'Achieng Odera' };
+const CHECKER_CODES = ['user.view', 'user.approve', 'membership.view'];
+
 const ESI = {
   id: U,
   username: 'esi.mensah',
@@ -46,6 +62,20 @@ const ESI = {
   displayName: 'Esi Mensah',
   userStatus: 'ACTIVE',
   membershipStatus: 'ACTIVE',
+  membershipId: '17000000-0000-4000-8000-0000000000c7',
+  createdBy: null as { id: string; displayName: string } | null,
+};
+/** Pending, invited by the first administrator: the platform checker may approve him. */
+const OTIENO = {
+  ...ESI,
+  id: '17000000-0000-4000-8000-0000000000a2',
+  username: 'otieno.ouma',
+  email: 'otieno@acme.example',
+  displayName: 'Otieno Ouma',
+  userStatus: 'INVITED',
+  membershipStatus: 'PENDING_APPROVAL',
+  membershipId: '17000000-0000-4000-8000-0000000000c2',
+  createdBy: ADMIN,
 };
 
 function userPage(items: readonly (typeof ESI)[], number = 0, totalPages = 1) {
@@ -63,14 +93,29 @@ function userPage(items: readonly (typeof ESI)[], number = 0, totalPages = 1) {
 }
 
 interface Setup {
+  permissions?: string[];
+  status?: string;
   /** What the tenant read rejects with, when it fails. */
   tenant?: Error;
   /** What the list read settles with: a page, or an Error that rejects it. */
   list?: ReturnType<typeof userPage> | Error;
+  /** What the checker window's read settles with (ACTIVE members, `size=1`). */
+  active?: ReturnType<typeof userPage> | Error;
 }
 
 /** Programs every read the tab makes. A test names only what it varies. */
-function setup({ tenant, list = userPage([ESI]) }: Setup = {}) {
+function setup({
+  permissions = ['user.view'],
+  status = 'ACTIVE',
+  tenant,
+  list = userPage([ESI]),
+  active = userPage([ESI]),
+}: Setup = {}) {
+  getCurrentContextProfile.mockResolvedValue({
+    kind: 'resolved',
+    profile: { user_id: ME, permissions },
+    context: { organization: { id: '00000000-0000-0000-0000-000000000000', name: 'Platform' } },
+  });
   if (tenant) getTenant.mockRejectedValue(tenant);
   else {
     getTenant.mockResolvedValue({
@@ -78,11 +123,13 @@ function setup({ tenant, list = userPage([ESI]) }: Setup = {}) {
       tenantCode: 'acme',
       displayName: 'Acme SACCO',
       countryCode: 'KE',
-      status: 'ACTIVE',
+      status,
     });
   }
   if (list instanceof Error) listInstitutionUsers.mockRejectedValue(list);
   else listInstitutionUsers.mockResolvedValue(list);
+  if (active instanceof Error) readActiveMembers.mockRejectedValue(active);
+  else readActiveMembers.mockResolvedValue(active);
 }
 
 async function show(
@@ -187,6 +234,84 @@ describe('UsersTab: the list', () => {
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Users table' })).toBeNull();
     expect(screen.queryByText('No users')).toBeNull();
+  });
+});
+
+describe('UsersTab: the platform checker (BG-02)', () => {
+  const approve = (name: string) => screen.queryByRole('button', { name: `Approve ${name}` });
+
+  it('says the window is open, and offers Approve on a pending member only', async () => {
+    setup({ permissions: CHECKER_CODES, list: userPage([OTIENO, ESI]) });
+
+    await show();
+
+    expect(within(section()).getByRole('note')).toHaveTextContent(
+      'Platform checking is open: Acme SACCO has no active member besides its first administrator, so a platform administrator can approve its first members.',
+    );
+    expect(approve('Otieno Ouma')).toBeEnabled();
+    expect(approve('Esi Mensah')).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeVisible();
+    expect(readActiveMembers).toHaveBeenCalledWith(T);
+  });
+
+  it("disables Approve for the member's inviter, with the caption", async () => {
+    setup({
+      permissions: CHECKER_CODES,
+      list: userPage([{ ...OTIENO, createdBy: { id: ME, displayName: 'Jane' } }]),
+    });
+
+    await show();
+
+    expect(approve('Otieno Ouma')).toBeDisabled();
+    expect(approve('Otieno Ouma')).toHaveAccessibleDescription(
+      'You invited this user, so another administrator must approve them.',
+    );
+  });
+
+  it('offers nothing once the institution has a second active member, and says it decides', async () => {
+    setup({
+      permissions: CHECKER_CODES,
+      list: userPage([OTIENO, ESI]),
+      active: {
+        ...userPage([{ ...ESI, createdBy: ADMIN }]),
+        page: { ...userPage([]).page, totalItems: 2 },
+      },
+    });
+
+    await show();
+
+    expect(within(section()).getByRole('note')).toHaveTextContent(
+      'Acme SACCO now approves its own members.',
+    );
+    expect(approve('Otieno Ouma')).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Actions' })).toBeNull();
+  });
+
+  it("offers Approve with no note when the window can't be read: the platform's 409 explains", async () => {
+    setup({
+      permissions: CHECKER_CODES,
+      list: userPage([OTIENO]),
+      active: new BackendApiError(503, { requestId: 'req-w' }),
+    });
+
+    await show();
+
+    expect(within(section()).queryByRole('note')).toBeNull();
+    expect(approve('Otieno Ouma')).toBeEnabled();
+  });
+
+  it.each([
+    ['without user.approve', ['user.view', 'membership.view'], 'ACTIVE'],
+    ['without membership.view', ['user.view', 'user.approve'], 'ACTIVE'],
+    ['for an institution that is not ACTIVE', CHECKER_CODES, 'SUSPENDED'],
+  ])('neither reads the window nor offers Approve %s', async (_label, permissions, status) => {
+    setup({ permissions, status, list: userPage([OTIENO]) });
+
+    await show();
+
+    expect(readActiveMembers).not.toHaveBeenCalled();
+    expect(within(section()).queryByRole('note')).toBeNull();
+    expect(approve('Otieno Ouma')).toBeNull();
   });
 });
 

@@ -9,7 +9,7 @@ describe('ProvisioningTimeline', () => {
     renderWithProviders(
       <ProvisioningTimeline
         steps={provisioningTimeline('ACTIVE', 'FAILED') ?? []}
-        failureCode="KEYCLOAK_UNAVAILABLE"
+        failureCode="IDENTITY_PROVIDER_FAILED"
       />,
     );
 
@@ -21,18 +21,18 @@ describe('ProvisioningTimeline', () => {
     expect(steps[0]).toHaveTextContent('Done');
     expect(steps[3]).toHaveTextContent('4. First administrator provisioned');
     expect(steps[3]).toHaveTextContent('Failed');
-    expect(screen.getByText('KEYCLOAK_UNAVAILABLE')).toBeInTheDocument();
+    expect(screen.getByText('IDENTITY_PROVIDER_FAILED')).toBeInTheDocument();
   });
 
   it('explains the failure code in words', () => {
     renderWithProviders(
       <ProvisioningTimeline
         steps={provisioningTimeline('ACTIVE', 'FAILED') ?? []}
-        failureCode="KEYCLOAK_UNAVAILABLE"
+        failureCode="IDENTITY_PROVIDER_FAILED"
       />,
     );
 
     expect(screen.getByText(FAILURE_CODE_NOTE)).toBeInTheDocument();
-    expect(screen.getByText('KEYCLOAK_UNAVAILABLE')).toBeInTheDocument();
+    expect(screen.getByText('IDENTITY_PROVIDER_FAILED')).toBeInTheDocument();
   });
 });

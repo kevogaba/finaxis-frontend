@@ -7,7 +7,6 @@ import { UUID_PATTERN } from '@/lib/api/wire';
 import {
   BRANCH_CREATE_INACTIVE,
   branchCreateDescription,
-  branchCreateWarning,
   PARENTS_PARTIAL,
   PARENTS_UNAVAILABLE,
 } from '@/modules/platform-administration/branches/institution-branch-rules';
@@ -123,7 +122,7 @@ beforeEach(() => {
 });
 
 describe('NewInstitutionBranchPage: the form', () => {
-  it('shows the form with the BG-18 warning for an active institution', async () => {
+  it('shows the form for an active institution, with no membership warning (BG-18)', async () => {
     const user = userEvent.setup();
     setup();
 
@@ -131,7 +130,8 @@ describe('NewInstitutionBranchPage: the form', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Create branch draft' })).toBeVisible();
     expect(screen.getByText(branchCreateDescription('Acme SACCO'))).toBeVisible();
-    expect(screen.getByRole('note')).toHaveTextContent(branchCreateWarning('Acme SACCO'));
+    // Platform #153: no membership inside the institution is needed, so nothing warns of one.
+    expect(screen.queryByRole('note')).toBeNull();
     expect(screen.getByRole('combobox', { name: 'Timezone' })).toHaveValue('Africa/Nairobi');
     expect(parentBranch()).toHaveAccessibleDescription('Optional.');
     await user.click(parentBranch());
@@ -217,8 +217,17 @@ describe('NewInstitutionBranchPage: refusals', () => {
     expect(getInstitutionBranchIndex).not.toHaveBeenCalled();
   });
 
-  it.each(TENANT_STATUSES.filter((status) => status !== 'ACTIVE'))(
-    "refuses an institution that isn't active (%s)",
+  it('shows the form for an institution still being provisioned (BG-18)', async () => {
+    setup({ status: 'PROVISIONING' });
+
+    await show();
+
+    expect(screen.getByRole('textbox', { name: 'Branch code' })).toBeVisible();
+    expect(screen.queryByText(BRANCH_CREATE_INACTIVE.title)).toBeNull();
+  });
+
+  it.each(TENANT_STATUSES.filter((status) => status !== 'ACTIVE' && status !== 'PROVISIONING'))(
+    "refuses an institution that isn't active or provisioning (%s)",
     async (status) => {
       setup({ status });
 

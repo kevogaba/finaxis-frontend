@@ -20,7 +20,7 @@ const NOT_PERMITTED = "Can't be checked with your permissions.";
 const NOTHING_WAITING = 'Nothing is waiting for your approval.';
 const PROVISIONING = '1 identity is still being provisioned: approval already ran.';
 const ONE_MEMBER =
-  'Only 1 member is active. Approvals need at least two, so someone other than the requester can decide (maker-checker).';
+  'Only 1 member is active. Someone other than the requester must decide each approval (maker-checker): until a second member is active, a platform administrator can approve the first members.';
 const ACTIVE = 'The institution is active.';
 const READINESS_NOTE =
   "Each item is computed from live data. An item your role can't read says so.";

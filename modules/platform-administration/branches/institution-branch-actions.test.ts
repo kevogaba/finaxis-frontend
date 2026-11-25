@@ -1,11 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
 import type * as ActionResultModule from '@/lib/api/action-result';
-import {
-  BRANCH_CODE_MAY_BE_TAKEN,
-  BRANCH_CREATE_CONFLICT,
-  BRANCH_CREATE_REFUSED,
-} from './institution-branch-rules';
+import { BRANCH_CODE_MAY_BE_TAKEN, BRANCH_CREATE_CONFLICT } from './institution-branch-rules';
 
 const { apiPost, getAuthenticatedUser, getCurrentContextProfile, runServerAction } = vi.hoisted(
   () => ({
@@ -194,12 +190,11 @@ describe('institution branch actions', () => {
     expect(apiPost).not.toHaveBeenCalled();
   });
 
-  it('explains the BG-18 refusal', async () => {
+  it('leaves a 403 to its status: no membership inside the institution is needed (BG-18)', async () => {
     runServerAction.mockResolvedValueOnce(failure('forbidden'));
-    expect(await actions.createInstitutionBranchDraft(null, form({}))).toEqual({
-      ...failure('forbidden'),
-      formError: BRANCH_CREATE_REFUSED,
-    });
+    expect(await actions.createInstitutionBranchDraft(null, form({}))).toEqual(
+      failure('forbidden'),
+    );
   });
 
   it('explains a 409 with the code field', async () => {

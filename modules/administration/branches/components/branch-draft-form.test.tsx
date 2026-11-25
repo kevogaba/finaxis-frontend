@@ -30,7 +30,7 @@ const CONFLICT = {
 };
 const FORBIDDEN = {
   ok: false,
-  formError: "The platform can't create a branch in an institution you aren't a member of.",
+  formError: "You don't have permission for this in your current context.",
   fieldErrors: {},
   code: 'forbidden',
   requestId: 'req-9',
@@ -365,7 +365,7 @@ describe('BranchDraftForm', () => {
       return form;
     }
 
-    it('puts focus back on Create draft when the failure names no field (BG-18)', async () => {
+    it('puts focus back on Create draft when the failure names no field (a 403)', async () => {
       const { create } = await submitThenSettle(FORBIDDEN);
 
       expect(await screen.findByRole('alert')).toHaveTextContent('req-9');

@@ -12,11 +12,7 @@ import {
 import { branchDraftSchema } from '@/modules/administration/branches/branch-rules';
 import { isInstitutionId } from '../tenants/institution-id';
 import { institutionBranchesHref } from './institution-branch-query';
-import {
-  BRANCH_CODE_MAY_BE_TAKEN,
-  BRANCH_CREATE_CONFLICT,
-  BRANCH_CREATE_REFUSED,
-} from './institution-branch-rules';
+import { BRANCH_CODE_MAY_BE_TAKEN, BRANCH_CREATE_CONFLICT } from './institution-branch-rules';
 
 const idempotencyKey = z.uuid();
 /** BG-29: never the reserved platform organisation, in any letter case. */
@@ -52,12 +48,9 @@ export async function createInstitutionBranchDraft(
       redirect(`${institutionBranchesHref(institution)}/${draft.branchId.toLowerCase()}`);
     },
   );
-  // BG-18: a 403 here is almost always the missing membership inside the institution (the button
-  // needs the platform code). 409: a duplicate code or an institution that can't take branches.
-  return explain(
-    explain(result, 'forbidden', BRANCH_CREATE_REFUSED),
-    'conflict',
-    BRANCH_CREATE_CONFLICT,
-    { branchCode: BRANCH_CODE_MAY_BE_TAKEN },
-  );
+  // 409: a duplicate code or an institution that can't take branches. A 403 is a missing platform
+  // permission, explained by its status: no membership inside the institution is needed (BG-18).
+  return explain(result, 'conflict', BRANCH_CREATE_CONFLICT, {
+    branchCode: BRANCH_CODE_MAY_BE_TAKEN,
+  });
 }
