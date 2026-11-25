@@ -126,14 +126,14 @@ spec's §8 entry. They are committed with that entry.
 | 17  | `bg-adopt/17-invitation`         | JIT                            | M3        |
 | 18  | `bg-adopt/18-reinvite`           | JIT                            | M3        |
 | 19  | `bg-adopt/19-membership-edit`    | JIT                            | M3        |
-| 20  | `bg-adopt/20-count-columns`      | JIT                            | M4        |
-| 21  | `bg-adopt/21-platform-users`     | JIT                            | M4        |
-| 22  | `bg-adopt/22-platform-settings`  | JIT                            | M4        |
-| 23  | `bg-adopt/23-audit-filters`      | JIT                            | M5        |
-| 24  | `bg-adopt/24-audit-export`       | JIT                            | M5        |
-| 25  | `bg-adopt/25-platform-audit`     | JIT                            | M5        |
-| 26  | `bg-adopt/26-cob-readiness`      | JIT                            | M5        |
-| 27  | `bg-adopt/27-tenant-search`      | JIT                            | M5        |
+| 20  | `bg-adopt/20-count-columns`      | drafted, see Status            | M4        |
+| 21  | `bg-adopt/21-platform-users`     | drafted, see Status            | M4        |
+| 22  | `bg-adopt/22-platform-settings`  | drafted, see Status            | M4        |
+| 23  | `bg-adopt/23-audit-filters`      | drafted, see Status            | M5        |
+| 24  | `bg-adopt/24-audit-export`       | drafted, see Status            | M5        |
+| 25  | `bg-adopt/25-platform-audit`     | drafted, see Status            | M5        |
+| 26  | `bg-adopt/26-cob-readiness`      | drafted, see Status            | M5        |
+| 27  | `bg-adopt/27-tenant-search`      | drafted, see Status            | M5        |
 
 ## Execution protocol (every entry)
 
@@ -178,3 +178,73 @@ playwright.local.config.ts`.
    - Resolve conflicts in the branch that owns the code. Run `pnpm check` and the full e2e suite on
      the top branch; CI checks each branch on push.
    - Push every rebased branch with `--force-with-lease`.
+
+## Status and handoff (2026-11-25)
+
+The owner paused the adoption after M3. M4 and M5 resume later from this section.
+
+### Where the stack stands
+
+| Entries | PRs                    | State                                    |
+| ------- | ---------------------- | ---------------------------------------- |
+| 00–07   | #105, #107–#113        | M0–M1 open, reviewed, green              |
+| 08–15   | #114, #116–#122        | M2 open, reviewed, green                 |
+| 16–19   | #123, #124, #125, #126 | M3 open, reviewed, green                 |
+| 20–27   | —                      | M4–M5 not started; plans drafted (below) |
+
+- **Base:** every entry sits on `main` `241888b`, one commit each.
+- **Merging:** nothing is merged. Merging is the owner's, bottom-up.
+- **Register:** after entry 19 the register reads 7 backend fixed · 2 partly fixed · 0 open · 8
+  adopted · 18 closed (35). BG-17 stays Partly fixed until entry 21, its platform-users part.
+
+### The M4–M5 plans
+
+This change (#127) commits the drafts for entries 20–27 beside the others:
+
+- `2026-11-24-bg-adopt-20-count-columns.md` … `2026-11-24-bg-adopt-27-tenant-search.md`.
+- They were written on 2026-11-24 against platform `6a8ea28`, **before** M2–M3 landed. Read each one
+  against the code as it now stands, and record differences as "**As built:**", as entries 08–19
+  did.
+- The changes most likely to affect them:
+  - **The branch gate.** `canActOnBranch` and `canActAtBranch` apply the platform's two checks.
+    Target-aware reads use `canAnywhere`.
+  - **The membership read.** `membership.view` is read tenant-wide only (`canTenantWide`).
+  - **Paging.** The user record's paging is the platform's, and the named list exceptions in
+    `AGENTS.md` were rewritten.
+  - **Makers.** Every record carries `created_by` / `submitted_by`, through `actorRefSchema` and
+    `makerLabel`.
+
+### Open follow-ups (small; fold into the entry that next touches the code)
+
+- **Entry 09's commit message** doesn't name its last three fixes: the New branch gate, the scope
+  helper copy and the Branches navigation item. PR #116's description does. Update it at the next
+  amend of 09.
+- **Two target-aware reads still use `can`.** The approval page's requested branches
+  (`listRequestedBranches`) and the `role_assignment.view` reads (the Overview role count, the Roles
+  & access tab) are target-aware on the platform. A branch-scoped holder at All branches doesn't see
+  them. Gate them with `canAnywhere`.
+- **Re-invited members missing from counts.** A re-invited member whose account was never
+  provisioned is left out of the pending counts (entry 18, "option C"). The platform's list and
+  count reads carry no invitation. This is recorded under BG-28 "Still open".
+
+### Resuming
+
+1. Fetch and rebase the stack onto the latest `main` (protocol step 7). Rebase onto whatever the
+   owner has merged.
+2. Bootstrap the container (protocol step 0).
+3. Start entry 20 from `bg-adopt/19-membership-edit`, or from what replaced it.
+4. Follow the protocol.
+
+**What helped during M2–M3:**
+
+- **Parallel worktrees.**
+  - Two worktrees ran in parallel: the main checkout, plus `git worktree add ../fx-push`.
+  - Each used its own e2e ports. Set them with `PORT=3200 FAKE_API_PORT=3299` in the worktree that
+    isn't the main checkout. Each worktree also needs its own untracked `playwright.local.config.ts`
+    and `.env.local`.
+  - This lets the next entry build while the previous one is reviewed. Rebase it onto the reviewed
+    entry before its final gates.
+- **An independent, git-only reviewer** per entry, given the platform paths to check. Fold its
+  findings into the one commit before pushing.
+- **The PR number.** Fill it in place of the `#PRNN` placeholder with one amend before the first
+  push, when the next number is certain. Otherwise create the PR, then amend and push again.
