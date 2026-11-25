@@ -146,6 +146,28 @@ describe('ConfirmDialog', () => {
     );
   });
 
+  it('offers only Cancel while the confirm is disabled (a precondition the children explain)', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    const action = vi.fn(() => Promise.resolve<FullResult>({ ok: true }));
+    renderWithProviders(
+      <ConfirmDialog
+        open
+        title="Archive Teller?"
+        description="Archiving is final."
+        confirmLabel="Archive"
+        confirmDisabled
+        action={action}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    // Pressing it anyway submits nothing.
+    await user.click(screen.getByRole('button', { name: 'Archive' }));
+    expect(action).not.toHaveBeenCalled();
+  });
+
   it('marks a destructive confirmation as an alert dialog', () => {
     setup(() => Promise.resolve<FullResult>({ ok: true }), 'error');
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();

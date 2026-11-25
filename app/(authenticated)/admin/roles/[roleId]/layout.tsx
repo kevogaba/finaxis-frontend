@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { notFound } from 'next/navigation';
+import Alert from '@mui/material/Alert';
 import Paper from '@mui/material/Paper';
 import VerifiedUserOutlined from '@mui/icons-material/VerifiedUserOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can, permissionHolder } from '@/auth/permissions';
+import { can, canTenantWide, permissionHolder } from '@/auth/permissions';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { RecordHero } from '@/components/data-display/record-hero';
@@ -14,12 +15,18 @@ import { PageHeader } from '@/components/shell/page-header';
 import { load } from '@/lib/api/load';
 import { UUID_PATTERN } from '@/lib/api/wire';
 import {
+  ARCHIVED_ROLE_NOTE,
+  canArchiveRole,
   canEditRole,
   HELD_ROLE,
   roleStatusAction,
   roleTypeLabel,
 } from '@/modules/administration/roles/role-rules';
-import { getRole, holdsRole } from '@/modules/administration/roles/role-service';
+import {
+  countActiveRoleAssignments,
+  getRole,
+  holdsRole,
+} from '@/modules/administration/roles/role-service';
 import { RoleLifecycleActions } from '@/modules/administration/roles/components/role-lifecycle-actions';
 
 export const metadata: Metadata = { title: 'Role record' };
@@ -73,6 +80,14 @@ export default async function RoleRecordLayout({ children, params }: RoleRecordL
   // Offered to your codes but refused because you hold it: shown disabled with the reason.
   const blocked = offered !== null && roleStatusAction(record, holder, heldByMe) === null;
   const editable = canEditRole(record, holder);
+  const archivable = canArchiveRole(record, holder);
+  // Archive is refused while an ACTIVE assignment remains. A branch-scoped role_assignment.view
+  // reads only its branches' rows, so only a tenant-wide one gives the whole count; the Overview
+  // shares this cached read.
+  const activeAssignments =
+    archivable && canTenantWide(holder, 'role_assignment.view')
+      ? await countActiveRoleAssignments(roleId)
+      : null;
   const base = `/admin/roles/${roleId}`;
 
   return (
@@ -87,12 +102,13 @@ export default async function RoleRecordLayout({ children, params }: RoleRecordL
         actions={
           // Undefined, not an empty component: RecordHero (frozen kit) renders its actions box
           // whenever this is truthy, which would leave an empty band at 375 px (08's layout).
-          editable || offered ? (
+          editable || offered || archivable ? (
             <RoleLifecycleActions
               roleId={roleId}
               roleName={record.roleName}
               editHref={editable ? `${base}/edit` : undefined}
               action={offered}
+              archive={archivable ? { roleCode: record.roleCode, activeAssignments } : undefined}
               blocked={blocked ? HELD_ROLE : undefined}
               heldByMe={heldByMe}
               contextOrganisationId={resolved?.context.organization.id}
@@ -100,6 +116,11 @@ export default async function RoleRecordLayout({ children, params }: RoleRecordL
           ) : undefined
         }
       />
+      {record.status === 'ARCHIVED' && (
+        <Alert severity="info" role="note" sx={{ mt: 3.5 }}>
+          {ARCHIVED_ROLE_NOTE}
+        </Alert>
+      )}
       <RecordTabs
         label={`${record.roleName} sections`}
         tabs={[

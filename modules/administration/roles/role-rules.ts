@@ -22,6 +22,12 @@ export function roleTypeLabel(systemRole: boolean): string {
 export const SYSTEM_ROLE_NOTE =
   "System roles come from the platform: their name, status and permissions can't be changed. You can still assign them.";
 
+export const ARCHIVED_ROLE_NOTE =
+  "This role is archived. It's kept for history and can't be changed.";
+
+/** A system role is fixed and an archived one final: either change is a 409 (ADR 0035). */
+const changeable = (role: RoleShape) => !role.systemRole && role.status !== 'ARCHIVED';
+
 export type RoleLifecycleAction = 'activate' | 'deactivate';
 
 /** RoleManagementService checks each role mutation, and the `role.view` it implies (ADR 0030),
@@ -37,8 +43,8 @@ export const HELD_ROLE =
   'You hold this role, so adding to it or re-enabling it needs a tenant administrator.';
 
 /** The one status toggle on offer — custom roles only, since a system role answers 409 (contract
- * §E.3). Activate and deactivate work from any state, so an ARCHIVED role offers Activate.
- * `heldByMe`: re-enabling a role you hold adds to your own access (#342). */
+ * §E.3). The role FSM (ADR 0035) deactivates only from ACTIVE and activates only from DISABLED;
+ * ARCHIVED is final. `heldByMe`: re-enabling a role you hold adds to your own access (#342). */
 export function roleStatusAction(
   role: RoleShape,
   holder: PermissionHolder,
@@ -48,13 +54,19 @@ export function roleStatusAction(
   if (role.status === 'ACTIVE') {
     return holdsRoleMutation(holder, 'role.deactivate') ? 'deactivate' : null;
   }
+  if (role.status !== 'DISABLED') return null;
   return holdsRoleMutation(holder, 'role.activate') && !ownAccessBlocked(heldByMe, holder)
     ? 'activate'
     : null;
 }
 
+/** ACTIVE or DISABLED custom roles; refused with 409 while the role has an ACTIVE assignment. */
+export function canArchiveRole(role: RoleShape, holder: PermissionHolder): boolean {
+  return changeable(role) && holdsRoleMutation(holder, 'role.archive');
+}
+
 export function canEditRole(role: RoleShape, holder: PermissionHolder): boolean {
-  return !role.systemRole && holdsRoleMutation(holder, 'role.update');
+  return changeable(role) && holdsRoleMutation(holder, 'role.update');
 }
 
 /** The drawer browses the catalogue, so granting also needs `permission.view`, which the catalogue
@@ -65,14 +77,14 @@ export function canGrantPermissions(
   heldByMe: boolean,
 ): boolean {
   return (
-    !role.systemRole &&
+    changeable(role) &&
     canAllTenantWide(holder, [...withViews(['role.assign_permission']), 'permission.view']) &&
     !ownAccessBlocked(heldByMe, holder)
   );
 }
 
 export function canRemovePermissions(role: RoleShape, holder: PermissionHolder): boolean {
-  return !role.systemRole && holdsRoleMutation(holder, 'role.remove_permission');
+  return changeable(role) && holdsRoleMutation(holder, 'role.remove_permission');
 }
 
 /** Only an ACTIVE role: a DISABLED one grants nothing (BG-27). The write needs its views (ADR
@@ -135,12 +147,13 @@ export function isAssignmentRevocable(
   );
 }
 
-/** The Assignments card's description. An assigner looking at an inactive role is told why Assign
- * is missing (Ruling 10: a DISABLED role grants nothing). */
+/** The Assignments card's description. An assigner looking at a DISABLED role is told why Assign
+ * is missing (Ruling 10: it grants nothing); everyone is told an ARCHIVED one is final. */
 export function assignmentsDescription(
   role: Pick<RoleShape, 'status'>,
   holder: PermissionHolder,
 ): string {
+  if (role.status === 'ARCHIVED') return "This role is archived, so it can't be assigned.";
   // The permission rule lives only in canAssignRole: ask it about the role once it is ACTIVE.
   return role.status !== 'ACTIVE' && canAssignRole({ status: 'ACTIVE' }, holder)
     ? 'Activate this role to assign it.'

@@ -35,6 +35,18 @@ function derivedId(seed: string): string {
 const roleNotFound = () => problem(404, 'resource_not_found', 'Role not found.');
 const assignmentNotFound = () => problem(404, 'resource_not_found', 'Role assignment not found');
 const immutable = () => problem(409, 'conflict', 'System roles cannot be modified.');
+/** An FSM edge the graph lacks: a generic detail, never the internal states (RoleManagementService
+ * `mapTransitionFailure`). */
+const notAllowed = () =>
+  problem(409, 'conflict', 'The request conflicts with the current resource state.');
+
+/** `requireEditable`: a system role is fixed and an archived one final (ADR 0035). */
+function requireEditable(role: FakeRole) {
+  if (role.systemRole) throw immutable();
+  if (role.status === 'ARCHIVED') {
+    throw problem(409, 'conflict', 'An archived role is final and cannot be changed.');
+  }
+}
 
 function tenantAccess(context: RouteContext): AccessContext {
   const access = requireContext(context);
@@ -157,9 +169,18 @@ const ASSIGNMENT_FILTERS: Record<string, (row: FakeRoleAssignment) => string | n
   status: (row) => row.status,
 };
 
-/** Activate / deactivate: any state → ACTIVE / DISABLED, custom roles only (contract §E.3).
- * Re-enabling a DISABLED role the caller holds is the #342 403. */
-function statusRoute(path: 'activate' | 'deactivate', status: 'ACTIVE' | 'DISABLED'): Route {
+/** The role FSM (ADR 0035): activate DISABLED → ACTIVE, deactivate ACTIVE → DISABLED, archive
+ * either → ARCHIVED; any other source state (a repeat included) is a 409. */
+const ROLE_EDGES = {
+  activate: { from: ['DISABLED'], to: 'ACTIVE' },
+  deactivate: { from: ['ACTIVE'], to: 'DISABLED' },
+  archive: { from: ['ACTIVE', 'DISABLED'], to: 'ARCHIVED' },
+} as const;
+
+/** Custom roles only (contract §E.3). Re-enabling a DISABLED role the caller holds is the #342 403;
+ * archiving is refused while the role has an ACTIVE assignment, the detail naming the count. */
+function statusRoute(path: keyof typeof ROLE_EDGES): Route {
+  const edge = ROLE_EDGES[path];
   return route('POST', `/api/v1/tenant/roles/:role_id/${path}`, (context) => {
     const access = tenantAccess(context);
     requirePermission(access, `role.${path}`);
@@ -169,9 +190,26 @@ function statusRoute(path: 'activate' | 'deactivate', status: 'ACTIVE' | 'DISABL
       if (role.systemRole) throw immutable();
       requireAssignSelf(
         access,
-        status === 'ACTIVE' && role.status === 'DISABLED' && holdsRole(access, role.id),
+        path === 'activate' && role.status === 'DISABLED' && holdsRole(access, role.id),
       );
-      role.status = status;
+      if (!(edge.from as readonly string[]).includes(role.status)) throw notAllowed();
+      if (path === 'archive') {
+        const count = context.state.roleAssignments.filter(
+          (row) =>
+            row.roleId === role.id &&
+            row.organisationId === access.organisation.id &&
+            row.status === 'ACTIVE',
+        ).length;
+        if (count > 0) {
+          const [noun, pronoun] = count === 1 ? ['assignment', 'it'] : ['assignments', 'them'];
+          throw problem(
+            409,
+            'conflict',
+            `The role has ${String(count)} active ${noun}; revoke ${pronoun} before archiving it. Archiving is final and the role's code stays reserved.`,
+          );
+        }
+      }
+      role.status = edge.to;
       role.updatedAt = new Date().toISOString();
       recordAuditEvent(context.state, access, {
         entityType: 'ROLE',
@@ -196,7 +234,8 @@ export const roleRoutes: Route[] = [
       (role) =>
         role.organisationId === access.organisation.id &&
         (!q || role.code.toLowerCase().includes(q) || role.name.toLowerCase().includes(q)) &&
-        (!status || role.status === status) &&
+        // An archived role is listed only on request (ADR 0035).
+        (status ? role.status === status : role.status !== 'ARCHIVED') &&
         (systemRole === null || String(role.systemRole) === systemRole),
     );
     const ordered = orderBy(roles, ROLE_SORTS, query, { by: 'createdAt', dir: 'DESC' });
@@ -266,17 +305,31 @@ export const roleRoutes: Route[] = [
 
   route('PATCH', '/api/v1/tenant/roles/:role_id', async (context) => {
     const access = tenantAccess(context);
-    requirePermission(access, 'role.update');
-    const role = findRole(access, context.params.role_id ?? '');
-    // The body is required (contract §D). As in the backend (BG-34), a non-null field replaces
-    // the stored one, blank included; the UI pre-validates the name.
+    // Platform #343 (BG-34): the body is required, every field optional. A name absent or null
+    // keeps it; a description absent keeps it and an explicit null clears it. Either blank is a
+    // 400, the name's from Bean Validation, the description's from the controller, both before
+    // the permission check and the lookup (RoleController.kt:297-312).
     const body = objectBody(await readBody(context.req), ['role_name', 'description']);
     const name = stringField(body, 'role_name', { required: false });
     const description = stringField(body, 'description', { required: false });
+    if (name !== null && name.trim() === '') {
+      throw problem(400, 'validation_failed', 'Validation failed.', [
+        { field: 'role_name', code: 'Pattern', message: 'must not be blank' },
+      ]);
+    }
+    if (description !== null && description.trim() === '') {
+      throw problem(
+        400,
+        'validation_failed',
+        'description must not be blank; send null to clear it.',
+      );
+    }
+    requirePermission(access, 'role.update');
+    const role = findRole(access, context.params.role_id ?? '');
     sendIdempotent(context, body, () => {
-      if (role.systemRole) throw immutable();
+      requireEditable(role);
       if (name !== null) role.name = name;
-      if (description !== null) role.description = description;
+      if ('description' in body) role.description = description;
       role.updatedAt = new Date().toISOString();
       recordAuditEvent(context.state, access, {
         entityType: 'ROLE',
@@ -288,8 +341,9 @@ export const roleRoutes: Route[] = [
     });
   }),
 
-  statusRoute('activate', 'ACTIVE'),
-  statusRoute('deactivate', 'DISABLED'),
+  statusRoute('activate'),
+  statusRoute('deactivate'),
+  statusRoute('archive'),
 
   route('GET', '/api/v1/tenant/roles/:role_id/permissions', (context) => {
     const access = tenantAccess(context);
@@ -308,7 +362,7 @@ export const roleRoutes: Route[] = [
       context,
       body,
       () => {
-        if (role.systemRole) throw immutable();
+        requireEditable(role);
         // #342, in the platform's order: no role may be granted it, then a role the caller holds
         // can't be widened (a re-grant included), before the permission lookup.
         if (code === 'user.assign_self') {
@@ -357,7 +411,7 @@ export const roleRoutes: Route[] = [
     sendIdempotent(context, {}, () => {
       const grant = grantsOf(role).find((candidate) => candidate.id === context.params.grant_id);
       if (!grant) throw problem(404, 'resource_not_found', 'Role permission not found');
-      if (role.systemRole) throw immutable();
+      requireEditable(role);
       // A view a held ACTIVE mutation needs stays (RoleCompositionGuard).
       const held = role.permissions.filter(isActivePermission);
       const dependants = held.filter((code) =>

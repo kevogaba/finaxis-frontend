@@ -19,6 +19,7 @@ const COMPLIANCE =
 // The app's copy, repeated here: an E2E imports only import-free modules.
 const HELD_ROLE =
   'You hold this role, so adding to it or re-enabling it needs a tenant administrator.';
+const ARCHIVED_ROLE_NOTE = "This role is archived. It's kept for history and can't be changed.";
 
 async function openDirectory(page: Page, branch: RegExp | null = ALL_BRANCHES) {
   await enterAdmin(page, '/admin/roles', { heading: 'Roles & permissions', branch });
@@ -245,6 +246,65 @@ test.describe('roles', () => {
     await expect(mainText(page, /System roles are immutable/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Grant permissions' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^Remove / })).toHaveCount(0);
+  });
+
+  // ADR 0035: ARCHIVED is final, keeps the code, and leaves the default list.
+  test('archives a role without assignments, which then lists only under Archived', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'roles');
+    await openDirectory(page);
+    await expect(page.getByRole('combobox', { name: 'Status' })).toHaveText('Active and disabled');
+    await openRecord(page, 'Roles', 'Operations supervisor');
+
+    await page.getByRole('button', { name: 'Archive', exact: true }).click();
+    const dialog = page.getByRole('alertdialog', { name: 'Archive Operations supervisor?' });
+    await expect(dialog).toContainText('its code OPS_SUPERVISOR stays reserved');
+    await dialog.getByRole('button', { name: 'Archive', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('alert').filter({ hasText: 'Role archived' })).toBeVisible();
+    // I3: nothing is left to act on, so focus falls back to the record title.
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Operations supervisor' }),
+    ).toBeFocused();
+    await expect(mainText(page, ARCHIVED_ROLE_NOTE)).toBeVisible();
+    await expect(page.getByRole('button', { name: /^(Deactivate|Activate|Archive)$/ })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
+    await openTab(page, 'Assignments');
+    await expect(
+      mainText(page, "This role is archived, so it can't be assigned.", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Assign role' })).toHaveCount(0);
+
+    await page.getByRole('link', { name: 'Back to roles' }).click();
+    await expect(mainText(page, '5 roles')).toBeVisible();
+    await selectMuiOption(page, 'Status', /^Archived$/);
+    await expect(page).toHaveURL(/status=ARCHIVED/);
+    await expect(mainText(page, '2 roles')).toBeVisible();
+    await expect(rowsOf(page, 'Roles').filter({ hasText: 'Operations supervisor' })).toHaveCount(1);
+  });
+
+  test('says a role with active assignments must lose them before it is archived', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'roles');
+    await openDirectory(page);
+    await openRecord(page, 'Roles', 'Teller');
+
+    await page.getByRole('button', { name: 'Archive', exact: true }).click();
+    const dialog = page.getByRole('alertdialog', { name: 'Archive Teller?' });
+    await expect(dialog).toContainText(
+      'This role still has 2 active assignments. Revoke them first.',
+    );
+    await expect(dialog.getByRole('button', { name: 'Archive', exact: true })).toBeDisabled();
+    await dialog.getByRole('link', { name: 'View assignments' }).click();
+    await expect(page).toHaveURL(/\/assignments$/);
+    await expect(dialog).toBeHidden();
+    await expect(rowsOf(page, 'Role assignments')).toHaveCount(3);
   });
 
   test('explains a missing branch assignment, assigns at the right branch, and revokes', async ({
@@ -541,6 +601,18 @@ test.describe('roles', () => {
 
         // The edit form's read-only code field is its own surface.
         await scan(`/admin/roles/${ROLE_SCENARIO_IDS.teller}/edit`, 'Teller');
+        // Archive's dialog, with its active-assignment warning and link.
+        await page.getByRole('button', { name: 'Archive', exact: true }).click();
+        const archive = page.getByRole('alertdialog', { name: 'Archive Teller?' });
+        await expect(archive).toContainText('Revoke them first.');
+        // Scanning mid-fade blends the Fade's opacity into color-contrast (platform-tenants.spec).
+        await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1');
+        await expectNoSeriousOrCriticalViolations(page);
+        await expectDrawerFits(a11yCase, archive);
+        await page.keyboard.press('Escape');
+        await expect(archive).toBeHidden();
+        // An archived record's note.
+        await scan(`/admin/roles/${ROLE_SCENARIO_IDS.cashDesk}`, 'Cash desk');
         await scan(
           `/admin/roles/${ROLE_SCENARIO_IDS.opsSupervisor}/permissions`,
           'Operations supervisor',

@@ -4,7 +4,11 @@ import { permissionHolder } from '@/auth/permissions';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { SectionCard } from '@/components/data-display/section-card';
 import { load } from '@/lib/api/load';
-import { SYSTEM_ROLE_NOTE, canEditRole } from '@/modules/administration/roles/role-rules';
+import {
+  ARCHIVED_ROLE_NOTE,
+  SYSTEM_ROLE_NOTE,
+  canEditRole,
+} from '@/modules/administration/roles/role-rules';
 import { getRole } from '@/modules/administration/roles/role-service';
 import { RoleForm } from '@/modules/administration/roles/components/role-form';
 
@@ -25,7 +29,16 @@ export default async function EditRolePage({ params }: EditRolePageProps) {
   if (!canEditRole(record, permissionHolder(resolved?.profile))) {
     return (
       <SectionCard title="Edit role">
-        <ForbiddenState description={record.systemRole ? SYSTEM_ROLE_NOTE : undefined} />
+        <ForbiddenState
+          title={record.status === 'ARCHIVED' ? "This role can't be edited" : undefined}
+          description={
+            record.systemRole
+              ? SYSTEM_ROLE_NOTE
+              : record.status === 'ARCHIVED'
+                ? ARCHIVED_ROLE_NOTE
+                : undefined
+          }
+        />
       </SectionCard>
     );
   }

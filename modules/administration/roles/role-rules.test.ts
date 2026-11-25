@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Permission } from './role-contract';
 import {
   assignmentsDescription,
+  canArchiveRole,
   canAssignRole,
   canCreateRole,
   canEditRole,
@@ -24,6 +25,7 @@ const ALL = [
   'role.update',
   'role.activate',
   'role.deactivate',
+  'role.archive',
   'role.assign_permission',
   'role.remove_permission',
   'permission.view',
@@ -50,12 +52,43 @@ const permission = (code: string, module: string): Permission => ({
 });
 
 describe('role rules', () => {
+  // The role FSM (ADR 0035): each toggle only from its named state, nothing out of ARCHIVED.
   it.each([
     ['ACTIVE', 'deactivate'],
     ['DISABLED', 'activate'],
-    ['ARCHIVED', 'activate'],
-  ] as const)('a custom %s role offers %s (any state → ACTIVE / DISABLED)', (status, expected) => {
+    ['ARCHIVED', null],
+  ] as const)('a custom %s role offers %s', (status, expected) => {
     expect(roleStatusAction({ systemRole: false, status }, wide(ALL), false)).toBe(expected);
+    // Holding the role changes nothing for ACTIVE or ARCHIVED.
+    if (status !== 'DISABLED') {
+      expect(roleStatusAction({ systemRole: false, status }, wide(ALL), true)).toBe(expected);
+    }
+  });
+
+  it.each([
+    ['a custom ACTIVE role', true, CUSTOM],
+    ['a custom DISABLED role', true, { systemRole: false, status: 'DISABLED' }],
+    ['an ARCHIVED role (final)', false, { systemRole: false, status: 'ARCHIVED' }],
+    ['a system role (409)', false, SYSTEM],
+  ] as const)('archives %s → %s', (_case, expected, role) => {
+    expect(canArchiveRole(role, wide(ALL))).toBe(expected);
+  });
+
+  it('archives only with role.archive and role.view, both tenant-wide (BG-33)', () => {
+    expect(canArchiveRole(CUSTOM, wide(['role.archive']))).toBe(false);
+    expect(canArchiveRole(CUSTOM, wide(['role.archive', 'role.view']))).toBe(true);
+    const branchView = {
+      permissions: ['role.archive', 'role.view'],
+      tenantPermissions: ['role.archive'],
+    };
+    expect(canArchiveRole(CUSTOM, branchView)).toBe(false);
+  });
+
+  it('offers no edit, grant or remove on an archived role (409)', () => {
+    const archived = { systemRole: false, status: 'ARCHIVED' } as const;
+    expect(canEditRole(archived, wide(ALL))).toBe(false);
+    expect(canGrantPermissions(archived, wide(ALL), false)).toBe(false);
+    expect(canRemovePermissions(archived, wide(ALL))).toBe(false);
   });
 
   it('hides every mutation of a system role (contract §E.3: 409), but still assigns it', () => {
@@ -188,7 +221,6 @@ describe('role rules', () => {
     const assigner = { permissions: codes, tenantPermissions: codes };
     const activate = 'Activate this role to assign it.';
     expect(assignmentsDescription({ status: 'DISABLED' }, assigner)).toBe(activate);
-    expect(assignmentsDescription({ status: 'ARCHIVED' }, assigner)).toBe(activate);
     // An ACTIVE role gets the ordinary description.
     expect(assignmentsDescription({ status: 'ACTIVE' }, assigner)).toMatch(/^Who holds this role/);
     // So does a viewer who couldn't assign it anyway, missing either permission.
@@ -197,6 +229,18 @@ describe('role rules', () => {
         /^Who holds this role/,
       );
     }
+  });
+
+  it('tells everyone an archived role is never assigned again', () => {
+    const archived = "This role is archived, so it can't be assigned.";
+    const codes = ['user.assign_role', 'role_assignment.view', 'role.view', 'user.view'];
+    expect(
+      assignmentsDescription(
+        { status: 'ARCHIVED' },
+        { permissions: codes, tenantPermissions: codes },
+      ),
+    ).toBe(archived);
+    expect(assignmentsDescription({ status: 'ARCHIVED' }, { permissions: [] })).toBe(archived);
   });
 
   it('groups the catalogue by module label, permissions by code', () => {

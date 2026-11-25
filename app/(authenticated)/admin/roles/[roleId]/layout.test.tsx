@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
-import { HELD_ROLE } from '@/modules/administration/roles/role-rules';
+import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ARCHIVED_ROLE_NOTE, HELD_ROLE } from '@/modules/administration/roles/role-rules';
 import { renderWithProviders } from '@/test/test-utils';
 
-const { getCurrentContextProfile, getRole, holdsRole } = vi.hoisted(() => ({
-  getCurrentContextProfile: vi.fn(),
-  getRole: vi.fn(),
-  holdsRole: vi.fn(),
-}));
+const { countActiveRoleAssignments, getCurrentContextProfile, getRole, holdsRole } = vi.hoisted(
+  () => ({
+    countActiveRoleAssignments: vi.fn(),
+    getCurrentContextProfile: vi.fn(),
+    getRole: vi.fn(),
+    holdsRole: vi.fn(),
+  }),
+);
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('next/navigation', async (importOriginal) => ({
@@ -22,11 +26,14 @@ vi.mock('@/auth/context-service', () => ({
   getCurrentContextProfile: () => getCurrentContextProfile() as unknown,
 }));
 vi.mock('@/modules/administration/roles/role-service', () => ({
+  countActiveRoleAssignments: (...args: unknown[]) =>
+    countActiveRoleAssignments(...args) as unknown,
   getRole: (...args: unknown[]) => getRole(...args) as unknown,
   holdsRole: (...args: unknown[]) => holdsRole(...args) as unknown,
 }));
 vi.mock('@/modules/administration/roles/role-actions', () => ({
   activateRole: vi.fn(),
+  archiveRole: vi.fn(),
   deactivateRole: vi.fn(),
 }));
 
@@ -45,8 +52,10 @@ const CODES = [
 ];
 
 interface Setup {
-  status?: 'ACTIVE' | 'DISABLED';
+  status?: 'ACTIVE' | 'DISABLED' | 'ARCHIVED';
   permissions?: string[];
+  /** Codes held only at branch scope. */
+  branchOnly?: string[];
   /** The ACTIVE roles `/auth/me` lists. */
   profileRoles?: string[];
   /** What the role-assignment read answers. */
@@ -56,6 +65,7 @@ interface Setup {
 function setup({
   status = 'DISABLED',
   permissions = CODES,
+  branchOnly = [],
   profileRoles = [],
   held = false,
 }: Setup = {}) {
@@ -71,7 +81,10 @@ function setup({
     profile: {
       user_id: ME,
       permissions,
-      permission_scopes: permissions.map((code) => ({ code, scope: 'TENANT' })),
+      permission_scopes: permissions.map((code) => ({
+        code,
+        scope: branchOnly.includes(code) ? 'BRANCH' : 'TENANT',
+      })),
       roles: profileRoles.map((id) => ({ id })),
     },
     context: { organization: { id: ORG, name: 'Greenfield' }, branch: null },
@@ -136,5 +149,48 @@ describe('RoleRecordLayout: a role you hold (#342)', () => {
 
     expect(holdsRole).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Activate' })).toBeEnabled();
+  });
+});
+
+describe('RoleRecordLayout: archiving (ADR 0035)', () => {
+  const ADMIN = [...CODES, 'role.update', 'role.archive'];
+
+  it('offers Archive with the active assignment count, which disables its confirm', async () => {
+    const user = userEvent.setup();
+    setup({ status: 'ACTIVE', permissions: ADMIN });
+    countActiveRoleAssignments.mockResolvedValue(2);
+
+    await show();
+
+    expect(countActiveRoleAssignments).toHaveBeenCalledWith(ROLE);
+    await user.click(screen.getByRole('button', { name: 'Archive' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Archive Loans officer?' });
+    expect(dialog).toHaveTextContent('LOANS_OFFICER stays reserved');
+    expect(dialog).toHaveTextContent('This role still has 2 active assignments.');
+    expect(within(dialog).getByRole('button', { name: 'Archive' })).toBeDisabled();
+  });
+
+  // A branch-scoped role_assignment.view reads only its branches' rows: a partial count.
+  it('leaves the count to the platform without role_assignment.view tenant-wide', async () => {
+    const user = userEvent.setup();
+    setup({ status: 'ACTIVE', permissions: ADMIN, branchOnly: ['role_assignment.view'] });
+
+    await show();
+
+    expect(countActiveRoleAssignments).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Archive' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Archive Loans officer?' });
+    expect(within(dialog).getByRole('button', { name: 'Archive' })).toBeEnabled();
+  });
+
+  it('shows an archived role as final, with nothing to change', async () => {
+    setup({ status: 'ARCHIVED', permissions: [...ADMIN, 'user.assign_self'] });
+
+    await show();
+
+    expect(screen.getByRole('note')).toHaveTextContent(ARCHIVED_ROLE_NOTE);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull();
+    expect(countActiveRoleAssignments).not.toHaveBeenCalled();
   });
 });

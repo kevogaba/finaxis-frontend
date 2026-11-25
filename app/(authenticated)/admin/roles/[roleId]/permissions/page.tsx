@@ -84,7 +84,9 @@ export default async function RolePermissionsPage({
       description={
         record.systemRole
           ? "System roles are immutable: their permissions can't be changed."
-          : 'Granted permissions take effect immediately for everyone holding this role.'
+          : record.status === 'ARCHIVED'
+            ? "This role is archived: its permissions are kept for history and can't be changed."
+            : 'Granted permissions take effect immediately for everyone holding this role.'
       }
       actions={
         canGrant && granted ? (
@@ -150,7 +152,9 @@ export default async function RolePermissionsPage({
         description={
           record.systemRole
             ? 'This system role grants no permissions.'
-            : 'Holders of this role can do nothing yet. Grant permissions to give them access.'
+            : record.status === 'ARCHIVED'
+              ? 'This archived role granted no permissions.'
+              : 'Holders of this role can do nothing yet. Grant permissions to give them access.'
         }
       />
     ) : (

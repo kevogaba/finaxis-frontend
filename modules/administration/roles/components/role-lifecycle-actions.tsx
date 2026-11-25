@@ -1,15 +1,17 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import { ConfirmDialog } from '@/components/data-display/confirm-dialog';
 import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import NextLink from '@/components/navigation/next-link';
 import { useToast } from '@/components/providers/toast-provider';
-import { activateRole, deactivateRole } from '../role-actions';
+import { activateRole, archiveRole, deactivateRole } from '../role-actions';
 import type { RoleLifecycleAction } from '../role-rules';
 
 interface RoleLifecycleActionsProps {
@@ -19,6 +21,9 @@ interface RoleLifecycleActionsProps {
   editHref?: string;
   /** `roleStatusAction`'s result: the one status toggle on offer, if any. */
   action: RoleLifecycleAction | null;
+  /** When `canArchiveRole`: the role's code, and its ACTIVE assignment count when the page knows
+   * it (`role_assignment.view` tenant-wide), else null and the platform's 409 decides. */
+  archive?: { roleCode: string; activeAssignments: number | null };
   /** Why the toggle can't be used here (you hold the role, #342): shown disabled with this. */
   blocked?: string;
   /** The signed-in user holds this role (`/auth/me` roles, or one role-assignment read for a
@@ -28,12 +33,14 @@ interface RoleLifecycleActionsProps {
   contextOrganisationId?: string;
 }
 
-/** Record hero actions (spec §10.4): Edit, plus Activate or Deactivate, custom roles only. */
+/** Record hero actions (spec §10.4): Edit, Activate or Deactivate, and Archive, custom roles
+ * only. */
 export function RoleLifecycleActions({
   roleId,
   roleName,
   editHref,
   action,
+  archive,
   blocked,
   heldByMe,
   contextOrganisationId,
@@ -41,6 +48,7 @@ export function RoleLifecycleActions({
   const notify = useToast();
   const blockedId = useId();
   const [open, setOpen] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
   // I3: a successful toggle swaps the action after `refresh()`. The toggle keeps its DOM node when
   // its replacement is on offer (Deactivate ↔ Activate); otherwise focus falls back to the title.
@@ -65,6 +73,9 @@ export function RoleLifecycleActions({
 
   const deactivate = action === 'deactivate';
   const label = deactivate ? 'Deactivate' : 'Activate';
+  // Archive is refused while any ACTIVE assignment remains (ADR 0035), and they are counted, not
+  // distinct people (Ruling 11).
+  const assigned = archive?.activeAssignments ?? 0;
 
   return (
     <>
@@ -104,6 +115,17 @@ export function RoleLifecycleActions({
             }}
           >
             {label}
+          </Button>
+        )}
+        {archive && (
+          <Button
+            variant="outlined"
+            color="error"
+            onClick={() => {
+              setArchiving(true);
+            }}
+          >
+            Archive
           </Button>
         )}
         {action && blocked !== undefined && (
@@ -149,6 +171,45 @@ export function RoleLifecycleActions({
             notify(deactivate ? 'Role deactivated' : 'Role activated');
           }}
         >
+          <input type="hidden" name="roleId" value={roleId} />
+        </ConfirmDialog>
+      )}
+      {archive && (
+        <ConfirmDialog
+          open={archiving}
+          tone="error"
+          title={`Archive ${roleName}?`}
+          description={`Archiving is final. The role can't be edited, activated or assigned again, and its code ${archive.roleCode} stays reserved.`}
+          confirmLabel="Archive"
+          confirmDisabled={assigned > 0}
+          action={archiveRole}
+          contextOrganisationId={contextOrganisationId}
+          onClose={() => {
+            setArchiving(false);
+          }}
+          onSuccess={() => {
+            succeededRef.current = true;
+            setArchiving(false);
+            notify('Role archived');
+          }}
+        >
+          {assigned > 0 && (
+            <Alert severity="warning">
+              {assigned === 1
+                ? 'This role still has 1 active assignment. Revoke it first.'
+                : `This role still has ${assigned} active assignments. Revoke them first.`}{' '}
+              <Link
+                component={NextLink}
+                href={`/admin/roles/${roleId}/assignments`}
+                // The layout keeps this component mounted across tabs: close as it navigates.
+                onClick={() => {
+                  setArchiving(false);
+                }}
+              >
+                View assignments
+              </Link>
+            </Alert>
+          )}
           <input type="hidden" name="roleId" value={roleId} />
         </ConfirmDialog>
       )}
