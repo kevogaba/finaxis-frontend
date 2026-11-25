@@ -4,8 +4,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import type { UserStatus } from '../user-contract';
 import {
-  MEMBERSHIP_MISSING,
-  MEMBERSHIP_UNAVAILABLE,
+  NO_MEMBERSHIP_VIEW,
   OWN_MEMBERSHIP,
   USER_MAKER_CHECKER_BLOCKED,
   type MembershipAction,
@@ -33,8 +32,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const NAME = 'Amina Odhiambo';
 
 interface Overrides {
-  /** Defaults to a found membership; `null` is the hero after a failed or missed lookup. */
-  membershipId?: string | null;
   actions: readonly MembershipAction[];
   blocked?: Partial<Record<MembershipAction, string>>;
   note?: string | null;
@@ -44,18 +41,11 @@ interface Overrides {
 }
 
 /** The hero's slot: the record title is the page's `h1`, the focus fallback's target. */
-const record = ({
-  membershipId = MEMBERSHIP,
-  actions,
-  blocked = {},
-  note = null,
-  warning = null,
-  userStatus,
-}: Overrides) => (
+const record = ({ actions, blocked = {}, note = null, warning = null, userStatus }: Overrides) => (
   <main>
     <h1>{NAME}</h1>
     <UserLifecycleActions
-      membershipId={membershipId}
+      membershipId={MEMBERSHIP}
       userName={NAME}
       actions={actions}
       blocked={blocked}
@@ -348,7 +338,7 @@ describe('UserLifecycleActions', () => {
     });
   });
 
-  it('falls back to the record title when the membership re-read fails after a transition', async () => {
+  it('falls back to the record title when only a note remains after a transition', async () => {
     const user = userEvent.setup();
     suspendMembership.mockResolvedValueOnce({ ok: true });
     const { rerender } = renderActions({ actions: ['suspend', 'revoke'] });
@@ -360,12 +350,12 @@ describe('UserLifecycleActions', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Membership suspended');
     expectScoped(suspendMembership.mock.calls[0]?.[1] as FormData);
 
-    // `refresh()` re-runs the layout. If its membership lookup now fails, the hero keeps only the
-    // note (no membership, no action) and this component stays mounted, so nothing unmounts to
-    // run the cleanup: the effect is what returns focus to the title.
-    rerender(record({ membershipId: null, actions: [], note: MEMBERSHIP_UNAVAILABLE }));
+    // `refresh()` re-runs the layout. If the holder has meanwhile lost membership.view, the hero
+    // keeps only the note (no action) and this component stays mounted, so nothing unmounts to run
+    // the cleanup: the effect is what returns focus to the title.
+    rerender(record({ actions: [], note: NO_MEMBERSHIP_VIEW }));
 
-    expect(await screen.findByText(MEMBERSHIP_UNAVAILABLE)).toBeInTheDocument();
+    expect(await screen.findByText(NO_MEMBERSHIP_VIEW)).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: NAME })).toHaveFocus();
     });
@@ -402,26 +392,10 @@ describe('UserLifecycleActions', () => {
     });
   });
 
-  it('offers no action without a membership to act on', () => {
-    renderWithProviders(
-      <UserLifecycleActions
-        membershipId={null}
-        userName={NAME}
-        actions={['approve', 'reject']}
-        blocked={{}}
-        note={MEMBERSHIP_MISSING}
-        contextOrganisationId={ORG}
-      />,
-    );
-
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.getByText(MEMBERSHIP_MISSING)).toBeInTheDocument();
-  });
-
   it('shows the note on its own', () => {
-    renderActions({ actions: [], note: MEMBERSHIP_MISSING });
+    renderActions({ actions: [], note: NO_MEMBERSHIP_VIEW });
 
-    expect(screen.getByText(MEMBERSHIP_MISSING)).toBeInTheDocument();
+    expect(screen.getByText(NO_MEMBERSHIP_VIEW)).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 });

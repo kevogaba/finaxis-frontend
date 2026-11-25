@@ -9,20 +9,20 @@ import { SectionCard } from '@/components/data-display/section-card';
 import type { Loaded } from '@/lib/api/load';
 import type { RoleIndexEntry } from '@/lib/api/lookups';
 import type { Page } from '@/lib/api/wire';
-import { shortId } from '@/lib/format';
+import { formatInstant, shortId } from '@/lib/format';
+import type { BranchAssignment } from '@/modules/administration/branches/branch-contract';
 import type { RoleAssignment } from '@/modules/administration/roles/role-contract';
 import { SCOPED_ROLE_ASSIGNMENTS_NOTE } from '@/modules/administration/roles/role-rules';
 import { UserBranchAssignmentsTable } from '@/modules/administration/users/components/user-branch-assignments-table';
 import { UserRoleAssignmentsTable } from '@/modules/administration/users/components/user-role-assignments-table';
-import type { MembershipSummary } from '@/modules/administration/users/user-contract';
+import type {
+  MembershipDetail,
+  MembershipType,
+} from '@/modules/administration/users/user-contract';
+import { SCOPED_ASSIGNMENTS_NOTE } from '@/modules/administration/users/user-rules';
 import {
-  PARTIAL_SCAN_NOTE,
-  SCOPED_ASSIGNMENTS_NOTE,
-} from '@/modules/administration/users/user-rules';
-import type { UserBranchScan } from '@/modules/administration/users/user-service';
-import {
+  BRANCHES_CAPPED,
   BRANCHES_NOT_PERMITTED,
-  MEMBERSHIP_NOT_FOUND,
   MEMBERSHIP_NOT_PERMITTED,
   NO_ACTIVE_BRANCH,
   NO_ACTIVE_BRANCH_SEEN,
@@ -37,11 +37,16 @@ import { ReadFailed } from './request-facts';
 /** Each read as the page settled it; `null`: the holder lacks its code, so nothing was read. */
 interface RequestedAccessProps {
   userName: string;
-  membership: Loaded<MembershipSummary | null> | null;
+  /** From the user read, which carries it (BG-09). */
+  membershipType: MembershipType;
+  /** Read by the id the user read carries, for the primary branch. */
+  membership: Loaded<MembershipDetail> | null;
   /** One page of the user's ACTIVE role assignments (Ruling 8). */
   roles: Loaded<Page<RoleAssignment>> | null;
-  /** 10's bounded scan of their ACTIVE branch assignments. */
-  scan: Loaded<UserBranchScan> | null;
+  /** One page of their ACTIVE branch assignments, branch names embedded (BG-09). */
+  branches: Loaded<Page<BranchAssignment>> | null;
+  /** The organisation's, for the Assigned column. */
+  timeZone: string;
   roleIndex: ReadonlyMap<string, RoleIndexEntry>;
   branchIndex: ReadonlyMap<string, { name: string; code: string }>;
   /** The holder views only some branches' assignments (`scopedAssignmentView`, BG-03). */
@@ -61,22 +66,23 @@ function subheading(text: string): ReactNode {
 }
 
 function membershipFact(
-  membership: Loaded<MembershipSummary | null> | null,
-  show: (found: MembershipSummary) => string,
+  membership: Loaded<MembershipDetail> | null,
+  show: (found: MembershipDetail) => string,
 ): ReactNode {
   if (membership === null) return MEMBERSHIP_NOT_PERMITTED;
-  if (!membership.ok) return <ReadFailed problem={membership.problem} />;
-  return membership.value ? show(membership.value) : MEMBERSHIP_NOT_FOUND;
+  return membership.ok ? show(membership.value) : <ReadFailed problem={membership.problem} />;
 }
 
 /** The access a pending user gets once approved (spec §10.6): the membership's type and primary
- * branch, their roles (one page, capped and said so) and their branches (10's bounded scan, said
- * partial when it is). A read that failed says so, never "none" (rule 9). Server-Component safe. */
+ * branch, their roles and their branches (one page each, capped and said so). A read that failed
+ * says so, never "none" (rule 9). Server-Component safe. */
 export function RequestedAccess({
   userName,
+  membershipType,
   membership,
   roles,
-  scan,
+  branches,
+  timeZone,
   roleIndex,
   branchIndex,
   scopedView,
@@ -90,10 +96,7 @@ export function RequestedAccess({
     <SectionCard title="Requested access" description={REQUESTED_ACCESS_DESCRIPTION}>
       <DescriptionList
         items={[
-          {
-            label: 'Membership type',
-            value: membershipFact(membership, (found) => humanizeEnum(found.type)),
-          },
+          { label: 'Membership type', value: humanizeEnum(membershipType) },
           {
             label: 'Primary branch',
             value: membershipFact(membership, (found) =>
@@ -151,46 +154,47 @@ export function RequestedAccess({
         </>
       )}
       {subheading('Branch assignments')}
-      {scan === null ? (
+      {branches === null ? (
         <Typography variant="body2" sx={MUTED_SX}>
           {BRANCHES_NOT_PERMITTED}
         </Typography>
-      ) : !scan.ok ? (
-        <ErrorState problem={scan.problem} />
+      ) : !branches.ok ? (
+        <ErrorState problem={branches.problem} />
       ) : (
         <>
-          {(scopedView || scan.value.truncated) && (
+          {(scopedView || branches.value.page.hasNext) && (
             <Box sx={{ px: 4, py: 2, display: 'grid', gap: 2 }}>
               {scopedView && (
                 <Alert severity="info" role="note">
                   {SCOPED_ASSIGNMENTS_NOTE}
                 </Alert>
               )}
-              {scan.value.truncated && (
+              {branches.value.page.hasNext && (
                 <Alert severity="info" role="note">
-                  {PARTIAL_SCAN_NOTE}
+                  {BRANCHES_CAPPED}
                 </Alert>
               )}
             </Box>
           )}
-          {scan.value.items.length === 0 ? (
+          {branches.value.items.length === 0 ? (
             <Typography variant="body2" sx={MUTED_SX}>
-              {/* A branch-scoped view narrows the scan and a capped scan hides rows, so "none" would
-                  be a guess under the note saying so (rule 9; 10's branchAssignmentsEmptyState). */}
-              {!scopedView && !scan.value.truncated ? NO_ACTIVE_BRANCH : NO_ACTIVE_BRANCH_SEEN}
+              {/* A branch-scoped view sees only its branches, so "none" would be a guess under the
+                  note saying so (rule 9; 10's branchAssignmentsEmptyState). */}
+              {scopedView ? NO_ACTIVE_BRANCH_SEEN : NO_ACTIVE_BRANCH}
             </Typography>
           ) : (
             <UserBranchAssignmentsTable
               userName={userName}
               self={false}
               canRevoke={false}
-              rows={scan.value.items.map((row) => {
-                const branch = branchIndex.get(row.branchId);
+              timeZone={timeZone}
+              rows={branches.value.items.map((row) => {
+                const when = formatInstant(row.assignedAt, timeZone);
                 return {
                   assignmentId: row.id,
-                  branchName: branch?.name ?? shortId(row.branchId),
-                  branchCode: branch?.code ?? null,
+                  branchName: row.branchName,
                   assignmentType: row.assignmentType,
+                  assignedAt: `${when.date} · ${when.time}`,
                   revocable: false,
                 };
               })}

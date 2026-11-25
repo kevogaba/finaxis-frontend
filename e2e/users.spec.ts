@@ -22,10 +22,6 @@ const PROVISIONING_NOTE =
   "Approval ran, and their sign-in identity is being created. The invitation is sent when it completes. If it stays here, identity provisioning may be switched off on the platform, and it can't be retried from here.";
 const NO_MEMBERSHIP_VIEW =
   "Membership actions need permission to view memberships, which your role doesn't include.";
-const MEMBERSHIP_MISSING =
-  "This user's membership couldn't be found, so its actions aren't available.";
-const MEMBERSHIP_UNAVAILABLE =
-  "This user's membership couldn't be loaded, so its actions aren't available. Refresh to try again.";
 const OWN_MEMBERSHIP =
   "You can't suspend or revoke your own membership. Ask another administrator.";
 const OWN_ACCESS = "You can't add to your own access. A tenant administrator can.";
@@ -33,8 +29,6 @@ const USER_MAKER_CHECKER_BLOCKED =
   'You invited this user, so another administrator must approve them.';
 const MEMBERSHIP_CHANGED =
   'This membership changed since the page loaded. Refresh to see its status.';
-const PARTIAL_SCAN_NOTE =
-  "This list may be incomplete: only the first 500 of this user's branch assignments were read.";
 const NO_MEMBERSHIP_DETAILS = "You can't view membership details in your current role.";
 const BRANCH_HINT = 'Assign them to a branch first to give a branch-scoped role.';
 const FORBIDDEN_TITLE = "You don't have permission";
@@ -811,7 +805,7 @@ test.describe('users: access and audit', () => {
     await expect(drawer).toBeHidden();
     await expect(toast(page, 'Branch assigned')).toBeVisible();
     await expect(rowsOf(page, 'Branch assignments')).toHaveCount(3);
-    // Rows are ordered by branch name, so Head Office now precedes Westlands.
+    // Newest assigned first (BG-09), so Head Office now precedes Westlands.
     await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Head Office');
     await expect(rowsOf(page, 'Branch assignments').nth(2)).toContainText('Westlands Branch');
 
@@ -1064,9 +1058,7 @@ test.describe('users: gating and ids', () => {
       hero(page).getByText('Membership pending approval', { exact: true }),
     ).toBeVisible();
     await expect(hero(page).getByRole('button')).toHaveCount(0);
-    for (const note of [NO_MEMBERSHIP_VIEW, MEMBERSHIP_MISSING, MEMBERSHIP_UNAVAILABLE]) {
-      await expect(mainText(page, note)).toHaveCount(0);
-    }
+    await expect(mainText(page, NO_MEMBERSHIP_VIEW)).toHaveCount(0);
 
     await openTab(page, 'Roles & access');
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(2);
@@ -1150,15 +1142,31 @@ test.describe('users: gating and ids', () => {
     expect(href.searchParams.get('entityType')).toBe('USER');
   });
 
-  test('marks a scan that hit its ceiling as partial', async ({ context, page }, testInfo) => {
+  // BG-09: the platform pages a member's assignments, so there is no ceiling to flag.
+  test("pages a member's branch assignments on the server, newest assigned first", async ({
+    context,
+    page,
+  }, testInfo) => {
     await authenticate(context, testInfo, 'users-many-assignments');
     await enterUser(page, USERS.felix, 'Felix Omondi');
 
-    // 501 active assignments of Felix's, 500 of them read: flagged, never presented as the whole.
-    await expect(fact(page, 'Branch assignments')).toHaveText('At least 500 (partial)');
+    await expect(fact(page, 'Branch assignments')).toHaveText('12');
     await openTab(page, 'Branch assignments');
-    await expect(mainText(page, PARTIAL_SCAN_NOTE)).toBeVisible();
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(11); // a page of 10
+    const main = page.getByRole('main');
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(11); // the header and a page of 10
+    await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Outpost 11');
+    await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('11 Oct 2026');
+    await expect(mainText(page, '1–10 of 12')).toBeVisible();
+    await expect(main.getByRole('note')).toHaveCount(0);
+    await expect(main).not.toContainText('incomplete');
+
+    await press(main.getByRole('button', { name: 'Go to next page' }));
+    await expect(page).toHaveURL((url) => url.searchParams.get('page') === '1');
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(3);
+    await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Outpost 01');
+    // His Westlands Home, the oldest, last.
+    await expect(rowsOf(page, 'Branch assignments').nth(2)).toContainText('Westlands Branch');
+    await expect(mainText(page, '11–12 of 12')).toBeVisible();
   });
 
   // BG-03: a branch-scoped view lists only the branches it covers, and says so.

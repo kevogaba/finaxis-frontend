@@ -87,6 +87,11 @@ export interface FakeBranchAssignment {
   branchId: string;
   type: string;
   status: string;
+  /** `assigned_at` (BG-09), which the list sorts by, newest first. */
+  assignedAt: string;
+  /** Set by a revoke, whose answer is the detail shape (`BranchAssignmentDetailResponse`). */
+  revokedAt?: string;
+  revokedBy?: string;
 }
 
 export interface FakeRole {

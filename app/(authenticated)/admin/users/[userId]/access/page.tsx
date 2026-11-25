@@ -5,7 +5,7 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can, permissionHolder } from '@/auth/permissions';
+import { canAnywhere, permissionHolder } from '@/auth/permissions';
 import { BlockedButton } from '@/components/data-display/blocked-button';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
@@ -34,6 +34,7 @@ import {
   OWN_ACCESS,
   ownAccessBlocked,
   parseUserId,
+  ROLE_SCOPE_ASSIGNMENTS_PAGE,
   ROLES_UNAVAILABLE,
   roleScopeBranches,
   roleScopeHint,
@@ -82,21 +83,33 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
   // own access, so it shows disabled with the reason.
   const ownBlocked =
     ownAccessBlocked(self, holder) && canAssignUserRole(record.membershipStatus, holder, false);
-  // Branch scope needs the user's own ACTIVE assignment at that branch, else a 409.
-  const scan =
-    canAssign && can(holder, 'branch_assignment.view')
-      ? await load(listUserBranchAssignments(userId))
+  // Branch scope needs the user's own ACTIVE assignment at that branch, else a 409. ponytail: one
+  // page of them, the platform's largest; past it the hint says so (AGENTS.md's fifth exception).
+  // The search by user answers with every branch a grant covers, whichever is selected (BG-03).
+  const theirs =
+    canAssign && canAnywhere(holder, 'branch_assignment.view')
+      ? await load(
+          listUserBranchAssignments(userId, { page: 0, size: ROLE_SCOPE_ASSIGNMENTS_PAGE }),
+        )
       : null;
   // BG-03: each of their branches where the holder may assign, whichever branch is selected;
-  // institution scope only with a tenant-wide grant.
+  // institution scope only with a tenant-wide grant. Named from the index (with the code), else by
+  // the name the assignment embeds (BG-09).
   const institution = canAssignRoleInstitutionWide(holder);
-  const scopeBranches = scan?.ok
-    ? roleScopeBranches(scan.value.items, (id) => canAssignRoleAt(holder, id), branchLabel)
+  const embedded = new Map(
+    theirs?.ok ? theirs.value.items.map((row) => [row.branchId, row.branchName]) : [],
+  );
+  const scopeBranches = theirs?.ok
+    ? roleScopeBranches(
+        theirs.value.items,
+        (id) => canAssignRoleAt(holder, id),
+        (id) => (branches.has(id) ? branchLabel(id) : (embedded.get(id) ?? shortId(id))),
+      )
     : [];
   const branchHint = roleScopeHint({
-    readable: scan?.ok ?? false,
+    readable: theirs?.ok ?? false,
     offered: scopeBranches.length,
-    truncated: scan?.ok === true && scan.value.truncated,
+    truncated: theirs?.ok === true && theirs.value.page.hasNext,
     someBranches: !institution,
   });
   // Without institution scope, no branch of theirs leaves nothing to assign: shown disabled, with

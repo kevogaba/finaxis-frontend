@@ -26,9 +26,9 @@ import { activatePendingBranch } from '../branch-activation-actions';
 const WARNING_ID = 'approval-decision-warning';
 
 /** What the dialogs post: the membership or the branch the decision writes; the action reads its
- * state again by that id. `membershipId` is null when the page's lookup found none (no decision). */
+ * state again by that id. The membership's comes from the user read (BG-09). */
 export type DecisionSubject =
-  { kind: 'membership'; membershipId: string | null } | { kind: 'branch'; branchId: string };
+  { kind: 'membership'; membershipId: string } | { kind: 'branch'; branchId: string };
 
 interface DecisionBarProps {
   subject: DecisionSubject;
@@ -83,7 +83,6 @@ export function DecisionBar({
 }: DecisionBarProps) {
   const notify = useToast();
   const [open, setOpen] = useState<ApprovalDecision | null>(null);
-  const offered = subject.kind === 'membership' && subject.membershipId === null ? [] : decisions;
   // Ruling 10: the approval's echo says which way it went; the wrapper below keeps it for the toast.
   const outcomeRef = useRef<ApprovalOutcome>('recorded');
   const buttonRefs = useRef(new Map<string, HTMLButtonElement | null>());
@@ -91,7 +90,7 @@ export function DecisionBar({
   // focus goes to the same decision if still offered, else the first enabled one, else the record
   // title. `succeededRef` is set only by a real success, so this runs once per decision.
   const succeededRef = useRef<string | null>(null);
-  const decisionKey = offered.join(',');
+  const decisionKey = decisions.join(',');
 
   useEffect(() => {
     const succeeded = succeededRef.current;
@@ -134,12 +133,12 @@ export function DecisionBar({
 
   // Visible text, not a tooltip: a disabled button can't take focus to reveal one.
   const captions = [
-    ...new Set([...offered.flatMap((id) => blocked[id] ?? []), ...(note ? [note] : [])]),
+    ...new Set([...decisions.flatMap((id) => blocked[id] ?? []), ...(note ? [note] : [])]),
   ];
   const captionId = (text: string) => `approval-decision-caption-${captions.indexOf(text)}`;
   const hiddenFields =
     subject.kind === 'membership' ? (
-      <input type="hidden" name="membershipId" value={subject.membershipId ?? ''} />
+      <input type="hidden" name="membershipId" value={subject.membershipId} />
     ) : (
       <input type="hidden" name="branchId" value={subject.branchId} />
     );
@@ -159,12 +158,12 @@ export function DecisionBar({
           '& > *': { flexGrow: { xs: 1, md: 0 } },
         }}
       >
-        {warning && offered.length > 0 && (
+        {warning && decisions.length > 0 && (
           <Alert id={WARNING_ID} severity="warning" role="note" sx={{ flexBasis: '100%' }}>
             {warning}
           </Alert>
         )}
-        {offered.map((id, index) => {
+        {decisions.map((id, index) => {
           const reason = blocked[id];
           const copy = decisionCopy(id, name);
           return (
@@ -210,7 +209,7 @@ export function DecisionBar({
           </Typography>
         ))}
       </Box>
-      {offered.map((id) => {
+      {decisions.map((id) => {
         const copy = decisionCopy(id, name);
         const close = () => {
           setOpen(null);

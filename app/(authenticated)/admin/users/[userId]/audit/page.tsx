@@ -1,7 +1,5 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getCurrentContextProfile } from '@/auth/context-service';
-import { can } from '@/auth/permissions';
 import { load } from '@/lib/api/load';
 import { toSearchParams } from '@/lib/api/query-string';
 import {
@@ -9,7 +7,7 @@ import {
   type RecordAuditView,
 } from '@/modules/administration/audit/components/record-audit-tab';
 import { parseUserId } from '@/modules/administration/users/user-rules';
-import { findUserMembership, getUser } from '@/modules/administration/users/user-service';
+import { getUser } from '@/modules/administration/users/user-service';
 
 export const metadata: Metadata = { title: 'User audit trail' };
 
@@ -25,14 +23,10 @@ interface UserAuditPageProps {
 export default async function UserAuditPage({ params, searchParams }: UserAuditPageProps) {
   const userId = parseUserId((await params).userId);
   if (!userId) notFound(); // rule 7: before any read, like the layout (16's tab pages)
-  const [user, selected] = await Promise.all([load(getUser(userId)), getCurrentContextProfile()]);
+  const user = await load(getUser(userId)); // cached: the layout's read
   if (!user.ok) return null; // the layout renders the failure
-  const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
-  // The layout's arguments, so `cache()` serves its read.
-  const membership = can(holder, 'membership.view')
-    ? await load(findUserMembership(user.value.id, user.value.email))
-    : null;
-  const membershipId = membership?.ok ? (membership.value?.id ?? null) : null;
+  // The user read carries the membership's id (BG-09), so its view needs no membership read.
+  const { membershipId } = user.value;
   const views: [RecordAuditView, ...RecordAuditView[]] = [
     { value: 'user', label: 'User record', filter: { entityType: 'USER', entityId: userId } },
     {
@@ -40,15 +34,11 @@ export default async function UserAuditPage({ params, searchParams }: UserAuditP
       label: 'Account',
       filter: { entityType: 'USER_ACCOUNT', entityId: userId },
     },
-    ...(membershipId
-      ? [
-          {
-            value: 'membership',
-            label: 'Membership',
-            filter: { entityType: 'MEMBERSHIP' as const, entityId: membershipId },
-          },
-        ]
-      : []),
+    {
+      value: 'membership',
+      label: 'Membership',
+      filter: { entityType: 'MEMBERSHIP', entityId: membershipId },
+    },
     { value: 'actor', label: 'Performed by', filter: { actorId: userId } },
   ];
   return (
@@ -56,9 +46,7 @@ export default async function UserAuditPage({ params, searchParams }: UserAuditP
       views={views}
       params={toSearchParams(await searchParams)}
       path={`/admin/users/${userId}/audit`}
-      description={`This user's history across their ${
-        membershipId ? 'record, account and membership' : 'record and account'
-      }, and what they did. ${NOT_HERE}`}
+      description={`This user's history across their record, account and membership, and what they did. ${NOT_HERE}`}
     />
   );
 }

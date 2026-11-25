@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendApiError } from '@/auth/backend-api';
-import { REQUESTED_ROLES_CEILING } from './approval-copy';
+import { REQUESTED_ACCESS_CEILING } from './approval-copy';
 import { pendingCountSchema } from './approval-contract';
 
-const { apiGet, listBranches, listRoleAssignments, listUsers } = vi.hoisted(() => ({
-  apiGet: vi.fn(),
-  listBranches: vi.fn(),
-  listRoleAssignments: vi.fn(),
-  listUsers: vi.fn(),
-}));
+const { apiGet, listBranches, listRoleAssignments, listUserBranchAssignments, listUsers } =
+  vi.hoisted(() => ({
+    apiGet: vi.fn(),
+    listBranches: vi.fn(),
+    listRoleAssignments: vi.fn(),
+    listUserBranchAssignments: vi.fn(),
+    listUsers: vi.fn(),
+  }));
 vi.mock('@/lib/api/tenant-api', () => ({
   apiGet: (...args: unknown[]) => apiGet(...args) as unknown,
 }));
@@ -19,6 +21,7 @@ vi.mock('@/modules/administration/roles/role-service', () => ({
   listRoleAssignments: (...args: unknown[]) => listRoleAssignments(...args) as unknown,
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
+  listUserBranchAssignments: (...args: unknown[]) => listUserBranchAssignments(...args) as unknown,
   listUsers: (...args: unknown[]) => listUsers(...args) as unknown,
 }));
 
@@ -136,8 +139,18 @@ describe('approval service', () => {
     await service.listRequestedRoles(USER);
     expect(listRoleAssignments).toHaveBeenCalledExactlyOnceWith(
       { userId: USER, status: 'ACTIVE' },
-      { page: 0, size: REQUESTED_ROLES_CEILING },
+      { page: 0, size: REQUESTED_ACCESS_CEILING },
     );
-    expect(REQUESTED_ROLES_CEILING).toBe(100);
+    expect(REQUESTED_ACCESS_CEILING).toBe(100);
+  });
+
+  // BG-09: one platform page by user, like the roles; no scan.
+  it('reads one bounded page of the user’s ACTIVE branch assignments', async () => {
+    listUserBranchAssignments.mockResolvedValue(total(0));
+    await service.listRequestedBranches(USER);
+    expect(listUserBranchAssignments).toHaveBeenCalledExactlyOnceWith(USER, {
+      page: 0,
+      size: REQUESTED_ACCESS_CEILING,
+    });
   });
 });

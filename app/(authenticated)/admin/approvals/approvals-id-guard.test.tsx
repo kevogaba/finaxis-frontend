@@ -7,10 +7,10 @@ import { permissionScopes } from '@/test/permission-scopes';
 const reads = vi.hoisted(() => ({
   getCurrentContextProfile: vi.fn(),
   getUser: vi.fn(),
-  findUserMembership: vi.fn(),
-  listUserBranchAssignments: vi.fn(),
+  getMembership: vi.fn(),
   getBranch: vi.fn(),
   listRequestedRoles: vi.fn(),
+  listRequestedBranches: vi.fn(),
   getBranchIndex: vi.fn(),
   getRoleIndex: vi.fn(),
   getOrganisationTimeZone: vi.fn(),
@@ -30,15 +30,14 @@ vi.mock('@/auth/context-service', () => ({
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
   getUser: (...args: unknown[]) => reads.getUser(...args) as unknown,
-  findUserMembership: (...args: unknown[]) => reads.findUserMembership(...args) as unknown,
-  listUserBranchAssignments: (...args: unknown[]) =>
-    reads.listUserBranchAssignments(...args) as unknown,
+  getMembership: (...args: unknown[]) => reads.getMembership(...args) as unknown,
 }));
 vi.mock('@/modules/administration/branches/branch-service', () => ({
   getBranch: (...args: unknown[]) => reads.getBranch(...args) as unknown,
 }));
 vi.mock('@/modules/administration/approvals/approval-service', () => ({
   listRequestedRoles: (...args: unknown[]) => reads.listRequestedRoles(...args) as unknown,
+  listRequestedBranches: (...args: unknown[]) => reads.listRequestedBranches(...args) as unknown,
 }));
 vi.mock('@/lib/api/lookups', () => ({
   getBranchIndex: (...args: unknown[]) => reads.getBranchIndex(...args) as unknown,

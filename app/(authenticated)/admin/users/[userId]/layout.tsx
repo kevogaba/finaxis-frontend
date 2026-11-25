@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { notFound } from 'next/navigation';
 import Paper from '@mui/material/Paper';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can, permissionHolder } from '@/auth/permissions';
+import { can, canAnywhere, permissionHolder } from '@/auth/permissions';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { RecordHero } from '@/components/data-display/record-hero';
@@ -25,7 +25,7 @@ import {
   onboardingState,
   parseUserId,
 } from '@/modules/administration/users/user-rules';
-import { findUserMembership, getUser } from '@/modules/administration/users/user-service';
+import { getUser } from '@/modules/administration/users/user-service';
 
 export const metadata: Metadata = { title: 'User record' };
 
@@ -62,12 +62,8 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
   const record = user.value;
   const holder = permissionHolder(resolved?.profile);
   const status = { membershipStatus: record.membershipStatus, userStatus: record.userStatus };
-  // Only with membership.view (every transition needs it, BG-31); a failure degrades the hero.
-  const membership = can(holder, 'membership.view')
-    ? await load(findUserMembership(record.id, record.email))
-    : null;
-  const membershipId = membership?.ok ? (membership.value?.id ?? null) : null;
-  const actions = membershipId ? availableMembershipActions(status, holder) : [];
+  // The user read carries the membership's id (BG-09): no lookup, so nothing to wait on or fail.
+  const actions = availableMembershipActions(status, holder);
   // BG-08: the inviter is the record's own `created_by`; the switch is read only when they are
   // the one who could approve (decision Q4: unread, Approve stays on offer for the platform).
   const me = resolved?.profile.user_id ?? '';
@@ -89,10 +85,7 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
     actions.includes('approve') && !blocked.approve && gate === 'allowed-self-approval'
       ? SELF_APPROVAL_NOTE_USERS
       : null;
-  const note = membershipActionsNote(
-    holder,
-    membership?.ok === false ? 'failed' : membershipId ? 'found' : 'missing',
-  );
+  const note = membershipActionsNote(holder);
   const onboarding = onboardingState(record.membershipStatus, record.userStatus);
   const base = `/admin/users/${userId}`;
 
@@ -118,7 +111,7 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
           // truthy (08's layout).
           actions.length > 0 || note ? (
             <UserLifecycleActions
-              membershipId={membershipId}
+              membershipId={record.membershipId}
               userName={record.displayName}
               actions={actions}
               blocked={blocked}
@@ -137,7 +130,8 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
           ...(can(holder, 'role_assignment.view')
             ? [{ href: `${base}/access`, label: 'Roles & access' }]
             : []),
-          ...(can(holder, 'branch_assignment.view')
+          // The search by user answers with every branch a grant covers, at All branches too (BG-03).
+          ...(canAnywhere(holder, 'branch_assignment.view')
             ? [{ href: `${base}/branches`, label: 'Branch assignments' }]
             : []),
           ...(can(holder, 'audit.view') ? [{ href: `${base}/audit`, label: 'Audit' }] : []),

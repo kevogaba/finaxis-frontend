@@ -14,10 +14,10 @@ import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { SectionCard } from '@/components/data-display/section-card';
 import { TablePaginationBar } from '@/components/data-display/table-pagination-bar';
 import { load } from '@/lib/api/load';
-import { getBranchIndex } from '@/lib/api/lookups';
+import { getBranchIndex, getOrganisationTimeZone } from '@/lib/api/lookups';
 import { lastPageIfPastEnd, parsePaging } from '@/lib/api/paging';
 import { hrefWith, toSearchParams } from '@/lib/api/query-string';
-import { shortId } from '@/lib/format';
+import { formatInstant, shortId } from '@/lib/format';
 import { scopedBranchView } from '@/modules/administration/branches/branch-rules';
 import { listBranches } from '@/modules/administration/branches/branch-service';
 import { AssignUserBranchButton } from '@/modules/administration/users/components/user-branch-actions';
@@ -27,8 +27,6 @@ import {
   canAssignUserBranch,
   OWN_ACCESS,
   ownAccessBlocked,
-  pageOfItems,
-  PARTIAL_SCAN_NOTE,
   parseUserId,
   SCOPED_ASSIGNMENTS_NOTE,
   scopedAssignmentView,
@@ -52,11 +50,12 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
   const userId = parseUserId((await params).userId);
   if (!userId) notFound(); // rule 7: before any read, like the layout (16's tab pages)
   const query = toSearchParams(await searchParams);
-  const [user, selected, scan, branches] = await Promise.all([
+  // One page of their assignments, newest assigned first, branch names embedded (BG-09).
+  const [user, selected, assignments, timeZone] = await Promise.all([
     load(getUser(userId)), // cached: the layout's read
     getCurrentContextProfile(),
-    load(listUserBranchAssignments(userId)),
-    getBranchIndex(), // empty without branch.view: names fall back to short ids
+    load(listUserBranchAssignments(userId, parsePaging(query, 10))),
+    getOrganisationTimeZone(),
   ]);
   if (!user.ok) return null; // the layout renders the failure
 
@@ -87,8 +86,11 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
           }),
         )
       : null;
+  // A branch-scoped grant's options are named from the branch index (empty without branch.view:
+  // short ids then); the rows carry their own names (BG-09).
+  const branches = canAssign && !anywhere ? await getBranchIndex() : null;
   const branchLabel = (id: string) => {
-    const branch = branches.get(id);
+    const branch = branches?.get(id);
     return branch ? `${branch.name} (${branch.code})` : shortId(id);
   };
   const options: SelectOption[] = anywhere
@@ -130,39 +132,16 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
     </SectionCard>
   );
 
-  if (!scan.ok) {
+  if (!assignments.ok) {
     return card(
-      scan.problem.code === 'forbidden' ? (
+      assignments.problem.code === 'forbidden' ? (
         <ForbiddenState />
       ) : (
-        <ErrorState problem={scan.problem} />
+        <ErrorState problem={assignments.problem} />
       ),
     );
   }
-
-  // The scan reads every page of the user's rows (BG-09), so they are paged here, on the server, with the page
-  // and size in the URL like every other list. Branch name, then type, then id: a total order, since
-  // the scan's own order is unspecified and a tie would move a row between pages.
-  const rows = scan.value.items
-    .map((row) => {
-      const branch = branches.get(row.branchId);
-      return {
-        assignmentId: row.id,
-        branchName: branch?.name ?? shortId(row.branchId),
-        branchCode: branch?.code ?? null,
-        assignmentType: row.assignmentType,
-        // On the row's own branch, which `/auth/me` lists only while it is ACTIVE (BG-03, #242).
-        revocable: canActAtBranch(holder, 'user.revoke_branch', row.branchId),
-      };
-    })
-    .sort(
-      (a, b) =>
-        a.branchName.localeCompare(b.branchName) ||
-        a.assignmentType.localeCompare(b.assignmentType) ||
-        a.assignmentId.localeCompare(b.assignmentId),
-    );
-  const paged = pageOfItems(rows, parsePaging(query, 10));
-  const redirectPage = lastPageIfPastEnd(paged.page);
+  const redirectPage = lastPageIfPastEnd(assignments.value.page);
   if (redirectPage !== null) {
     redirect(
       hrefWith(`/admin/users/${userId}/branches`, query, {
@@ -171,49 +150,44 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
     );
   }
 
+  const rows = assignments.value.items.map((row) => {
+    const when = formatInstant(row.assignedAt, timeZone);
+    return {
+      assignmentId: row.id,
+      branchName: row.branchName,
+      assignmentType: row.assignmentType,
+      assignedAt: `${when.date} · ${when.time}`,
+      // On the row's own branch, which `/auth/me` lists only while it is ACTIVE (BG-03, #242).
+      revocable: canActAtBranch(holder, 'user.revoke_branch', row.branchId),
+    };
+  });
   // BG-03: a search by user covers every branch to a tenant-wide view, its own branches otherwise.
-  // Ruling 8: a user with more than 500 ACTIVE assignments caps the scan, which is then partial.
   const scoped = scopedAssignmentView(holder);
-  const notices =
-    scoped || scan.value.truncated ? (
-      <Box sx={{ px: 4, py: 3, display: 'grid', gap: 2 }}>
-        {/* role="note": static notices, not alerts announced on every visit to the tab (as the
-            settings catalogue's, and distinct from the toast's alert). */}
-        {scoped && (
+  return card(
+    <>
+      {scoped && (
+        <Box sx={{ px: 4, py: 3 }}>
+          {/* role="note": a static notice, not an alert announced on every visit to the tab (as
+              the settings catalogue's, and distinct from the toast's alert). */}
           <Alert severity="info" role="note">
             {SCOPED_ASSIGNMENTS_NOTE}
           </Alert>
-        )}
-        {scan.value.truncated && (
-          <Alert severity="info" role="note">
-            {PARTIAL_SCAN_NOTE}
-          </Alert>
-        )}
-      </Box>
-    ) : null;
-
-  return card(
-    <>
-      {notices}
-      {paged.items.length === 0 ? (
-        // With a branch-scoped view or a capped scan, "none" would be a guess under the note.
-        <EmptyState
-          {...branchAssignmentsEmptyState({
-            scoped,
-            truncated: scan.value.truncated,
-            assignOffered,
-          })}
-        />
+        </Box>
+      )}
+      {rows.length === 0 ? (
+        // With a branch-scoped view, "none" would be a guess under the note.
+        <EmptyState {...branchAssignmentsEmptyState({ scoped, assignOffered })} />
       ) : (
         <UserBranchAssignmentsTable
           userName={record.displayName}
           self={self}
-          canRevoke={paged.items.some((row) => row.revocable)}
+          canRevoke={rows.some((row) => row.revocable)}
+          timeZone={timeZone}
           contextOrganisationId={contextOrganisationId}
-          rows={paged.items}
+          rows={rows}
         />
       )}
-      <TablePaginationBar page={paged.page} />
+      <TablePaginationBar page={assignments.value.page} />
     </>,
   );
 }

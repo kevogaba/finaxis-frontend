@@ -4,7 +4,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import { MAKER_CHECKER_BLOCKED } from '@/modules/administration/branches/branch-rules';
 import {
-  MEMBERSHIP_UNAVAILABLE,
+  NO_MEMBERSHIP_VIEW,
   USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
 import { ACTIVATED_TOAST, APPROVED_TOAST, REJECTED_TOAST } from '../approval-copy';
@@ -245,16 +245,11 @@ describe('DecisionBar', () => {
     }
   });
 
-  it('offers no decision without a membership to act on, but shows the note', () => {
-    renderWithProviders(
-      record({
-        subject: { kind: 'membership', membershipId: null },
-        note: MEMBERSHIP_UNAVAILABLE,
-      }),
-    );
+  it('shows the note on its own when no decision is offered', () => {
+    renderWithProviders(record({ decisions: [], note: NO_MEMBERSHIP_VIEW }));
 
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.getByText(MEMBERSHIP_UNAVAILABLE)).toBeInTheDocument();
+    expect(screen.getByText(NO_MEMBERSHIP_VIEW)).toBeInTheDocument();
   });
 
   it('keeps the key and the remark after a failed approval, and retries with them', async () => {
@@ -383,7 +378,7 @@ describe('DecisionBar', () => {
 
   it.each([
     ['the first enabled decision left', ['reject'], null, 'Reject & revoke'],
-    ['the record title when nothing is left to act on', [], MEMBERSHIP_UNAVAILABLE, NAME],
+    ['the record title when nothing is left to act on', [], NO_MEMBERSHIP_VIEW, NAME],
   ] as const)(
     'moves focus to %s while the bar stays mounted',
     async (_case, decisions, note, focused) => {

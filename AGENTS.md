@@ -97,16 +97,16 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   directory — one bounded page of 100 plus the role's granted-code set, each read once and
   filtered client-side — so it is no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-10-01-admin-parity-09-roles.md`, Ruling 6).
-  The user record's Branch assignments tab (`modules/administration/users`'s
-  `listUserBranchAssignments`: a bounded scan of at most 5 × 100 of the user's ACTIVE
-  assignments, now searched by `user_id` (BG-03); reading them by membership, BG-09, retires the
-  scan), its Assign-branch drawer's options
-  (one page of 100 ACTIVE branches, saying so when there are more) and its Assign-role drawer's
-  options (the role index's first 500 roles by name, saying so when there are more) are a fifth,
-  named exception: the tab pages what the scan found with the URL holding page and size and says
-  when it may be partial, and the options are a picker's option set, not a data-listing directory
-  — no licence for an unbounded list (plan
-  `docs/superpowers/plans/2026-10-03-admin-parity-10-users.md`, Rulings 8 and 11).
+  The user record's Assign-branch drawer's options (one page of 100 ACTIVE branches, saying so
+  when there are more) and its Assign-role drawer's options (the role index's first 500 roles by
+  name, saying so under the Role field when there are more; and for branch scope the branches on
+  one page of 100 of the user's ACTIVE branch assignments, saying so when there are more, under
+  the Scope field when that page held none of theirs and under the Branch field when it held
+  some) are a fifth, named exception: a picker's option set, not a data-listing directory — no
+  licence for an unbounded list (plan
+  `docs/superpowers/plans/2026-10-03-admin-parity-10-users.md`, Rulings 8 and 11). The record's
+  Branch assignments tab is no exception: the platform pages it (`listUserBranchAssignments`,
+  BG-09; plan `docs/superpowers/plans/2026-11-24-bg-adopt-16-member-reads.md`).
   The platform overview's Needs attention table
   (`modules/platform-administration/overview`'s `attentionView`) is a sixth, named exception: a
   bounded preview of at most 5 institutions pending approval and 5 drafts, oldest first, each
@@ -115,10 +115,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   preview's total), with no scan. It is no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-10-03-admin-parity-17-platform-records.md`, Ruling 10).
   The user approval page's Requested access (`modules/administration/approvals`'s
-  `listRequestedRoles`: one page of 100 ACTIVE role assignments, saying so when there are more,
-  beside 10's bounded branch-assignment scan) is a seventh, named exception: one pending member's
-  access shown before a decision, not a data-listing directory, with their record holding the
-  rest — no licence for an unbounded list (plan
+  `listRequestedRoles` and `listRequestedBranches`: one page of 100 ACTIVE role assignments and
+  one of 100 ACTIVE branch assignments, each saying so when there are more) is a seventh, named
+  exception: one pending member's access shown before a decision, not a data-listing directory,
+  with their record holding the rest — no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-10-04-admin-parity-12-approvals.md`, Ruling 8).
   The Invite user wizard's pickers (`app/(authenticated)/admin/users/new/page.tsx`: one page of 100
   ACTIVE roles and one of 100 ACTIVE branches, by name, each saying so when there are more) are an

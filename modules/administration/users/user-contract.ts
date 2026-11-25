@@ -58,7 +58,8 @@ export type UserSummary = z.output<typeof userSummarySchema>;
 
 export const userPageSchema = pageSchema(userSummarySchema);
 
-/** MembershipSummary: no names (BG-09). */
+/** MembershipSummary, for the overview's `size=1` count. Items also carry the member's names,
+ * `primary_branch_name`, `created_at` and `member_number` (BG-09), which nothing reads. */
 const membershipSummarySchema = z
   .object({
     id: uuidSchema,

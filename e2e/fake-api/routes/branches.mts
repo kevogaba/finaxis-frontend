@@ -14,6 +14,7 @@ import {
 import type { AccessContext } from '../access.mts';
 import { recordAuditEvent } from '../audit-log.mts';
 import {
+  instantKey,
   isIanaZone,
   objectBody,
   pageOf,
@@ -22,6 +23,7 @@ import {
   reasonField,
   sendJson,
   stringField,
+  tenantListOrder,
   UUID,
 } from '../http.mts';
 import type { Violation } from '../http.mts';
@@ -29,7 +31,7 @@ import { sendIdempotent } from '../idempotency.mts';
 import { makerCheckerRequired } from './settings.mts';
 import { route } from '../router.mts';
 import type { Route, RouteContext } from '../router.mts';
-import type { FakeBranch, FakeBranchAssignment } from '../state.mts';
+import type { FakeBranch, FakeBranchAssignment, RunState } from '../state.mts';
 
 const BRANCH_CODE = /^[A-Z0-9_-]{2,20}$/;
 const ASSIGNMENT_TYPES = ['HOME', 'OPERATE', 'APPROVE', 'VIEW'];
@@ -197,13 +199,54 @@ function requireParent(access: AccessContext, branch: FakeBranch, parentId: stri
   }
 }
 
-const assignmentWire = (row: FakeBranchAssignment) => ({
-  id: row.id,
-  user_id: row.userId,
-  branch_id: row.branchId,
-  assignment_type: row.type,
-  status: row.status,
-});
+/** BranchAssignmentSummaryResponse: the user's and the branch's names and `assigned_at` come
+ * embedded (BG-09). */
+const assignmentWire = (state: RunState, row: FakeBranchAssignment) => {
+  const user = state.users.find((candidate) => candidate.id === row.userId);
+  const branch = state.branches.find((candidate) => candidate.id === row.branchId);
+  return {
+    id: row.id,
+    user_id: row.userId,
+    branch_id: row.branchId,
+    assignment_type: row.type,
+    status: row.status,
+    username: user?.username ?? '',
+    display_name: user?.displayName ?? '',
+    branch_name: branch?.name ?? '',
+    assigned_at: row.assignedAt,
+  };
+};
+
+/** BranchAssignmentDetailResponse, the revoke's answer: the summary's fields plus the organisation,
+ * who assigned and revoked it and when, and its timestamps. The fake keeps no assigner (nullable on
+ * the platform) and stamps no write but the revoke, so the row was created when assigned. */
+const assignmentDetailWire = (state: RunState, row: FakeBranchAssignment) => {
+  const summary = assignmentWire(state, row);
+  return {
+    id: summary.id,
+    organisation_id: row.organisationId,
+    user_id: summary.user_id,
+    branch_id: summary.branch_id,
+    assignment_type: summary.assignment_type,
+    status: summary.status,
+    assigned_at: summary.assigned_at,
+    assigned_by: null,
+    revoked_at: row.revokedAt ?? null,
+    revoked_by: row.revokedBy ?? null,
+    created_at: row.assignedAt,
+    updated_at: row.revokedAt ?? row.assignedAt,
+    username: summary.username,
+    display_name: summary.display_name,
+    branch_name: summary.branch_name,
+  };
+};
+
+/** `allowedBranchAssignmentSorts`; without `sort_by`, newest assigned first. */
+const ASSIGNMENT_SORTS: Record<string, (row: FakeBranchAssignment) => string> = {
+  assignedAt: (row) => instantKey(row.assignedAt),
+  assignmentType: (row) => row.type,
+  status: (row) => row.status,
+};
 
 /** Runs before the state check; what it returns runs after the transition is recorded. */
 type Guard = (
@@ -563,7 +606,7 @@ export const branchRoutes: Route[] = [
   // BG-03 (`IamQueryService.searchBranchAssignments`): the branches the caller may view, from
   // every grant; an explicit branch_id outside them is a 403. With no branch_id the search defaults
   // to the selected branch when the caller may view it, unless user_id names someone: then it spans
-  // every branch the caller may view.
+  // every branch the caller may view. The sort is checked after both 403s (BG-09).
   route('GET', '/api/v1/tenant/branch-assignments', (context) => {
     const access = tenantAccess(context);
     const visibility = branchVisibility(access, 'branch_assignment.view');
@@ -579,18 +622,28 @@ export const branchRoutes: Route[] = [
     const branchId =
       requested ??
       (userId === null && selected !== null && canSee(visibility, selected) ? selected : null);
+    const order = tenantListOrder(context.query, ASSIGNMENT_SORTS, 'assignedAt');
     const type = context.query.get('assignment_type');
     const status = context.query.get('status');
-    const rows = context.state.branchAssignments.filter(
-      (row) =>
-        row.organisationId === access.organisation.id &&
-        canSee(visibility, row.branchId) &&
-        (!branchId || row.branchId === branchId) &&
-        (!userId || row.userId === userId) &&
-        (!type || row.type === type) &&
-        (!status || row.status === status),
+    const rows = context.state.branchAssignments
+      .filter(
+        (row) =>
+          row.organisationId === access.organisation.id &&
+          canSee(visibility, row.branchId) &&
+          (!branchId || row.branchId === branchId) &&
+          (!userId || row.userId === userId) &&
+          (!type || row.type === type) &&
+          (!status || row.status === status),
+      )
+      .sort(order);
+    sendJson(
+      context.res,
+      200,
+      pageOf(
+        rows.map((row) => assignmentWire(context.state, row)),
+        context.query,
+      ),
     );
-    sendJson(context.res, 200, pageOf(rows.map(assignmentWire), context.query));
   }),
 
   route('POST', '/api/v1/tenant/branch-assignments', async (context) => {
@@ -638,7 +691,7 @@ export const branchRoutes: Route[] = [
             row.type === type &&
             row.status === 'ACTIVE',
         );
-        if (existing) return assignmentWire(existing);
+        if (existing) return assignmentWire(state, existing);
         const created: FakeBranchAssignment = {
           id: randomUUID(),
           organisationId: access.organisation.id,
@@ -646,6 +699,7 @@ export const branchRoutes: Route[] = [
           branchId: branch.id,
           type,
           status: 'ACTIVE',
+          assignedAt: new Date().toISOString(),
         };
         state.branchAssignments.push(created);
         recordAuditEvent(state, access, {
@@ -654,7 +708,7 @@ export const branchRoutes: Route[] = [
           action: 'branch.assign_user',
           reason: null,
         });
-        return assignmentWire(created);
+        return assignmentWire(state, created);
       },
       201,
     );
@@ -700,15 +754,16 @@ export const branchRoutes: Route[] = [
         );
       }
       row.status = 'REVOKED';
+      row.revokedAt = new Date().toISOString();
+      row.revokedBy = access.claims.userId;
       recordAuditEvent(state, access, {
         entityType: 'BRANCH',
         entityId: row.branchId,
         action: 'branch.revoke_user',
         reason: null,
       });
-      // ponytail: summary fields only; the real API returns BranchAssignmentDetail and the UI
-      // ignores the body.
-      return assignmentWire(row);
+      // The platform reads the row back (`BranchAssignmentDetailResponse`); the UI ignores it.
+      return assignmentDetailWire(state, row);
     });
   }),
 ];

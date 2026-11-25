@@ -264,6 +264,24 @@ export function sortKey<T>(
   return { key, descending: direction === 'DESC' };
 }
 
+/**
+ * A tenant list's order (`tenantListSortOrder`, BG-09, BG-26): the key `sort_by` names, newest first
+ * unless `sort_by` comes with `sort_dir=ASC` (a `sort_dir` alone is checked but changes nothing),
+ * then the id, highest first. An off-list `sort_by` or `sort_dir` is `sortKey`'s 400.
+ */
+export function tenantListOrder<T extends { id: string }>(
+  query: URLSearchParams,
+  keys: Partial<Record<string, (row: T) => string>>,
+  fallback: string,
+): (a: T, b: T) => number {
+  const { key, descending } = sortKey(query, keys, { by: fallback, dir: 'DESC' });
+  const direction = descending || query.get('sort_by') === null ? -1 : 1;
+  return (a, b) => direction * key(a).localeCompare(key(b)) || b.id.localeCompare(a.id);
+}
+
+/** An instant as a sortable key: seeds write `…:00Z`, the routes `toISOString()`'s `….000Z`. */
+export const instantKey = (iso: string): string => new Date(iso).toISOString();
+
 export function pageOf<T>(items: readonly T[], query: URLSearchParams) {
   const number = intParam(query, 'page', 0, 0, Number.MAX_SAFE_INTEGER);
   const size = intParam(query, 'size', 25, 1, 100);

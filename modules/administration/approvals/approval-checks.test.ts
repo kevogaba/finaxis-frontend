@@ -108,23 +108,22 @@ describe('the control checks', () => {
     ['an auditor', { membershipType: 'AUDITOR' as const }, 'not-required'],
     ['a system member', { membershipType: 'SYSTEM' as const }, 'not-required'],
     [
-      'a staff member with none, after a complete scan',
+      'a staff member with none, every branch visible',
       { branches: { ok: true as const, value: { count: 0, complete: true } } },
       'failed',
     ],
-    // A capped scan, or one a selected branch narrowed, can't prove "none" (rule 9).
+    // A read a branch-scoped view narrowed can't prove "none" (rule 9).
     [
-      'a staff member with none in a partial scan',
+      'a staff member with none among the branches seen',
       { branches: { ok: true as const, value: { count: 0, complete: false } } },
       'platform',
     ],
-    ['an unread membership type', { membershipType: null }, 'platform'],
     ['no branch_assignment.view', { branches: null }, 'platform'],
   ])('checks the branch assignment of %s: %s', (_case, overrides, state) => {
     expect(byId('branch', checks(overrides))?.state).toBe(state);
   });
 
-  it('leaves the branch check to the platform when the scan failed or was not permitted, never "none"', () => {
+  it('leaves the branch check to the platform when the read failed or was not permitted, never "none"', () => {
     expect(
       byId('branch', checks({ branches: { ok: false, problem: { requestId: 'req-8' } } }))?.detail,
     ).toBe(`${VERIFIED_ON_APPROVAL} Their branch assignments couldn't be loaded. Reference: req-8`);

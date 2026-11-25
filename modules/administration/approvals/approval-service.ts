@@ -6,8 +6,8 @@ import type { BranchSortField } from '@/modules/administration/branches/branch-c
 import { DEFAULT_BRANCH_SORT } from '@/modules/administration/branches/branch-query';
 import { listBranches } from '@/modules/administration/branches/branch-service';
 import { listRoleAssignments } from '@/modules/administration/roles/role-service';
-import { listUsers } from '@/modules/administration/users/user-service';
-import { REQUESTED_ROLES_CEILING } from './approval-copy';
+import { listUserBranchAssignments, listUsers } from '@/modules/administration/users/user-service';
+import { REQUESTED_ACCESS_CEILING } from './approval-copy';
 import { pendingCountSchema, type PendingCounts } from './approval-contract';
 import type { UserApprovalCounts } from './approval-notifications';
 
@@ -78,6 +78,12 @@ export function readPendingCounts(): Promise<PendingCounts> {
 export function listRequestedRoles(userId: string) {
   return listRoleAssignments(
     { userId, status: 'ACTIVE' },
-    { page: 0, size: REQUESTED_ROLES_CEILING },
+    { page: 0, size: REQUESTED_ACCESS_CEILING },
   );
+}
+
+/** Requested access: the user's ACTIVE branch assignments, newest first with their branch names
+ * (BG-09), one bounded page like the roles. */
+export function listRequestedBranches(userId: string) {
+  return listUserBranchAssignments(userId, { page: 0, size: REQUESTED_ACCESS_CEILING });
 }

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can, permissionHolder } from '@/auth/permissions';
+import { can, canAnywhere, canTenantWide, permissionHolder } from '@/auth/permissions';
 import { CopyIdButton } from '@/components/data-display/copy-id-button';
 import { DescriptionList, type DescriptionItem } from '@/components/data-display/description-list';
 import { ErrorState } from '@/components/data-display/error-state';
@@ -18,10 +18,7 @@ import {
   scopedRoleAssignmentView,
 } from '@/modules/administration/roles/role-rules';
 import { OnboardingTimeline } from '@/modules/administration/users/components/onboarding-timeline';
-import type {
-  MembershipDetail,
-  MembershipSummary,
-} from '@/modules/administration/users/user-contract';
+import type { MembershipDetail } from '@/modules/administration/users/user-contract';
 import {
   branchAssignmentCount,
   onboardingProgress,
@@ -30,11 +27,10 @@ import {
   userStatusLabel,
 } from '@/modules/administration/users/user-rules';
 import {
+  countUserBranchAssignments,
   countUserRoleAssignments,
-  findUserMembership,
   getMembership,
   getUser,
-  listUserBranchAssignments,
 } from '@/modules/administration/users/user-service';
 
 interface UserOverviewPageProps {
@@ -54,14 +50,17 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
 
   const record = user.value;
   const holder = permissionHolder(selected.kind === 'resolved' ? selected.profile : undefined);
-  const [membership, roleCount, scan] = await Promise.all([
-    can(holder, 'membership.view') ? load(findUserMembership(record.id, record.email)) : null,
-    // null: not permitted (the row is left out). A Loaded failure: permitted, but the read failed.
+  // The membership by the id the user read carries (BG-09). null: not permitted (a count's row is
+  // left out, the card says so). A Loaded failure: permitted, but the read failed.
+  // The platform checks the membership read tenant-wide (BG-33), and the assignment search by user
+  // against every branch a grant covers, whichever branch is selected (BG-03).
+  const [membership, roleCount, branchCount] = await Promise.all([
+    canTenantWide(holder, 'membership.view') ? load(getMembership(record.membershipId)) : null,
     can(holder, 'role_assignment.view') ? load(countUserRoleAssignments(record.id)) : null,
-    can(holder, 'branch_assignment.view') ? load(listUserBranchAssignments(record.id)) : null,
+    canAnywhere(holder, 'branch_assignment.view')
+      ? load(countUserBranchAssignments(record.id))
+      : null,
   ]);
-  const detail =
-    membership?.ok && membership.value ? await load(getMembership(membership.value.id)) : null;
   const at = (iso: string) => {
     const when = formatInstant(iso, timeZone);
     return `${when.date} · ${when.time}`;
@@ -85,17 +84,13 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
           },
         ]
       : []),
-    ...(scan
+    ...(branchCount
       ? [
           {
             label: 'Branch assignments',
-            value: scan.ok
-              ? branchAssignmentCount(
-                  scan.value.items.length,
-                  scan.value.truncated,
-                  scopedAssignmentView(holder),
-                )
-              : readFailed(scan.problem),
+            value: branchCount.ok
+              ? branchAssignmentCount(branchCount.value, scopedAssignmentView(holder))
+              : readFailed(branchCount.problem),
           },
         ]
       : []),
@@ -108,7 +103,7 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
         <DescriptionList items={profileItems} />
       </SectionCard>
       <SectionCard title="Membership">
-        {membershipBody(membership, detail, branches, timeZone, at)}
+        {membershipBody(membership, branches, timeZone, at)}
       </SectionCard>
       <SectionCard title="Onboarding">
         <OnboardingTimeline
@@ -142,8 +137,7 @@ function readFailed(problem: ProblemView): ReactNode {
 
 /** The Membership card's body: each way the read can fall short says so, never an empty card. */
 function membershipBody(
-  membership: Loaded<MembershipSummary | null> | null,
-  detail: Loaded<MembershipDetail> | null,
+  membership: Loaded<MembershipDetail> | null,
   branches: ReadonlyMap<string, { name: string; code: string }>,
   timeZone: string,
   at: (iso: string) => string,
@@ -156,16 +150,8 @@ function membershipBody(
     );
   }
   if (!membership.ok) return <ErrorState problem={membership.problem} />;
-  if (detail === null) {
-    return (
-      <Typography variant="body2" sx={MUTED_PARAGRAPH_SX}>
-        {"This user's membership couldn't be found."}
-      </Typography>
-    );
-  }
-  if (!detail.ok) return <ErrorState problem={detail.problem} />;
 
-  const { value } = detail;
+  const { value } = membership;
   const branch = value.primaryBranchId ? branches.get(value.primaryBranchId) : undefined;
   let primaryBranch = 'None';
   if (value.primaryBranchId) {
