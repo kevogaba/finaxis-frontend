@@ -38,6 +38,8 @@ export const AUDIT_ACTIONS = [
   },
   { value: 'membership.revoke', label: 'Revoked membership', entityType: 'MEMBERSHIP' },
   { value: 'membership.activate', label: 'Activated membership', entityType: 'MEMBERSHIP' },
+  // BG-28: the REINVITE transition's own row; a re-invitation writes no `user.invite`.
+  { value: 'membership.reinvite', label: 'Re-invited member', entityType: 'MEMBERSHIP' },
   { value: 'user.assign_role', label: 'Assigned role', entityType: 'USER_ROLE_ASSIGNMENT' },
   { value: 'user.revoke_role', label: 'Revoked role', entityType: 'USER_ROLE_ASSIGNMENT' },
   {

@@ -26,7 +26,7 @@ import { canInviteUsers, INVITE_HREF } from '@/modules/administration/users/invi
 import { MEMBERSHIP_STATUSES, USER_STATUSES } from '@/modules/administration/users/user-contract';
 import { hasUserFilters, parseUserListQuery } from '@/modules/administration/users/user-query';
 import { USERS_BRANCH_SCOPED, userStatusLabel } from '@/modules/administration/users/user-rules';
-import { listUsers } from '@/modules/administration/users/user-service';
+import { listUsers, readRowInvitations } from '@/modules/administration/users/user-service';
 
 export const metadata: Metadata = { title: 'Users & access' };
 
@@ -118,6 +118,8 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
   }
 
   const total = users.value.page.totalItems;
+  // BG-28: a re-invited member whose account was never provisioned reads Awaiting approval.
+  const invitations = await readRowInvitations(users.value.items, holder);
 
   return (
     <>
@@ -142,7 +144,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                 }
               />
             ) : (
-              <UserDirectoryTable users={users.value.items} />
+              <UserDirectoryTable users={users.value.items} invitations={invitations} />
             )}
             <TablePaginationBar page={users.value.page} />
           </ListBusyRegion>

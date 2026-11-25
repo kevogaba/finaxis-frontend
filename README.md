@@ -460,10 +460,12 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     branches it drafted while maker-checker is on: another administrator must, the institution
     switches maker-checker off in Settings, or a platform administrator acts as the platform
     checker from the institution record (BG-02).
-  - A user whose identity is still provisioning was already approved: the queue marks them and
-    offers no decision, and the approval page says when provisioning failed and links to the
-    user record, which retries it (BG-11). Missing prerequisites (a role, a branch) are explained after the
-    platform refuses (BG-07).
+  - A user whose identity is still provisioning was usually approved already: the queue marks
+    them by their invitation (Identity in progress or failed; a re-invited member whose account
+    was never provisioned reads Awaiting approval, BG-28) and the approval page offers no decision
+    once approval ran, says when provisioning failed and links to the user record, which retries
+    it (BG-11). Missing prerequisites (a role, a branch) are explained after the platform refuses
+    (BG-07).
   - A tenant-wide `branch.approve` activates whichever branch is selected (BG-03). A pending
     branch grants no branch-scoped permission (platform #242), so the queue, the bell and the
     approval page are for tenant-wide holders only. The queue gates on `branch.approve`, which
@@ -622,8 +624,15 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     (`user.invite`), once a few minutes (five by default, configurable on the platform) have
     passed since their account was set up or an invitation was last sent, in any institution
     (BG-11).
-  - Reject & revoke and Revoke are presented as permanent, and the invite wizard refuses the
-    email, though the platform now re-invites a revoked member (BG-28).
+  - Reject & revoke and Revoke say the person can be invited again: the invite wizard re-invites a
+    revoked member on the same membership (BG-28). A pending row whose account is still
+    provisioning reads its membership's invitation (one read per such row, with `membership.view`
+    tenant-wide), so a re-invited member whose account was never provisioned reads Awaiting
+    approval in the directory, the queue and the overview's preview. At most 10 rows a page are
+    read (`ROW_INVITATION_LOOKUPS`); the rest, and any whose read fails (logged as one line per
+    page, by count and status), keep the status-only label. The counts (the bell, the
+    queue tab, the overview) still leave such a member out: only the membership detail carries
+    the invitation (BG-28).
     Suspend and Revoke are disabled on your own record (BG-35). Revoking your own branch
     assignment from the Branch assignments tab shows no self warning (layer 08's
     `RevokeAssignmentButton` has no `self` prop, unlike the Roles & access revoke); at the
@@ -647,15 +656,20 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     aren't mapped onto form fields (BG-09).
   - The invite wizard offers the first 100 active roles and the first 100 active branches by
     name, and says so when there are more. Its Identity step checks the email against this
-    institution's users (at most 500 search matches are read; any membership, a revoked one
-    included, although the platform now re-invites a revoked member, BG-28; past the ceiling the
-    platform's own refusal is the backstop); a 403 from that check asks for a reload (a stale
-    context, or a branch-scoped `user.view`, BG-33). The invitation itself is posted first, and a
-    taken email, or a username a member here holds, is named only after that fails, so a retry
-    with the same idempotency key replays; the naming keys on a 500, and the platform now answers
-    409 `conflict`, so a generic error shows instead (BG-07). An account in another institution
-    can't be seen: its email is reused with its own name, username and phone, which the Review
-    step says, and a username it holds is refused (a 409 since the platform's fix).
+    institution's users (at most 500 search matches are read; past the ceiling the platform's own
+    refusal is the backstop); a 403 from that check asks for a reload (a stale context, or a
+    branch-scoped `user.view`, BG-33). A revoked member's email isn't refused: the first Continue
+    says by name that the invitation re-invites them, on the same membership, keeping their account
+    as it is, and the next one goes on; the Review step says so too (BG-28). The invitation itself
+    is posted first, and a taken email, or a username a member here holds, is named only after
+    that fails, so a retry with the same idempotency key replays; the naming keys on a 500, and
+    the platform now answers 409 `conflict`, so a generic error shows instead (BG-07). A revoked
+    member's email is never named after a 409: the platform re-invites it, so the 409 names an
+    inactive institution or a change since the check, never the username, which a re-invite never
+    checks; a 409 also drops the re-invite note, so the next Continue checks again. An account in
+    another institution can't be seen: its email is reused with its own name, username and phone,
+    which the Review step says, and a username it holds is refused (a 409 since the platform's
+    fix).
   - The Invitation step starts from the contract's flag defaults (identity-provider invitation on,
     application invitation off), and either can be changed. The identity provider's email asks
     them to verify their address and set a password, with a 72-hour link; whether the emails go

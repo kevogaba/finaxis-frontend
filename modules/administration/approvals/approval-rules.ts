@@ -186,7 +186,8 @@ export function userOutcomeNote(
     case 'ACTIVE':
       return 'Approved: this membership is active.';
     case 'REVOKED':
-      return "Rejected: this membership was revoked, and this email can't be invited to this institution again.";
+      // BG-28: inviting the email again re-invites them on this membership.
+      return 'Rejected: this membership was revoked. Inviting this email again brings them back for a new approval.';
     default:
       return `This membership isn't waiting for approval: it is ${humanizeEnum(membership).toLowerCase()}.`;
   }

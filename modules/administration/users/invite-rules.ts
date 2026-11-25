@@ -102,9 +102,12 @@ export const CHOOSE_ROLE_BRANCH = 'Choose the branch this role applies at.';
 export const ROLE_BRANCH_UNASSIGNED = 'Assign them to this branch under Branch assignments first.';
 export const DUPLICATE_ROLE_ROW = 'This role is already listed with the same scope.';
 
-/** Why the email can't be invited, by the membership it already has here (BG-28: a revoked one
- * blocks the email for good). */
-export function memberEmailMessage(status: MembershipStatus): string {
+/** A membership here that refuses the email: every status but REVOKED, which the platform
+ * re-invites on the same membership (BG-28). */
+export type BlockingMembershipStatus = Exclude<MembershipStatus, 'REVOKED'>;
+
+/** Why the email can't be invited, by the membership it already has here. */
+export function memberEmailMessage(status: BlockingMembershipStatus): string {
   switch (status) {
     case 'PENDING_APPROVAL':
       return 'This email already has an invitation to this institution waiting for approval.';
@@ -112,15 +115,30 @@ export function memberEmailMessage(status: MembershipStatus): string {
       return 'This email already belongs to a member of this institution.';
     case 'SUSPENDED':
       return 'This email belongs to a suspended member of this institution. Reactivate them from their record instead.';
-    case 'REVOKED':
-      return "This email's membership here was revoked, so it can't be invited to this institution again.";
   }
 }
 
-/** The route handler's answer to the email check (Ruling 1): the membership this email already has
- * here, or null. */
+/** BG-28: a revoked member's email re-invites them, on the same membership. The Identity step says
+ * so before Continue goes on: the lead in bold, then the note, which ends with what the next
+ * Continue does. The account is matched by email, so the identity entered here is ignored, and the
+ * re-inviter becomes the maker (entry 08). A member number is taken at a membership's first
+ * activation (platform V35), so one revoked while still pending, or by Reject & revoke, has none. */
+export const reinviteLead = (name: string) => `This re-invites ${name}.`;
+export const REINVITE_NOTE =
+  'Their revoked membership returns to awaiting approval with the access you choose next. They keep any member number they had, and their existing account details stay as they are, so the name, username and phone you enter here are ignored. Someone else must approve them. Continue to choose their access, or change the email.';
+
+/** The route handler's answer to the email check (Ruling 1): the membership status this email
+ * already has here, or null. Only a revoked member's answer carries their name, which the re-invite
+ * note says (BG-28); every other status refuses the email, so nothing more leaves the server. */
 export const emailCheckSchema = z.object({
-  membershipStatus: z.enum(MEMBERSHIP_STATUSES).nullable(),
+  member: z
+    .discriminatedUnion('membershipStatus', [
+      z.object({ membershipStatus: z.literal('REVOKED'), displayName: z.string() }),
+      z.object({
+        membershipStatus: z.enum(MEMBERSHIP_STATUSES).exclude(['REVOKED']),
+      }),
+    ])
+    .nullable(),
 });
 export type EmailCheck = z.output<typeof emailCheckSchema>;
 
@@ -139,6 +157,16 @@ export const EMAIL_TAKEN = "This email can't be invited: it is already in use in
 /** A frontend-only problem code: the username belongs to a member here (found after a failed
  * invite whose email is free here, Ruling 15). */
 export const USERNAME_TAKEN_CODE = 'username_taken';
+/** The invite action's 409 outcomes, by code (the platform's and the two above): each says the
+ * email's standing may have changed since the wizard checked it, so a re-invite that check found no
+ * longer holds (BG-28). */
+export const INVITE_CONFLICT_CODES: readonly string[] = [
+  EMAIL_TAKEN_CODE,
+  USERNAME_TAKEN_CODE,
+  'conflict',
+  'IDEMPOTENCY_KEY_REUSED',
+  'IDEMPOTENCY_REQUEST_IN_PROGRESS',
+];
 export const USERNAME_TAKEN =
   "This username can't be used: it already belongs to someone in this institution.";
 export const USERNAME_IN_USE = 'This username belongs to someone in this institution.';
@@ -148,6 +176,10 @@ export const INVITE_REFUSED =
  * institution holds the username, or the institution isn't active). */
 export const INVITE_CONFLICT =
   "This invitation conflicts with an existing member or username, or the institution isn't active. Check the email and username, then try again.";
+/** BG-28: a 409 for a revoked member's email. Its re-invite never checks the username (the account
+ * is matched by email), so the cause is the institution or a change to their membership meanwhile. */
+export const REINVITE_CONFLICT =
+  "This re-invitation couldn't be sent: the institution isn't active, or their membership changed since the email was checked. Check where they stand in the directory, then try again.";
 /** BG-07: a 422 `invalid_operation`: a role or branch picked is unknown or no longer ACTIVE. */
 export const INVITE_STALE_ACCESS =
   'A role or branch you picked is no longer active. Go back to Access and choose again.';
@@ -164,6 +196,9 @@ export const INVITE_MAY_BE_SENT =
 /** What sending does, and what the tenant can't see (BG-02, BG-07, BG-11; Ruling 3). */
 export const REVIEW_NOTE =
   'Sending creates the invitation now. A different administrator must approve it before they can use this institution. If this email already has a Finaxis account, that account is reused: its name, username and phone stay as they are.';
+/** REVIEW_NOTE for a revoked member's email (BG-28). */
+export const reinviteReviewNote = (name: string) =>
+  `Sending re-invites ${name} now: their revoked membership returns to awaiting approval with the access above. They keep any member number they had, and their existing account details stay as they are, so the name, username and phone above are ignored. A different administrator must approve it before they can use this institution.`;
 /** BG-25: the identity provider's email asks them to verify their address and set a password,
  * with a 72-hour link (platform #274); whether it goes out depends on the deployment. A failed
  * identity provisioning shows on the user record (BG-11); an undelivered email doesn't. */

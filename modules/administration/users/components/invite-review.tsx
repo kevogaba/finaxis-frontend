@@ -8,7 +8,7 @@ import Typography from '@mui/material/Typography';
 import { DescriptionList, type DescriptionItem } from '@/components/data-display/description-list';
 import { SectionCard } from '@/components/data-display/section-card';
 import { humanizeEnum } from '@/components/data-display/status-chip';
-import { IDENTITY_LABELS, REVIEW_NOTE, SCOPE_OPTIONS } from '../invite-rules';
+import { IDENTITY_LABELS, reinviteReviewNote, REVIEW_NOTE, SCOPE_OPTIONS } from '../invite-rules';
 import type { InviteValues } from '../invite-schema';
 import type { SelectOption } from '../user-rules';
 
@@ -53,13 +53,22 @@ interface InviteReviewProps {
   values: InviteValues;
   roles: readonly SelectOption[];
   branches: readonly SelectOption[];
+  /** The revoked member this invitation re-invites (BG-28), by name; null for anyone else. */
+  reinviteName?: string | null;
   /** A send in flight: Edit would move the wizard under it. */
   pending: boolean;
   onEdit: (step: number) => void;
 }
 
 /** The Review step: every answer by step, each with a way back to it (spec §10.5). */
-export function InviteReview({ values, roles, branches, pending, onEdit }: InviteReviewProps) {
+export function InviteReview({
+  values,
+  roles,
+  branches,
+  reinviteName = null,
+  pending,
+  onEdit,
+}: InviteReviewProps) {
   const label = (options: readonly SelectOption[], id: string) =>
     options.find((option) => option.id === id)?.label ?? id;
   const scope = (scopeType: string) =>
@@ -138,7 +147,7 @@ export function InviteReview({ values, roles, branches, pending, onEdit }: Invit
         </SectionCard>
       ))}
       <Alert severity="info" role="note">
-        {REVIEW_NOTE}
+        {reinviteName === null ? REVIEW_NOTE : reinviteReviewNote(reinviteName)}
       </Alert>
     </>
   );

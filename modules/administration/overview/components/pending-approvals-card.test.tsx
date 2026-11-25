@@ -11,6 +11,7 @@ const reads = vi.hoisted(() => ({
   countUserApprovals: vi.fn<() => Promise<UserApprovalCounts>>(),
   listBranchActivations: vi.fn<(query: unknown) => Promise<Page<BranchSummary>>>(),
   listUserApprovals: vi.fn<(paging: unknown) => Promise<Page<UserSummary>>>(),
+  readRowInvitations: vi.fn<(users: unknown, holder: unknown) => Promise<Record<string, string>>>(),
 }));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
@@ -18,6 +19,9 @@ vi.mock('@/modules/administration/approvals/approval-service', () => ({
   countUserApprovals: () => reads.countUserApprovals(),
   listBranchActivations: (query: unknown) => reads.listBranchActivations(query),
   listUserApprovals: (paging: unknown) => reads.listUserApprovals(paging),
+}));
+vi.mock('@/modules/administration/users/user-service', () => ({
+  readRowInvitations: (users: unknown, holder: unknown) => reads.readRowInvitations(users, holder),
 }));
 
 const { PendingApprovalsSection } = await import('./pending-approvals-card');
@@ -64,14 +68,19 @@ function waiting() {
   reads.listBranchActivations.mockResolvedValue(page([NYERI], 3));
 }
 
+const HOLDER = { permissions: ['user.approve', 'user.view', 'membership.view'] };
+
 async function show(users = true, branches = true) {
-  return renderWithProviders(<>{await PendingApprovalsSection({ users, branches })}</>);
+  return renderWithProviders(
+    <>{await PendingApprovalsSection({ users, branches, holder: HOLDER })}</>,
+  );
 }
 
 const card = () => screen.getByRole('region', { name: 'Pending approvals' });
 
 beforeEach(() => {
   vi.resetAllMocks();
+  reads.readRowInvitations.mockResolvedValue({});
 });
 
 describe('PendingApprovalsSection', () => {
@@ -118,12 +127,37 @@ describe('PendingApprovalsSection', () => {
       `/admin/approvals/branches/${NYERI.id}`,
     );
     expect(within(card()).getByRole('note')).toHaveTextContent(
-      '1 identity is still being provisioned: approval already ran. If provisioning failed, it can be retried from their user record.',
+      '1 identity is still being set up, usually after approval. Their user records show where each stands.',
     );
     expect(within(card()).getByRole('link', { name: 'Open the approval queue' })).toHaveAttribute(
       'href',
       '/admin/approvals',
     );
+  });
+
+  it('lists a re-invited member awaiting an identity by their invitation, which only they need (BG-28)', async () => {
+    waiting();
+    reads.readRowInvitations.mockResolvedValue({ [BARAKA.id]: 'AWAITING_APPROVAL' });
+    await show();
+
+    // Only the rows awaiting an identity that could be shown, with the holder for its gate.
+    expect(reads.readRowInvitations).toHaveBeenCalledExactlyOnceWith([BARAKA], HOLDER);
+    const rows = within(
+      within(card()).getByRole('list', { name: 'Requests waiting for a decision' }),
+    ).getAllByRole('listitem');
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Wanjiku KariukiUser onboarding · a4@greenfield.exampleReview',
+      'Baraka OtienoUser onboarding · a3@greenfield.exampleReview',
+      'Nyeri BranchBranch activation · NYERI · OperationsReview',
+    ]);
+  });
+
+  it('keeps skipping a row awaiting an identity whose invitation is in progress or unread', async () => {
+    waiting();
+    reads.readRowInvitations.mockResolvedValue({ [BARAKA.id]: 'IN_PROGRESS' });
+    await show();
+
+    expect(within(card()).queryByRole('link', { name: 'Review Baraka Otieno' })).toBeNull();
   });
 
   it('never reads more than a page of 100 users (BG-11)', async () => {
@@ -227,6 +261,7 @@ describe('PendingApprovalsSection', () => {
       PendingApprovalsSection({
         users: true,
         branches: true,
+        holder: HOLDER,
       }),
     ).rejects.toMatchObject({ digest: expect.stringContaining(digest) as unknown });
   });

@@ -9,6 +9,7 @@ import {
   INVITE_REJECTED,
   INVITE_STALE_ACCESS,
   NEEDS_A_ROLE,
+  REINVITE_CONFLICT,
   ROLE_BRANCH_UNASSIGNED,
   USERNAME_IN_USE,
   USERNAME_TAKEN,
@@ -191,8 +192,8 @@ describe('inviteUser', () => {
   it.each([
     ['ACTIVE', 'This email already belongs to a member of this institution.'],
     [
-      'REVOKED',
-      "This email's membership here was revoked, so it can't be invited to this institution again.",
+      'SUSPENDED',
+      'This email belongs to a suspended member of this institution. Reactivate them from their record instead.',
     ],
   ])(
     'names a %s member on the email after the invite’s 409 (BG-07), and only then',
@@ -216,6 +217,24 @@ describe('inviteUser', () => {
       expect(findMemberByUsername).not.toHaveBeenCalled();
     },
   );
+
+  it("names neither the email nor the username of a revoked member's 409: the platform re-invites them (BG-28)", async () => {
+    apiPost.mockRejectedValueOnce(conflict());
+    findMemberByEmail.mockResolvedValueOnce({ membershipStatus: 'REVOKED' });
+
+    // The account is matched by email, so its username was never checked: the 409 is another
+    // cause (an institution that isn't active, a change meanwhile), and the copy never asks to check
+    // the username.
+    expect(await invite()).toMatchObject({
+      ok: false,
+      formError: REINVITE_CONFLICT,
+      fieldErrors: {},
+      code: 'conflict',
+      requestId: 'req-7',
+    });
+    expect(REINVITE_CONFLICT).not.toMatch(/username/i);
+    expect(findMemberByUsername).not.toHaveBeenCalled();
+  });
 
   it('names a username a member here holds once the email is free, with the reference (Ruling 15)', async () => {
     apiPost.mockRejectedValueOnce(conflict());

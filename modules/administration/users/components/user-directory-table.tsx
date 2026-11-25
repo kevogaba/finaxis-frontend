@@ -16,7 +16,7 @@ import { LinkPendingIndicator } from '@/components/navigation/link-pending-indic
 import { StatusChip } from '@/components/data-display/status-chip';
 import { TruncatedText } from '@/components/data-display/truncated-text';
 import { initialsOf } from '@/components/shell/initials';
-import type { UserSummary } from '../user-contract';
+import type { InvitationStatus, UserSummary } from '../user-contract';
 import { onboardingState, userStatusLabel } from '../user-rules';
 
 const COLUMNS = ['User', 'Username', 'Onboarding', 'Membership', 'User status'] as const;
@@ -28,6 +28,9 @@ interface UserDirectoryTableProps {
   users: readonly UserSummary[];
   /** Where a user's record lives: 10's own by default; layer 17 passes the platform's. */
   basePath?: string;
+  /** BG-28: the `invitation` of rows that await an identity, by user id (`readRowInvitations`), so
+   * a re-invited member reads Awaiting approval. A row without one keeps its status-only label. */
+  invitations?: Readonly<Record<string, InvitationStatus>>;
   /** A last "Actions" column, a row's own controls (the platform checker's Approve, BG-02). Server
    * Component: this function prop never crosses to the client — keep it that way. */
   rowActions?: (user: UserSummary) => ReactNode;
@@ -39,6 +42,7 @@ interface UserDirectoryTableProps {
 export function UserDirectoryTable({
   users,
   basePath = '/admin/users',
+  invitations = {},
   rowActions,
 }: UserDirectoryTableProps) {
   return (
@@ -62,7 +66,11 @@ export function UserDirectoryTable({
         </TableHead>
         <TableBody>
           {users.map((user) => {
-            const onboarding = onboardingState(user.membershipStatus, user.userStatus);
+            const onboarding = onboardingState(
+              user.membershipStatus,
+              user.userStatus,
+              invitations[user.id],
+            );
             return (
               <TableRow key={user.id}>
                 <TableCell>

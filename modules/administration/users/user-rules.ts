@@ -50,6 +50,17 @@ function accountBlocked(user: UserStatus): OnboardingState {
   };
 }
 
+/** BG-28: a list row that is PENDING_APPROVAL with its account PROVISIONING_IDP. Usually approval
+ * ran and the sign-in identity is being set up, but a re-invited member whose account was never
+ * provisioned reads the same: only the membership's `invitation` tells them apart, and list rows
+ * carry none (platform 6a8ea28). */
+export function awaitsIdentity(user: {
+  membershipStatus: MembershipStatus;
+  userStatus: UserStatus;
+}): boolean {
+  return user.membershipStatus === 'PENDING_APPROVAL' && user.userStatus === 'PROVISIONING_IDP';
+}
+
 /** A user status in words: `humanizeEnum` would print "Provisioning idp". */
 export function userStatusLabel(status: UserStatus): string {
   return status === 'PROVISIONING_IDP' ? 'Provisioning identity' : humanizeEnum(status);
@@ -185,7 +196,8 @@ export function onboardingProgress(
     case 'REVOKED':
       return {
         kind: 'note',
-        note: "The membership is revoked. This is permanent: this email can't be invited to this institution again.",
+        // BG-28: inviting the email again re-invites them on this membership.
+        note: "The membership is revoked, so they can't use this institution. Inviting this email again brings them back on the same membership, after a new approval.",
       };
     case 'ACCOUNT_BLOCKED':
       return {

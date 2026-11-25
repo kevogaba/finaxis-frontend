@@ -6,9 +6,14 @@ import { UUID_PATTERN } from '@/lib/api/wire';
 import {
   EMAIL_CHECK_FAILED,
   EMAIL_CHECK_REFUSED,
+  EMAIL_TAKEN,
   memberEmailMessage,
   NEEDS_A_BRANCH,
   NEEDS_A_ROLE,
+  REINVITE_NOTE,
+  reinviteLead,
+  reinviteReviewNote,
+  REVIEW_NOTE,
   ROLE_BRANCH_UNASSIGNED,
   SESSION_EXPIRED,
 } from '../invite-rules';
@@ -35,6 +40,9 @@ const EMAIL = 'neema.wanjiku@greenfield.example';
 const fetchMock = vi.fn<(input: string) => Promise<Response>>();
 const answer = (status: number, body: unknown) =>
   Promise.resolve(new Response(JSON.stringify(body), { status }));
+/** The email check's member, in a status that refuses the email: the route names only a revoked one. */
+const esther = (membershipStatus: string) => ({ membershipStatus });
+const HASSAN = { membershipStatus: 'REVOKED', displayName: 'Hassan Ali' };
 
 function renderWizard() {
   renderWithProviders(
@@ -81,7 +89,7 @@ beforeEach(() => {
   // Reset, not clear: a failed test's unused queued answers must not leak into the next one.
   vi.resetAllMocks();
   vi.stubGlobal('fetch', fetchMock);
-  fetchMock.mockImplementation(() => answer(200, { membershipStatus: null }));
+  fetchMock.mockImplementation(() => answer(200, { member: null }));
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -120,7 +128,7 @@ describe('InviteUserWizard: the steps', () => {
 
   it('keeps an email already in use on Identity, says why, and clears it once changed', async () => {
     const user = userEvent.setup({ delay: null });
-    fetchMock.mockImplementationOnce(() => answer(200, { membershipStatus: 'REVOKED' }));
+    fetchMock.mockImplementationOnce(() => answer(200, { member: esther('SUSPENDED') }));
     renderWizard();
     await fillIdentity(user);
 
@@ -128,7 +136,7 @@ describe('InviteUserWizard: the steps', () => {
 
     const email = screen.getByRole('textbox', { name: 'Email' });
     await waitFor(() => {
-      expect(email).toHaveAccessibleDescription(memberEmailMessage('REVOKED'));
+      expect(email).toHaveAccessibleDescription(memberEmailMessage('SUSPENDED'));
     });
     await waitFor(() => {
       expect(email).toHaveFocus();
@@ -138,8 +146,123 @@ describe('InviteUserWizard: the steps', () => {
 
     await user.type(email, 'x');
     await waitFor(() => {
-      expect(email).not.toHaveAccessibleDescription(memberEmailMessage('REVOKED'));
+      expect(email).not.toHaveAccessibleDescription(memberEmailMessage('SUSPENDED'));
     });
+  });
+
+  it('re-invites a revoked member: the first Continue names them and stays, the next goes on (BG-28)', async () => {
+    const user = userEvent.setup({ delay: null });
+    fetchMock.mockImplementation(() => answer(200, { member: HASSAN }));
+    renderWizard();
+    await fillIdentity(user);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // Said as a note, never as an error on the email, and focused: Continue was disabled while
+    // the check ran, so focus would otherwise fall to the page.
+    const note = (await screen.findByText(reinviteLead('Hassan Ali'))).closest('[role="note"]');
+    expect(note).toHaveTextContent(`${reinviteLead('Hassan Ali')} ${REINVITE_NOTE}`);
+    await waitFor(() => {
+      expect(note).toHaveFocus();
+    });
+    const email = screen.getByRole('textbox', { name: 'Email' });
+    expect(email).toHaveAccessibleDescription(
+      "We check it isn't already in use in this institution.",
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+
+    await next(user, 'Access');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await fillAccess(user);
+    await next(user, 'Invitation');
+    await next(user, 'Review');
+
+    // The Review says the same, in place of the reused-account note.
+    expect(screen.getByRole('note')).toHaveTextContent(reinviteReviewNote('Hassan Ali'));
+    expect(screen.queryByText(REVIEW_NOTE)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }));
+    // The same invitation: the platform re-invites by email (BG-28).
+    await waitFor(() => {
+      expect(inviteUser).toHaveBeenCalledTimes(1);
+    });
+    expect((inviteUser.mock.calls[0]?.[1] as FormData).get('email')).toBe(EMAIL);
+  });
+
+  it('drops the re-invite note once the email changes, and checks the new one first', async () => {
+    const user = userEvent.setup({ delay: null });
+    fetchMock.mockImplementationOnce(() => answer(200, { member: HASSAN }));
+    renderWizard();
+    await fillIdentity(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText(reinviteLead('Hassan Ali'))).toBeInTheDocument();
+
+    const email = screen.getByRole('textbox', { name: 'Email' });
+    await user.type(email, 'x');
+    expect(screen.queryByRole('note')).toBeNull();
+    // Back to the first email: the note returns, and only another check moves on.
+    await user.type(email, '{Backspace}');
+    expect(screen.getByRole('note')).toHaveTextContent(reinviteLead('Hassan Ali'));
+
+    await user.clear(email);
+    await user.type(email, `other.${EMAIL}`);
+    await next(user, 'Access');
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/tenant/users/invite-check?email=${encodeURIComponent(`other.${EMAIL}`)}`,
+    );
+    await fillAccess(user);
+    await next(user, 'Invitation');
+    await next(user, 'Review');
+    expect(screen.getByRole('note')).toHaveTextContent(REVIEW_NOTE);
+  });
+
+  it('asks again before re-inviting a second revoked member', async () => {
+    const user = userEvent.setup({ delay: null });
+    fetchMock
+      .mockImplementationOnce(() => answer(200, { member: HASSAN }))
+      .mockImplementationOnce(() =>
+        answer(200, { member: { membershipStatus: 'REVOKED', displayName: 'Halima Said' } }),
+      );
+    renderWizard();
+    await fillIdentity(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText(reinviteLead('Hassan Ali'))).toBeInTheDocument();
+    const email = screen.getByRole('textbox', { name: 'Email' });
+    await user.clear(email);
+    await user.type(email, 'halima.said@greenfield.example');
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    const note = (await screen.findByText(reinviteLead('Halima Said'))).closest('[role="note"]');
+    await waitFor(() => {
+      expect(note).toHaveFocus();
+    });
+    expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+  });
+
+  it('drops the re-invite note when the next check finds them re-invited by someone else', async () => {
+    const user = userEvent.setup({ delay: null });
+    fetchMock
+      .mockImplementationOnce(() => answer(200, { member: HASSAN }))
+      .mockImplementationOnce(() => answer(200, { member: esther('PENDING_APPROVAL') }));
+    renderWizard();
+    await fillIdentity(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText(reinviteLead('Hassan Ali'))).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // The refusal alone, never "This re-invites …" beside it.
+    const email = screen.getByRole('textbox', { name: 'Email' });
+    await waitFor(() => {
+      expect(email).toHaveAccessibleDescription(memberEmailMessage('PENDING_APPROVAL'));
+    });
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(screen.getByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+    // Forgotten, not hidden: editing the email back doesn't bring it back unchecked.
+    await user.type(email, 'x');
+    await user.type(email, '{Backspace}');
+    expect(screen.queryByRole('note')).toBeNull();
   });
 
   it.each([
@@ -166,7 +289,7 @@ describe('InviteUserWizard: the steps', () => {
   );
 
   it.each([
-    ['an unreadable answer', () => answer(200, { membershipStatus: 'GONE' })],
+    ['an unreadable answer', () => answer(200, { member: esther('GONE') })],
     ['a network failure', () => Promise.reject(new TypeError('Failed to fetch'))],
   ])(
     'says the check failed after %s, never reading it as a free email (L1)',
@@ -238,7 +361,7 @@ describe('InviteUserWizard: the steps', () => {
     await user.type(screen.getByRole('textbox', { name: 'Email' }), 'x');
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
 
-    reply(new Response(JSON.stringify({ membershipStatus: null }), { status: 200 }));
+    reply(new Response(JSON.stringify({ member: null }), { status: 200 }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
@@ -266,7 +389,7 @@ describe('InviteUserWizard: the steps', () => {
     await user.clear(username);
     await user.type(username, 'ne');
 
-    reply(new Response(JSON.stringify({ membershipStatus: null }), { status: 200 }));
+    reply(new Response(JSON.stringify({ member: null }), { status: 200 }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
@@ -291,7 +414,7 @@ describe('InviteUserWizard: the steps', () => {
     const email = screen.getByRole('textbox', { name: 'Email' });
     await user.type(email, 'x');
 
-    reply(new Response(JSON.stringify({ membershipStatus: 'ACTIVE' }), { status: 200 }));
+    reply(new Response(JSON.stringify({ member: esther('ACTIVE') }), { status: 200 }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
@@ -491,6 +614,43 @@ describe('InviteUserWizard: sending', () => {
     expect(second?.get('roleAssignments')).toBe(
       JSON.stringify([{ roleId: TELLER, scopeType: 'BRANCH', branchId: WESTLANDS }]),
     );
+  });
+
+  it('drops the re-invite note after a 409 names the email: someone re-invited them meanwhile', async () => {
+    const user = userEvent.setup({ delay: null });
+    fetchMock.mockImplementation(() => answer(200, { member: HASSAN }));
+    inviteUser.mockResolvedValueOnce({
+      ok: false,
+      formError: EMAIL_TAKEN,
+      fieldErrors: { email: memberEmailMessage('PENDING_APPROVAL') },
+      code: 'email_taken',
+      requestId: 'req-9',
+    });
+    renderWizard();
+    await fillIdentity(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText(reinviteLead('Hassan Ali'))).toBeInTheDocument();
+    await next(user, 'Access');
+    await fillAccess(user);
+    await next(user, 'Invitation');
+    await next(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }));
+
+    // Back on Identity with the email's refusal, and no re-invite note beside it.
+    expect(await screen.findByRole('heading', { level: 2, name: 'Identity' })).toBeInTheDocument();
+    const email = screen.getByRole('textbox', { name: 'Email' });
+    await waitFor(() => {
+      expect(email).toHaveAccessibleDescription(memberEmailMessage('PENDING_APPROVAL'));
+    });
+    expect(screen.getByText(/Reference: req-9/)).toBeInTheDocument();
+    expect(screen.queryByRole('note')).toBeNull();
+    // Cleared, so editing the error away doesn't bring the note back: the next Continue checks.
+    await user.type(email, 'x');
+    await user.type(email, '{Backspace}');
+    await waitFor(() => {
+      expect(email).not.toHaveAccessibleDescription(memberEmailMessage('PENDING_APPROVAL'));
+    });
+    expect(screen.queryByRole('note')).toBeNull();
   });
 
   it('shows a safe message, never the error text, when the action itself rejects', async () => {

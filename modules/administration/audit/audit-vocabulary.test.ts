@@ -43,6 +43,13 @@ describe('audit vocabulary', () => {
     expect(actionsForEntityType('BRANCH').map((action) => action.value)).toContain('branch.update');
   });
 
+  it('names a re-invitation on its membership (BG-28)', () => {
+    expect(actionLabel('membership.reinvite')).toBe('Re-invited member');
+    expect(actionsForEntityType('MEMBERSHIP').map((action) => action.value)).toContain(
+      'membership.reinvite',
+    );
+  });
+
   it('labels entity types', () => {
     expect(entityTypeLabel('USER_ROLE_ASSIGNMENT')).toBe('Role assignment');
     expect(entityTypeLabel('GL_ACCOUNT')).toBe('Gl account');

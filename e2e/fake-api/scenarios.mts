@@ -1750,6 +1750,69 @@ function platformCheckerScenario(): RunState {
   };
 }
 
+/** bg-adopt 18 seed IDs (lane rules §5): Kamau …01, his membership …02, his assignments …03–…04. */
+export const REINVITED_SCENARIO_IDS = {
+  kamau: 'a1800000-0000-4000-8000-000000000001',
+  kamauMembership: 'a1800000-0000-4000-8000-000000000002',
+} as const;
+
+/**
+ * BG-28: `users` plus Kamau Njoroge, a re-invited member whose account was never provisioned. His
+ * first membership was revoked while his identity was still being set up, so his account stayed
+ * PROVISIONING_IDP with no identity link; Victor invited him again, so the same membership awaits
+ * approval with fresh access and no dispatch of this life (his invitation reads AWAITING_APPROVAL).
+ * In a list he looks like Daniel, whose approval ran: only his membership's invitation tells them
+ * apart.
+ */
+function usersReinvitedScenario(): RunState {
+  const state = usersScenario();
+  const ids = REINVITED_SCENARIO_IDS;
+  return {
+    ...state,
+    users: [
+      ...state.users,
+      {
+        id: ids.kamau,
+        username: 'kamau.njoroge',
+        email: 'kamau.njoroge@greenfield.example',
+        displayName: 'Kamau Njoroge',
+        status: 'PROVISIONING_IDP',
+        keycloakSubject: 'e2e-kamau.njoroge',
+        identityLinked: false,
+      },
+    ],
+    memberships: [
+      ...state.memberships,
+      {
+        ...membership(ids.kamauMembership, IDS.greenfield, ids.kamau),
+        type: 'STAFF',
+        status: 'PENDING_APPROVAL',
+        primaryBranchId: IDS.westlands,
+        invitedBy: USER_SCENARIO_IDS.victor,
+      },
+    ],
+    branchAssignments: [
+      ...state.branchAssignments,
+      assignment(
+        'a1800000-0000-4000-8000-000000000003',
+        IDS.greenfield,
+        ids.kamau,
+        IDS.westlands,
+        'HOME',
+      ),
+    ],
+    roleAssignments: [
+      ...state.roleAssignments,
+      tenantRoleAssignment(
+        'a1800000-0000-4000-8000-000000000004',
+        IDS.greenfield,
+        ids.kamau,
+        USER_SCENARIO_IDS.teller,
+      ),
+    ],
+  };
+}
+
 /** Layer 12 seed IDs (lane rules §5): users …a*, memberships …b*, branches …c*; role assignments
  * …d*, branch assignments …e* and audit events …f* are internal. Every tail holds a letter, so an
  * upper-cased id differs from the seed. */
@@ -2329,6 +2392,8 @@ const BUILDERS = {
   'users-read-only': () => withoutPermission(usersScenario(), ...USER_ADMIN_CODES),
   // #342: the same, with Jane IAM_ADMIN-shaped (no user.assign_self) on her own record.
   'users-self': () => withoutPermission(usersScenario(), 'user.assign_self'),
+  // BG-28: with Kamau, re-invited after a revoke while his account was still provisioning.
+  'users-reinvited': usersReinvitedScenario,
   // A pagination fixture (BG-09): Felix also works at eleven outposts, each assignment newer than
   // his Westlands Home, so his twelve fill a page of 10 and spill onto a second, newest first.
   'users-many-assignments': () => {

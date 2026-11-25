@@ -34,6 +34,7 @@ import {
   invitationErrorText,
   invitationFacts,
   membershipActionsNote,
+  awaitsIdentity,
   onboardingProgress,
   onboardingState,
   ownAccessBlocked,
@@ -239,6 +240,23 @@ describe('userStatusLabel', () => {
   });
 });
 
+describe('awaitsIdentity (BG-28)', () => {
+  it('picks the pending rows whose account waits on its identity, and nothing else', () => {
+    expect(
+      awaitsIdentity({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'PROVISIONING_IDP' }),
+    ).toBe(true);
+    expect(awaitsIdentity({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'DRAFT' })).toBe(
+      false,
+    );
+    expect(awaitsIdentity({ membershipStatus: 'ACTIVE', userStatus: 'PROVISIONING_IDP' })).toBe(
+      false,
+    );
+    expect(awaitsIdentity({ membershipStatus: 'REVOKED', userStatus: 'PROVISIONING_IDP' })).toBe(
+      false,
+    );
+  });
+});
+
 describe('onboardingProgress', () => {
   const states = (membership: MembershipStatus, user: UserStatus) => {
     const progress = onboardingProgress(membership, user);
@@ -322,7 +340,10 @@ describe('onboardingProgress', () => {
 
   it('replaces the steps with a sentence once onboarding has stopped', () => {
     expect(states('SUSPENDED', 'ACTIVE')).toMatch(/suspended/);
-    expect(states('REVOKED', 'ACTIVE')).toMatch(/permanent/);
+    // BG-28: revoked is no longer for good, so the note says how they come back.
+    expect(states('REVOKED', 'ACTIVE')).toBe(
+      "The membership is revoked, so they can't use this institution. Inviting this email again brings them back on the same membership, after a new approval.",
+    );
     expect(states('ACTIVE', 'LOCKED')).toBe(
       "Their account is locked on the platform, so they can't sign in to any institution.",
     );

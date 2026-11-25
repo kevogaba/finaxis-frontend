@@ -10,6 +10,7 @@ import {
   noOverviewCards,
   overviewCards,
   pendingApprovalsView,
+  previewInvitationRows,
   userPreviewSize,
   type PendingApprovalsReads,
 } from './overview-rules';
@@ -222,7 +223,7 @@ describe('the Pending approvals preview (Ruling 5)', () => {
       },
     ]);
     expect(view.provisioning).toBe(
-      '1 identity is still being provisioned: approval already ran. If provisioning failed, it can be retried from their user record.',
+      '1 identity is still being set up, usually after approval. Their user records show where each stands.',
     );
     expect(view.empty).toBe(false);
     expect(view.failures).toEqual([]);
@@ -318,8 +319,56 @@ describe('the Pending approvals preview (Ruling 5)', () => {
       'Waiting 5',
     ]);
     expect(view.provisioning).toBe(
-      '5 identities are still being provisioned: approval already ran. If provisioning failed, it can be retried from their user record.',
+      '5 identities are still being set up, usually after approval. Their user records show where each stands.',
     );
+  });
+
+  // BG-28: a re-invited member whose account was never provisioned awaits approval all the same.
+  it('lists a row awaiting an identity whose invitation still awaits approval, in its place', () => {
+    const view = pendingApprovalsView({
+      ...READS,
+      invitations: { [BARAKA.id]: 'AWAITING_APPROVAL' },
+      branches: null,
+    });
+    expect(view.rows.map((row) => row.name)).toEqual([
+      'Wanjiku Kariuki',
+      'Baraka Otieno',
+      'Halima Odhiambo',
+    ]);
+    for (const status of ['IN_PROGRESS', 'FAILED', 'COMPLETED'] as const) {
+      const skipped = pendingApprovalsView({
+        ...READS,
+        invitations: { [BARAKA.id]: status },
+        branches: null,
+      });
+      expect(
+        skipped.rows.map((row) => row.name),
+        status,
+      ).toEqual(['Wanjiku Kariuki', 'Halima Odhiambo']);
+    }
+  });
+
+  it('looks up only the rows awaiting an identity that could reach the preview, at most five', () => {
+    const approved = (tail: string) => user(tail, `Approved ${tail}`, 'PROVISIONING_IDP');
+    const waiting = (tail: string) => user(tail, `Waiting ${tail}`, 'DRAFT');
+    // Past the fifth other row, nothing more can be shown.
+    const rows = [
+      approved('g1'),
+      waiting('h1'),
+      waiting('h2'),
+      approved('g2'),
+      waiting('h3'),
+      waiting('h4'),
+      waiting('h5'),
+      approved('g3'),
+    ];
+    expect(previewInvitationRows(rows).map((row) => row.displayName)).toEqual([
+      'Approved g1',
+      'Approved g2',
+    ]);
+    const many = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6'].map(approved);
+    expect(previewInvitationRows(many)).toHaveLength(5);
+    expect(previewInvitationRows([waiting('h1')])).toEqual([]);
   });
 
   it.each([

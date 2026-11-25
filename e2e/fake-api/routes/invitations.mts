@@ -175,16 +175,17 @@ const sameText = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
  * every branch (primary, then assigned) ACTIVE, else 422; every role ACTIVE here, else 422, and
  * TENANT scope without a branch, else 422 (a BRANCH row's branch only has to be ACTIVE: it needn't
  * be one of the assigned ones); STAFF and ADMIN need a branch, and everyone a role, else 400; no
- * membership of the email in this organisation, else 409 (a REVOKED one too, until 18 adopts the
- * re-invite, BG-28); a username taken by another email, 409. Runs inside `produce`, so a refusal
- * stores nothing. The organisation is ACTIVE: `requireContext` saw to it.
+ * membership of the email in this organisation but a REVOKED one, which is re-invited
+ * (InviteeResolution, BG-28), else 409; a username taken by another email, 409. Runs inside
+ * `produce`, so a refusal stores nothing. The organisation is ACTIVE: `requireContext` saw to it.
+ * Returns the REVOKED membership the invitation re-invites, if any.
  */
 function checkInviteRules(
   state: RunState,
   organisationId: string,
   input: Invitation,
   existing: FakeUser | undefined,
-): void {
+): FakeMembership | undefined {
   const activeBranch = (id: string) =>
     state.branches.some(
       (branch) =>
@@ -215,30 +216,39 @@ function checkInviteRules(
     throw malformed('At least one branch assignment is required.');
   }
   if (input.roles.length === 0) throw malformed('At least one role assignment is required.');
-  if (
+  const held =
     existing &&
-    state.memberships.some(
+    state.memberships.find(
       (membership) =>
         membership.userId === existing.id && membership.organisationId === organisationId,
-    )
-  ) {
+    );
+  if (held && held.status !== 'REVOKED') {
     throw conflict('This user already has a membership in the selected organisation.');
   }
   if (!existing && state.users.some((user) => sameText(user.username, input.username))) {
     throw conflict('That username is already in use.');
   }
+  return held;
 }
 
 /**
  * The invitation (contract §E.3): an email that already has an account anywhere reuses it (case
  * aside), and the entered name, username and phone are then ignored; otherwise a DRAFT user with no
  * identity link. The membership waits for approval, the assignments are ACTIVE, and `user.invite`
- * is audited on the USER (the maker lookup's source, contract §G).
+ * is audited on the USER.
+ *
+ * A REVOKED membership of the email is re-invited instead (ADR 0037, BG-28): the same membership,
+ * back to PENDING_APPROVAL, takes the request's type and primary branch, and the caller becomes
+ * its maker (`created_by`); `created_at` stays. The platform also clears the membership's dates and
+ * status reason and deletes its direct permission overrides, none of which the fake keeps, and
+ * its first life's dispatch no longer counts. The first life's assignments stay revoked, and fresh
+ * ones come from the request. The one audit row
+ * is the transition's, `membership.reinvite` on the MEMBERSHIP, and no `user.invite`.
  */
 function invite(state: RunState, access: AccessContext, input: Invitation) {
   const organisationId = access.organisation.id;
   const existing = state.users.find((user) => sameText(user.email, input.email));
-  checkInviteRules(state, organisationId, input, existing);
+  const revoked = checkInviteRules(state, organisationId, input, existing);
 
   const now = new Date().toISOString();
   let user: FakeUser;
@@ -257,18 +267,33 @@ function invite(state: RunState, access: AccessContext, input: Invitation) {
     };
     state.users.push(user);
   }
-  const membership: FakeMembership = {
-    id: randomUUID(),
-    organisationId,
-    userId: user.id,
-    status: 'PENDING_APPROVAL',
-    type: input.membershipType,
-    primaryBranchId: input.primaryBranchId,
-    createdAt: now,
-    updatedAt: now,
-    invitedBy: access.claims.userId,
-  };
-  state.memberships.push(membership);
+  let membership: FakeMembership;
+  if (revoked) {
+    membership = revoked;
+    Object.assign(membership, {
+      status: 'PENDING_APPROVAL',
+      type: input.membershipType,
+      primaryBranchId: input.primaryBranchId,
+      updatedAt: now,
+      invitedBy: access.claims.userId,
+    });
+    // The first life's dispatch is filed under the old generation's key (ADR 0037), so until the
+    // new approval queues one the invitation reads AWAITING_APPROVAL (BG-11).
+    delete membership.dispatch;
+  } else {
+    membership = {
+      id: randomUUID(),
+      organisationId,
+      userId: user.id,
+      status: 'PENDING_APPROVAL',
+      type: input.membershipType,
+      primaryBranchId: input.primaryBranchId,
+      createdAt: now,
+      updatedAt: now,
+      invitedBy: access.claims.userId,
+    };
+    state.memberships.push(membership);
+  }
   for (const row of input.branches) {
     state.branchAssignments.push({
       id: randomUUID(),
@@ -291,12 +316,18 @@ function invite(state: RunState, access: AccessContext, input: Invitation) {
       status: 'ACTIVE',
     });
   }
-  recordAuditEvent(state, access, {
-    entityType: 'USER',
-    entityId: user.id,
-    action: 'user.invite',
-    reason: null,
-  });
+  recordAuditEvent(
+    state,
+    access,
+    revoked
+      ? {
+          entityType: 'MEMBERSHIP',
+          entityId: membership.id,
+          action: 'membership.reinvite',
+          reason: null,
+        }
+      : { entityType: 'USER', entityId: user.id, action: 'user.invite', reason: null },
+  );
   return {
     user_id: user.id,
     membership_id: membership.id,

@@ -148,14 +148,18 @@ describe('UserLifecycleActions', () => {
     expectScoped(second);
   });
 
-  it('makes Reject & revoke an alertdialog with the permanence warning and a required reason', async () => {
+  it('makes Reject & revoke an alertdialog that says they can come back, with a required reason', async () => {
     const user = userEvent.setup();
     revokeMembership.mockResolvedValueOnce({ ok: true });
     renderActions({ actions: ['approve', 'reject'], userStatus: 'DRAFT' });
 
     await user.click(screen.getByRole('button', { name: 'Reject & revoke' }));
     const dialog = screen.getByRole('alertdialog', { name: `Reject and revoke ${NAME}?` });
-    expect(dialog).toHaveTextContent('can never be invited to this institution again');
+    // BG-28: a revoked member can be re-invited, so nothing calls it permanent.
+    expect(dialog).toHaveTextContent(
+      'The membership is revoked with every role and branch assignment it was given. They can be invited again later.',
+    );
+    expect(dialog).not.toHaveTextContent(/permanent|never/);
     const reason = within(dialog).getByRole('textbox', { name: /^Reason/ });
     expect(reason).toBeRequired();
     expect(within(dialog).getByRole('button', { name: 'Reject & revoke' })).toHaveClass(
@@ -377,8 +381,10 @@ describe('UserLifecycleActions', () => {
 
     await user.click(screen.getByRole('button', { name: 'Revoke' }));
     const dialog = screen.getByRole('alertdialog', { name: `Revoke ${NAME}'s membership?` });
-    expect(dialog).toHaveTextContent('Every role and branch assignment here is revoked with it');
-    expect(dialog).toHaveTextContent('can never be invited to this institution again');
+    expect(dialog).toHaveTextContent(
+      `${NAME} loses access to this institution, and every role and branch assignment here is revoked with it. They can be invited again later.`,
+    );
+    expect(dialog).not.toHaveTextContent(/permanent|never/);
     const reason = within(dialog).getByRole('textbox', { name: /^Reason/ });
     expect(reason).toBeRequired();
     await user.type(reason, 'Left the SACCO');

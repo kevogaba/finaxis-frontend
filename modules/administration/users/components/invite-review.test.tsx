@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { screen, within } from '@testing-library/react';
 import { ownStyle } from '@/test/own-style';
 import { renderWithProviders } from '@/test/test-utils';
-import { REVIEW_NOTE } from '../invite-rules';
+import { reinviteReviewNote, REVIEW_NOTE } from '../invite-rules';
 import type { InviteValues } from '../invite-schema';
 import { InviteReview } from './invite-review';
 
@@ -86,6 +86,21 @@ describe('InviteReview', () => {
     expect(fact(invitation, 'Identity-provider invitation')).toHaveTextContent('Yes');
     expect(fact(invitation, 'Application invitation')).toHaveTextContent('No');
     expect(screen.getByRole('note')).toHaveTextContent(REVIEW_NOTE);
+  });
+
+  it("says a revoked member's re-invite in place of the reused-account note (BG-28)", () => {
+    renderWithProviders(
+      <InviteReview
+        values={VALUES}
+        roles={ROLES}
+        branches={BRANCHES}
+        reinviteName="Hassan Ali"
+        pending={false}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('note')).toHaveTextContent(reinviteReviewNote('Hassan Ali'));
   });
 
   it('shows an unset answer muted and in regular weight, apart from real values', () => {

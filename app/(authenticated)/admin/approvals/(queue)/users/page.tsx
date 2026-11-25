@@ -23,6 +23,7 @@ import {
 } from '@/modules/administration/approvals/approval-rules';
 import { listUserApprovals } from '@/modules/administration/approvals/approval-service';
 import { UserDirectoryTable } from '@/modules/administration/users/components/user-directory-table';
+import { readRowInvitations } from '@/modules/administration/users/user-service';
 import { DEFAULT_USER_PAGE_SIZE } from '@/modules/administration/users/user-query';
 
 export const metadata: Metadata = { title: 'User onboarding' };
@@ -33,7 +34,8 @@ interface UserOnboardingPageProps {
 
 /** The User onboarding tab (spec §10.6): memberships PENDING_APPROVAL, newest first, paged in the
  * URL. A row whose user is provisioning reads "Provisioning identity" and opens a page with no
- * decision (Ruling 12). */
+ * decision (Ruling 12), unless its invitation, read per such row, shows a re-invited member who
+ * still awaits approval (BG-28). */
 export default async function UserOnboardingPage({ searchParams }: UserOnboardingPageProps) {
   const params = toSearchParams(await searchParams);
   const selected = await getCurrentContextProfile();
@@ -62,12 +64,17 @@ export default async function UserOnboardingPage({ searchParams }: UserOnboardin
     );
   }
 
+  const invitations = await readRowInvitations(users.value.items, holder);
   return card(
     <>
       {users.value.items.length === 0 ? (
         <EmptyState title={NO_USERS_WAITING} />
       ) : (
-        <UserDirectoryTable users={users.value.items} basePath={USER_QUEUE_HREF} />
+        <UserDirectoryTable
+          users={users.value.items}
+          basePath={USER_QUEUE_HREF}
+          invitations={invitations}
+        />
       )}
       <TablePaginationBar page={users.value.page} />
     </>,
