@@ -8,6 +8,7 @@ import {
   mainText,
   notFoundHeading,
   rowsOf,
+  statusChip,
 } from './support/admin';
 import { authenticate, clickInMuiPopover, expectHydrated } from './support/auth';
 import {
@@ -580,6 +581,31 @@ test.describe('approvals: branch activation decisions', () => {
     await expect(toast(page, BRANCH_ACTIVATED)).toBeVisible();
     await expect(mainText(page, ACTIVATED_NOTE)).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: 'Kericho Branch' })).toBeFocused();
+  });
+
+  test('returns a branch someone else submitted, and its record shows it as a returned draft', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'approvals');
+    await enterQueue(page);
+    await openRequest(page, branchPath(APPROVALS.kericho), 'Kericho Branch');
+
+    await press(decision(page, 'Return for changes'));
+    const dialog = page.getByRole('dialog', { name: 'Return Kericho Branch for changes?' });
+    await expect(dialog).toContainText('It goes back to draft. Its maker sees your reason.');
+    await dialog.getByRole('textbox', { name: 'What needs to change' }).fill('Fix the parent');
+    await dialog.getByRole('button', { name: 'Return for changes', exact: true }).click();
+    await expect(toast(page, 'Returned for changes')).toBeVisible();
+    await expect(
+      mainText(page, 'Sent back to draft: it can be changed and submitted again.'),
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Kericho Branch' })).toBeFocused();
+
+    await page.getByRole('link', { name: 'Open the branch record' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Kericho Branch' })).toBeVisible();
+    await expect(statusChip(page, 'Draft')).toBeVisible();
+    await expect(mainText(page, 'KERICHO · Operations · Sent back: Fix the parent')).toBeVisible();
   });
 
   test('disables Activate for its drafter', async ({ context, page }, testInfo) => {

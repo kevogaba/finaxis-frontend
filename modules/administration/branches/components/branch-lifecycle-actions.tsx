@@ -12,11 +12,13 @@ import type { FormAction } from '@/lib/api/action-result';
 import {
   activateBranch,
   closeBranch,
+  discardBranch,
   reactivateBranch,
+  returnBranch,
   submitBranch,
   suspendBranch,
 } from '../branch-actions';
-import { MAKER_CHECKER_BLOCKED, type BranchLifecycleAction } from '../branch-rules';
+import { MAKER_CHECKER_BLOCKED, sendBackCopy, type BranchLifecycleAction } from '../branch-rules';
 
 /** The self-approval note, which describes the decision it relaxes. */
 const WARNING_ID = 'branch-lifecycle-warning';
@@ -26,11 +28,22 @@ interface ActionCopy {
   title: string;
   description: string;
   reason: 'optional' | 'required';
+  reasonLabel?: string;
   success: string;
   action: FormAction;
 }
 
-function copyFor(id: BranchLifecycleAction, name: string, selectedHere: boolean): ActionCopy {
+/** Destructive: an error-toned trigger and an alertdialog. */
+const DESTRUCTIVE: readonly BranchLifecycleAction[] = ['discard', 'close'];
+/** Never the hero's primary action, even alone: each undoes or abandons a request. */
+const SECONDARY: readonly BranchLifecycleAction[] = ['discard', 'withdraw', 'return'];
+
+function copyFor(
+  id: BranchLifecycleAction,
+  name: string,
+  code: string,
+  selectedHere: boolean,
+): ActionCopy {
   // A branch-selected context becomes invalid once its branch leaves ACTIVE (contract §E.4).
   const leavesContext = selectedHere
     ? ' You are working in this branch, so you will choose a working context again afterwards.'
@@ -45,6 +58,15 @@ function copyFor(id: BranchLifecycleAction, name: string, selectedHere: boolean)
         success: 'Submitted for approval',
         action: submitBranch,
       };
+    case 'discard':
+      return {
+        label: 'Discard draft',
+        title: `Discard the ${name} draft?`,
+        description: `The draft closes and can't be reopened. Its code ${code} stays taken.`,
+        reason: 'required',
+        success: 'Draft discarded',
+        action: discardBranch,
+      };
     case 'activate':
       return {
         label: 'Activate',
@@ -54,6 +76,9 @@ function copyFor(id: BranchLifecycleAction, name: string, selectedHere: boolean)
         success: 'Branch activated',
         action: activateBranch,
       };
+    case 'withdraw':
+    case 'return':
+      return { ...sendBackCopy(id, name), reason: 'required', action: returnBranch };
     case 'suspend':
       return {
         label: 'Suspend',
@@ -88,6 +113,8 @@ const BLOCKED_ID = 'branch-activate-blocked';
 
 interface BranchLifecycleActionsProps {
   branchId: string;
+  /** Named by Discard: the code stays taken. */
+  branchCode: string;
   branchName: string;
   actions: readonly BranchLifecycleAction[];
   /** The current user drafted this branch and maker-checker is on (BG-08); Activate stays visible
@@ -104,6 +131,7 @@ interface BranchLifecycleActionsProps {
 /** Record hero lifecycle (spec §10.3): availability comes from `availableBranchActions`. */
 export function BranchLifecycleActions({
   branchId,
+  branchCode,
   branchName,
   actions,
   activateBlocked,
@@ -201,8 +229,8 @@ export function BranchLifecycleActions({
             ref={(node) => {
               buttonRefs.current.set(id, node);
             }}
-            variant={index === 0 ? 'contained' : 'outlined'}
-            color={id === 'close' ? 'error' : 'primary'}
+            variant={index === 0 && !SECONDARY.includes(id) ? 'contained' : 'outlined'}
+            color={DESTRUCTIVE.includes(id) ? 'error' : 'primary'}
             disabled={id === 'activate' && blocked}
             aria-describedby={
               id !== 'activate'
@@ -217,7 +245,7 @@ export function BranchLifecycleActions({
               setOpen(id);
             }}
           >
-            {copyFor(id, branchName, selectedHere).label}
+            {copyFor(id, branchName, branchCode, selectedHere).label}
           </Button>
         ))}
         {blocked && (
@@ -232,7 +260,7 @@ export function BranchLifecycleActions({
         )}
       </Box>
       {actions.map((id) => {
-        const copy = copyFor(id, branchName, selectedHere);
+        const copy = copyFor(id, branchName, branchCode, selectedHere);
         return (
           <ReasonDialog
             key={id}
@@ -241,8 +269,9 @@ export function BranchLifecycleActions({
             description={copy.description}
             confirmLabel={copy.label}
             reason={copy.reason}
+            reasonLabel={copy.reasonLabel}
             action={copy.action}
-            tone={id === 'close' ? 'error' : 'default'}
+            tone={DESTRUCTIVE.includes(id) ? 'error' : 'default'}
             contextOrganisationId={contextOrganisationId}
             onClose={() => {
               setOpen(null);

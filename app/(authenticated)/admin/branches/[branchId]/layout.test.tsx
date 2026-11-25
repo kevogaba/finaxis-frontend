@@ -42,7 +42,9 @@ vi.mock('@/modules/administration/settings/settings-service', () => ({
 vi.mock('@/modules/administration/branches/branch-actions', () => ({
   activateBranch: vi.fn(),
   closeBranch: vi.fn(),
+  discardBranch: vi.fn(),
   reactivateBranch: vi.fn(),
+  returnBranch: vi.fn(),
   submitBranch: vi.fn(),
   suspendBranch: vi.fn(),
 }));
@@ -66,16 +68,18 @@ function setup({
   branchOnly = [],
   heldAt = ['b-1'],
   selected = null,
+  branch = {},
 }: {
   maker?: string | null;
   submitter?: string | null;
   switchState?: SwitchState;
   status?: string;
-  codes?: string[];
+  codes?: readonly string[];
   /** Of `codes`, the ones held only through BRANCH grants (BG-33), at `heldAt`. */
   branchOnly?: string[];
   heldAt?: string[];
   selected?: { id: string; name: string } | null;
+  branch?: { branchCode?: string; statusReason?: string | null };
 } = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
@@ -96,8 +100,10 @@ function setup({
     branchName: 'Likoni',
     branchType: 'BRANCH',
     status,
+    statusReason: null,
     createdBy: maker === null ? null : { id: maker, displayName: null },
     submittedBy: submitter === null ? null : { id: submitter, displayName: null },
+    ...branch,
   });
   readMakerCheckerSwitch.mockResolvedValue(switchState);
 }
@@ -218,5 +224,68 @@ describe('BranchRecordLayout: whichever branch is selected (BG-03)', () => {
     await show();
 
     expect(screen.queryByRole('button', { name: 'Reactivate' })).toBeNull();
+  });
+});
+
+describe('BranchRecordLayout: sending a request back (BG-01)', () => {
+  const MAKER_CODES = ['branch.view', 'branch.create', 'branch.approve'];
+  const button = (name: string) => screen.queryByRole('button', { name });
+
+  it.each([
+    ['its creator', 'Withdraw', 'Return for changes', { maker: ME }],
+    ['its latest submitter', 'Withdraw', 'Return for changes', { maker: VICTOR, submitter: ME }],
+    ['anyone else', 'Return for changes', 'Withdraw', { maker: VICTOR, submitter: VICTOR }],
+  ])('offers %s of a pending branch %s, never %s', async (_case, shown, hidden, makers) => {
+    setup({ ...makers, codes: MAKER_CODES });
+    await show();
+
+    expect(button(shown)).toBeEnabled();
+    expect(button(hidden)).not.toBeInTheDocument();
+  });
+
+  // Platform #242: a branch-scope grant counts only while its branch is ACTIVE, so a pending or
+  // draft branch is withdrawn, returned or discarded tenant-wide only (`canActOnBranch`), even
+  // were it the selected branch.
+  it.each([
+    ['Withdraw', 'PENDING_APPROVAL', ME],
+    ['Return for changes', 'PENDING_APPROVAL', VICTOR],
+    ['Discard draft', 'DRAFT', ME],
+  ])('offers a branch-scoped holder no %s on a %s branch', async (name, status, maker) => {
+    setup({
+      maker,
+      status,
+      codes: MAKER_CODES,
+      branchOnly: ['branch.create', 'branch.approve'],
+      selected: { id: BRANCH, name: 'Likoni' },
+    });
+    await show();
+
+    expect(button(name)).not.toBeInTheDocument();
+  });
+
+  it('offers Discard draft on a draft, but not on the head office', async () => {
+    setup({ codes: MAKER_CODES, status: 'DRAFT' });
+    const { unmount } = await show();
+    expect(button('Discard draft')).toBeEnabled();
+    unmount();
+
+    setup({ codes: MAKER_CODES, status: 'DRAFT', branch: { branchCode: 'HEAD_OFFICE' } });
+    await show();
+    expect(button('Submit for approval')).toBeEnabled();
+    expect(button('Discard draft')).not.toBeInTheDocument();
+  });
+
+  it('says why a returned draft came back under its title', async () => {
+    setup({ status: 'DRAFT', branch: { statusReason: 'Fix the parent branch' } });
+    await show();
+
+    expect(screen.getByText('LIK · Branch · Sent back: Fix the parent branch')).toBeInTheDocument();
+  });
+
+  it('keeps the plain subtitle for a fresh draft', async () => {
+    setup({ status: 'DRAFT' });
+    await show();
+
+    expect(screen.getByText('LIK · Branch')).toBeInTheDocument();
   });
 });

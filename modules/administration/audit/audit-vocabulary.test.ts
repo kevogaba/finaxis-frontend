@@ -20,6 +20,16 @@ describe('audit vocabulary', () => {
     expect(actionsForEntityType(undefined).length).toBeGreaterThan(roleActions.length);
   });
 
+  // BG-01: a withdrawal writes `branch.withdraw` beside the FSM's `branch.return_for_changes`.
+  it('names the branch return, withdrawal and discard', () => {
+    expect(actionLabel('branch.return_for_changes')).toBe('Returned branch for changes');
+    expect(actionLabel('branch.withdraw')).toBe('Withdrew branch');
+    expect(actionLabel('branch.discard')).toBe('Discarded branch draft');
+    expect(actionsForEntityType('BRANCH').map((action) => action.value)).toEqual(
+      expect.arrayContaining(['branch.return_for_changes', 'branch.withdraw', 'branch.discard']),
+    );
+  });
+
   it('labels entity types', () => {
     expect(entityTypeLabel('USER_ROLE_ASSIGNMENT')).toBe('Role assignment');
     expect(entityTypeLabel('GL_ACCOUNT')).toBe('Gl account');

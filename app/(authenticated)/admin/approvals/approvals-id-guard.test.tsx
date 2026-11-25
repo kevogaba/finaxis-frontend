@@ -62,6 +62,7 @@ vi.mock('@/modules/administration/roles/role-actions', () => ({
 }));
 vi.mock('@/modules/administration/branches/branch-actions', () => ({
   assignBranchUser: vi.fn(),
+  returnBranch: vi.fn(),
   revokeBranchAssignment: vi.fn(),
 }));
 

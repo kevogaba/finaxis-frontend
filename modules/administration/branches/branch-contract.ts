@@ -61,7 +61,7 @@ export type BranchSummary = z.output<typeof branchSummarySchema>;
 export const branchPageSchema = pageSchema(branchSummarySchema);
 
 /** `address` is always `{}` and isn't mapped (BG-13). `opened_on`/`closed_on` ARE mapped through
- * to `openedOn`/`closedOn` below — the backend just never sets them today. */
+ * to `openedOn`/`closedOn` below, and shown when set: a discarded draft has a `closed_on` (BG-01). */
 export const branchDetailSchema = z
   .object({
     id: uuidSchema,

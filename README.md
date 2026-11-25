@@ -425,10 +425,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   tab paged in the URL and counted in its label, and opens a page per request with who asked and
   when, the requested access (a user's) or the branch, control checks and a decision bar. The app
   bar's bell counts the same approvals. Known limits:
-  - There is no return for changes, resubmission, branch rejection or remark on Approve. The
-    platform now has branch return and withdraw, tenant return and an optional approval remark,
-    which the UI doesn't use yet, but still no approval-request model (`docs/backend-gaps.md`
-    BG-01).
+  - A pending branch can be returned for changes (or withdrawn by its maker) beside Activate; a
+    returned draft is resubmitted from its record. There is no branch rejection, and no remark on
+    Approve or institution return yet, which the platform has; there is still no approval-request
+    model (`docs/backend-gaps.md` BG-01).
   - User onboarding's "Newest first" is the users endpoint's own order, by when each account was
     created (BG-09): an invitation that reused an existing account sorts by that account's age.
   - The maker comes from the record (`created_by`, `submitted_by`), so naming it needs no
@@ -504,9 +504,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     `Intl` itself rejects falls back the same way, but that is rarer.
 - Branches (`/admin/branches`, `modules/administration/branches/`) lists and searches branches
   (code/name search, status and type filters, five sortable columns) from `GET /branches`,
-  creates a draft, and drives the lifecycle (submit, activate, suspend, reactivate, close) and user
-  assignments (assign/revoke) as Server Actions behind `ReasonDialog`/`ConfirmDialog`/
-  `AssignmentDrawer`. The record page (`RecordHero` + `RecordTabs`) renders Overview, Users, and
+  creates a draft, and drives the lifecycle (submit, discard, activate, withdraw or return,
+  suspend, reactivate, close) and user assignments (assign/revoke) as Server Actions behind
+  `ReasonDialog`/`ConfirmDialog`/`AssignmentDrawer`. The record page (`RecordHero` + `RecordTabs`) renders Overview, Users, and
   Audit tabs. Known limits:
   - No address, edit, or opened/closed-date fields, which the platform now provides
     (`docs/backend-gaps.md` BG-13).
@@ -519,8 +519,12 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     check at the branch: a role held at two ACTIVE branches acts on either while one of them is
     selected, and on neither at All branches. The directory lists only the branches a
     branch-scoped `branch.view` covers, and says so.
-  - No draft discard or return: the platform has both now, but the UI doesn't offer them yet, so
-    a draft created here can't be removed from the UI (`docs/backend-gaps.md` BG-01).
+  - Withdraw (the branch's creator or latest submitter) and Return for changes (anyone else) are
+    one platform route, told apart by the caller; a draft with a reason shows "Sent back:
+    <reason>", since the record can't tell a withdrawal from a return. Like Submit and Activate,
+    they and Discard act on a pending or draft branch only through a tenant-wide grant; Discard is
+    never offered for the head office, and a discarded draft's code stays taken
+    (`docs/backend-gaps.md` BG-01).
   - The directory's Type filter offers only the two platform types (`HEAD_OFFICE`, `OPERATIONS`);
     a tenant-defined type filters only through a hand-edited `?type=` URL.
   - The toolbar search commits on Enter or blur, not as you type.

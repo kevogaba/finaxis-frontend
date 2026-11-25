@@ -1,7 +1,27 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
-import { BRANCH_SCENARIO_IDS, IDS } from './fake-api/scenarios.mts';
+import { expect, test, type APIRequestContext } from '@playwright/test';
+import { APPROVAL_SCENARIO_IDS, BRANCH_SCENARIO_IDS, IDS } from './fake-api/scenarios.mts';
 import { api, contextFor } from './support/fake-api';
+
+const DRAFT_BODY = {
+  branch_name: 'Nairobi CBD Branch',
+  branch_type: 'OPERATIONS',
+  timezone: 'Africa/Nairobi',
+};
+
+/** The `action`s audited on one branch, with their reasons (rows written in one request share a
+ * timestamp, so their order isn't asserted). */
+async function auditedOn(
+  request: APIRequestContext,
+  headers: Record<string, string>,
+  branchId: string,
+) {
+  const page = await request.get(api(`/tenant/audit-events?entity_id=${branchId}&size=100`), {
+    headers,
+  });
+  const { items } = (await page.json()) as { items: { action: string; reason: string | null }[] };
+  return items.map(({ action, reason }) => ({ action, reason }));
+}
 
 test.describe('fake API branches (contract §E.3–§E.4)', () => {
   // BG-03 (platform #154): the selected branch no longer pins administration.
@@ -84,6 +104,22 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
     });
     expect(suspend.status()).toBe(403);
     expect(await suspend.json()).toMatchObject({ detail: 'Missing permission: branch.suspend.' });
+    // A pending or draft branch is acted on tenant-wide only: no return, no discard (BG-01). The
+    // route's own gate passes at Head Office, and the target check names the intent's code.
+    for (const [path, branchId, code] of [
+      ['return', BRANCH_SCENARIO_IDS.thikaRoad, 'branch.approve'],
+      ['discard', BRANCH_SCENARIO_IDS.karen, 'branch.create'],
+    ] as const) {
+      const refused = await request.post(api(`/branches/${branchId}/${path}`), {
+        headers: atHeadOffice,
+        data: { reason: 'Wrong name' },
+      });
+      expect(refused.status(), path).toBe(403);
+      expect(await refused.json()).toMatchObject({
+        code: 'forbidden',
+        detail: `Missing permission: ${code}.`,
+      });
+    }
 
     // The list is target-aware too: the ACTIVE branches the grant covers (BG-03).
     const listed = (await (await get('/branches')).json()) as {
@@ -358,5 +394,192 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
       ],
       page: { total_items: 1 },
     });
+  });
+
+  // BranchProvisioningService.returnForChanges: one route, two intents, told apart by the caller.
+  test('returns a pending branch for its checker and withdraws it for its maker (BG-01)', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'branches', null);
+    const thika = BRANCH_SCENARIO_IDS.thikaRoad; // Mary drafted it
+    const returned = await request.post(api(`/branches/${thika}/return`), {
+      headers,
+      data: { reason: 'Fix the parent branch' },
+    });
+    expect(returned.status()).toBe(200);
+    expect(await returned.json()).toMatchObject({
+      id: thika,
+      status: 'DRAFT',
+      status_reason: 'Fix the parent branch',
+      created_by: { id: BRANCH_SCENARIO_IDS.mary },
+    });
+    // A return is the FSM's row only.
+    const onThika = await auditedOn(request, headers, thika);
+    expect(onThika).toContainEqual({
+      action: 'branch.return_for_changes',
+      reason: 'Fix the parent branch',
+    });
+    expect(onThika.map(({ action }) => action)).not.toContain('branch.withdraw');
+    // Only PENDING_APPROVAL goes back.
+    const again = await request.post(api(`/branches/${thika}/return`), {
+      headers,
+      data: { reason: 'Again' },
+    });
+    expect(again.status()).toBe(409);
+    expect(await again.json()).toMatchObject({ code: 'conflict' });
+
+    // Jane's own request: she withdraws it, and a withdrawal adds its own row.
+    const created = await request.post(api('/branches'), {
+      headers,
+      data: { ...DRAFT_BODY, branch_code: 'NAIROBI_CBD', parent_branch_id: null },
+    });
+    const { branch_id: own } = (await created.json()) as { branch_id: string };
+    await request.post(api(`/branches/${own}/submit`), { headers, data: {} });
+    const withdrawn = await request.post(api(`/branches/${own}/return`), {
+      headers,
+      data: { reason: 'Wrong name' },
+    });
+    expect(await withdrawn.json()).toMatchObject({ status: 'DRAFT', status_reason: 'Wrong name' });
+    expect(await auditedOn(request, headers, own)).toEqual(
+      expect.arrayContaining([
+        { action: 'branch.return_for_changes', reason: 'Wrong name' },
+        { action: 'branch.withdraw', reason: 'Wrong name' },
+      ]),
+    );
+  });
+
+  test('asks the permission of the caller’s intent, and a reason of 3–500 characters', async ({
+    request,
+  }) => {
+    // Jane holds branch.approve but not branch.create: she returns Victor's request, and can't
+    // withdraw her own, even though she could approve it.
+    const headers = await contextFor(request, 'approvals', null);
+    const own = await request.post(api(`/branches/${APPROVAL_SCENARIO_IDS.naivasha}/return`), {
+      headers,
+      data: { reason: 'Wrong name' },
+    });
+    expect(own.status()).toBe(403);
+    expect(await own.json()).toMatchObject({
+      code: 'forbidden',
+      detail: 'Missing permission: branch.create.',
+    });
+    const theirs = await request.post(api(`/branches/${APPROVAL_SCENARIO_IDS.kericho}/return`), {
+      headers,
+      data: { reason: 'Wrong name' },
+    });
+    expect(theirs.status()).toBe(200);
+
+    // The read-only default holds neither code. The platform refuses it at the route's own gate,
+    // whose detail is generic, so only the status and code are pinned.
+    const reader = await contextFor(request, 'default', null);
+    const refused = await request.post(api(`/branches/${IDS.westlands}/return`), {
+      headers: reader,
+      data: { reason: 'Wrong name' },
+    });
+    expect(refused.status()).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: 'forbidden' });
+
+    const branches = await contextFor(request, 'branches', null);
+    const thika = BRANCH_SCENARIO_IDS.thikaRoad;
+    for (const [data, code] of [
+      [undefined, 'invalid_json'],
+      [{}, 'invalid_json'],
+      [{ reason: 'ab' }, 'validation_failed'],
+      [{ reason: 'x'.repeat(501) }, 'validation_failed'],
+      [{ reason: 'Fine', note: 'x' }, 'invalid_json'],
+    ] as const) {
+      for (const path of ['return', 'discard']) {
+        const id = path === 'return' ? thika : BRANCH_SCENARIO_IDS.karen;
+        const bad = await request.post(api(`/branches/${id}/${path}`), {
+          headers: branches,
+          data,
+        });
+        expect(bad.status(), `${path} ${JSON.stringify(data)}`).toBe(400);
+        expect(await bad.json()).toMatchObject({ code });
+      }
+    }
+  });
+
+  test('discards a draft, which keeps its code, but never the head office (#222)', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'branches', null);
+    const karen = BRANCH_SCENARIO_IDS.karen;
+    const discarded = await request.post(api(`/branches/${karen}/discard`), {
+      headers,
+      data: { reason: 'Opened by mistake' },
+    });
+    expect(discarded.status()).toBe(200);
+    expect(await discarded.json()).toMatchObject({
+      status: 'CLOSED',
+      status_reason: 'Opened by mistake',
+      closed_on: '07-09-2026',
+      opened_on: null,
+    });
+    expect(await auditedOn(request, headers, karen)).toContainEqual({
+      action: 'branch.discard',
+      reason: 'Opened by mistake',
+    });
+    // The code stays taken, and a closed branch is no draft.
+    const reuse = await request.post(api('/branches'), {
+      headers,
+      data: { ...DRAFT_BODY, branch_code: 'KAREN', parent_branch_id: null },
+    });
+    expect(reuse.status()).toBe(409);
+    const twice = await request.post(api(`/branches/${karen}/discard`), {
+      headers,
+      data: { reason: 'Again' },
+    });
+    expect(await twice.json()).toMatchObject({ code: 'conflict' });
+
+    // The head office is refused by its code, before its state.
+    const head = await request.post(api(`/branches/${IDS.headOffice}/discard`), {
+      headers,
+      data: { reason: 'Never' },
+    });
+    expect(head.status()).toBe(409);
+    expect(await head.json()).toMatchObject({ code: 'lifecycle.head_office_branch_protected' });
+  });
+
+  test('refuses to discard a draft with an active child branch (the closure guard)', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'branches', null);
+    // Maker-checker off, so Jane can activate the child she drafted (ADR 0032).
+    await request.put(api('/tenant/settings/require_maker_checker_for_branch_creation'), {
+      headers,
+      data: { value: 'false', reason: 'One-person test' },
+    });
+    const draft = async (code: string, parent: string | null) => {
+      const created = await request.post(api('/branches'), {
+        headers,
+        data: { ...DRAFT_BODY, branch_code: code, parent_branch_id: parent },
+      });
+      return ((await created.json()) as { branch_id: string }).branch_id;
+    };
+    const parent = await draft('KILIMANI', null);
+    const child = await draft('KILIMANI_ANNEX', parent);
+    await request.post(api(`/branches/${child}/submit`), { headers, data: {} });
+    expect(
+      (await request.post(api(`/branches/${child}/activate`), { headers, data: {} })).status(),
+    ).toBe(200);
+
+    const refused = await request.post(api(`/branches/${parent}/discard`), {
+      headers,
+      data: { reason: 'Opened by mistake' },
+    });
+    expect(refused.status()).toBe(409);
+    expect(await refused.json()).toMatchObject({ code: 'conflict' });
+  });
+
+  // The platform refuses the read-only default at the route's own gate, with a generic detail.
+  test('needs branch.create to discard', async ({ request }) => {
+    const reader = await contextFor(request, 'default', null);
+    const refused = await request.post(api(`/branches/${IDS.westlands}/discard`), {
+      headers: reader,
+      data: { reason: 'Opened by mistake' },
+    });
+    expect(refused.status()).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: 'forbidden' });
   });
 });

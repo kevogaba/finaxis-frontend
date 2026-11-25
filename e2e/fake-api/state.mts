@@ -58,6 +58,8 @@ export interface FakeBranch {
   /** `created_by` and the latest submitter, `submitted_by` (BG-08); absent = the system. */
   draftedBy?: string;
   submittedBy?: string;
+  /** The business date a draft was discarded (#222); absent = `null`. */
+  closedOn?: string;
 }
 
 export interface FakeBranchAssignment {

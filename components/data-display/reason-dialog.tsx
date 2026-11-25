@@ -31,6 +31,8 @@ interface ReasonDialogProps {
   description: string;
   confirmLabel: string;
   reason: 'optional' | 'required';
+  /** The reason field's label when "Reason" undersells it (e.g. "What needs to change"). */
+  reasonLabel?: string;
   action: FormAction;
   onClose: () => void;
   onSuccess: () => void;
@@ -86,6 +88,7 @@ function ReasonForm({
   description,
   confirmLabel,
   reason,
+  reasonLabel = reason === 'required' ? 'Reason' : 'Reason (optional)',
   action,
   onClose,
   onSuccess,
@@ -176,7 +179,7 @@ function ReasonForm({
         {fields?.(fieldErrors)}
         <TextField
           name="reason"
-          label={reason === 'required' ? 'Reason' : 'Reason (optional)'}
+          label={reasonLabel}
           required={reason === 'required'}
           multiline
           minRows={2}

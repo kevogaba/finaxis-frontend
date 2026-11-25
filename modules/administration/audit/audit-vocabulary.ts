@@ -51,6 +51,13 @@ export const AUDIT_ACTIONS = [
   { value: 'branch.create_draft', label: 'Drafted branch', entityType: 'BRANCH' },
   { value: 'branch.submit', label: 'Submitted branch', entityType: 'BRANCH' },
   { value: 'branch.activate', label: 'Activated branch', entityType: 'BRANCH' },
+  {
+    value: 'branch.return_for_changes',
+    label: 'Returned branch for changes',
+    entityType: 'BRANCH',
+  },
+  { value: 'branch.withdraw', label: 'Withdrew branch', entityType: 'BRANCH' },
+  { value: 'branch.discard', label: 'Discarded branch draft', entityType: 'BRANCH' },
   { value: 'branch.suspend', label: 'Suspended branch', entityType: 'BRANCH' },
   { value: 'branch.reactivate', label: 'Reactivated branch', entityType: 'BRANCH' },
   { value: 'branch.close', label: 'Closed branch', entityType: 'BRANCH' },

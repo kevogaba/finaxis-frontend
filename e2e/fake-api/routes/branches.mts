@@ -71,7 +71,7 @@ export const branchDetailWire = (access: AccessContext, branch: FakeBranch) => (
   timezone: branch.timezone,
   address: {}, // stored, never returned (BG-13)
   opened_on: null, // never set by the API (BG-13)
-  closed_on: null,
+  closed_on: branch.closedOn ?? null, // only a discarded draft's, so far (#222)
   status_reason: branch.statusReason,
   created_at: branch.createdAt,
   updated_at: branch.updatedAt,
@@ -177,23 +177,68 @@ const nothingActiveBelow: Guard = (access, branch) => {
   }
 };
 
+/** Discard (#222): the head office is refused by its code, before the state; then the closure
+ * guard, whose 409 and the state's look alike. */
+const notHeadOffice: Guard = (access, branch) => {
+  if (branch.code === 'HEAD_OFFICE') {
+    throw problem(
+      409,
+      'lifecycle.head_office_branch_protected',
+      'The head office branch cannot be discarded; it is activated with the tenant.',
+    );
+  }
+  return nothingActiveBelow(access, branch);
+};
+
+/** BranchProvisioningService.returnForChanges: the creator or latest submitter withdraws their own
+ * request (`branch.create`), anyone else returns it (`branch.approve`). */
+const withdrawing = (access: AccessContext, branch: FakeBranch) =>
+  [branch.draftedBy, branch.submittedBy].includes(access.claims.userId);
+
+/** The code a return needs: the intent is read from the branch's makers before any permission
+ * check (`isBranchMaker`), so an unknown id is a checker's return, refused on the target branch. */
+function returnIntent(access: AccessContext, branchId: string): string {
+  const branch = access.state.branches.find(
+    (candidate) => candidate.id === branchId && candidate.organisationId === access.organisation.id,
+  );
+  return branch && withdrawing(access, branch) ? 'branch.create' : 'branch.approve';
+}
+
+/** A withdrawal writes `branch.withdraw` beside the FSM's row, both with the reason. */
+const withdrawal: Guard = (access, branch) => {
+  if (!withdrawing(access, branch)) return undefined;
+  return (reason) => {
+    recordAuditEvent(access.state, access, {
+      entityType: 'BRANCH',
+      entityId: branch.id,
+      action: 'branch.withdraw',
+      reason,
+    });
+  };
+};
+
 function transition(
   path: string,
-  permission: string,
+  permission: string | ((access: AccessContext, branchId: string) => string),
   from: readonly string[],
   to: string,
   action: string,
   reasonRequired: boolean,
   guard: Guard = () => undefined,
+  /** The route's own `@PreAuthorize` codes, any of which passes it; the target code by default. */
+  routeCodes?: readonly string[],
 ): Route {
   return route('POST', `/api/v1/branches/:branch_id/${path}`, async (context) => {
     const access = tenantAccess(context);
-    // The route's own gate reads the selected context's authorities, the code alone; the service
+    const branchId = context.params.branch_id ?? '';
+    const code = typeof permission === 'string' ? permission : permission(access, branchId);
+    // The route's own gate reads the selected context's authorities, its codes alone; the service
     // checks the code and its views on the target (BG-03).
-    requireAuthority(access, [permission]);
-    const branch = targetBranch(access, context.params.branch_id ?? '', permission);
+    requireAuthority(access, routeCodes ?? [code]);
+    const branch = targetBranch(access, branchId, code);
     const raw = await readBody(context.req);
-    // Submit/Activate/Reactivate bodies are optional; Suspend/Close need a reason (contract §D).
+    // Submit/Activate/Reactivate bodies are optional; Suspend/Close/Return/Discard need a reason
+    // (contract §D).
     const body = raw === undefined && !reasonRequired ? {} : objectBody(raw, ['reason']);
     const reason = reasonField(body, reasonRequired);
     sendIdempotent(context, body, () => {
@@ -205,6 +250,12 @@ function transition(
       }
       branch.status = to;
       if (path === 'submit') branch.submittedBy = access.claims.userId; // the latest submitter
+      // The tenant's business date (#222); opened_on stays null.
+      if (path === 'discard') {
+        branch.closedOn = access.state.businessDates.find(
+          (row) => row.organisationId === branch.organisationId,
+        )?.date;
+      }
       branch.statusReason = reason; // overwritten by every transition (contract §C)
       branch.updatedAt = new Date().toISOString();
       recordAuditEvent(context.state, access, {
@@ -283,6 +334,26 @@ export const branchRoutes: Route[] = [
     'branch.activate',
     false,
     makerChecker,
+  ),
+  // `hasAnyAuthority('branch.create', 'branch.approve')`, then the intent's code on the target.
+  transition(
+    'return',
+    returnIntent,
+    ['PENDING_APPROVAL'],
+    'DRAFT',
+    'branch.return_for_changes',
+    true,
+    withdrawal,
+    ['branch.create', 'branch.approve'],
+  ),
+  transition(
+    'discard',
+    'branch.create',
+    ['DRAFT'],
+    'CLOSED',
+    'branch.discard',
+    true,
+    notHeadOffice,
   ),
   transition('suspend', 'branch.suspend', ['ACTIVE'], 'SUSPENDED', 'branch.suspend', true),
   transition(

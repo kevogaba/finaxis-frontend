@@ -7,24 +7,32 @@ import {
 } from '@/auth/permissions';
 import { withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
-import { uuidSchema } from '@/lib/api/wire';
-import type { BranchStatus } from './branch-contract';
+import { uuidSchema, type ActorRef } from '@/lib/api/wire';
+import { isMaker } from '@/modules/administration/approvals/maker-checker';
+import type { BranchDetail, BranchStatus } from './branch-contract';
 
-export type BranchLifecycleAction = 'submit' | 'activate' | 'suspend' | 'reactivate' | 'close';
+/** Withdraw and Return are one route, `POST /branches/{id}/return`, told apart by the caller. */
+export type SendBackAction = 'withdraw' | 'return';
+
+export type BranchLifecycleAction =
+  'submit' | 'discard' | 'activate' | SendBackAction | 'suspend' | 'reactivate' | 'close';
 
 const ACTIONS_BY_STATUS: Record<BranchStatus, readonly BranchLifecycleAction[]> = {
-  DRAFT: ['submit'],
-  PENDING_APPROVAL: ['activate'],
+  DRAFT: ['submit', 'discard'],
+  PENDING_APPROVAL: ['activate', 'withdraw', 'return'],
   ACTIVE: ['suspend', 'close'],
   SUSPENDED: ['reactivate', 'close'],
   CLOSED: [],
   ARCHIVED: [],
 };
 
-// Contract §E.3: submitting a draft is gated by `branch.create`, not a code of its own.
+// Contract §E.3: submit, discard and withdraw (a maker's own request) need `branch.create`.
 const PERMISSION: Record<BranchLifecycleAction, string> = {
   submit: 'branch.create',
+  discard: 'branch.create',
   activate: 'branch.approve',
+  withdraw: 'branch.create',
+  return: 'branch.approve',
   suspend: 'branch.suspend',
   reactivate: 'branch.reactivate',
   close: 'branch.close',
@@ -46,15 +54,69 @@ export function canActOnBranch(
   return canActAtBranch(holder, code, branch.status === 'ACTIVE' ? branch.id : null, routeCodes);
 }
 
+/** The bootstrap's head office, which discard refuses by its code (`isHeadOffice`, 409
+ * `lifecycle.head_office_branch_protected`). */
+const HEAD_OFFICE_CODE = 'HEAD_OFFICE';
+
+interface BranchMakers {
+  createdBy: ActorRef;
+  submittedBy: ActorRef;
+}
+
+/** BranchProvisioningService.returnForChanges: the branch's creator or latest submitter withdraws
+ * their own request; anyone else returns it as a checker. */
+export function pendingBranchAction(branch: BranchMakers, callerId: string): SendBackAction {
+  return isMaker([branch.createdBy?.id, branch.submittedBy?.id], callerId) ? 'withdraw' : 'return';
+}
+
+/** `POST /branches/{id}/return`'s own gate: `hasAnyAuthority('branch.create', 'branch.approve')`;
+ * the service then checks the intent's code (`PERMISSION`) on the target. */
+export const RETURN_ROUTE_CODES = ['branch.create', 'branch.approve'] as const;
+
 /** Every transition reads the branch back (BG-31), so it needs `branch.view` there too, which
- * `canActOnBranch` checks with the code's other views. */
+ * `canActOnBranch` checks with the code's other views. Withdraw, Return and Discard act on a
+ * PENDING_APPROVAL or DRAFT branch, so they need their code tenant-wide (#242), as the platform's
+ * discard does anyway. */
 export function availableBranchActions(
-  branch: { id: string; status: BranchStatus },
+  branch: Pick<BranchDetail, 'id' | 'status' | 'branchCode'> & BranchMakers,
   holder: PermissionHolder,
+  callerId: string,
 ): BranchLifecycleAction[] {
-  return ACTIONS_BY_STATUS[branch.status].filter((action) =>
-    canActOnBranch(holder, PERMISSION[action], branch),
-  );
+  const sendBack = pendingBranchAction(branch, callerId);
+  return ACTIONS_BY_STATUS[branch.status].filter((action) => {
+    if ((action === 'withdraw' || action === 'return') && action !== sendBack) return false;
+    if (action === 'discard' && branch.branchCode === HEAD_OFFICE_CODE) return false;
+    const route = action === 'withdraw' || action === 'return' ? RETURN_ROUTE_CODES : undefined;
+    return canActOnBranch(holder, PERMISSION[action], branch, route);
+  });
+}
+
+/** Withdraw's and Return's words, the same on the branch record and the approval page. */
+export function sendBackCopy(action: SendBackAction, name: string) {
+  return action === 'withdraw'
+    ? {
+        label: 'Withdraw',
+        title: `Withdraw ${name}?`,
+        description: 'It goes back to draft so you can change it and submit it again.',
+        reasonLabel: 'Reason',
+        success: 'Branch withdrawn',
+      }
+    : {
+        label: 'Return for changes',
+        title: `Return ${name} for changes?`,
+        description: 'It goes back to draft. Its maker sees your reason.',
+        reasonLabel: 'What needs to change',
+        success: 'Returned for changes',
+      };
+}
+
+/** A draft that carries a reason was sent back: every transition overwrites `status_reason`, and
+ * creating a draft leaves it null. Neutral, since the record can't tell a withdrawal from a return
+ * (no actor of the last transition). */
+export function sentBackNote(branch: Pick<BranchDetail, 'status' | 'statusReason'>): string | null {
+  return branch.status === 'DRAFT' && branch.statusReason
+    ? `Sent back: ${branch.statusReason}`
+    : null;
 }
 
 /** POST /branches checks `branch.create` and its view tenant-wide (`requireTenantPermission`), so a

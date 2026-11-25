@@ -67,7 +67,7 @@ test.describe('branches', () => {
     await expect(rowsOf(page, 'Branches').nth(1)).toContainText('Westlands Branch');
   });
 
-  test('creates a draft, submits it, and blocks the drafter from activating it', async ({
+  test('creates a draft, submits it, blocks the drafter from activating it, and lets them withdraw it', async ({
     context,
     page,
   }, testInfo) => {
@@ -91,15 +91,47 @@ test.describe('branches', () => {
 
     const dialog = await lifecycle(page, 'Submit for approval');
     await expect(dialog).toBeHidden();
-    // PF6: Submit leaves only a disabled Activate (the drafter can't activate their own draft), so
-    // focus falls back to the record title (I3's third rung).
-    await expect(page.getByRole('heading', { level: 1, name: 'Nairobi CBD Branch' })).toBeFocused();
+    // PF6: Submit leaves a disabled Activate (the drafter can't activate their own draft) and the
+    // drafter's Withdraw, so focus lands on the first enabled action (I3's second rung).
+    await expect(page.getByRole('button', { name: 'Withdraw', exact: true })).toBeFocused();
     await expect(
       page.getByRole('alert').filter({ hasText: 'Submitted for approval' }),
     ).toBeVisible();
     await expect(statusChip(page, 'Pending approval')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Activate', exact: true })).toBeDisabled();
     await expect(mainText(page, MAKER_CHECKER)).toBeVisible();
+    // Its maker withdraws, never returns (BG-01).
+    await expect(page.getByRole('button', { name: 'Return for changes' })).toHaveCount(0);
+
+    await lifecycle(page, 'Withdraw', 'Wrong name');
+    await expect(page.getByRole('alert').filter({ hasText: 'Branch withdrawn' })).toBeVisible();
+    await expect(statusChip(page, 'Draft')).toBeVisible();
+    await expect(mainText(page, 'NAIROBI_CBD · Operations · Sent back: Wrong name')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Submit for approval' })).toBeFocused();
+  });
+
+  test('discards a draft, whose code stays taken, through an error-toned confirmation', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'branches');
+    await openDirectory(page);
+    await openRecord(page, 'Branches', 'Karen Branch');
+
+    await page.getByRole('button', { name: 'Discard draft', exact: true }).click();
+    const dialog = page.getByRole('alertdialog', { name: 'Discard the Karen Branch draft?' });
+    await expect(dialog).toContainText(
+      "The draft closes and can't be reopened. Its code KAREN stays taken.",
+    );
+    await dialog.getByRole('textbox', { name: 'Reason' }).fill('Opened by mistake');
+    await dialog.getByRole('button', { name: 'Discard draft', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('alert').filter({ hasText: 'Draft discarded' })).toBeVisible();
+    // Discard empties the action set, so the record title takes focus (I3's third rung).
+    await expect(page.getByRole('heading', { level: 1, name: 'Karen Branch' })).toBeFocused();
+    await expect(statusChip(page, 'Closed')).toBeVisible();
+    await expect(mainText(page, 'Opened by mistake')).toBeVisible();
+    await expect(mainText(page, 'Closed on')).toBeVisible();
   });
 
   test('activates a branch another administrator drafted and shows it in the audit tab', async ({
