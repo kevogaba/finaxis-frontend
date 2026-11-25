@@ -4,6 +4,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import {
   AssignRoleButton,
+  INSTITUTION_SCOPE_UNAVAILABLE,
   RevokeRoleAssignmentButton,
   RoleScopeFields,
 } from './role-assignment-actions';
@@ -48,6 +49,32 @@ describe('RoleScopeFields', () => {
       'Westlands Branch (WESTLANDS)',
     );
     expect(hidden('branchId')).toBe(WESTLANDS);
+  });
+
+  // Institution scope needs user.assign_role and its view tenant-wide (BG-03).
+  it('disables institution scope, says why, and starts at one branch without the tenant-wide grant', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <form>
+        <RoleScopeFields
+          branches={[{ id: WESTLANDS, label: 'Westlands Branch (WESTLANDS)' }]}
+          fieldErrors={{}}
+          institution={false}
+        />
+      </form>,
+    );
+
+    expect(hidden('scopeType')).toBe('BRANCH');
+    expect(hidden('branchId')).toBe(WESTLANDS);
+    const scope = screen.getByRole('combobox', { name: 'Scope' });
+    expect(scope).toHaveAccessibleDescription(
+      `Applies at that branch only, while it is active. The user must already be assigned to it. ${INSTITUTION_SCOPE_UNAVAILABLE}`,
+    );
+    await user.click(scope);
+    expect(screen.getByRole('option', { name: 'Institution (all branches)' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('disables one-branch scope with no reachable branch and shows server field errors', async () => {
@@ -121,7 +148,7 @@ describe('RoleScopeFields', () => {
     await user.click(screen.getByRole('combobox', { name: 'Scope' }));
     await user.click(screen.getByRole('option', { name: 'One branch' }));
     expect(screen.getByRole('combobox', { name: 'Scope' })).toHaveAccessibleDescription(
-      'Applies only while that branch is selected. The user must already be assigned to it.',
+      'Applies at that branch only, while it is active. The user must already be assigned to it.',
     );
   });
 });

@@ -18,6 +18,7 @@ import {
   PROVISIONING_NOTE,
   ROLES_UNAVAILABLE,
   SCAN_CEILING,
+  SCOPED_ASSIGNMENTS_NOTE,
   USER_MAKER_CHECKER_BLOCKED,
   type MembershipAction,
   type OnboardingKey,
@@ -26,7 +27,6 @@ import {
   blockedMembershipActions,
   branchAssignmentCount,
   branchAssignmentsEmptyState,
-  branchContextNote,
   canAssignUserBranch,
   canAssignUserRole,
   membershipActionsNote,
@@ -39,6 +39,7 @@ import {
   roleScopeHint,
   rolesCappedHint,
   rolesCappedNoneActive,
+  scopedAssignmentView,
   userStatusLabel,
 } from './user-rules';
 
@@ -502,20 +503,13 @@ describe('membershipActionsNote', () => {
   });
 });
 
-describe('branchContextNote', () => {
-  it('offers the switch when the signed-in user can leave the branch', () => {
-    const note = branchContextNote('Westlands Branch', true);
-    expect(note).toMatch(/^Only Westlands Branch is visible/);
-    expect(
-      note.endsWith("Switch to All branches to see this user's other branch assignments."),
-    ).toBe(true);
-  });
-
-  it('names the single-branch account and never offers the switch', () => {
-    const note = branchContextNote('Westlands Branch', false);
-    expect(note).toContain('Westlands Branch');
-    expect(note).toContain('assigned to this branch only');
-    expect(note).not.toContain('Switch');
+describe('scopedAssignmentView', () => {
+  // BG-03: a search by user lists every branch for a tenant-wide view, the grant's branches else.
+  it('is scoped unless branch_assignment.view is held tenant-wide', () => {
+    const codes = ['branch_assignment.view'];
+    expect(scopedAssignmentView({ permissions: codes, tenantPermissions: codes })).toBe(false);
+    expect(scopedAssignmentView({ permissions: codes, tenantPermissions: [] })).toBe(true);
+    expect(SCOPED_ASSIGNMENTS_NOTE).toBe('Only assignments at branches you can view are shown.');
   });
 });
 
@@ -648,9 +642,9 @@ describe('copy constants', () => {
     expect(ROLES_UNAVAILABLE).toBe(
       "Roles couldn't be loaded, so none can be assigned right now. Refresh to try again.",
     );
-    // Context-neutral: the same note covers an institution scan and one forced to a selected branch.
+    // The scan searches by user_id (BG-03): the ceiling counts their own assignments.
     expect(PARTIAL_SCAN_NOTE).toBe(
-      "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 branch assignments were checked.",
+      "This list may be incomplete: only the first 500 of this user's branch assignments were read.",
     );
   });
 });
@@ -678,10 +672,10 @@ describe('the capped role catalogue copy', () => {
 describe('SCAN_CEILING', () => {
   it('is 500, and the sentences that name the ceiling say whatever it is (A-m3)', () => {
     expect(SCAN_CEILING).toBe(500);
-    const checked = `first ${SCAN_CEILING} branch assignments were checked`;
+    const checked = `first ${SCAN_CEILING} of`;
     expect(PARTIAL_SCAN_NOTE).toContain(checked);
     expect(
-      roleScopeHint({ readable: true, offered: 0, truncated: true, selectedBranchName: null }),
+      roleScopeHint({ readable: true, offered: 0, truncated: true, someBranches: true }),
     ).toContain(checked);
   });
 });
@@ -689,127 +683,115 @@ describe('SCAN_CEILING', () => {
 describe('roleScopeBranches', () => {
   const label = (id: string) =>
     ({ b1: 'Westlands Branch', b2: 'Head Office', b3: 'Kisumu' })[id] ?? id;
+  const anywhere = () => true;
 
   it('offers a branch held twice (HOME and OPERATE) once, sorted by label', () => {
     expect(
-      roleScopeBranches([{ branchId: 'b1' }, { branchId: 'b2' }, { branchId: 'b1' }], null, label),
+      roleScopeBranches(
+        [{ branchId: 'b1' }, { branchId: 'b2' }, { branchId: 'b1' }],
+        anywhere,
+        label,
+      ),
     ).toEqual([
       { id: 'b2', label: 'Head Office' },
       { id: 'b1', label: 'Westlands Branch' },
     ]);
   });
 
-  it('narrows to the selected branch in a branch context', () => {
-    const rows = [{ branchId: 'b1' }, { branchId: 'b2' }, { branchId: 'b1' }];
-    expect(roleScopeBranches(rows, 'b1', label)).toEqual([{ id: 'b1', label: 'Westlands Branch' }]);
-    expect(roleScopeBranches(rows, 'b3', label)).toEqual([]);
-    expect(roleScopeBranches([], null, label)).toEqual([]);
+  it('keeps only the branches the holder may assign at (BG-03)', () => {
+    const rows = [{ branchId: 'b1' }, { branchId: 'b2' }, { branchId: 'b3' }];
+    const reachable = (id: string) => id !== 'b2';
+    expect(roleScopeBranches(rows, reachable, label)).toEqual([
+      { id: 'b3', label: 'Kisumu' },
+      { id: 'b1', label: 'Westlands Branch' },
+    ]);
+    expect(roleScopeBranches(rows, () => false, label)).toEqual([]);
+    expect(roleScopeBranches([], anywhere, label)).toEqual([]);
   });
 });
 
 describe('roleScopeHint', () => {
-  const CAPPED =
-    'Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here.';
+  const UNREADABLE =
+    "Their branch assignments can't be read here, so only institution scope is available.";
 
   it('says nothing while a branch is on offer', () => {
     expect(
-      roleScopeHint({ readable: true, offered: 2, truncated: false, selectedBranchName: null }),
+      roleScopeHint({ readable: true, offered: 2, truncated: false, someBranches: false }),
     ).toBeUndefined();
     expect(
-      roleScopeHint({
-        readable: false,
-        offered: 1,
-        truncated: false,
-        selectedBranchName: 'Westlands Branch',
-      }),
+      roleScopeHint({ readable: false, offered: 1, truncated: false, someBranches: true }),
     ).toBeUndefined();
     // A capped scan that still found a branch has nothing to explain: the branch is offered.
     expect(
-      roleScopeHint({ readable: true, offered: 1, truncated: true, selectedBranchName: null }),
+      roleScopeHint({ readable: true, offered: 1, truncated: true, someBranches: false }),
     ).toBeUndefined();
   });
 
-  it('explains an unreadable scan, a selected branch the user is not at, and no assignment', () => {
+  it('explains an unreadable scan, and no assignment where the holder may assign', () => {
     expect(
-      roleScopeHint({ readable: false, offered: 0, truncated: false, selectedBranchName: null }),
-    ).toBe("Their branch assignments can't be read here, so only institution scope is available.");
+      roleScopeHint({ readable: false, offered: 0, truncated: false, someBranches: false }),
+    ).toBe(UNREADABLE);
+    // Without institution scope, "only institution scope" would be wrong too.
     expect(
-      roleScopeHint({
-        readable: true,
-        offered: 0,
-        truncated: false,
-        selectedBranchName: 'Westlands Branch',
-      }),
+      roleScopeHint({ readable: false, offered: 0, truncated: false, someBranches: true }),
+    ).toBe("Their branch assignments can't be read here, so no branch can be offered.");
+    expect(
+      roleScopeHint({ readable: true, offered: 0, truncated: false, someBranches: true }),
     ).toBe(
-      "They aren't assigned to Westlands Branch. Assign them there first to give a branch-scoped role.",
+      "They aren't assigned to a branch where you can assign roles. Assign them to one first to give a branch-scoped role.",
     );
     expect(
-      roleScopeHint({ readable: true, offered: 0, truncated: false, selectedBranchName: null }),
+      roleScopeHint({ readable: true, offered: 0, truncated: false, someBranches: false }),
     ).toBe('Assign them to a branch first to give a branch-scoped role.');
   });
 
   it('says a capped scan is partial instead of claiming the user has no branch (Ruling 8)', () => {
-    // The scan stopped at its ceiling with rows unread, so "not assigned" would be a guess; the
-    // sentence holds with or without a selected branch.
     expect(
-      roleScopeHint({ readable: true, offered: 0, truncated: true, selectedBranchName: null }),
-    ).toBe(CAPPED);
-    expect(
-      roleScopeHint({
-        readable: true,
-        offered: 0,
-        truncated: true,
-        selectedBranchName: 'Westlands Branch',
-      }),
-    ).toBe(CAPPED);
+      roleScopeHint({ readable: true, offered: 0, truncated: true, someBranches: false }),
+    ).toBe(
+      'Only the first 500 of their branch assignments were checked, so only institution scope is offered here.',
+    );
+    expect(roleScopeHint({ readable: true, offered: 0, truncated: true, someBranches: true })).toBe(
+      'Only the first 500 of their branch assignments were checked, and none was at a branch where you can assign roles.',
+    );
   });
 
   it('keeps the unreadable explanation ahead of the capped one', () => {
     expect(
-      roleScopeHint({ readable: false, offered: 0, truncated: true, selectedBranchName: null }),
-    ).toBe("Their branch assignments can't be read here, so only institution scope is available.");
+      roleScopeHint({ readable: false, offered: 0, truncated: true, someBranches: false }),
+    ).toBe(UNREADABLE);
   });
 });
 
 describe('branchAssignmentCount', () => {
-  it('counts exactly, flags a partial scan, and scopes to a selected branch', () => {
-    expect(branchAssignmentCount(2, false, null)).toBe('2');
-    expect(branchAssignmentCount(500, true, null)).toBe('At least 500 (partial)');
-    expect(branchAssignmentCount(1, false, 'Westlands Branch')).toBe('1 at Westlands Branch');
-  });
-
-  it('keeps the partial hedge in a branch context, where the scan is still capped', () => {
-    // A branch with more than 500 ACTIVE assignments: the user's may lie beyond the window.
-    expect(branchAssignmentCount(3, true, 'Westlands Branch')).toBe(
-      'At least 3 at Westlands Branch (partial)',
+  it('counts exactly, flags a partial scan, and says when the view is branch-scoped', () => {
+    expect(branchAssignmentCount(2, false, false)).toBe('2');
+    expect(branchAssignmentCount(500, true, false)).toBe('At least 500 (partial)');
+    expect(branchAssignmentCount(1, false, true)).toBe('1 at branches you can view');
+    expect(branchAssignmentCount(3, true, true)).toBe(
+      'At least 3 at branches you can view (partial)',
     );
   });
 
   it('says none were found, never "At least 0", when a capped scan found nothing', () => {
-    expect(branchAssignmentCount(0, true, 'Westlands Branch')).toBe(
-      'None found at Westlands Branch (partial)',
+    expect(branchAssignmentCount(0, true, true)).toBe(
+      'None found at branches you can view (partial)',
     );
-    expect(branchAssignmentCount(0, true, null)).toBe('None found (partial)');
+    expect(branchAssignmentCount(0, true, false)).toBe('None found (partial)');
     // A complete scan that found nothing is a fact, not a hedge.
-    expect(branchAssignmentCount(0, false, null)).toBe('0');
-    expect(branchAssignmentCount(0, false, 'Westlands Branch')).toBe('0 at Westlands Branch');
+    expect(branchAssignmentCount(0, false, false)).toBe('0');
+    expect(branchAssignmentCount(0, false, true)).toBe('0 at branches you can view');
   });
 });
 
 describe('branchAssignmentsEmptyState', () => {
   const OFFER = 'Assign a branch so they can work there.';
-  const OTHER = 'They may be assigned to other branches.';
-  const SWITCH = 'Switch to All branches to see them.';
+  const OTHER = "They may be assigned to branches you can't view.";
   const BEYOND =
     'Only the first 500 branch assignments were checked, so they may be assigned beyond them.';
-  const base = {
-    selectedBranchName: null,
-    truncated: false,
-    canSwitch: false,
-    assignOffered: false,
-  };
+  const base = { scoped: false, truncated: false, assignOffered: false };
 
-  it('claims no assignments only when nothing was hidden (no branch selected, scan complete)', () => {
+  it('claims no assignments only when nothing was hidden (a tenant-wide view, scan complete)', () => {
     expect(branchAssignmentsEmptyState(base)).toEqual({
       title: 'No branch assignments',
       description: 'This user has no branch assignments.',
@@ -818,28 +800,17 @@ describe('branchAssignmentsEmptyState', () => {
       title: 'No branch assignments',
       description: OFFER,
     });
-    // Switching is a branch-context matter: it changes nothing here.
-    expect(branchAssignmentsEmptyState({ ...base, canSwitch: true })).toEqual({
-      title: 'No branch assignments',
-      description: 'This user has no branch assignments.',
-    });
   });
 
-  it('names the selected branch, and offers the switch only to an account that can switch', () => {
-    const branch = { ...base, selectedBranchName: 'Head Office' };
-    expect(branchAssignmentsEmptyState({ ...branch, canSwitch: true })).toEqual({
-      title: 'No assignment at Head Office',
-      description: `${OTHER} ${SWITCH}`,
-    });
-    expect(branchAssignmentsEmptyState(branch)).toEqual({
-      title: 'No assignment at Head Office',
+  it('says a branch-scoped view sees only its branches', () => {
+    const scoped = { ...base, scoped: true };
+    expect(branchAssignmentsEmptyState(scoped)).toEqual({
+      title: 'No assignment at branches you can view',
       description: OTHER,
     });
-    expect(
-      branchAssignmentsEmptyState({ ...branch, canSwitch: true, assignOffered: true }),
-    ).toEqual({
-      title: 'No assignment at Head Office',
-      description: `${OTHER} ${SWITCH} ${OFFER}`,
+    expect(branchAssignmentsEmptyState({ ...scoped, assignOffered: true })).toEqual({
+      title: 'No assignment at branches you can view',
+      description: `${OTHER} ${OFFER}`,
     });
   });
 
@@ -848,23 +819,11 @@ describe('branchAssignmentsEmptyState', () => {
       title: 'No branch assignments found',
       description: BEYOND,
     });
-    expect(branchAssignmentsEmptyState({ ...base, truncated: true, assignOffered: true })).toEqual({
-      title: 'No branch assignments found',
-      description: `${BEYOND} ${OFFER}`,
-    });
-  });
-
-  it('says both when a branch context was capped, and never claims "no assignment at" it', () => {
     expect(
-      branchAssignmentsEmptyState({
-        selectedBranchName: 'Head Office',
-        truncated: true,
-        canSwitch: true,
-        assignOffered: true,
-      }),
+      branchAssignmentsEmptyState({ scoped: true, truncated: true, assignOffered: true }),
     ).toEqual({
       title: 'No branch assignments found',
-      description: `${BEYOND} ${OTHER} ${SWITCH} ${OFFER}`,
+      description: `${BEYOND} ${OTHER} ${OFFER}`,
     });
   });
 });

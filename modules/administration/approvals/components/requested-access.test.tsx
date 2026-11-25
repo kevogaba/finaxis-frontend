@@ -1,7 +1,11 @@
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
-import { branchContextNote, PARTIAL_SCAN_NOTE } from '@/modules/administration/users/user-rules';
+import {
+  PARTIAL_SCAN_NOTE,
+  SCOPED_ASSIGNMENTS_NOTE,
+} from '@/modules/administration/users/user-rules';
+import { SCOPED_ROLE_ASSIGNMENTS_NOTE } from '@/modules/administration/roles/role-rules';
 import { renderWithProviders } from '@/test/test-utils';
 import {
   BRANCHES_NOT_PERMITTED,
@@ -10,6 +14,7 @@ import {
   NO_ACTIVE_BRANCH,
   NO_ACTIVE_BRANCH_SEEN,
   NO_ACTIVE_ROLE,
+  NO_ACTIVE_ROLE_SEEN,
   READ_FAILED,
   ROLES_CAPPED,
   ROLES_NOT_PERMITTED,
@@ -99,8 +104,7 @@ const PROPS: Props = {
     [TELLER, { name: 'Teller', code: 'TELLER', status: 'ACTIVE', systemRole: false }],
   ]),
   branchIndex: new Map([[WESTLANDS, { name: 'Westlands Branch', code: 'WESTLANDS' }]]),
-  selectedBranch: null,
-  canSwitch: true,
+  scopedView: false,
 };
 
 const show = (overrides: Partial<Props> = {}) =>
@@ -157,6 +161,18 @@ describe('RequestedAccess', () => {
     expect(screen.queryByText(NO_ACTIVE_BRANCH)).toBeNull();
   });
 
+  // BG-03: a branch-scoped role_assignment.view lists only its branches' BRANCH-scope rows.
+  it('says a branch-scoped view narrows the roles, and never says none', () => {
+    show({ rolesScoped: true });
+    expect(screen.getByRole('note')).toHaveTextContent(SCOPED_ROLE_ASSIGNMENTS_NOTE);
+
+    const roles = PROPS.roles?.ok ? PROPS.roles.value : null;
+    if (!roles) throw new Error('the fixture has roles');
+    show({ rolesScoped: true, roles: { ok: true, value: { ...roles, items: [] } } });
+    expect(screen.getByText(NO_ACTIVE_ROLE_SEEN)).toBeInTheDocument();
+    expect(screen.queryByText(NO_ACTIVE_ROLE)).toBeNull();
+  });
+
   it('says the roles are capped when one page doesn’t hold them all (rule 9)', () => {
     const roles = PROPS.roles?.ok ? PROPS.roles.value : null;
     if (!roles) throw new Error('the fixture has roles');
@@ -165,17 +181,13 @@ describe('RequestedAccess', () => {
     expect(screen.getByRole('note')).toHaveTextContent(ROLES_CAPPED);
   });
 
-  it('says when the branch scan is partial, and when a selected branch narrows it', () => {
+  it('says when the branch scan is partial, and when a branch-scoped view narrows it', () => {
     const scan = PROPS.scan?.ok ? PROPS.scan.value : null;
     if (!scan) throw new Error('the fixture has a scan');
-    show({
-      scan: { ok: true, value: { ...scan, truncated: true } },
-      selectedBranch: { name: 'Westlands Branch' },
-      canSwitch: false,
-    });
+    show({ scan: { ok: true, value: { ...scan, truncated: true } }, scopedView: true });
 
     const notes = screen.getAllByRole('note').map((note) => note.textContent);
-    expect(notes).toEqual([branchContextNote('Westlands Branch', false), PARTIAL_SCAN_NOTE]);
+    expect(notes).toEqual([SCOPED_ASSIGNMENTS_NOTE, PARTIAL_SCAN_NOTE]);
   });
 
   it('says none when there are none, and a membership it couldn’t find', () => {
@@ -203,7 +215,7 @@ describe('RequestedAccess', () => {
     expect(fact('Primary branch')).toHaveTextContent('None');
   });
 
-  it('says the scan is partial with no branch selected, and still lists what it found', () => {
+  it('says the scan is partial for a tenant-wide view, and still lists what it found', () => {
     const scan = PROPS.scan?.ok ? PROPS.scan.value : null;
     if (!scan) throw new Error('the fixture has a scan');
     show({ scan: { ok: true, value: { ...scan, truncated: true } } });
@@ -216,11 +228,12 @@ describe('RequestedAccess', () => {
     expect(screen.queryByText(NO_ACTIVE_BRANCH)).toBeNull();
   });
 
-  it('says a selected branch narrows the scan, in the copy for who can switch', () => {
-    show({ selectedBranch: { name: 'Westlands Branch' }, canSwitch: true });
+  // BG-03: a search by user lists every branch to a tenant-wide view, the grant's branches else.
+  it('says a branch-scoped view narrows the scan', () => {
+    show({ scopedView: true });
 
     expect(screen.getAllByRole('note').map((note) => note.textContent)).toEqual([
-      branchContextNote('Westlands Branch', true),
+      SCOPED_ASSIGNMENTS_NOTE,
     ]);
   });
 
@@ -272,17 +285,13 @@ describe('RequestedAccess', () => {
     expect(screen.queryByRole('columnheader', { name: 'Actions' })).toBeNull();
   });
 
-  it('never says none when a selected branch or a partial scan hides rows (rule 9)', () => {
+  it('never says none when a branch-scoped view or a partial scan hides rows (rule 9)', () => {
     const { unmount } = show({ scan: { ok: true, value: { items: [], truncated: true } } });
     expect(screen.queryByText(NO_ACTIVE_BRANCH)).toBeNull();
     expect(screen.getByText(NO_ACTIVE_BRANCH_SEEN)).toBeInTheDocument();
     unmount();
 
-    show({
-      scan: { ok: true, value: { items: [], truncated: false } },
-      selectedBranch: { name: 'Westlands Branch' },
-      canSwitch: false,
-    });
+    show({ scan: { ok: true, value: { items: [], truncated: false } }, scopedView: true });
     expect(screen.queryByText(NO_ACTIVE_BRANCH)).toBeNull();
     expect(screen.getByText(NO_ACTIVE_BRANCH_SEEN)).toBeInTheDocument();
   });

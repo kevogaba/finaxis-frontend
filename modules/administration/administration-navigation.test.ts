@@ -34,6 +34,20 @@ describe('administrationNavigationItems', () => {
     expect(labels(['branch.view'], [])).toEqual(['Overview', 'Branches']);
   });
 
+  // BG-03: GET /branches answers a branch-scoped branch.view with its branches at All branches,
+  // where the grant isn't in the selected context's permissions.
+  it('shows Branches for a branch.view held at any branch, and no other page', () => {
+    const atAllBranches = (heldAtAnyBranch: string[]) =>
+      visibleNavigationItems(
+        administrationNavigationItems,
+        { permissions: [], tenantPermissions: [] },
+        heldAtAnyBranch,
+      ).map((item) => item.label);
+    expect(atAllBranches(['branch.view'])).toEqual(['Overview', 'Branches']);
+    expect(atAllBranches([])).toEqual(['Overview']);
+    expect(atAllBranches(['user.view', 'role.view', 'audit.view'])).toEqual(['Overview']);
+  });
+
   it('shows the Approval queue to a holder of either decision, and only then', () => {
     expect(labels(['user.approve'])).toEqual(['Overview', 'Approval queue']);
     expect(labels(['branch.approve', 'branch.view'])).toEqual([

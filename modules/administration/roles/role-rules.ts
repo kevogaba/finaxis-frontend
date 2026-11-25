@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  canActAtBranch,
   canAll,
   canAllTenantWide,
   canTenantWide,
@@ -130,21 +131,55 @@ export function neededByNames(
     .map((held) => byCode.get(held)?.name ?? held);
 }
 
-export function canRevokeRoleAssignments(holder: PermissionHolder): boolean {
-  return canAll(holder, withViews(['user.revoke_role']));
-}
-
-/** From a branch-selected context, revoking a BRANCH assignment at another branch is a 404
- * (contract §E.4), so its Revoke is hidden rather than a dead end. `null` is institution level. */
+/** A revoke is checked on the assignment's own scope (BG-03), whichever branch is selected: a
+ * TENANT row needs `user.revoke_role` and its view tenant-wide, a BRANCH row tenant-wide or at its
+ * branch, after the route's own gate (`canActAtBranch`). */
 export function isAssignmentRevocable(
   assignment: { scopeType: RoleScopeType; branchId: string | null },
-  selectedBranchId: string | null,
+  holder: PermissionHolder,
 ): boolean {
-  return (
-    selectedBranchId === null ||
-    assignment.scopeType !== 'BRANCH' ||
-    assignment.branchId === selectedBranchId
+  return canActAtBranch(
+    holder,
+    'user.revoke_role',
+    assignment.scopeType === 'BRANCH' ? assignment.branchId : null,
   );
+}
+
+/** Institution scope needs `user.assign_role` and its view tenant-wide
+ * (`RoleManagementService.requireRoleAssignmentPermission`). */
+export function canAssignRoleInstitutionWide(holder: PermissionHolder): boolean {
+  return canAllTenantWide(holder, withViews(['user.assign_role']));
+}
+
+/** Branch scope is checked on that branch, whichever branch is selected (BG-03). */
+export function canAssignRoleAt(holder: PermissionHolder, branchId: string): boolean {
+  return canActAtBranch(holder, 'user.assign_role', branchId);
+}
+
+/** The branches a holder may name for a BRANCH-scope assignment (`canAssignRoleAt`): from `known`
+ * (the branch index) for a tenant-wide grant, else from where its own grants are held. */
+export function roleAssignmentBranchIds(
+  holder: PermissionHolder,
+  known: Iterable<string>,
+): string[] {
+  const candidates = canAssignRoleInstitutionWide(holder)
+    ? [...known]
+    : (holder.branchPermissions?.['user.assign_role'] ?? []);
+  return candidates.filter((id) => canAssignRoleAt(holder, id));
+}
+
+/** BG-03: a branch-scoped `role_assignment.view` lists only BRANCH-scope rows, at the ACTIVE
+ * branches it covers, whichever branch is selected. */
+export function scopedRoleAssignmentView(holder: PermissionHolder): boolean {
+  return !canTenantWide(holder, 'role_assignment.view');
+}
+
+export const SCOPED_ROLE_ASSIGNMENTS_NOTE =
+  'Only branch-scope assignments at branches you can view are shown.';
+
+/** A role-assignment count (`totalItems`), never a branch-scoped view's passed off as the whole. */
+export function roleAssignmentCount(count: number, scoped: boolean): string {
+  return scoped ? `${count} at branches you can view` : String(count);
 }
 
 /** The Assignments card's description. An assigner looking at a DISABLED role is told why Assign

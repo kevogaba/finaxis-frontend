@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { permissionHolder } from '@/auth/permissions';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ListNavigationProvider } from '@/components/data-display/list-navigation-context';
@@ -25,7 +28,12 @@ import {
   BRANCH_TYPE_SUGGESTIONS,
 } from '@/modules/administration/branches/branch-contract';
 import { parseBranchListQuery } from '@/modules/administration/branches/branch-query';
-import { branchTypeLabel, canCreateBranch } from '@/modules/administration/branches/branch-rules';
+import {
+  branchTypeLabel,
+  canCreateBranch,
+  SCOPED_BRANCHES_NOTE,
+  scopedBranchView,
+} from '@/modules/administration/branches/branch-rules';
 import { listBranches } from '@/modules/administration/branches/branch-service';
 import { BranchDirectoryTable } from '@/modules/administration/branches/components/branch-directory-table';
 
@@ -45,7 +53,7 @@ export default async function BranchesPage({ searchParams }: BranchesPageProps) 
     getCurrentContextProfile(),
     getOrganisationTimeZone(),
   ]);
-  const permissions = selected.kind === 'resolved' ? selected.profile.permissions : [];
+  const holder = permissionHolder(selected.kind === 'resolved' ? selected.profile : undefined);
 
   const header = (
     <PageHeader
@@ -53,7 +61,7 @@ export default async function BranchesPage({ searchParams }: BranchesPageProps) 
       title="Branches"
       description="Operating locations, their lifecycle, and who is assigned to each."
       actions={
-        canCreateBranch({ permissions }) ? (
+        canCreateBranch(holder) ? (
           <Button
             component={NextLink}
             href={`${PATH}/new`}
@@ -90,6 +98,7 @@ export default async function BranchesPage({ searchParams }: BranchesPageProps) 
     ...new Set([...BRANCH_TYPE_SUGGESTIONS, ...(query.type ? [query.type] : [])]),
   ].map((type) => ({ value: type, label: branchTypeLabel(type) }));
   const hasFilters = Boolean(query.q ?? query.status ?? query.type);
+  const scoped = scopedBranchView(holder);
 
   return (
     <>
@@ -122,6 +131,14 @@ export default async function BranchesPage({ searchParams }: BranchesPageProps) 
           />
           <ListNavigationProgress />
           <ListBusyRegion>
+            {/* BG-03: a branch-scoped `branch.view` lists only the ACTIVE branches it covers. */}
+            {scoped && (
+              <Box sx={{ px: 4, py: 3 }}>
+                <Alert severity="info" role="note">
+                  {SCOPED_BRANCHES_NOTE}
+                </Alert>
+              </Box>
+            )}
             {branches.value.items.length === 0 ? (
               <EmptyState
                 title="No branches"

@@ -22,13 +22,14 @@ import {
   SCOPE_OPTIONS,
   toChoices,
 } from '../invite-rules';
+import { SCOPED_BRANCHES_NOTE } from '@/modules/administration/branches/branch-rules';
 import { EMPTY_BRANCH_ROW, EMPTY_ROLE_ROW, type InviteValues } from '../invite-schema';
 import type { SelectOption } from '../user-rules';
 import { InviteChoiceField } from './invite-choice-field';
 
 const TENANT_HELP = 'Applies at every branch and at institution level.';
 const TENANT_HELP_NO_BRANCH = `${TENANT_HELP} Add a branch above to scope a role to one branch.`;
-const BRANCH_HELP = 'Applies only while that branch is selected.';
+const BRANCH_HELP = 'Applies at that branch only, while it is active.';
 
 /** `trigger` and `handleSubmit` put a list's error on `root` (RHF 7.90's field-array rule); a server
  * field error (`setError`) puts it on the list itself. */
@@ -60,6 +61,8 @@ interface InviteAccessFieldsProps {
   branches: readonly SelectOption[];
   rolesCapped: boolean;
   branchesCapped: boolean;
+  /** The branches are only those the caller's `branch.view` covers (BG-03): say so. */
+  branchesScoped?: boolean;
   /** The two lists' own errors (a missing branch or role), from the form state. */
   branchListError?: ListError;
   roleListError?: ListError;
@@ -77,6 +80,7 @@ export function InviteAccessFields({
   branches,
   rolesCapped,
   branchesCapped,
+  branchesScoped = false,
   branchListError,
   roleListError,
 }: InviteAccessFieldsProps) {
@@ -150,6 +154,11 @@ export function InviteAccessFields({
         {branchesCapped && (
           <Alert severity="info" role="note">
             {BRANCHES_CAPPED}
+          </Alert>
+        )}
+        {branchesScoped && (
+          <Alert severity="info" role="note">
+            {SCOPED_BRANCHES_NOTE}
           </Alert>
         )}
         <Box>

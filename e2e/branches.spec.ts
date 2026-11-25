@@ -234,7 +234,8 @@ test.describe('branches', () => {
     await expect(theirs.getByRole('alert')).toHaveCount(0);
   });
 
-  test('guides a branch context to All branches for another branch', async ({
+  // BG-03: the platform checks the target branch, whichever branch is selected.
+  test('activates another branch with a branch selected, as a tenant-wide approver', async ({
     context,
     page,
   }, testInfo) => {
@@ -242,12 +243,66 @@ test.describe('branches', () => {
     await openDirectory(page, /Head Office/);
 
     await page.goto(`/admin/branches/${BRANCH_SCENARIO_IDS.thikaRoad}`);
-    await expect(mainText(page, 'Switch to All branches to manage this branch')).toBeVisible();
-    await page.getByRole('button', { name: 'Switch to All branches' }).click();
-    await expect(
-      page.getByRole('alert').filter({ hasText: 'Switched to Greenfield SACCO · All branches' }),
-    ).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: 'Thika Road Branch' })).toBeVisible();
+    await lifecycle(page, 'Activate');
+    await expect(statusChip(page, 'Active')).toBeVisible();
+  });
+
+  // A branch-scoped caller gets 403, never 404, for a branch its grant doesn't cover.
+  test('shows a branch-scoped holder the Forbidden state on another branch', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'branches-branch-scoped');
+    await enterAdmin(page, `/admin/branches/${IDS.westlands}`, {
+      heading: 'Branch record',
+      branch: /Head Office/,
+    });
+    await expect(mainText(page, "You don't have access to this branch.")).toBeVisible();
+
+    // The grant's own branch, selected, is its to act on.
+    await page.goto(`/admin/branches/${IDS.headOffice}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Head Office' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Suspend', exact: true })).toBeVisible();
+
+    // The directory is target-aware: it lists the branch the grant covers, and says so.
+    await page.goto('/admin/branches');
+    await expect(mainText(page, 'Only branches you can view are shown.')).toBeVisible();
+    await expect(rowsOf(page, 'Branches')).toHaveCount(2); // header + Head Office
+    // POST /branches checks branch.create tenant-wide, so a branch-scoped one creates nothing.
+    await expect(page.getByRole('link', { name: 'Create branch' })).toHaveCount(0);
+  });
+
+  // BG-03: the branch list answers a branch-scoped branch.view at All branches too, where the
+  // selected context's permissions leave it out, so the rail still offers Branches.
+  test('offers a branch-scoped viewer Branches at All branches', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'branches-branch-scoped');
+    await openDirectory(page);
+
+    await expect(page.getByRole('link', { name: 'Branches', exact: true })).toBeVisible(); // rail
+    await expect(mainText(page, 'Only branches you can view are shown.')).toBeVisible();
+    await expect(rowsOf(page, 'Branches')).toHaveCount(2); // header + Head Office
+    await expect(page.getByRole('link', { name: 'Create branch' })).toHaveCount(0);
+  });
+
+  // BG-03: the route's own gate reads the selected context, the service the target branch, so one
+  // role held at two branches acts on the other from either.
+  test('acts on another branch through the same role there, with one of its branches selected', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'branches-two-branch-scoped');
+    await enterAdmin(page, `/admin/branches/${IDS.westlands}`, {
+      heading: 'Westlands Branch',
+      branch: /Head Office/,
+    });
+    await expect(page.getByRole('button', { name: 'Suspend', exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Users' }).click();
+    await expect(page.getByRole('button', { name: 'Assign user' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Revoke/ }).first()).toBeVisible();
   });
 
   test('suspending the working branch sends the user back to context selection (index item 1)', async ({
@@ -284,10 +339,9 @@ test.describe('branches', () => {
     await page.goto('/admin/branches/new');
     // Scoped to `main`: on one run this matched two nodes (a strict-mode violation) with only one
     // inside `main` (`ForbiddenState` has exactly one call site here, so it isn't a double render).
-    // Likely the same class as the "guides a branch context" test above (see `mainText`'s comment
-    // in e2e/support/admin.ts; not reproduced in this session either): app/loading.tsx's root
-    // Suspense boundary can let the streamed route briefly exist as a hidden duplicate segment next
-    // to the rendered one. Whatever the actual cause, `getByRole('main')` excludes a hidden
+    // Likely the hidden-duplicate class `mainText`'s comment in e2e/support/admin.ts describes (not
+    // reproduced since): app/loading.tsx's root Suspense boundary can let the streamed route briefly
+    // exist as a hidden duplicate segment next to the rendered one. Whatever the actual cause, `getByRole('main')` excludes a hidden
     // duplicate landmark from resolution, so scoping to it is deterministic either way and matches
     // what a user/screen-reader perceives as the page's content.
     await expect(page.getByRole('main').getByText("You don't have permission")).toBeVisible();

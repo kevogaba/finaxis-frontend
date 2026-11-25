@@ -1,10 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { BRANCH_SCENARIO_IDS, IDS } from './fake-api/scenarios.mts';
 import { api, contextFor } from './support/fake-api';
 
 test.describe('fake API branches (contract §E.3–§E.4)', () => {
-  test('hides every other branch from a branch-selected context (BG-03)', async ({ request }) => {
-    const atHeadOffice = await contextFor(request, 'default', IDS.headOffice);
+  // BG-03 (platform #154): the selected branch no longer pins administration.
+  test('reaches any branch from a branch context with a tenant-wide grant', async ({ request }) => {
+    const atHeadOffice = await contextFor(request, 'branches', IDS.headOffice);
     const own = await request.get(api(`/branches/${IDS.headOffice}`), { headers: atHeadOffice });
     expect(own.status()).toBe(200);
     expect(await own.json()).toMatchObject({
@@ -13,21 +15,166 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
       opened_on: null,
       closed_on: null,
     });
+    // Another branch, a pending one, and an unknown id: read, activated, and 404.
+    const westlands = await request.get(api(`/branches/${IDS.westlands}`), {
+      headers: atHeadOffice,
+    });
+    expect(westlands.status()).toBe(200);
     expect(
-      (await request.get(api(`/branches/${IDS.westlands}`), { headers: atHeadOffice })).status(),
+      (
+        await request.post(api(`/branches/${BRANCH_SCENARIO_IDS.thikaRoad}/activate`), {
+          headers: atHeadOffice,
+          data: {},
+        })
+      ).status(),
+    ).toBe(200);
+    expect(
+      (await request.get(api(`/branches/${randomUUID()}`), { headers: atHeadOffice })).status(),
     ).toBe(404);
     expect(
       (
-        await request.get(api(`/tenant/branch-assignments?branch_id=${IDS.westlands}`), {
+        await request.post(api(`/branches/${randomUUID()}/suspend`), {
           headers: atHeadOffice,
+          data: { reason: 'Cash audit' },
         })
       ).status(),
     ).toBe(404);
+  });
 
-    const institution = await contextFor(request, 'default', null);
+  // An explicit branch_id is honoured, a user_id search spans every branch, and a search with
+  // neither defaults to the selected branch (BranchAssignmentController).
+  test('searches assignments by branch_id or user_id, whichever branch is selected', async ({
+    request,
+  }) => {
+    const atHeadOffice = await contextFor(request, 'branches', IDS.headOffice);
+    const search = async (query: string) =>
+      (await (
+        await request.get(api(`/tenant/branch-assignments${query}`), { headers: atHeadOffice })
+      ).json()) as { items: { branch_id: string; user_id: string }[] };
+
+    const westlands = await search(`?branch_id=${IDS.westlands}`);
+    expect(new Set(westlands.items.map((row) => row.branch_id))).toEqual(new Set([IDS.westlands]));
+    expect(westlands.items).toHaveLength(3);
+    const peter = await search(`?user_id=${BRANCH_SCENARIO_IDS.peter}`);
+    expect(peter.items.map((row) => row.branch_id).sort()).toEqual(
+      [IDS.headOffice, IDS.westlands].sort(),
+    );
+    const neither = await search('');
+    expect(new Set(neither.items.map((row) => row.branch_id))).toEqual(new Set([IDS.headOffice]));
+  });
+
+  // A branch-scope grant counts only on its own ACTIVE branch (platform #242), and a mutation's
+  // own gate reads the selected branch's grants.
+  test('refuses a branch-scoped caller every other branch with 403, never 404', async ({
+    request,
+  }) => {
+    const atHeadOffice = await contextFor(request, 'branches-branch-scoped', IDS.headOffice);
+    const get = (path: string) => request.get(api(path), { headers: atHeadOffice });
+    expect((await get(`/branches/${IDS.headOffice}`)).status()).toBe(200);
+    for (const branchId of [IDS.westlands, BRANCH_SCENARIO_IDS.thikaRoad, randomUUID()]) {
+      const refused = await get(`/branches/${branchId}`);
+      expect(refused.status(), branchId).toBe(403);
+      expect(await refused.json()).toMatchObject({ code: 'forbidden' });
+    }
+    // The route's own gate passes (branch.suspend at the selected Head Office); the target check
+    // names the code it lacks at Westlands.
+    const suspend = await request.post(api(`/branches/${IDS.westlands}/suspend`), {
+      headers: atHeadOffice,
+      data: { reason: 'Cash audit' },
+    });
+    expect(suspend.status()).toBe(403);
+    expect(await suspend.json()).toMatchObject({ detail: 'Missing permission: branch.suspend.' });
+
+    // The list is target-aware too: the ACTIVE branches the grant covers (BG-03).
+    const listed = (await (await get('/branches')).json()) as {
+      items: { id: string }[];
+      page: { total_items: number };
+    };
+    expect(listed.items.map((branch) => branch.id)).toEqual([IDS.headOffice]);
+    expect(listed.page.total_items).toBe(1);
+
+    // Assignments: only Head Office's are visible, and another branch is a 403.
+    expect((await get(`/tenant/branch-assignments?branch_id=${IDS.westlands}`)).status()).toBe(403);
+    const peter = (await (
+      await get(`/tenant/branch-assignments?user_id=${BRANCH_SCENARIO_IDS.peter}`)
+    ).json()) as { items: { branch_id: string }[] };
+    expect(peter.items.map((row) => row.branch_id)).toEqual([IDS.headOffice]);
+    for (const assignmentId of [BRANCH_SCENARIO_IDS.peterAtWestlands, randomUUID()]) {
+      const revoke = await request.delete(api(`/tenant/branch-assignments/${assignmentId}`), {
+        headers: atHeadOffice,
+      });
+      expect(revoke.status(), assignmentId).toBe(403);
+    }
+    const assign = await request.post(api('/tenant/branch-assignments'), {
+      headers: atHeadOffice,
+      data: {
+        user_id: BRANCH_SCENARIO_IDS.mary,
+        branch_id: IDS.westlands,
+        assignment_type: 'OPERATE',
+      },
+    });
+    expect(assign.status()).toBe(403);
+
+    // At All branches the grant still reads Head Office, but a mutation's gate refuses it, naming
+    // nothing (Spring's `@PreAuthorize` refusal).
+    const institution = await contextFor(request, 'branches-branch-scoped', null);
     expect(
-      (await request.get(api(`/branches/${IDS.westlands}`), { headers: institution })).status(),
+      (await request.get(api(`/branches/${IDS.headOffice}`), { headers: institution })).status(),
     ).toBe(200);
+    const listedThere = (await (
+      await request.get(api('/branches'), { headers: institution })
+    ).json()) as { items: { id: string }[] };
+    expect(listedThere.items.map((branch) => branch.id)).toEqual([IDS.headOffice]);
+    const gated = await request.post(api(`/branches/${IDS.headOffice}/suspend`), {
+      headers: institution,
+      data: { reason: 'Cash audit' },
+    });
+    expect(gated.status()).toBe(403);
+    expect(await gated.json()).toMatchObject({
+      code: 'forbidden',
+      detail: 'You are not permitted to perform this action.',
+    });
+  });
+
+  // BG-03: the route's own gate reads the selected context, the service the target, so one role
+  // held at two branches acts on either while one of them is selected.
+  test('acts on another branch through the same role there, from either of its branches', async ({
+    request,
+  }) => {
+    const atHeadOffice = await contextFor(request, 'branches-two-branch-scoped', IDS.headOffice);
+    const listed = (await (
+      await request.get(api('/branches?sort_by=branchName&sort_dir=ASC'), { headers: atHeadOffice })
+    ).json()) as { items: { id: string }[] };
+    expect(listed.items.map((branch) => branch.id)).toEqual([IDS.headOffice, IDS.westlands]);
+
+    const assign = await request.post(api('/tenant/branch-assignments'), {
+      headers: atHeadOffice,
+      data: {
+        user_id: BRANCH_SCENARIO_IDS.mary,
+        branch_id: IDS.westlands,
+        assignment_type: 'OPERATE',
+      },
+    });
+    expect(assign.status()).toBe(201);
+    const revoke = await request.delete(
+      api(`/tenant/branch-assignments/${BRANCH_SCENARIO_IDS.peterAtWestlands}`),
+      { headers: atHeadOffice },
+    );
+    expect(revoke.status()).toBe(200);
+    const suspend = await request.post(api(`/branches/${IDS.westlands}/suspend`), {
+      headers: atHeadOffice,
+      data: { reason: 'Cash audit' },
+    });
+    expect(suspend.status()).toBe(200);
+    expect(await suspend.json()).toMatchObject({ status: 'SUSPENDED' });
+
+    // At All branches the same grants pass no route gate.
+    const institution = await contextFor(request, 'branches-two-branch-scoped', null);
+    const gated = await request.post(api(`/branches/${IDS.headOffice}/suspend`), {
+      headers: institution,
+      data: { reason: 'Cash audit' },
+    });
+    expect(gated.status()).toBe(403);
   });
 
   test('records the drafter and refuses their own activation (maker-checker)', async ({
@@ -144,8 +291,13 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
 
     // The route has no endpoint gate, and FoundationQueryService.searchBranches checks the sort
     // before branch.view: a caller who can't list (the 403 is the control) meets the 400 first.
-    const cannotList = await contextFor(request, 'overview-branch-scoped', IDS.headOffice);
-    expect((await request.get(api('/branches'), { headers: cannotList })).status()).toBe(403);
+    const cannotList = await contextFor(request, 'no-branch-view', IDS.headOffice);
+    const refused = await request.get(api('/branches'), { headers: cannotList });
+    expect(refused.status()).toBe(403);
+    expect(await refused.json()).toMatchObject({
+      code: 'forbidden',
+      detail: 'You are not permitted to perform this action.',
+    });
     const refusedFirst = await request.get(api('/branches?sort_by=branch_code'), {
       headers: cannotList,
     });

@@ -67,8 +67,6 @@ const READS: PendingApprovalsReads = {
   users: ok(page([WANJIKU, BARAKA, HALIMA])),
   userCounts: ok({ pending: 3, provisioning: 1 }),
   branches: ok(page([MALINDI, NYERI, KAKAMEGA])),
-  branchSelected: false,
-  canSwitch: true,
 };
 
 describe('which cards a holder sees (Ruling 2)', () => {
@@ -113,7 +111,7 @@ describe('which cards a holder sees (Ruling 2)', () => {
   it('reads no names and no user requests while user.view is held only at branch scope', () => {
     const cards = overviewCards({
       permissions: ALL,
-      tenantPermissions: ['audit.view', 'tenant.view'],
+      tenantPermissions: ['audit.view', 'tenant.view', 'branch.approve', 'branch.view'],
     });
     expect(cards.activity).toEqual({ names: false, timeZone: true });
     expect(cards.approvals).toEqual({ users: false, branches: true });
@@ -128,9 +126,21 @@ describe('which cards a holder sees (Ruling 2)', () => {
 
   it('offers each kind of request only with both of its codes', () => {
     expect(overviewCards({ permissions: ['user.approve', 'branch.view'] }).approvals).toBeNull();
+    const codes = ['branch.approve', 'branch.view', 'user.view'];
+    expect(overviewCards({ permissions: codes, tenantPermissions: codes }).approvals).toEqual({
+      users: false,
+      branches: true,
+    });
+  });
+
+  // A pending branch grants no branch-scoped permission (platform #242, BG-03).
+  it('offers no branch requests to an approver whose grant is branch-scoped', () => {
     expect(
-      overviewCards({ permissions: ['branch.approve', 'branch.view', 'user.view'] }).approvals,
-    ).toEqual({ users: false, branches: true });
+      overviewCards({
+        permissions: ['branch.approve', 'branch.view'],
+        tenantPermissions: ['branch.view'],
+      }).approvals,
+    ).toBeNull();
   });
 
   it('keeps Readiness while any one item can be checked, and omits the rest', () => {
@@ -216,20 +226,6 @@ describe('the Pending approvals preview (Ruling 5)', () => {
     expect(view.failures).toEqual([]);
   });
 
-  it('asks for All branches before activating, with a branch selected', () => {
-    const view = pendingApprovalsView({ ...READS, branchSelected: true });
-    expect(view.summary[1]?.text).toBe(
-      '3 branches are waiting for activation. Switch to All branches to activate them.',
-    );
-  });
-
-  it('tells an account that works at one branch who activates, as the bell does', () => {
-    const view = pendingApprovalsView({ ...READS, branchSelected: true, canSwitch: false });
-    expect(view.summary[1]?.text).toBe(
-      '3 branches are waiting for activation. Ask an administrator who works at institution level to activate them.',
-    );
-  });
-
   it('reads only the kinds the holder can decide', () => {
     const view = pendingApprovalsView({ ...READS, users: null, userCounts: null });
     expect(view.rows.map((row) => row.kind)).toEqual(['branch', 'branch', 'branch']);
@@ -242,8 +238,6 @@ describe('the Pending approvals preview (Ruling 5)', () => {
       users: ok(page([])),
       userCounts: ok({ pending: 0, provisioning: 0 }),
       branches: ok(page([])),
-      branchSelected: false,
-      canSwitch: true,
     });
     expect(none).toEqual({
       summary: [],
@@ -291,8 +285,6 @@ describe('the Pending approvals preview (Ruling 5)', () => {
         users: null,
         userCounts: null,
         branches: failed(null),
-        branchSelected: false,
-        canSwitch: true,
       }),
     ).toEqual({
       summary: [],

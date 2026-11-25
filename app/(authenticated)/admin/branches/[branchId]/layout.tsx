@@ -6,7 +6,7 @@ import AccountTreeOutlined from '@mui/icons-material/AccountTreeOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
 import { can, permissionHolder } from '@/auth/permissions';
 import { ErrorState } from '@/components/data-display/error-state';
-import { BranchContextState } from '@/components/data-display/forbidden-state';
+import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { RecordHero } from '@/components/data-display/record-hero';
 import { RecordTabs } from '@/components/data-display/record-tabs';
 import { StatusChip } from '@/components/data-display/status-chip';
@@ -45,30 +45,17 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
   const resolved = selected.kind === 'resolved' ? selected : null;
 
   if (!branch.ok) {
-    const missing = branch.problem.code === 'resource_not_found';
-    // Spec §6.5 / BG-03: with a branch selected, every other branch is a 404 — guide instead.
-    if (missing && resolved?.context.branch) {
-      return (
-        <>
-          <PageHeader eyebrow="Administration · Branch record" title="Branch not available here" />
-          <Paper>
-            <BranchContextState
-              // PF1: /auth/me branches[] can include SUSPENDED branches, and All branches only
-              // helps with more than one ACTIVE branch to switch between.
-              allBranchesAvailable={
-                resolved.profile.branches.filter((entry) => entry.status === 'ACTIVE').length > 1
-              }
-            />
-          </Paper>
-        </>
-      );
-    }
-    if (missing) notFound();
+    if (branch.problem.code === 'resource_not_found') notFound();
     return (
       <>
         <PageHeader eyebrow="Administration · Branch record" title="Branch record" />
         <Paper>
-          <ErrorState problem={branch.problem} />
+          {/* BG-03: a branch-scoped caller gets 403, never 404, for a branch it can't reach. */}
+          {branch.problem.code === 'forbidden' ? (
+            <ForbiddenState description="You don't have access to this branch." />
+          ) : (
+            <ErrorState problem={branch.problem} />
+          )}
         </Paper>
       </>
     );
@@ -76,7 +63,9 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
 
   const record = branch.value;
   const holder = permissionHolder(resolved?.profile);
-  const actions = availableBranchActions(record.status, holder);
+  const actions = availableBranchActions(record, holder);
+  // Only the copy needs it: suspending or closing the selected branch ends the working context.
+  const selectedHere = resolved?.context.branch?.id === record.id;
   // BG-08: the tenant route refuses the record's creator (`created_by`), not its submitter. The
   // switch is read only when the caller drafted it and Activate is on offer (decision Q4: unread,
   // Activate stays on offer, and the platform's named refusal explains a refusal).
@@ -112,7 +101,7 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
               actions={actions}
               activateBlocked={gate === 'blocked'}
               warning={gate === 'allowed-self-approval' ? SELF_APPROVAL_NOTE_BRANCHES : null}
-              selectedHere={resolved?.context.branch?.id === branchId}
+              selectedHere={selectedHere}
               contextOrganisationId={resolved?.context.organization.id}
             />
           ) : undefined

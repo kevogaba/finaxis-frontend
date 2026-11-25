@@ -92,6 +92,18 @@ describe('the control checks', () => {
     ).toBe(`${VERIFIED_ON_APPROVAL} Their roles couldn't be loaded.`);
   });
 
+  // BG-03: a branch-scoped role_assignment.view sees only its branches' rows, so "none" is a guess.
+  it('never fails the role check on a read a branch-scoped view narrowed', () => {
+    const narrowed = checks({ roles: { ok: true, value: 0 }, rolesComplete: false });
+    expect(byId('role', narrowed)?.state).toBe('platform');
+    expect(byId('role', narrowed)?.detail).toContain(
+      'None was found among the role assignments this page could check.',
+    );
+    expect(
+      byId('role', checks({ roles: { ok: true, value: 1 }, rolesComplete: false }))?.state,
+    ).toBe('passed');
+  });
+
   it.each([
     ['an auditor', { membershipType: 'AUDITOR' as const }, 'not-required'],
     ['a system member', { membershipType: 'SYSTEM' as const }, 'not-required'],

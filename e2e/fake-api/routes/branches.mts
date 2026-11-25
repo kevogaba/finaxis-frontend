@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import {
   actorRef,
+  branchVisibility,
+  canSee,
+  mutationVisibility,
   requireAssignSelf,
+  requireAuthority,
+  requireBranchPermission,
   requireContext,
   requirePermission,
   requireTenantContext,
@@ -37,14 +42,15 @@ function tenantAccess(context: RouteContext): AccessContext {
   return access;
 }
 
-/** Contract §E.4 / BG-03: with a branch selected, every other branch is a 404. */
-function reachableBranch(access: AccessContext, branchId: string): FakeBranch {
+/** BG-03 (`BranchProvisioningService.requireBranchPermission`): `code` on the target branch first,
+ * so a branch-scoped caller gets 403 for any branch its grants don't cover, an unknown id included;
+ * then a 404 for an unknown id, whichever branch is selected. */
+function targetBranch(access: AccessContext, branchId: string, code: string): FakeBranch {
+  requireBranchPermission(access, code, branchId);
   const branch = access.state.branches.find(
     (candidate) => candidate.id === branchId && candidate.organisationId === access.organisation.id,
   );
-  if (!branch || (access.claims.branchId !== null && access.claims.branchId !== branchId)) {
-    throw branchNotFound();
-  }
+  if (!branch) throw branchNotFound();
   return branch;
 }
 
@@ -182,8 +188,10 @@ function transition(
 ): Route {
   return route('POST', `/api/v1/branches/:branch_id/${path}`, async (context) => {
     const access = tenantAccess(context);
-    const branch = reachableBranch(access, context.params.branch_id ?? '');
-    requirePermission(access, permission, 'branch');
+    // The route's own gate reads the selected context's authorities, the code alone; the service
+    // checks the code and its views on the target (BG-03).
+    requireAuthority(access, [permission]);
+    const branch = targetBranch(access, context.params.branch_id ?? '', permission);
     const raw = await readBody(context.req);
     // Submit/Activate/Reactivate bodies are optional; Suspend/Close need a reason (contract §D).
     const body = raw === undefined && !reasonRequired ? {} : objectBody(raw, ['reason']);
@@ -212,14 +220,11 @@ function transition(
 }
 
 export const branchRoutes: Route[] = [
+  // A target-aware read with no route gate of its own (ADR 0030 point 5).
   route('GET', '/api/v1/branches/:branch_id', (context) => {
     const access = tenantAccess(context);
-    requirePermission(access, 'branch.view');
-    sendJson(
-      context.res,
-      200,
-      branchDetailWire(access, reachableBranch(access, context.params.branch_id ?? '')),
-    );
+    const branch = targetBranch(access, context.params.branch_id ?? '', 'branch.view');
+    sendJson(context.res, 200, branchDetailWire(access, branch));
   }),
 
   route('POST', '/api/v1/branches', async (context) => {
@@ -298,20 +303,33 @@ export const branchRoutes: Route[] = [
     nothingActiveBelow,
   ),
 
+  // BG-03 (`IamQueryService.searchBranchAssignments`): the branches the caller may view, from
+  // every grant; an explicit branch_id outside them is a 403. With no branch_id the search defaults
+  // to the selected branch when the caller may view it, unless user_id names someone: then it spans
+  // every branch the caller may view.
   route('GET', '/api/v1/tenant/branch-assignments', (context) => {
     const access = tenantAccess(context);
-    requirePermission(access, 'branch_assignment.view', 'branch');
+    const visibility = branchVisibility(access, 'branch_assignment.view');
+    if (visibility !== 'all' && visibility.size === 0) {
+      throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
+    }
     const requested = context.query.get('branch_id');
+    const userId = context.query.get('user_id');
+    if (requested && !canSee(visibility, requested)) {
+      throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
+    }
     const selected = access.claims.branchId;
-    // With a branch selected the search is forced to it; asking for another is a 404 (BG-03).
-    if (selected !== null && requested && requested !== selected) throw branchNotFound();
-    const branchId = selected ?? requested;
+    const branchId =
+      requested ??
+      (userId === null && selected !== null && canSee(visibility, selected) ? selected : null);
     const type = context.query.get('assignment_type');
     const status = context.query.get('status');
     const rows = context.state.branchAssignments.filter(
       (row) =>
         row.organisationId === access.organisation.id &&
+        canSee(visibility, row.branchId) &&
         (!branchId || row.branchId === branchId) &&
+        (!userId || row.userId === userId) &&
         (!type || row.type === type) &&
         (!status || row.status === status),
     );
@@ -320,7 +338,7 @@ export const branchRoutes: Route[] = [
 
   route('POST', '/api/v1/tenant/branch-assignments', async (context) => {
     const access = tenantAccess(context);
-    requirePermission(access, 'user.assign_branch');
+    requireAuthority(access, ['user.assign_branch']);
     const body = objectBody(await readBody(context.req), [
       'user_id',
       'branch_id',
@@ -331,9 +349,10 @@ export const branchRoutes: Route[] = [
     if (!ASSIGNMENT_TYPES.includes(type)) {
       throw problem(400, 'invalid_json', 'Malformed request body.');
     }
-    const branch = reachableBranch(
+    const branch = targetBranch(
       access,
       stringField(body, 'branch_id', { required: true }) ?? '',
+      'user.assign_branch',
     );
     // #342: after the route's own check (the branch's existence is part of it), before the user,
     // organisation and membership lookups.
@@ -384,17 +403,25 @@ export const branchRoutes: Route[] = [
     );
   }),
 
+  // BG-03 (`BranchProvisioningService.revokeAssignment`): an authorised combined lookup. A 404 for
+  // an unknown id only to a tenant-wide holder; anyone else gets one 403 for an unknown id and for a
+  // row on a branch it may not act on.
   route('DELETE', '/api/v1/tenant/branch-assignments/:assignment_id', (context) => {
     const access = tenantAccess(context);
-    requirePermission(access, 'user.revoke_branch');
+    requireAuthority(access, ['user.revoke_branch']);
+    const visibility = mutationVisibility(access, 'user.revoke_branch');
     const { state } = context;
     const row = state.branchAssignments.find(
       (candidate) =>
         candidate.id === context.params.assignment_id &&
         candidate.organisationId === access.organisation.id,
     );
-    if (!row) throw problem(404, 'resource_not_found', 'Branch assignment not found.');
-    reachableBranch(access, row.branchId);
+    if (!row && visibility === 'all') {
+      throw problem(404, 'resource_not_found', 'Branch assignment not found.');
+    }
+    if (!row || !canSee(visibility, row.branchId)) {
+      throw problem(403, 'forbidden', 'Missing permission: user.revoke_branch.');
+    }
     sendIdempotent(context, {}, () => {
       if (row.status !== 'ACTIVE')
         throw problem(409, 'conflict', 'The assignment is already revoked.');

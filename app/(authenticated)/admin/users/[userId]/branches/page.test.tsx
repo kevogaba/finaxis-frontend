@@ -4,7 +4,12 @@ import userEvent from '@testing-library/user-event';
 import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
 import type { UserBranchAssignmentsTable } from '@/modules/administration/users/components/user-branch-assignments-table';
-import { OWN_ACCESS, PARTIAL_SCAN_NOTE } from '@/modules/administration/users/user-rules';
+import {
+  OWN_ACCESS,
+  PARTIAL_SCAN_NOTE,
+  SCOPED_ASSIGNMENTS_NOTE,
+} from '@/modules/administration/users/user-rules';
+import { SCOPED_BRANCHES_NOTE } from '@/modules/administration/branches/branch-rules';
 import { resolvedStyle } from '@/test/resolved-style';
 import { renderWithProviders } from '@/test/test-utils';
 
@@ -59,9 +64,6 @@ vi.mock('@/modules/administration/branches/branch-actions', () => ({
   assignBranchUser: vi.fn(),
   revokeBranchAssignment: vi.fn(),
 }));
-vi.mock('@/components/context/switch-to-all-branches-button', () => ({
-  SwitchToAllBranchesButton: () => <button type="button">Switch to All branches</button>,
-}));
 // The real table, recording the rows the page hands it: a full tie in the sort is invisible in the
 // rendered cells.
 vi.mock(
@@ -104,19 +106,12 @@ const UNAVAILABLE =
 const TRUNCATED_NOTE = 'Only the first 100 active branches are listed.';
 const NO_ROWS = 'This user has no branch assignments.';
 const OFFER = 'Assign a branch so they can work there.';
-const OTHER_BRANCHES = 'They may be assigned to other branches.';
-const SWITCH_TO_SEE = 'Switch to All branches to see them.';
+const OTHER_BRANCHES = "They may be assigned to branches you can't view.";
 const BEYOND_CEILING =
   'Only the first 500 branch assignments were checked, so they may be assigned beyond them.';
-const contextNote = (name: string) =>
-  `Only ${name} is visible with a branch selected. Switch to All branches to see this user's other branch assignments.`;
-const singleBranchNote = (name: string) =>
-  `Only ${name} is visible: your account is assigned to this branch only, so this user's other branch assignments can't be shown.`;
+/** Every code tenant-wide but these, held only through BRANCH grants (BG-33), at `heldAt`. */
+const scopedTo = (...codes: string[]) => ALL_CODES.filter((code) => !codes.includes(code));
 
-interface Branch {
-  id: string;
-  status: string;
-}
 interface Row {
   id: string;
   branchId: string;
@@ -126,8 +121,9 @@ interface Setup {
   permissions?: string[];
   /** The codes held tenant-wide (`/auth/me` scopes); defaults to every code in `permissions`. */
   tenantWide?: string[];
+  /** Where the others are held (BRANCH scopes' `branch_ids`); defaults to the selected branch. */
+  heldAt?: string[];
   selectedBranch?: { id: string; name: string } | null;
-  profileBranches?: Branch[];
   membershipStatus?: string;
   rows?: Row[];
   truncated?: boolean;
@@ -146,10 +142,7 @@ function setup({
   permissions = ALL_CODES,
   tenantWide = permissions,
   selectedBranch = null,
-  profileBranches = [
-    { id: HEAD_OFFICE, status: 'ACTIVE' },
-    { id: WESTLANDS, status: 'ACTIVE' },
-  ],
+  heldAt = selectedBranch ? [selectedBranch.id] : [],
   membershipStatus = 'ACTIVE',
   rows = [],
   truncated = false,
@@ -172,9 +165,13 @@ function setup({
     kind: 'resolved',
     profile: {
       permissions,
-      permission_scopes: tenantWide.map((code) => ({ code, scope: 'TENANT' })),
+      permission_scopes: permissions.map((code) =>
+        tenantWide.includes(code)
+          ? { code, scope: 'TENANT' }
+          : { code, scope: 'BRANCH', branch_ids: heldAt },
+      ),
       user_id: signedInAs,
-      branches: profileBranches,
+      branches: [],
     },
     context: { organization: { id: ORG, name: 'Greenfield' }, branch: selectedBranch },
   });
@@ -242,7 +239,6 @@ const noteOf = (text: string): HTMLElement => {
   if (!note) throw new Error(`"${text}" is not inside an Alert`);
   return note;
 };
-const switchButton = () => screen.queryByRole('button', { name: 'Switch to All branches' });
 const dataRows = () => within(screen.getByRole('table')).getAllByRole('row').slice(1);
 /** The Branch and Assignment type cells of a data row (the Actions cell only holds the revoke). */
 const cellText = (tr: HTMLElement) =>
@@ -501,20 +497,53 @@ describe('UserBranchesPage: the rows', () => {
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /^Revoke/ })).toHaveLength(1);
   });
+
+  // BG-03: a revoke held only at the selected branch reaches that branch's rows alone.
+  // BG-03: the route's gate reads the selected context, the service the row's branch, whichever
+  // branch is selected.
+  it('offers a branch-scoped revoke on the rows at every branch its grant is held at', async () => {
+    setup({
+      tenantWide: scopedTo('user.revoke_branch'),
+      selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' },
+      heldAt: [WESTLANDS, KISUMU],
+      rows: [row(1, WESTLANDS, 'HOME'), row(2, HEAD_OFFICE, 'OPERATE'), row(3, KISUMU, 'VIEW')],
+    });
+
+    await show();
+
+    expect(screen.getAllByRole('button', { name: /^Revoke/ })).toEqual([
+      screen.getByRole('button', { name: /View assignment at Kisumu$/ }),
+      screen.getByRole('button', { name: /Home assignment at Westlands Branch$/ }),
+    ]);
+  });
+
+  it('offers a branch-scoped revoke nowhere at All branches', async () => {
+    setup({
+      permissions: scopedTo('user.revoke_branch'),
+      tenantWide: scopedTo('user.revoke_branch'),
+      rows: [row(1, WESTLANDS, 'HOME')],
+    });
+
+    await show();
+
+    expect(screen.queryByRole('button', { name: /^Revoke/ })).toBeNull();
+  });
 });
 
 describe('UserBranchesPage: what the list says about itself', () => {
-  it('shows no note at institution level when the scan was complete', async () => {
-    setup({ rows: [row(1, WESTLANDS, 'HOME')] });
+  it('shows no note for a tenant-wide view when the scan was complete, whichever branch is selected', async () => {
+    setup({
+      rows: [row(1, WESTLANDS, 'HOME')],
+      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
+    });
 
     await show();
 
     expect(screen.getByRole('table')).toBeInTheDocument(); // the page did render
     expect(alerts()).toHaveLength(0);
-    expect(switchButton()).toBeNull();
   });
 
-  it('shows only the partial-scan note at institution level when the scan was capped, even with no row', async () => {
+  it('shows only the partial-scan note when the scan was capped, even with no row', async () => {
     setup({ rows: [], truncated: true });
 
     await show();
@@ -522,30 +551,22 @@ describe('UserBranchesPage: what the list says about itself', () => {
     expect(alerts().map((alert) => alert.textContent)).toEqual([PARTIAL_SCAN_NOTE]);
     // Not "No branch assignments": under a note saying the list may be incomplete, that is a guess.
     expect(emptyState().title).toBe('No branch assignments found');
-    expect(switchButton()).toBeNull();
   });
 
-  it('shows the branch note with the switch, then the partial-scan note, in a branch context with a capped scan', async () => {
-    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' }, truncated: true });
+  // BG-03: a search by user lists only the branches a branch-scoped view covers.
+  it('says a branch-scoped view sees only its branches, then the partial-scan note', async () => {
+    setup({ tenantWide: scopedTo('branch_assignment.view'), truncated: true });
 
     await show();
 
     expect(alerts()).toHaveLength(2);
-    const context = noteOf(contextNote('Head Office'));
+    const scoped = noteOf(SCOPED_ASSIGNMENTS_NOTE);
     const partial = noteOf(PARTIAL_SCAN_NOTE);
-    expect(context).not.toBe(partial);
-    expect(
-      context.compareDocumentPosition(partial) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    // The switch is part of the note's message, not its `action` slot, and only in the first note.
-    const button = within(context).getByRole('button', { name: 'Switch to All branches' });
-    expect(button.closest('.MuiAlert-message')).not.toBeNull();
-    expect(button.closest('.MuiAlert-action')).toBeNull();
-    expect(within(partial).queryByRole('button')).toBeNull();
+    expect(scoped.compareDocumentPosition(partial) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('marks both static notes as notes, not alerts, so a screen reader is not interrupted on every visit (2)', async () => {
-    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' }, truncated: true });
+    setup({ tenantWide: scopedTo('branch_assignment.view'), truncated: true });
 
     await show();
 
@@ -555,18 +576,9 @@ describe('UserBranchesPage: what the list says about itself', () => {
     expect(screen.getAllByRole('note')).toHaveLength(2);
   });
 
-  it('keeps the switch at the left of its note, not stretched across it (M1)', async () => {
-    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' } });
-
-    await show();
-
-    // The shared button lays itself out for a centred state; its wrapper here hugs its content.
-    expect(switchButton()?.parentElement).toHaveStyle({ width: 'fit-content' });
-  });
-
   it('leaves room under the last note, so it does not touch the table header (M2)', async () => {
     setup({
-      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
+      tenantWide: scopedTo('branch_assignment.view'),
       truncated: true,
       rows: [row(1, HEAD_OFFICE, 'HOME')],
     });
@@ -581,56 +593,11 @@ describe('UserBranchesPage: what the list says about itself', () => {
     expect(getComputedStyle(notes).paddingTop).toBe(step3);
     expect(getComputedStyle(notes).paddingBottom).toBe(step3);
   });
-
-  it('shows only the branch note in a branch context when the scan was complete', async () => {
-    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' } });
-
-    await show();
-
-    expect(alerts().map((alert) => alert.querySelector('.MuiAlert-message')?.textContent)).toEqual([
-      `${contextNote('Head Office')}Switch to All branches`,
-    ]);
-    expect(screen.queryByText(PARTIAL_SCAN_NOTE)).toBeNull();
-  });
-
-  it("offers no switch when the account has one ACTIVE branch (a SUSPENDED one doesn't count) and says why", async () => {
-    setup({
-      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
-      profileBranches: [
-        { id: HEAD_OFFICE, status: 'ACTIVE' },
-        { id: WESTLANDS, status: 'SUSPENDED' },
-      ],
-    });
-
-    await show();
-
-    expect(noteOf(singleBranchNote('Head Office'))).toBeInTheDocument();
-    expect(screen.queryByText(contextNote('Head Office'))).toBeNull();
-    expect(switchButton()).toBeNull();
-  });
-
-  it('offers the switch when the account has two ACTIVE branches (the control for the case above)', async () => {
-    setup({
-      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
-      profileBranches: [
-        { id: HEAD_OFFICE, status: 'ACTIVE' },
-        { id: WESTLANDS, status: 'ACTIVE' },
-        { id: KISUMU, status: 'SUSPENDED' },
-      ],
-    });
-
-    await show();
-
-    expect(switchButton()).toBeInTheDocument();
-    expect(screen.queryByText(singleBranchNote('Head Office'))).toBeNull();
-  });
 });
 
 describe('UserBranchesPage: the empty state says only what could be seen (1c)', () => {
-  const HEAD = { id: HEAD_OFFICE, name: 'Head Office' };
-
-  it('claims no assignments only when the whole list was visible: no branch selected, scan complete', async () => {
-    setup();
+  it('claims no assignments only when the whole list was visible: a tenant-wide view, scan complete', async () => {
+    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' } });
 
     await show();
 
@@ -645,44 +612,17 @@ describe('UserBranchesPage: the empty state says only what could be seen (1c)', 
     expect(emptyState()).toEqual({ title: 'No branch assignments', description: NO_ROWS });
   });
 
-  it('names the selected branch, and says they may be elsewhere with the way to see them', async () => {
-    setup({ selectedBranch: HEAD });
+  it('says a branch-scoped view found none at its branches, and that they may be elsewhere', async () => {
+    // The assignment's own view is branch-scoped too, so it assigns only at a selected branch.
+    setup({ tenantWide: scopedTo('branch_assignment.view') });
 
     await show();
 
     expect(emptyState()).toEqual({
-      title: 'No assignment at Head Office',
-      description: `${OTHER_BRANCHES} ${SWITCH_TO_SEE} ${OFFER}`,
+      title: 'No assignment at branches you can view',
+      description: OTHER_BRANCHES,
     });
     expect(screen.queryByText('No branch assignments')).toBeNull();
-  });
-
-  it('leaves the switch out of the empty state when the account cannot switch', async () => {
-    setup({
-      selectedBranch: HEAD,
-      profileBranches: [
-        { id: HEAD_OFFICE, status: 'ACTIVE' },
-        { id: WESTLANDS, status: 'SUSPENDED' },
-      ],
-    });
-
-    await show();
-
-    expect(emptyState()).toEqual({
-      title: 'No assignment at Head Office',
-      description: `${OTHER_BRANCHES} ${OFFER}`,
-    });
-  });
-
-  it('keeps the offer out when nothing can be assigned, in a branch context', async () => {
-    setup({ selectedBranch: HEAD, membershipStatus: 'REVOKED' });
-
-    await show();
-
-    expect(emptyState()).toEqual({
-      title: 'No assignment at Head Office',
-      description: `${OTHER_BRANCHES} ${SWITCH_TO_SEE}`,
-    });
   });
 
   it('says a capped scan found none, and that they may be beyond what was checked', async () => {
@@ -708,19 +648,12 @@ describe('UserBranchesPage: the empty state says only what could be seen (1c)', 
     });
   });
 
-  it('never claims "no assignment at" a branch whose list was capped: it says both things', async () => {
-    setup({ selectedBranch: HEAD, truncated: true });
-
-    await show();
-
-    expect(emptyState()).toEqual({
-      title: 'No branch assignments found',
-      description: `${BEYOND_CEILING} ${OTHER_BRANCHES} ${SWITCH_TO_SEE} ${OFFER}`,
-    });
-  });
-
   it('shows no empty state at all while a row is listed (the control for the cases above)', async () => {
-    setup({ selectedBranch: HEAD, truncated: true, rows: [row(1, HEAD_OFFICE, 'HOME')] });
+    setup({
+      tenantWide: scopedTo('branch_assignment.view'),
+      truncated: true,
+      rows: [row(1, HEAD_OFFICE, 'HOME')],
+    });
 
     await show();
 
@@ -793,8 +726,24 @@ describe('UserBranchesPage: assigning a branch', () => {
     expect(branch).toHaveAccessibleDescription('');
   });
 
-  it('offers only the selected branch, labelled with its code and already chosen, without reading the list', async () => {
-    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' }, activeHasNext: true });
+  it('offers every ACTIVE branch to a tenant-wide grant, whichever branch is selected (BG-03)', async () => {
+    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' } });
+    await show();
+
+    const { user, branch } = await openDrawer();
+
+    expect(listBranches).toHaveBeenCalledTimes(1);
+    await user.click(branch);
+    expect(within(await screen.findByRole('listbox')).getAllByRole('option')).toHaveLength(2);
+  });
+
+  // A grant held only at the selected branch assigns there alone.
+  it('offers a branch-scoped grant only the selected branch, labelled with its code and already chosen, without reading the list', async () => {
+    setup({
+      tenantWide: scopedTo('user.assign_branch'),
+      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
+      activeHasNext: true,
+    });
     await show();
 
     const { drawer, branch } = await openDrawer();
@@ -806,23 +755,51 @@ describe('UserBranchesPage: assigning a branch', () => {
     expect(branch).toHaveAccessibleDescription('');
   });
 
-  it("labels the selected branch by its name alone when the branch index doesn't know it", async () => {
-    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' }, index: [] });
+  it('offers a branch-scoped grant every branch it is held at, whichever is selected', async () => {
+    setup({
+      tenantWide: scopedTo('user.assign_branch'),
+      selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' },
+      heldAt: [KISUMU, HEAD_OFFICE],
+    });
+    await show();
+
+    const { user, branch } = await openDrawer();
+    await user.click(branch);
+
+    expect(listBranches).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Head Office (HEAD_OFFICE)',
+      'Kisumu (KISUMU)',
+    ]);
+  });
+
+  it("labels a branch the index doesn't know by its short id", async () => {
+    setup({
+      tenantWide: scopedTo('user.assign_branch'),
+      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
+      index: [],
+    });
     await show();
 
     const { branch } = await openDrawer();
 
-    expect(branch).toHaveTextContent(/^Head Office$/);
+    expect(branch).toHaveTextContent(/^22222222$/);
+  });
+
+  // BG-03: the ACTIVE list is `GET /branches`' answer, only the branches `branch.view` covers.
+  it('says a tenant-wide grant lists only the branches a branch-scoped branch.view covers', async () => {
+    setup({ tenantWide: scopedTo('branch.view'), selectedBranch: { id: WESTLANDS, name: 'W' } });
+    await show();
+
+    const { branch } = await openDrawer();
+
+    expect(branch).toHaveAccessibleDescription(SCOPED_BRANCHES_NOTE);
   });
 
   it.each([
     ['a REVOKED membership', { membershipStatus: 'REVOKED' }],
     ['no user.assign_branch', { permissions: ALL_CODES.filter((c) => c !== 'user.assign_branch') }],
     ['no branch.view', { permissions: ALL_CODES.filter((c) => c !== 'branch.view') }],
-    [
-      'no branch_assignment.view',
-      { permissions: ALL_CODES.filter((c) => c !== 'branch_assignment.view') },
-    ],
   ] as [string, Setup][])(
     'offers no assignment, and reads no branch list, with %s',
     async (_label, overrides) => {
@@ -837,6 +814,20 @@ describe('UserBranchesPage: assigning a branch', () => {
       expect(screen.queryByText(OFFER)).toBeNull();
     },
   );
+
+  // Without the view the platform refuses the scan, too.
+  it('offers no assignment, and reads no branch list, with no branch_assignment.view', async () => {
+    setup({
+      permissions: ALL_CODES.filter((c) => c !== 'branch_assignment.view'),
+      scanError: new BackendApiError(403, { code: 'forbidden' }),
+    });
+
+    await show();
+
+    expect(screen.getByText(DESCRIPTION)).toBeInTheDocument(); // the page did render
+    expect(screen.queryByRole('button', { name: 'Assign branch' })).toBeNull();
+    expect(listBranches).not.toHaveBeenCalled();
+  });
 
   it('offers the assignment, and says so on an empty list, with every code and an ACTIVE membership (the control for the cases above)', async () => {
     setup();

@@ -45,7 +45,8 @@ export interface SelectOrganisationResponse {
 export interface SelectBranchResponse {
   organisation_id: string;
   membership_id: string;
-  branch_id: string;
+  /** `null` when the request cleared the branch (All branches, BG-03). */
+  branch_id: string | null;
   context_token: string;
   context_header: string;
 }

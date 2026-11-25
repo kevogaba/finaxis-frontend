@@ -15,6 +15,8 @@ export interface UserBranchAssignmentRow {
   /** From the branch index; null when the branch isn't in it. */
   branchCode: string | null;
   assignmentType: string;
+  /** The holder may revoke at this row's branch (`canActAtBranch`, BG-03). */
+  revocable: boolean;
 }
 
 interface UserBranchAssignmentsTableProps {
@@ -68,14 +70,16 @@ export function UserBranchAssignmentsTable({
               </TableCell>
               {canRevoke && (
                 <TableCell align="right">
-                  <RevokeAssignmentButton
-                    assignmentId={row.assignmentId}
-                    userLabel={userName}
-                    typeLabel={humanizeEnum(row.assignmentType)}
-                    branchLabel={row.branchName}
-                    self={self}
-                    contextOrganisationId={contextOrganisationId}
-                  />
+                  {row.revocable && (
+                    <RevokeAssignmentButton
+                      assignmentId={row.assignmentId}
+                      userLabel={userName}
+                      typeLabel={humanizeEnum(row.assignmentType)}
+                      branchLabel={row.branchName}
+                      self={self}
+                      contextOrganisationId={contextOrganisationId}
+                    />
+                  )}
                 </TableCell>
               )}
             </TableRow>

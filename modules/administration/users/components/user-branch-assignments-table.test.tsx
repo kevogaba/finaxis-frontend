@@ -39,12 +39,14 @@ const westlandsHome: UserBranchAssignmentRow = {
   branchName: 'Westlands Branch',
   branchCode: 'WESTLANDS',
   assignmentType: 'HOME',
+  revocable: true,
 };
 const headOfficeOperate: UserBranchAssignmentRow = {
   assignmentId: OPERATE_ASSIGNMENT,
   branchName: 'Head Office',
   branchCode: 'HEAD_OFFICE',
   assignmentType: 'OPERATE',
+  revocable: true,
 };
 
 interface Overrides {
@@ -130,6 +132,16 @@ describe('UserBranchAssignmentsTable', () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /^Revoke/ })).toHaveLength(2);
+  });
+
+  // BG-03: a revoke the holder can't make at a row's branch offers none on that row.
+  it('offers Revoke only on the rows it may revoke', () => {
+    renderTable({ rows: [westlandsHome, { ...headOfficeOperate, revocable: false }] });
+
+    expect(
+      within(rowOf('Westlands Branch')).getByRole('button', { name: /^Revoke/ }),
+    ).toBeVisible();
+    expect(within(rowOf('Head Office')).queryByRole('button')).toBeNull();
   });
 
   it('forwards the organisation and the assignment to the revoke (I2)', async () => {

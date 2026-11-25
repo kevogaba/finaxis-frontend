@@ -71,8 +71,9 @@ export interface RoleAssignmentFilter {
 const optionalId = (value: string | undefined) =>
   value === undefined ? undefined : uuidSchema.parse(value);
 
-/** `GET /tenant/role-assignments`: newest first, never branch-restricted (contract §E.4). Layer 10
- * reads a user's roles with `{ userId }`; 12 reads a pending user's requested roles. */
+/** `GET /tenant/role-assignments`: newest first, target-aware (BG-03): a branch-scoped
+ * `role_assignment.view` reads only BRANCH-scope rows at its branches (`scopedRoleAssignmentView`).
+ * Layer 10 reads a user's roles with `{ userId }`; 12 reads a pending user's requested roles. */
 export async function listRoleAssignments(filter: RoleAssignmentFilter, paging: Paging) {
   const query = toQueryString({
     user_id: optionalId(filter.userId),

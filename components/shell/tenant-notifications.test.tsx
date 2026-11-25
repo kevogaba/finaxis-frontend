@@ -62,8 +62,8 @@ function resolved(
   options: {
     module?: ApplicationContext['module'];
     branch?: ApplicationContext['branch'];
-    /** The account's ACTIVE branches in /auth/me. */
-    activeBranches?: number;
+    /** Of `permissions`, the ones held only at one branch (BG-33). */
+    branchOnly?: string[];
   } = {},
 ) {
   getCurrentContextProfile.mockResolvedValue({
@@ -71,11 +71,8 @@ function resolved(
     profile: {
       ...PROFILE,
       permissions,
-      permission_scopes: permissionScopes(permissions),
-      branches: Array.from({ length: options.activeBranches ?? 2 }, (_entry, index) => ({
-        ...ACTIVE_BRANCH,
-        id: `5b000000-0000-4000-8000-00000000000${String(index)}`,
-      })),
+      permission_scopes: permissionScopes(permissions, options.branchOnly),
+      branches: [{ ...ACTIVE_BRANCH, id: WESTLANDS }],
     },
     context: {
       module: options.module ?? MODULES.tenant,
@@ -128,7 +125,8 @@ describe('PendingApprovalNotifications', () => {
     expect(countBranchActivations).not.toHaveBeenCalled();
   });
 
-  it('says to switch to All branches with a branch selected', async () => {
+  // BG-03: a tenant-wide approver activates from any branch context, so nothing to add.
+  it('counts pending branches with a branch selected, with no advice to switch', async () => {
     const user = userEvent.setup({ delay: null });
     resolved(['branch.approve', 'branch.view'], {
       branch: { id: WESTLANDS, name: 'Westlands Branch' },
@@ -138,26 +136,21 @@ describe('PendingApprovalNotifications', () => {
 
     await user.click(screen.getByRole('button', { name: 'Notifications: 1 approval waiting' }));
     expect(screen.getByRole('dialog', { name: 'Notifications' })).toHaveTextContent(
-      '1 branch is waiting for activation. Switch to All branches to activate them.',
+      /1 branch is waiting for activation\.Review branch activation$/,
     );
     expect(countUserApprovals).not.toHaveBeenCalled();
   });
 
-  it('tells an account that works at one branch who activates, never to switch', async () => {
-    const user = userEvent.setup({ delay: null });
+  // A pending branch grants no branch-scoped permission (platform #242).
+  it('reads no branch count for an approver whose grant is branch-scoped', async () => {
     resolved(['branch.approve', 'branch.view'], {
       branch: { id: WESTLANDS, name: 'Westlands Branch' },
-      activeBranches: 1,
+      branchOnly: ['branch.approve'],
     });
-    countBranchActivations.mockResolvedValue(1);
     await show();
 
-    await user.click(screen.getByRole('button', { name: 'Notifications: 1 approval waiting' }));
-    const dialog = screen.getByRole('dialog', { name: 'Notifications' });
-    expect(dialog).toHaveTextContent(
-      '1 branch is waiting for activation. Ask an administrator who works at institution level to activate them.',
-    );
-    expect(dialog).not.toHaveTextContent('Switch to All branches');
+    expect(screen.queryByRole('button', { name: /Notifications/ })).toBeNull();
+    expect(countBranchActivations).not.toHaveBeenCalled();
   });
 
   it('says nothing is waiting when nothing is', async () => {

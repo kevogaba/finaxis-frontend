@@ -1,8 +1,12 @@
 import type { Metadata } from 'next';
-import Alert from '@mui/material/Alert';
 import Paper from '@mui/material/Paper';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { canCreateBranch } from '@/modules/administration/branches/branch-rules';
+import { permissionHolder } from '@/auth/permissions';
+import {
+  canCreateBranch,
+  SCOPED_BRANCHES_NOTE,
+  scopedBranchView,
+} from '@/modules/administration/branches/branch-rules';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { PageHeader } from '@/components/shell/page-header';
 import { getBranchIndex, getOrganisationTimeZone } from '@/lib/api/lookups';
@@ -17,6 +21,7 @@ export default async function NewBranchPage() {
     getBranchIndex(),
   ]);
   const resolved = selected.kind === 'resolved' ? selected : null;
+  const holder = permissionHolder(resolved?.profile);
   const header = (
     <PageHeader
       eyebrow="Administration · Branches"
@@ -25,7 +30,7 @@ export default async function NewBranchPage() {
     />
   );
 
-  if (!canCreateBranch({ permissions: resolved?.profile.permissions ?? [] })) {
+  if (!canCreateBranch(holder)) {
     return (
       <>
         {header}
@@ -40,13 +45,6 @@ export default async function NewBranchPage() {
     <>
       {header}
       <Paper>
-        {resolved?.context.branch && (
-          // Spec §6.5: a draft is unreachable from a branch context; submitting needs All branches.
-          <Alert severity="info" sx={{ m: 4.5, mb: 0 }}>
-            You&apos;re working in {resolved.context.branch.name}. You can create the draft here,
-            but switch to All branches to open and submit it.
-          </Alert>
-        )}
         <BranchDraftForm
           defaultTimeZone={timeZone}
           contextOrganisationId={resolved?.context.organization.id}
@@ -54,6 +52,8 @@ export default async function NewBranchPage() {
             id,
             label: `${branch.name} (${branch.code})`,
           }))}
+          // BG-03: the index is `GET /branches`' answer, only the branches `branch.view` covers.
+          parentsNote={scopedBranchView(holder) ? `Optional. ${SCOPED_BRANCHES_NOTE}` : undefined}
         />
       </Paper>
     </>

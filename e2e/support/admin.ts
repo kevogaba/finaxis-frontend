@@ -31,8 +31,8 @@ export async function enterAdmin(
  * Text inside the page's `main` landmark.
  *
  * Scoped to `main`: in an observed failure, an unscoped page.getByText resolved to two elements
- * for the branches spec's "guides a branch context" test -- one hidden and outside `main`, one
- * inside it (the layout has a single BranchContextState call site, so it wasn't a double render).
+ * for a branch record's guided state (since retired) -- one hidden and outside `main`, one inside it
+ * (the layout rendered it from a single call site, so it wasn't a double render).
  * The likely cause (not reproduced in this session) is app/loading.tsx's root Suspense boundary
  * letting the streamed content briefly exist as a hidden duplicate segment. Whatever the actual
  * cause, `getByRole('main')` excludes a hidden `<main>` from resolution, so a chained getByText only

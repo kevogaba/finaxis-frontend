@@ -19,10 +19,6 @@ export interface AccessContext {
   tenantPermissions: ReadonlySet<string>;
 }
 
-/** Contract §E.4: `tenant` counts TENANT grants only; `branch` also counts BRANCH grants at the
- * selected branch. */
-export type PermissionScope = 'tenant' | 'branch';
-
 /** ACTIVE assignment rows on ACTIVE branches — one row per assignment, so branches can repeat. */
 export function activeAssignmentRows(
   state: RunState,
@@ -182,18 +178,71 @@ export function requireContext({ req, state }: RouteContext): AccessContext {
   };
 }
 
-/** A mutation also needs each view the catalogue pairs with it, at the same scope, before any
- * lookup or write (ADR 0030); the 403 names the first missing code in its detail. */
-export function requirePermission(
-  access: AccessContext,
-  code: string,
-  scope: PermissionScope = 'tenant',
-): void {
-  const held = scope === 'branch' ? access.permissions : access.tenantPermissions;
-  const missing = [code, ...viewsRequiredBy(code)].find((candidate) => !held.has(candidate));
+/** A tenant-wide check (`requireTenantPermission`): a mutation also needs each view the catalogue
+ * pairs with it, tenant-wide, before any lookup or write (ADR 0030); the 403 names the first missing
+ * code in its detail. */
+export function requirePermission(access: AccessContext, code: string): void {
+  const missing = [code, ...viewsRequiredBy(code)].find(
+    (candidate) => !access.tenantPermissions.has(candidate),
+  );
   if (missing !== undefined) {
     throw problem(403, 'forbidden', `Missing permission: ${missing}.`);
   }
+}
+
+/** A route's own `@PreAuthorize("hasAnyAuthority(...)")` gate: one of `codes` among the principal's
+ * authorities, the selected context's effective set (`/auth/me`'s `permissions`), with no view
+ * pairing; Spring's refusal names nothing (`ApiExceptionHandler.accessDenied`). The service's own
+ * checks follow it. */
+export function requireAuthority(access: AccessContext, codes: readonly string[]): void {
+  if (!codes.some((code) => access.permissions.has(code))) {
+    throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
+  }
+}
+
+/** Where a code is held (`PermissionGuard.branchVisibility`, BG-03): every branch for a TENANT
+ * grant, else the ACTIVE branches its BRANCH grants name, whichever branch is selected (#242). */
+export type BranchVisibility = 'all' | ReadonlySet<string>;
+
+export function branchVisibility(access: AccessContext, code: string): BranchVisibility {
+  const entry = permissionScopes(access.state, access.claims.userId, access.organisation.id).find(
+    (candidate) => candidate.code === code,
+  );
+  if (entry === undefined) return new Set();
+  return entry.scope === 'TENANT' ? 'all' : new Set(entry.branch_ids);
+}
+
+export const canSee = (visibility: BranchVisibility, branchId: string): boolean =>
+  visibility === 'all' || visibility.has(branchId);
+
+const missingPermission = (code: string) =>
+  problem(403, 'forbidden', `Missing permission: ${code}.`);
+
+/** `requireBranchPermission` (BG-03): the code and each view it implies (ADR 0030) on the target
+ * branch, before any lookup, so an unknown id is a 403 to a branch-scoped caller, never an oracle. */
+export function requireBranchPermission(
+  access: AccessContext,
+  code: string,
+  branchId: string,
+): void {
+  const missing = [code, ...viewsRequiredBy(code)].find(
+    (candidate) => !canSee(branchVisibility(access, candidate), branchId),
+  );
+  if (missing !== undefined) throw missingPermission(missing);
+}
+
+/** `mutationBranchVisibility`: where the code and every view it implies are all held; a 403 naming
+ * the first code held nowhere. A route that names only an assignment id authorises through it. */
+export function mutationVisibility(access: AccessContext, code: string): BranchVisibility {
+  const scoped = [code, ...viewsRequiredBy(code)].flatMap((candidate) => {
+    const held = branchVisibility(access, candidate);
+    if (held === 'all') return [];
+    if (held.size === 0) throw missingPermission(candidate);
+    return [held];
+  });
+  const [first, ...rest] = scoped;
+  if (first === undefined) return 'all';
+  return new Set([...first].filter((id) => rest.every((held) => held.has(id))));
 }
 
 /** Adding to your own access also needs `user.assign_self` (and its view) tenant-wide, which

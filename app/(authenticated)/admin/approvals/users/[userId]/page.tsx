@@ -45,12 +45,14 @@ import {
   makerGate,
   SELF_APPROVAL_NOTE_USERS,
 } from '@/modules/administration/approvals/maker-checker';
+import { scopedRoleAssignmentView } from '@/modules/administration/roles/role-rules';
 import { readMakerCheckerSwitch } from '@/modules/administration/settings/settings-service';
 import type { MembershipSummary } from '@/modules/administration/users/user-contract';
 import {
   membershipActionsNote,
   onboardingState,
   parseUserId,
+  scopedAssignmentView,
   userStatusLabel,
 } from '@/modules/administration/users/user-rules';
 import {
@@ -108,7 +110,9 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
   const record = user.value;
   // The backend's ids, never the URL's (Ruling 5): `record.id` for every read, `/auth/me`'s for me.
   const me = resolved.profile.user_id;
-  const selectedBranch = resolved.context.branch;
+  // BG-03: a search by user lists every branch to a tenant-wide view, the grant's branches else.
+  const scopedView = scopedAssignmentView(holder);
+  const rolesScoped = scopedRoleAssignmentView(holder);
   const state = userApprovalState(record.membershipStatus, record.userStatus);
   // BG-08: the inviter is the record's own `created_by`; the switch is read only for them.
   const makers = [record.createdBy?.id];
@@ -233,10 +237,8 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
           scan={scan}
           roleIndex={roleIndex}
           branchIndex={branchIndex}
-          selectedBranch={selectedBranch}
-          canSwitch={
-            resolved.profile.branches.filter((entry) => entry.status === 'ACTIVE').length > 1
-          }
+          scopedView={scopedView}
+          rolesScoped={rolesScoped}
         />
         {(state === 'awaiting' || state === 'blocked') && (
           <SectionCard title="Control checks" description={CHECKS_DESCRIPTION}>
@@ -251,7 +253,8 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
                     : roles.ok
                       ? { ok: true, value: roles.value.items.length }
                       : roles,
-                // A capped scan, or one a selected branch narrowed, can't prove "none" (rule 9).
+                rolesComplete: !rolesScoped,
+                // A capped scan, or one a branch-scoped view narrowed, can't prove "none" (rule 9).
                 branches:
                   scan === null
                     ? null
@@ -260,7 +263,7 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
                           ok: true,
                           value: {
                             count: scan.value.items.length,
-                            complete: !scan.value.truncated && selectedBranch === null,
+                            complete: !scan.value.truncated && !scopedView,
                           },
                         }
                       : scan,

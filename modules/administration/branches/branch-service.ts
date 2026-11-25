@@ -21,7 +21,8 @@ export const getBranch = cache(async (branchId: string) => {
   return await apiGet(`/api/v1/branches/${id}`, branchDetailSchema);
 });
 
-/** ACTIVE assignments at one branch (with a branch selected the backend forces its own). */
+/** ACTIVE assignments at one branch: the explicit `branch_id` holds whichever branch is selected,
+ * and a branch the caller may not view is a 403 (BG-03). */
 export async function listBranchAssignments(
   branchId: string,
   paging: { page: number; size: number },

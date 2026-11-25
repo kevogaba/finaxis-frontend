@@ -392,7 +392,9 @@ test.describe('roles', () => {
     await expect(dialog).toBeHidden();
   });
 
-  test('offers only the selected branch for a branch-scoped assignment in a branch context', async ({
+  // BG-03: the platform checks a BRANCH-scope role action on its target branch, so a tenant-wide
+  // grant assigns and revokes at any branch, whichever branch is selected.
+  test('offers every branch for a branch-scoped assignment, with a branch selected', async ({
     context,
     page,
   }, testInfo) => {
@@ -404,12 +406,13 @@ test.describe('roles', () => {
     await page.getByRole('button', { name: 'Assign role' }).click();
     await selectMuiOption(page, 'Scope', /^One branch$/);
     await page.getByRole('combobox', { name: 'Branch' }).click();
-    // Contract §E.4: a BRANCH assignment at another branch would be a 404 here.
-    await expect(page.getByRole('option')).toHaveCount(1);
-    await expect(page.getByRole('option')).toHaveText('Westlands Branch (WESTLANDS)');
+    await expect(page.getByRole('option')).toHaveText([
+      'Head Office (HEAD_OFFICE)',
+      'Westlands Branch (WESTLANDS)',
+    ]);
   });
 
-  test('hides Revoke for a branch assignment at another branch, but not a tenant-wide one', async ({
+  test('offers Revoke for a branch assignment at another branch than the selected one', async ({
     context,
     page,
   }, testInfo) => {
@@ -419,10 +422,11 @@ test.describe('roles', () => {
     await openTab(page, 'Assignments');
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(3); // header + 2
 
-    // Contract §E.4: Grace holds Teller at Westlands only, so a Head Office context would get a
-    // 404 revoking it. Tom holds it institution-wide, which any branch may revoke.
-    await expect(page.getByRole('row', { name: /Grace Achieng/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Revoke Grace Achieng/ })).toHaveCount(0);
+    await expect(
+      page.getByRole('button', {
+        name: "Revoke Grace Achieng's Teller assignment (Westlands Branch)",
+      }),
+    ).toBeVisible();
     await expect(
       page.getByRole('button', {
         name: "Revoke Tom Kiprop's Teller assignment (institution-wide)",

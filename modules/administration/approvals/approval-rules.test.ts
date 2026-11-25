@@ -6,6 +6,7 @@ import {
 } from '@/modules/administration/users/user-rules';
 import {
   approvalQueueTabs,
+  canSeeBranchActivations,
   canSeeUserApprovals,
   availableBranchDecisions,
   availableUserDecisions,
@@ -49,11 +50,30 @@ describe('the queue', () => {
   // GET /tenant/users checks user.view tenant-wide (BG-33).
   it('offers no User onboarding tab while user.view is held only at branch scope', () => {
     const permissions = ['user.approve', 'user.view', 'branch.approve', 'branch.view'];
-    const holder = { permissions, tenantPermissions: ['user.approve', 'branch.view'] };
+    const holder = {
+      permissions,
+      tenantPermissions: ['user.approve', 'branch.approve', 'branch.view'],
+    };
     expect(approvalQueueTabs(holder).map((tab) => tab.label)).toEqual(['Branch activation']);
     expect(canSeeUserApprovals(holder)).toBe(false);
     expect(canSeeUserApprovals({ ...holder, tenantPermissions: ['user.view'] })).toBe(true);
   });
+
+  // A pending branch grants no branch-scoped permission (platform #242): only a tenant-wide
+  // approver can activate one, whichever branch is selected (BG-03).
+  it.each(['branch.approve', 'branch.view'])(
+    'offers no Branch activation tab while %s is held only at a branch',
+    (scoped) => {
+      const permissions = ['branch.approve', 'branch.view'];
+      const holder = {
+        permissions,
+        tenantPermissions: permissions.filter((code) => code !== scoped),
+      };
+      expect(approvalQueueTabs(holder)).toEqual([]);
+      expect(canSeeBranchActivations(holder)).toBe(false);
+      expect(canSeeBranchActivations(wide(permissions))).toBe(true);
+    },
+  );
 
   it('counts a tab only when its count was read (spec §10.6), never a 0 it doesn’t know', () => {
     const codes = ['user.approve', 'user.view', 'branch.approve', 'branch.view'];
@@ -182,17 +202,22 @@ describe('where a user approval stands', () => {
 });
 
 describe('where a branch activation stands', () => {
-  const ACTIVATOR = { permissions: ['branch.approve', 'branch.view'] };
+  const ACTIVATOR = wide(['branch.approve', 'branch.view']);
 
-  it('offers Activate only while pending, and only with both codes', () => {
-    expect(availableBranchDecisions('PENDING_APPROVAL', ACTIVATOR)).toEqual(['activate']);
-    expect(availableBranchDecisions('ACTIVE', ACTIVATOR)).toEqual([]);
+  it('offers Activate only while pending, and only with both codes held tenant-wide', () => {
+    const pending = { id: 'branch-a', status: 'PENDING_APPROVAL' } as const;
+    expect(availableBranchDecisions(pending, ACTIVATOR)).toEqual(['activate']);
+    expect(availableBranchDecisions({ ...pending, status: 'ACTIVE' }, ACTIVATOR)).toEqual([]);
+    expect(availableBranchDecisions(pending, wide(['branch.approve']))).toEqual([]);
+    expect(availableBranchDecisions(pending, wide(['branch.view']))).toEqual([]);
+    // Held at that branch only: a pending branch grants no branch-scope permission (#242).
     expect(
-      availableBranchDecisions('PENDING_APPROVAL', { permissions: ['branch.approve'] }),
+      availableBranchDecisions(pending, {
+        permissions: ['branch.approve', 'branch.view'],
+        tenantPermissions: ['branch.view'],
+        branchPermissions: { 'branch.approve': ['branch-a'] },
+      }),
     ).toEqual([]);
-    expect(availableBranchDecisions('PENDING_APPROVAL', { permissions: ['branch.view'] })).toEqual(
-      [],
-    );
   });
 
   it('disables Activate only while the maker gate blocks it', () => {

@@ -48,7 +48,7 @@ export interface BrowserOrganisationSelection {
 export interface BrowserBranchSelection {
   organisationId: string;
   membershipId: string;
-  branchId: string;
+  branchId: string | null;
 }
 
 function toBrowserPageMetadata(page: PageMetadata): BrowserPageMetadata {

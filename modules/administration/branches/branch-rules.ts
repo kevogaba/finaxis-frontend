@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { can, canAll, canTenantWide, type PermissionHolder } from '@/auth/permissions';
+import {
+  canActAtBranch,
+  canAllTenantWide,
+  canTenantWide,
+  type PermissionHolder,
+} from '@/auth/permissions';
 import { withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import { uuidSchema } from '@/lib/api/wire';
@@ -25,19 +30,38 @@ const PERMISSION: Record<BranchLifecycleAction, string> = {
   close: 'branch.close',
 };
 
-/** Every transition reads the branch back, so it also needs `branch.view` (BG-31). */
-export function availableBranchActions(
-  status: BranchStatus,
+/**
+ * Whether the holder may run `code` on `branch` (BG-03): the route's own gate, `routeCodes` (the
+ * code unless the route names others) in the selected context, and the service's check of `code`
+ * and its views on the target, held tenant-wide or at that branch (`canActAtBranch`). A branch-scope
+ * grant counts only while its branch is ACTIVE (platform #242), so a DRAFT, PENDING_APPROVAL or
+ * SUSPENDED branch is acted on tenant-wide only.
+ */
+export function canActOnBranch(
   holder: PermissionHolder,
-): BranchLifecycleAction[] {
-  if (!can(holder, 'branch.view')) return [];
-  return ACTIONS_BY_STATUS[status].filter((action) => can(holder, PERMISSION[action]));
+  code: string,
+  branch: { id: string; status: BranchStatus },
+  routeCodes?: readonly string[],
+): boolean {
+  return canActAtBranch(holder, code, branch.status === 'ACTIVE' ? branch.id : null, routeCodes);
 }
 
-/** POST /branches needs only `branch.create`, but the record it redirects to and submitting the
- * draft both read the branch back, so the create flow also needs `branch.view` (spec §6.6). */
+/** Every transition reads the branch back (BG-31), so it needs `branch.view` there too, which
+ * `canActOnBranch` checks with the code's other views. */
+export function availableBranchActions(
+  branch: { id: string; status: BranchStatus },
+  holder: PermissionHolder,
+): BranchLifecycleAction[] {
+  return ACTIONS_BY_STATUS[branch.status].filter((action) =>
+    canActOnBranch(holder, PERMISSION[action], branch),
+  );
+}
+
+/** POST /branches checks `branch.create` and its view tenant-wide (`requireTenantPermission`), so a
+ * branch-scoped grant creates nothing, whichever branch is selected; the record it redirects to and
+ * submitting the draft read the branch back with that view (spec §6.6). */
 export function canCreateBranch(holder: PermissionHolder): boolean {
-  return canAll(holder, ['branch.create', 'branch.view']);
+  return canAllTenantWide(holder, withViews(['branch.create']));
 }
 
 export const MAKER_CHECKER_BLOCKED =
@@ -46,19 +70,33 @@ export const MAKER_CHECKER_BLOCKED =
  * their own codes (BG-08). The branch record and the approval page share it. */
 export const ACTIVATE_FORBIDDEN = "You can't activate this branch. Your role doesn't allow it.";
 
-/** Assigning needs an ACTIVE branch (else 409) and the write's views (ADR 0030); the drawer's user
- * search reads `/tenant/users`, which needs `user.view` tenant-wide (BG-33). */
-export function canAssignUsers(status: BranchStatus, holder: PermissionHolder): boolean {
+/** Assigning needs an ACTIVE branch (else 409) and the write on it (`canActOnBranch`); the drawer's
+ * user search reads `/tenant/users`, which needs `user.view` tenant-wide (BG-33). */
+export function canAssignUsers(
+  branch: { id: string; status: BranchStatus },
+  holder: PermissionHolder,
+): boolean {
   return (
-    status === 'ACTIVE' &&
-    canAll(holder, withViews(['user.assign_branch'])) &&
+    branch.status === 'ACTIVE' &&
+    canActOnBranch(holder, 'user.assign_branch', branch) &&
     canTenantWide(holder, 'user.view')
   );
 }
 
-export function canRevokeAssignments(holder: PermissionHolder): boolean {
-  return canAll(holder, withViews(['user.revoke_branch']));
+/** A revoke is checked on the assignment's own branch (BG-03). */
+export function canRevokeAssignments(
+  holder: PermissionHolder,
+  branch: { id: string; status: BranchStatus },
+): boolean {
+  return canActOnBranch(holder, 'user.revoke_branch', branch);
 }
+
+/** BG-03: `GET /branches` lists only the branches a branch-scoped `branch.view` covers. */
+export function scopedBranchView(holder: PermissionHolder): boolean {
+  return !canTenantWide(holder, 'branch.view');
+}
+
+export const SCOPED_BRANCHES_NOTE = 'Only branches you can view are shown.';
 
 /** `HEAD_OFFICE` → `Head office`; free text such as `Service centre` stays as typed. */
 export function branchTypeLabel(type: string): string {

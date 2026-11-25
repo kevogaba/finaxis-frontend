@@ -5,8 +5,8 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { permissionHolder } from '@/auth/permissions';
-import { SwitchToAllBranchesButton } from '@/components/context/switch-to-all-branches-button';
+import { withViews } from '@/auth/permission-views';
+import { canActAtBranch, canAllTenantWide, permissionHolder } from '@/auth/permissions';
 import { BlockedButton } from '@/components/data-display/blocked-button';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
@@ -18,19 +18,20 @@ import { getBranchIndex } from '@/lib/api/lookups';
 import { lastPageIfPastEnd, parsePaging } from '@/lib/api/paging';
 import { hrefWith, toSearchParams } from '@/lib/api/query-string';
 import { shortId } from '@/lib/format';
-import { canRevokeAssignments } from '@/modules/administration/branches/branch-rules';
+import { scopedBranchView } from '@/modules/administration/branches/branch-rules';
 import { listBranches } from '@/modules/administration/branches/branch-service';
 import { AssignUserBranchButton } from '@/modules/administration/users/components/user-branch-actions';
 import { UserBranchAssignmentsTable } from '@/modules/administration/users/components/user-branch-assignments-table';
 import {
   branchAssignmentsEmptyState,
-  branchContextNote,
   canAssignUserBranch,
   OWN_ACCESS,
   ownAccessBlocked,
   pageOfItems,
   PARTIAL_SCAN_NOTE,
   parseUserId,
+  SCOPED_ASSIGNMENTS_NOTE,
+  scopedAssignmentView,
   type SelectOption,
 } from '@/modules/administration/users/user-rules';
 import { getUser, listUserBranchAssignments } from '@/modules/administration/users/user-service';
@@ -61,21 +62,22 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
 
   const record = user.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
-  const holder = resolved ? permissionHolder(resolved.profile) : { permissions: [] };
+  const holder = permissionHolder(resolved?.profile);
   const self = record.id === resolved?.profile.user_id;
   // I2: the organisation this page rendered with, carried by every mutation surface below.
   const contextOrganisationId = resolved?.context.organization.id;
-  const selectedBranch = resolved?.context.branch ?? null;
   const canAssign = canAssignUserBranch(record.membershipStatus, holder, self);
   // Your own record (#342): shown disabled with the reason, like the access tab's Assign role.
   const ownBlocked =
     ownAccessBlocked(self, holder) && canAssignUserBranch(record.membershipStatus, holder, false);
-  // ACTIVE branches only (an inactive one is a 409); with a branch selected, only that branch is
-  // reachable (§E.4).
+  // ACTIVE branches only (an inactive one is a 409). A tenant-wide grant assigns at any of them; a
+  // branch-scoped one at the branches it is held at, whichever branch is selected (BG-03), which
+  // `/auth/me` lists ACTIVE only.
   // ponytail: one page of 100 ACTIVE branches; past it the rest aren't offered and the drawer says
   // so (AGENTS.md's fifth exception; Ruling 11).
+  const anywhere = canAllTenantWide(holder, withViews(['user.assign_branch']));
   const active =
-    canAssign && !selectedBranch
+    canAssign && anywhere
       ? await load(
           listBranches({
             status: 'ACTIVE',
@@ -85,20 +87,21 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
           }),
         )
       : null;
-  const selectedCode = selectedBranch ? branches.get(selectedBranch.id)?.code : undefined;
-  const options: SelectOption[] = selectedBranch
-    ? [
-        {
-          id: selectedBranch.id,
-          label: selectedCode ? `${selectedBranch.name} (${selectedCode})` : selectedBranch.name,
-        },
-      ]
-    : active?.ok
+  const branchLabel = (id: string) => {
+    const branch = branches.get(id);
+    return branch ? `${branch.name} (${branch.code})` : shortId(id);
+  };
+  const options: SelectOption[] = anywhere
+    ? active?.ok
       ? active.value.items.map((branch) => ({
           id: branch.id,
           label: `${branch.branchName} (${branch.branchCode})`,
         }))
-      : [];
+      : []
+    : (holder.branchPermissions['user.assign_branch'] ?? [])
+        .filter((id) => canActAtBranch(holder, 'user.assign_branch', id))
+        .map((id) => ({ id, label: branchLabel(id) }))
+        .sort((a, b) => a.label.localeCompare(b.label));
   const assignOffered = canAssign && options.length > 0;
 
   const card = (content: ReactNode) => (
@@ -113,6 +116,9 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
             userName={record.displayName}
             branches={options}
             truncated={active?.ok === true && active.value.page.hasNext}
+            // The ACTIVE list is `GET /branches`' answer: only the branches a branch-scoped
+            // `branch.view` covers (BG-03).
+            scoped={anywhere && scopedBranchView(holder)}
             contextOrganisationId={contextOrganisationId}
           />
         ) : ownBlocked ? (
@@ -134,7 +140,7 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
     );
   }
 
-  // The scan has no user filter (BG-09), so its rows are paged here, on the server, with the page
+  // The scan reads every page of the user's rows (BG-09), so they are paged here, on the server, with the page
   // and size in the URL like every other list. Branch name, then type, then id: a total order, since
   // the scan's own order is unspecified and a tie would move a row between pages.
   const rows = scan.value.items
@@ -145,6 +151,8 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
         branchName: branch?.name ?? shortId(row.branchId),
         branchCode: branch?.code ?? null,
         assignmentType: row.assignmentType,
+        // On the row's own branch, which `/auth/me` lists only while it is ACTIVE (BG-03, #242).
+        revocable: canActAtBranch(holder, 'user.revoke_branch', row.branchId),
       };
     })
     .sort(
@@ -163,26 +171,17 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
     );
   }
 
-  // PF1: /auth/me branches[] can include SUSPENDED branches, and All branches only helps with more
-  // than one ACTIVE branch to switch between (the branch record layout's check).
-  const canSwitch =
-    (resolved?.profile.branches.filter((entry) => entry.status === 'ACTIVE').length ?? 0) > 1;
-  // Ruling 8: the backend forces a scan to the selected branch, and a branch with more than 500
-  // ACTIVE assignments is capped there too, so a capped scan is partial with or without a branch.
+  // BG-03: a search by user covers every branch to a tenant-wide view, its own branches otherwise.
+  // Ruling 8: a user with more than 500 ACTIVE assignments caps the scan, which is then partial.
+  const scoped = scopedAssignmentView(holder);
   const notices =
-    selectedBranch || scan.value.truncated ? (
+    scoped || scan.value.truncated ? (
       <Box sx={{ px: 4, py: 3, display: 'grid', gap: 2 }}>
         {/* role="note": static notices, not alerts announced on every visit to the tab (as the
             settings catalogue's, and distinct from the toast's alert). */}
-        {selectedBranch && (
+        {scoped && (
           <Alert severity="info" role="note">
-            {branchContextNote(selectedBranch.name, canSwitch)}
-            {canSwitch && (
-              // The shared button centres itself for a centred state; here it hugs the note's left.
-              <Box sx={{ mt: 2, width: 'fit-content' }}>
-                <SwitchToAllBranchesButton />
-              </Box>
-            )}
+            {SCOPED_ASSIGNMENTS_NOTE}
           </Alert>
         )}
         {scan.value.truncated && (
@@ -197,12 +196,11 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
     <>
       {notices}
       {paged.items.length === 0 ? (
-        // With a branch selected or a capped scan, "none" would be a guess under the note saying so.
+        // With a branch-scoped view or a capped scan, "none" would be a guess under the note.
         <EmptyState
           {...branchAssignmentsEmptyState({
-            selectedBranchName: selectedBranch?.name ?? null,
+            scoped,
             truncated: scan.value.truncated,
-            canSwitch,
             assignOffered,
           })}
         />
@@ -210,7 +208,7 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
         <UserBranchAssignmentsTable
           userName={record.displayName}
           self={self}
-          canRevoke={canRevokeAssignments(holder)}
+          canRevoke={paged.items.some((row) => row.revocable)}
           contextOrganisationId={contextOrganisationId}
           rows={paged.items}
         />

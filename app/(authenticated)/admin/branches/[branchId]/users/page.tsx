@@ -36,11 +36,12 @@ export default async function BranchUsersPage({ params, searchParams }: BranchUs
     load(listBranchAssignments(branchId, parsePaging(query, 10))),
     getCurrentContextProfile(),
   ]);
-  if (!branch.ok) return null; // the layout renders the failure or the guided state
+  if (!branch.ok) return null; // the layout renders the failure
   const record = branch.value;
   const holder =
     selected.kind === 'resolved' ? permissionHolder(selected.profile) : { permissions: [] };
-  const canAssign = canAssignUsers(record.status, holder);
+  // BG-03: checked on this branch, whichever branch is selected.
+  const canAssign = canAssignUsers(record, holder);
   // I2: the organisation this page rendered with, carried by every mutation surface below.
   const contextOrganisationId =
     selected.kind === 'resolved' ? selected.context.organization.id : undefined;
@@ -107,7 +108,7 @@ export default async function BranchUsersPage({ params, searchParams }: BranchUs
         />
       ) : (
         <BranchUsersTable
-          canRevoke={canRevokeAssignments(holder)}
+          canRevoke={canRevokeAssignments(holder, record)}
           rows={assignments.value.items.map((row) => ({
             assignmentId: row.id,
             name: byId.get(row.userId)?.displayName ?? shortId(row.userId),

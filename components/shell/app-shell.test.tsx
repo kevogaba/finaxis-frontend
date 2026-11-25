@@ -73,6 +73,38 @@ describe('AppShell', () => {
     expect(screen.getAllByRole('link', { name: 'SACCO institutions' }).length).toBeGreaterThan(0);
   });
 
+  // BG-03: at All branches a branch-scoped branch.view isn't in `permissions`, but the branch list
+  // answers it, so the layout's server-computed `viewsBranches` shows Branches.
+  it('shows Branches at All branches when the layout says branch.view is held at a branch', () => {
+    const atAllBranches = { ...ADMINISTRATION, branch: null };
+    const { unmount } = renderWithProviders(
+      <AppShell
+        user={USER}
+        context={atAllBranches}
+        initialNavCollapsed={false}
+        platformOrganisationId="platform"
+      >
+        <div />
+      </AppShell>,
+    );
+    expect(screen.queryByRole('link', { name: 'Branches' })).not.toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(
+      <AppShell
+        user={USER}
+        context={atAllBranches}
+        initialNavCollapsed={false}
+        platformOrganisationId="platform"
+        viewsBranches
+      >
+        <div />
+      </AppShell>,
+    );
+    expect(screen.getAllByRole('link', { name: 'Branches' }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('link', { name: 'Users & access' })).not.toBeInTheDocument();
+  });
+
   it('persists the collapse preference in a cookie', async () => {
     const user = userEvent.setup();
     renderWithProviders(

@@ -1,5 +1,5 @@
 import { encodeContext } from '../context-token.mts';
-import { objectBody, pageOf, problem, readBody, sendJson, stringField } from '../http.mts';
+import { objectBody, pageOf, problem, readBody, sendJson, stringField, UUID } from '../http.mts';
 import {
   activeAssignmentRows,
   canSelectOrganisation,
@@ -126,19 +126,25 @@ export const authRoutes: Route[] = [
     sendJson(context.res, 200, pageOf(items, context.query));
   }),
 
+  // BG-03 (platform #154): an absent or null `branch_id` clears the branch, for a single-branch
+  // member too; anything but a 36-character UUID, `""` included, is a malformed body
+  // (StrictUuidDeserializer), before the service's checks.
   route('POST', '/api/v1/auth/select-branch', async (context) => {
     const access = requireContext(context);
-    requirePermission(access, 'auth.select_branch');
     const body = objectBody(await readBody(context.req), ['branch_id']);
-    const branchId = requiredIdField(body, 'branch_id');
-    const allowed = activeAssignmentRows(
-      context.state,
-      access.claims.userId,
-      access.claims.organisationId,
-    ).some((row) => row.branchId === branchId);
+    const branchId = stringField(body, 'branch_id', { required: false });
+    if (branchId !== null && !UUID.test(branchId)) {
+      throw problem(400, 'invalid_json', 'Malformed request body.');
+    }
+    const allowed =
+      branchId === null ||
+      activeAssignmentRows(context.state, access.claims.userId, access.claims.organisationId).some(
+        (row) => row.branchId === branchId,
+      );
     if (!allowed) {
       throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
     }
+    requirePermission(access, 'auth.select_branch');
     sendJson(context.res, 200, {
       organisation_id: access.claims.organisationId,
       membership_id: access.claims.membershipId,

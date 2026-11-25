@@ -260,7 +260,7 @@ describe('InviteAccessFields', () => {
     );
     await choose(user, role, 'Scope', 'One branch');
     expect(within(role).getByRole('combobox', { name: 'Scope' })).toHaveAccessibleDescription(
-      'Applies only while that branch is selected.',
+      'Applies at that branch only, while it is active.',
     );
     await user.click(within(role).getByRole('combobox', { name: 'Branch' }));
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([

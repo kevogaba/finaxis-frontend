@@ -24,6 +24,11 @@ interface ContextSwitcherDialogProps {
   open: boolean;
   onClose: () => void;
   platformOrganisationId: string;
+  /** Holds `auth.select_branch` tenant-wide, which clearing a branch needs (BG-03): a single-branch
+   * member is then offered All branches too.
+   * ponytail: the current organisation's grant stands in for the one picked; a member without it
+   * there gets the context-lost message, as a multi-branch member already would. */
+  canSelectBranch?: boolean;
 }
 
 type Load =
@@ -36,12 +41,13 @@ export function ContextSwitcherDialog({
   open,
   onClose,
   platformOrganisationId,
+  canSelectBranch = false,
 }: ContextSwitcherDialogProps) {
   const router = useRouter();
   const notify = useToast();
   const current = useApplicationContext();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
-  const [committed, setCommitted] = useState<string | null>(null);
+  const [committed, setCommitted] = useState<SelectionOutcome | null>(null);
   // The branch endpoints clear the context cookie server-side on a 403/409 — once that happens the
   // ambient organisation/branch this dialog opened with is no longer pinned, so Close must stop
   // treating it as a completed switch and just let the shared layout notice on its own refresh.
@@ -95,14 +101,15 @@ export function ContextSwitcherDialog({
   };
 
   const finish = (outcome: SelectionOutcome) => {
-    // Already at All branches for the current organisation as far as this tab knows: no toast.
-    // The refresh below still runs — the shared cookie may have moved in another tab (or an
-    // earlier switch's refresh may still be in flight), and the select-organisation POST that led
-    // here has just reset it, so the shell must re-read it rather than trust `current`.
+    // Already there for the current organisation as far as this tab knows: no toast. The refresh
+    // below still runs — the shared cookie may have moved in another tab (or an earlier switch's
+    // refresh may still be in flight), and the select-organisation POST that led here has just
+    // reset it, so the shell must re-read it rather than trust `current`.
     const unchanged =
-      outcome.kind === 'institution' &&
       outcome.organisationId === current.organization.id &&
-      current.branch === null;
+      (outcome.kind === 'institution'
+        ? current.branch === null
+        : current.branch?.id === outcome.branchId);
     const name = nameOf(outcome.organisationId);
     reset();
     onClose();
@@ -125,10 +132,10 @@ export function ContextSwitcherDialog({
 
   const close = () => {
     if (committed) {
-      // The organisation token is already issued; without a branch the context is institution
-      // level. `onOrganisationLost` always clears `committed` first, so a still-lost context never
+      // The organisation token is already issued, at All branches or at the branch it pinned.
+      // `onOrganisationLost` always clears `committed` first, so a still-lost context never
       // reaches here — this only fires once a (possibly later) organisation POST has recovered it.
-      finish({ kind: 'institution', organisationId: committed });
+      finish(committed);
       return;
     }
     if (contextLost) {
@@ -165,8 +172,8 @@ export function ContextSwitcherDialog({
         <Stack spacing={3}>
           <Typography sx={{ color: 'text.secondary' }}>
             Choosing an organisation or branch switches to it straight away. Available actions
-            depend on your active membership and branch assignment; All branches lets multi-branch
-            users administer every branch at institution level.
+            depend on your active membership and roles. Sign-in picks your branch when you have only
+            one; choose All branches to work at institution level.
           </Typography>
           {load.kind === 'loading' && (
             <Stack direction="row" role="status" spacing={1} sx={{ alignItems: 'center' }}>
@@ -196,12 +203,13 @@ export function ContextSwitcherDialog({
           {load.kind === 'ready' && (
             <ContextSelectionForm
               initialOrganisations={load.organisations}
+              offerAllBranches={canSelectBranch}
               onComplete={finish}
-              onOrganisationCommitted={(organisationId) => {
+              onOrganisationCommitted={(outcome) => {
                 // The dialog was closed mid-save (Close/Escape/backdrop, while the organisation
                 // POST was still in flight): `committed` would land on a dialog nothing else
-                // finishes, stranding the shell on the old organisation. Finish it now, at
-                // institution level, per spec §6.5 (All branches). `finish` here is this render's
+                // finishes, stranding the shell on the old organisation. Finish it now, where the
+                // token stands (spec §6.5: All branches, or the branch it pinned). `finish` here is this render's
                 // closure (captured while `load.kind === 'ready'`), so `nameOf` still has the
                 // loaded organisations list to name the toast.
                 // ponytail: if this organisation is also mid auto-pin, that pin can still resolve
@@ -209,10 +217,10 @@ export function ContextSwitcherDialog({
                 // toast, then the branch toast) — the final route/refresh is still correct either
                 // way, so this double notify is left as-is.
                 if (!openRef.current) {
-                  finish({ kind: 'institution', organisationId });
+                  finish(outcome);
                   return;
                 }
-                setCommitted(organisationId);
+                setCommitted(outcome);
               }}
               onOrganisationLost={() => {
                 setCommitted(null);

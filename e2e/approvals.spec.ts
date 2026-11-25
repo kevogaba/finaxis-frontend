@@ -23,8 +23,6 @@ const ALL_BRANCHES = /All branches \(institution level\)/;
 const BRANCH_ACTIVATED = 'Branch activated';
 const NO_APPROVAL_ACCESS =
   "Your role can't approve users or activate branches. Ask an administrator if you need access.";
-const BRANCH_QUEUE_CONTEXT =
-  'With Head Office selected, these branches can be listed but not activated. Switch to All branches to review them.';
 const UNKNOWN_ID = '12000000-0000-4000-8000-0000000000ff';
 const APPROVED_ACTIVE = 'Approved. Their membership is active.';
 const APPROVED_PROVISIONING =
@@ -179,26 +177,20 @@ test.describe('approvals: the queue', () => {
     await expect(names).toHaveText(['Kericho Branch', TEXT.longBranch, 'Naivasha Branch']);
   });
 
-  test('tells a branch context that activation needs All branches', async ({
-    context,
-    page,
-  }, testInfo) => {
+  // BG-03: the platform checks the target branch, so a tenant-wide approver activates any branch
+  // whichever branch is selected.
+  test('activates a branch with another branch selected', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'approvals');
     await enterAdmin(page, '/admin/approvals/branches', {
       heading: 'Approval queue',
       branch: /Head Office/,
     });
 
-    await expect(page.getByRole('main').getByRole('note')).toContainText(BRANCH_QUEUE_CONTEXT);
-    await expect(
-      page.getByRole('button', { name: 'Switch to All branches', exact: true }),
-    ).toBeVisible();
     await expect(rowsOf(page, 'Branches')).toHaveCount(4); // header + 3
-
-    await page.goto(branchPath(APPROVALS.kericho));
-    await expect(
-      page.getByRole('heading', { level: 1, name: 'Branch not available here' }),
-    ).toBeVisible();
+    await expect(page.getByRole('main').getByRole('note')).toHaveCount(0);
+    await openRequest(page, branchPath(APPROVALS.kericho), 'Kericho Branch');
+    await decide(page, 'Activate');
+    await expect(toast(page, BRANCH_ACTIVATED)).toBeVisible();
   });
 
   test('hides the queue and the bell from a holder who can decide nothing', async ({
@@ -288,14 +280,17 @@ test.describe('approvals: the notifications bell', () => {
     await bell(page, 'Notifications: 10 approvals waiting');
   });
 
-  test('tells a branch context to switch to activate', async ({ context, page }, testInfo) => {
+  test('counts the same with a branch selected, with no advice to switch (BG-03)', async ({
+    context,
+    page,
+  }, testInfo) => {
     await authenticate(context, testInfo, 'approvals');
     await enterQueue(page, /Head Office/);
 
     await press(await bell(page, 'Notifications: 11 approvals waiting'));
-    await expect(page.getByRole('dialog', { name: 'Notifications' })).toContainText(
-      '3 branches are waiting for activation. Switch to All branches to activate them.',
-    );
+    const dialog = page.getByRole('dialog', { name: 'Notifications' });
+    await expect(dialog).toContainText('3 branches are waiting for activation.');
+    await expect(dialog).not.toContainText('Switch to All branches');
   });
 
   // Ruling 1: the bell joins the header, and the user's name and email give way below `xl`. STOP

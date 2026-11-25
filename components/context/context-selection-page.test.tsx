@@ -488,7 +488,9 @@ describe('ContextSelectionPage', () => {
     expect(await screen.findByText(/page 2 of 2/i)).toBeInTheDocument();
   });
 
-  it('offers All branches when several distinct branches are assigned and completes without posting a branch', async () => {
+  // The organisation POST left the token at All branches (`branch_id: null`), so choosing it sends
+  // no select-branch: clearing needs `auth.select_branch` tenant-wide, and a 403 clears the context.
+  it('offers All branches when several distinct branches are assigned, without a second POST', async () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({

@@ -121,6 +121,8 @@ interface Setup {
   branches?: number | Error;
   truncated?: boolean;
   selectedBranch?: { id: string; name: string } | null;
+  /** Of `permissions`, the ones held only at one branch (BG-33). */
+  branchOnly?: string[];
 }
 
 function setup({
@@ -141,13 +143,14 @@ function setup({
   branches = 1,
   truncated = false,
   selectedBranch = null,
+  branchOnly = [],
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
     profile: {
       user_id: ME,
       permissions,
-      permission_scopes: permissionScopes(permissions),
+      permission_scopes: permissionScopes(permissions, branchOnly),
       branches: [],
     },
     context: {
@@ -464,7 +467,7 @@ describe('UserApprovalPage: the control checks read the page’s reads (Ruling 7
 
   it.each([
     ['a capped scan', { truncated: true }],
-    ['a selected branch', { selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' } }],
+    ['a branch-scoped view (BG-03)', { branchOnly: ['branch_assignment.view'] }],
   ])('never proves "none" from %s (rule 9)', async (_case, overrides) => {
     setup({ branches: 0, ...overrides });
     await show();

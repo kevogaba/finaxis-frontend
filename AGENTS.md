@@ -98,9 +98,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   filtered client-side — so it is no licence for an unbounded list (plan
   `docs/superpowers/plans/2026-10-01-admin-parity-09-roles.md`, Ruling 6).
   The user record's Branch assignments tab (`modules/administration/users`'s
-  `listUserBranchAssignments`: a bounded scan of at most 5 × 100 ACTIVE assignments, because the
-  contract had no `user_id` filter on branch assignments; the platform has one now, BG-09, and
-  adopting it retires the scan), its Assign-branch drawer's options
+  `listUserBranchAssignments`: a bounded scan of at most 5 × 100 of the user's ACTIVE
+  assignments, now searched by `user_id` (BG-03); reading them by membership, BG-09, retires the
+  scan), its Assign-branch drawer's options
   (one page of 100 ACTIVE branches, saying so when there are more) and its Assign-role drawer's
   options (the role index's first 500 roles by name, saying so when there are more) are a fifth,
   named exception: the tab pages what the scan found with the URL holding page and size and says
@@ -178,9 +178,18 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Gate a mutation on its code and the views the platform pairs with it (`withViews` from
   `auth/permission-views.ts`, ADR 0030). Gate what the platform checks tenant-wide
   (`requireTenantPermission`, or `requirePermission` without a branch) with `canTenantWide` /
-  `canAllTenantWide` on `permissionHolder(profile)` (BG-33); a target-branch check stays on `can`.
-  A permission migration that adds a mutation adds its pair to that map;
-  `e2e/fake-api-roles.spec.ts` pins it to the fake catalogue.
+  `canAllTenantWide` on `permissionHolder(profile)` (BG-33). A permission migration that adds a
+  mutation adds its pair to that map; `e2e/fake-api-roles.spec.ts` pins it to the fake catalogue.
+  The platform makes two checks of a branch action (BG-03): the route's own `@PreAuthorize` reads
+  the selected context (`/auth/me`'s `permissions`, so at All branches only tenant-wide grants), and
+  the service checks the code and its views on the target branch, held tenant-wide or at that
+  branch (`/auth/me`'s BRANCH `branch_ids`) whichever branch is selected. Gate it with
+  `canActOnBranch` (`modules/administration/branches/branch-rules.ts`, over `canActAtBranch` in
+  `auth/permissions.ts`), passing the route's codes when they differ from the action's. A
+  branch-scope grant counts only while its branch is ACTIVE (platform #242), so DRAFT,
+  PENDING_APPROVAL and SUSPENDED branches are tenant-wide only. The branch list and the
+  assignment searches are target-aware too: a branch-scoped view gets its own branches' rows, so
+  say so (`SCOPED_BRANCHES_NOTE` and its kin) and never show their count as the institution's.
   Adding to your own access (assigning yourself a role or branch, granting to or re-enabling a role
   you hold) also needs `user.assign_self` tenant-wide (platform #342): gate it with
   `ownAccessBlocked` and show the action disabled with its reason, and a new assign path does too.

@@ -282,18 +282,22 @@ test.describe('overview: the cards', () => {
     ]);
   });
 
-  test('marks a refused branch read on its own item and card, keeping the rest (BG-33)', async ({
+  // BG-03: the branch list is target-aware, so a branch-scoped `branch.view` would count only its
+  // own branches: the Branches item reads nothing and says it can't be checked, never a partial
+  // count as the institution's. A branch-scoped `branch.approve` activates no pending branch
+  // (platform #242), so neither the card nor the bell reads branch requests for it.
+  test('never counts branches for a branch-scoped view, and lists no branch request for a branch-scoped approver', async ({
     context,
     page,
   }, testInfo) => {
     await authenticate(context, testInfo, 'overview-branch-scoped');
     await enterOverview(page, HEAD_OFFICE);
-    await bell(page, "Notifications (couldn't be loaded)");
+    await bell(page, 'Notifications: 3 approvals waiting');
 
     await expect(page.getByRole('main').getByRole('region')).toHaveCount(4);
-    await expectItems(page, "Couldn't be checked", [
-      ['Branches', "Couldn't be loaded. Reference: "],
-    ]);
+    await expectItems(page, "Can't be checked", [['Branches', NOT_PERMITTED]]);
+    // Its directory still opens: it lists the branches the grant covers.
+    await expectLinks(page, [['Branches', 'Open branches', '/admin/branches']]);
     await expect(
       card(page, 'Operational readiness').getByRole('progressbar', {
         name: 'Operational readiness',
@@ -306,10 +310,9 @@ test.describe('overview: the cards', () => {
     ]);
 
     const approvals = card(page, 'Pending approvals');
-    await expect(approvals.getByRole('alert')).toContainText(
-      "Branches waiting for activation couldn't be loaded.",
-    );
+    await expect(approvals.getByRole('alert')).toHaveCount(0);
     await expect(approvals).not.toContainText(NOTHING_WAITING);
+    await expect(approvals).not.toContainText('Branches waiting for activation');
     await expectRequests(approvals, ['Wanjiku Kariuki', TEXT.longName, 'Halima Odhiambo']);
 
     await expect(card(page, 'Business date').getByText('Closed', { exact: true })).toBeVisible();
@@ -432,10 +435,10 @@ const SURFACES = [
     regions: 2,
   },
   {
-    label: 'a refused branch read',
+    label: 'a branch-scoped branch read',
     scenario: 'overview-branch-scoped',
     branch: HEAD_OFFICE,
-    bell: "Notifications (couldn't be loaded)",
+    bell: 'Notifications: 3 approvals waiting',
     regions: 4,
   },
 ] as const;

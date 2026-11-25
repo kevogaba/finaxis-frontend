@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
+import { BackendApiError } from '@/auth/backend-api';
 import {
   SELF_APPROVAL_NOTE_BRANCHES,
   type SwitchState,
@@ -60,27 +61,41 @@ function setup({
   maker = null,
   submitter = null,
   switchState = 'on',
+  status = 'PENDING_APPROVAL',
+  codes = ALL_CODES,
+  branchOnly = [],
+  heldAt = ['b-1'],
+  selected = null,
 }: {
   maker?: string | null;
   submitter?: string | null;
   switchState?: SwitchState;
+  status?: string;
+  codes?: string[];
+  /** Of `codes`, the ones held only through BRANCH grants (BG-33), at `heldAt`. */
+  branchOnly?: string[];
+  heldAt?: string[];
+  selected?: { id: string; name: string } | null;
 } = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
     profile: {
-      permissions: ALL_CODES,
-      permission_scopes: permissionScopes(ALL_CODES),
+      // `/auth/me`'s effective set: a branch grant counts only while its branch is selected.
+      permissions: codes.filter(
+        (code) => !branchOnly.includes(code) || heldAt.includes(selected?.id ?? ''),
+      ),
+      permission_scopes: permissionScopes(codes, branchOnly, heldAt),
       user_id: ME,
       branches: [],
     },
-    context: { organization: { id: ORG, name: 'Greenfield' }, branch: null },
+    context: { organization: { id: ORG, name: 'Greenfield' }, branch: selected },
   });
   getBranch.mockResolvedValue({
     id: BRANCH,
     branchCode: 'LIK',
     branchName: 'Likoni',
     branchType: 'BRANCH',
-    status: 'PENDING_APPROVAL',
+    status,
     createdBy: maker === null ? null : { id: maker, displayName: null },
     submittedBy: submitter === null ? null : { id: submitter, displayName: null },
   });
@@ -141,5 +156,67 @@ describe('BranchRecordLayout: maker-checker (BG-08, decision Q4)', () => {
     expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
     expect(activate()).toBeEnabled();
     expect(screen.getByText('Tab body')).toBeInTheDocument();
+  });
+});
+
+describe('BranchRecordLayout: whichever branch is selected (BG-03)', () => {
+  const WESTLANDS = { id: '08000000-0000-4000-8000-000000000009', name: 'Westlands' };
+
+  it('offers a tenant-wide approver Activate with another branch selected', async () => {
+    setup({ maker: VICTOR, selected: WESTLANDS });
+    await show();
+
+    expect(activate()).toBeEnabled();
+  });
+
+  it('answers an unknown branch with not-found, with a branch selected too', async () => {
+    setup({ selected: WESTLANDS });
+    getBranch.mockRejectedValue(new BackendApiError(404, { code: 'resource_not_found' }));
+    await expect(show()).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+
+  // A branch-scoped caller gets 403, never 404, for a branch its grants don't cover.
+  it('shows the Forbidden state, under the page h1, when the branch answers 403', async () => {
+    setup({ selected: WESTLANDS });
+    getBranch.mockRejectedValue(new BackendApiError(403, { code: 'forbidden' }));
+    await show();
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Branch record' })).toBeInTheDocument();
+    expect(screen.getByText("You don't have access to this branch.")).toBeInTheDocument();
+    expect(screen.queryByText('Tab body')).toBeNull();
+  });
+
+  // The route's own gate reads the selected context's grants, and the service checks the target,
+  // whichever branch is selected: one role at this branch and Westlands acts here from Westlands.
+  it.each([
+    ['held here and at the selected branch', [BRANCH, WESTLANDS.id], WESTLANDS, true],
+    ['held here, selected', [BRANCH], { id: BRANCH, name: 'Likoni' }, true],
+    ['held only at the selected branch', [WESTLANDS.id], WESTLANDS, false],
+    ['held here, at All branches', [BRANCH, WESTLANDS.id], null, false],
+  ])('offers a branch-scoped Suspend %s: %s', async (_case, heldAt, selected, offered) => {
+    setup({
+      status: 'ACTIVE',
+      codes: ['branch.view', 'branch.suspend'],
+      branchOnly: ['branch.view', 'branch.suspend'],
+      heldAt,
+      selected,
+    });
+    await show();
+
+    expect(screen.queryByRole('button', { name: 'Suspend' }) !== null).toBe(offered);
+  });
+
+  // #242: a branch-scope grant counts only while its branch is ACTIVE.
+  it('offers a branch-scoped Reactivate on a suspended branch: never', async () => {
+    setup({
+      status: 'SUSPENDED',
+      codes: ['branch.view', 'branch.reactivate'],
+      branchOnly: ['branch.view', 'branch.reactivate'],
+      heldAt: [BRANCH, WESTLANDS.id],
+      selected: WESTLANDS,
+    });
+    await show();
+
+    expect(screen.queryByRole('button', { name: 'Reactivate' })).toBeNull();
   });
 });

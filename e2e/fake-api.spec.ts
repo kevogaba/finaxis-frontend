@@ -225,6 +225,42 @@ test.describe('fake API', () => {
     });
   });
 
+  // BG-03 (platform #154): `{}` or `{"branch_id": null}` clears the branch, for a single-branch
+  // member too; `""` is no UUID (StrictUuidDeserializer), so it is a malformed body.
+  test('clears the auto-selected branch with null or no branch_id, but refuses an empty one', async ({
+    request,
+  }) => {
+    const headers = bearer('duplicate-assignments');
+    const selection = await request.post(`${FAKE_API_URL}/api/v1/auth/select-organisation`, {
+      headers,
+      data: { organisation_id: '11111111-1111-4111-8111-111111111111' },
+    });
+    const { context_token: pinned } = (await selection.json()) as { context_token: string };
+    const selectBranch = (data: Record<string, unknown>) =>
+      request.post(`${FAKE_API_URL}/api/v1/auth/select-branch`, {
+        headers: { ...headers, 'X-Active-Organisation-Context': pinned },
+        data,
+      });
+
+    const empty = await selectBranch({ branch_id: '' });
+    expect(empty.status()).toBe(400);
+    expect(await empty.json()).toMatchObject({ code: 'invalid_json' });
+
+    for (const data of [{}, { branch_id: null }]) {
+      const cleared = await selectBranch(data);
+      expect(cleared.status()).toBe(200);
+      const body = (await cleared.json()) as { branch_id: string | null; context_token: string };
+      expect(body).toMatchObject({
+        organisation_id: '11111111-1111-4111-8111-111111111111',
+        branch_id: null,
+      });
+      const profile = await request.get(`${FAKE_API_URL}/api/v1/auth/me`, {
+        headers: { ...headers, 'X-Active-Organisation-Context': body.context_token },
+      });
+      expect(await profile.json()).toMatchObject({ selected_branch: null });
+    }
+  });
+
   // Contract §A/§C: created_from/created_to on /platform/tenants are instants, compared by time
   // and inclusive — not the tenant's createdAt string, which would wrongly exclude a same-instant
   // boundary once a date-only value (no time/Z) is involved.

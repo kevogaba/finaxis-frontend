@@ -62,6 +62,7 @@ vi.mock('@/components/shell/app-shell', () => ({
     user,
     businessDate,
     notifications,
+    viewsBranches,
   }: {
     children: React.ReactNode;
     context: unknown;
@@ -70,6 +71,7 @@ vi.mock('@/components/shell/app-shell', () => ({
     user: unknown;
     businessDate: unknown;
     notifications: unknown;
+    viewsBranches: unknown;
   }) => {
     renderedShell({
       context,
@@ -78,6 +80,7 @@ vi.mock('@/components/shell/app-shell', () => ({
       user,
       businessDate,
       notifications,
+      viewsBranches,
     });
     return children;
   },
@@ -156,9 +159,56 @@ describe('AuthenticatedLayout', () => {
         administration: expect.anything(),
         'platform-administration': expect.anything(),
       }),
+      viewsBranches: false,
     });
     expect(profileToFinaxisUser).toHaveBeenCalledWith(profile, user);
   });
+
+  // BG-03: GET /branches answers a branch-scoped branch.view at All branches, where it isn't in
+  // the selected context's permissions. Only a boolean reaches the shell, never the branch ids.
+  it.each([
+    [
+      'held at a branch only',
+      [],
+      [{ code: 'branch.view', scope: 'BRANCH', branch_ids: ['b-2'] }],
+      true,
+    ],
+    ['held tenant-wide', ['branch.view'], [{ code: 'branch.view', scope: 'TENANT' }], true],
+    ['held at no branch', [], [{ code: 'branch.view', scope: 'BRANCH', branch_ids: [] }], false],
+    ['not held', [], [], false],
+  ])(
+    'tells the shell whether branch.view is %s: %s',
+    async (_label, permissions, permissionScopes, viewsBranches) => {
+      getAuthenticatedUser.mockResolvedValueOnce({
+        id: 'user-1',
+        name: 'Jane Muthoni',
+        email: 'jane.muthoni@finaxis.test',
+        roles: [],
+        branches: [],
+      });
+      getCurrentContextProfile.mockResolvedValueOnce({
+        kind: 'resolved',
+        context: {
+          branch: null,
+          module: { id: 'administration', name: 'Administration' },
+          organization: { id: 'organisation-1', name: 'Finaxis Holdings' },
+        },
+        profile: {
+          user_id: 'u',
+          full_name: 'Jane',
+          email: 'j@x',
+          branches: [],
+          roles: [],
+          permissions,
+          permission_scopes: permissionScopes,
+        },
+      });
+
+      render(await AuthenticatedLayout({ children: <div /> }));
+
+      expect(renderedShell).toHaveBeenCalledWith(expect.objectContaining({ viewsBranches }));
+    },
+  );
 
   it.each([
     ['administration', ['business_date.view'], ['business_date.view'], true],

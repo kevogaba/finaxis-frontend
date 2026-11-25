@@ -22,6 +22,8 @@ interface AssignUserRoleButtonProps {
   branches: readonly SelectOption[];
   /** Why no branch is offered, when none is (shown under the Scope field). */
   branchHint?: string;
+  /** See `RoleScopeFields`. */
+  institution?: boolean;
   /** I2: the organisation the page rendered for; forwarded to the drawer as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -35,6 +37,7 @@ export function AssignUserRoleButton({
   roleHint,
   branches,
   branchHint,
+  institution = true,
   contextOrganisationId,
 }: AssignUserRoleButtonProps) {
   const notify = useToast();
@@ -87,6 +90,7 @@ export function AssignUserRoleButton({
               branches={branches}
               branchHint={branchHint}
               fieldErrors={fieldErrors}
+              institution={institution}
             />
           </>
         )}

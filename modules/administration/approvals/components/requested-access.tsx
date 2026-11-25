@@ -11,10 +11,14 @@ import type { RoleIndexEntry } from '@/lib/api/lookups';
 import type { Page } from '@/lib/api/wire';
 import { shortId } from '@/lib/format';
 import type { RoleAssignment } from '@/modules/administration/roles/role-contract';
+import { SCOPED_ROLE_ASSIGNMENTS_NOTE } from '@/modules/administration/roles/role-rules';
 import { UserBranchAssignmentsTable } from '@/modules/administration/users/components/user-branch-assignments-table';
 import { UserRoleAssignmentsTable } from '@/modules/administration/users/components/user-role-assignments-table';
 import type { MembershipSummary } from '@/modules/administration/users/user-contract';
-import { branchContextNote, PARTIAL_SCAN_NOTE } from '@/modules/administration/users/user-rules';
+import {
+  PARTIAL_SCAN_NOTE,
+  SCOPED_ASSIGNMENTS_NOTE,
+} from '@/modules/administration/users/user-rules';
 import type { UserBranchScan } from '@/modules/administration/users/user-service';
 import {
   BRANCHES_NOT_PERMITTED,
@@ -23,6 +27,7 @@ import {
   NO_ACTIVE_BRANCH,
   NO_ACTIVE_BRANCH_SEEN,
   NO_ACTIVE_ROLE,
+  NO_ACTIVE_ROLE_SEEN,
   REQUESTED_ACCESS_DESCRIPTION,
   ROLES_CAPPED,
   ROLES_NOT_PERMITTED,
@@ -39,10 +44,10 @@ interface RequestedAccessProps {
   scan: Loaded<UserBranchScan> | null;
   roleIndex: ReadonlyMap<string, RoleIndexEntry>;
   branchIndex: ReadonlyMap<string, { name: string; code: string }>;
-  /** A selected branch narrows the scan to itself (BG-03). */
-  selectedBranch: { name: string } | null;
-  /** The signed-in user can switch to All branches (two ACTIVE branches, 08's PF1). */
-  canSwitch: boolean;
+  /** The holder views only some branches' assignments (`scopedAssignmentView`, BG-03). */
+  scopedView: boolean;
+  /** The holder views only some branches' role assignments (`scopedRoleAssignmentView`, BG-03). */
+  rolesScoped?: boolean;
 }
 
 const MUTED_SX = { color: 'text.secondary', px: 4.5, py: 2 } as const;
@@ -74,8 +79,8 @@ export function RequestedAccess({
   scan,
   roleIndex,
   branchIndex,
-  selectedBranch,
-  canSwitch,
+  scopedView,
+  rolesScoped = false,
 }: RequestedAccessProps) {
   const branchName = (id: string) => {
     const branch = branchIndex.get(id);
@@ -106,15 +111,22 @@ export function RequestedAccess({
         <ErrorState problem={roles.problem} />
       ) : roles.value.items.length === 0 ? (
         <Typography variant="body2" sx={MUTED_SX}>
-          {NO_ACTIVE_ROLE}
+          {rolesScoped ? NO_ACTIVE_ROLE_SEEN : NO_ACTIVE_ROLE}
         </Typography>
       ) : (
         <>
-          {roles.value.page.hasNext && (
-            <Box sx={{ px: 4, py: 2 }}>
-              <Alert severity="info" role="note">
-                {ROLES_CAPPED}
-              </Alert>
+          {(rolesScoped || roles.value.page.hasNext) && (
+            <Box sx={{ px: 4, py: 2, display: 'grid', gap: 2 }}>
+              {rolesScoped && (
+                <Alert severity="info" role="note">
+                  {SCOPED_ROLE_ASSIGNMENTS_NOTE}
+                </Alert>
+              )}
+              {roles.value.page.hasNext && (
+                <Alert severity="info" role="note">
+                  {ROLES_CAPPED}
+                </Alert>
+              )}
             </Box>
           )}
           <UserRoleAssignmentsTable
@@ -147,11 +159,11 @@ export function RequestedAccess({
         <ErrorState problem={scan.problem} />
       ) : (
         <>
-          {(selectedBranch !== null || scan.value.truncated) && (
+          {(scopedView || scan.value.truncated) && (
             <Box sx={{ px: 4, py: 2, display: 'grid', gap: 2 }}>
-              {selectedBranch && (
+              {scopedView && (
                 <Alert severity="info" role="note">
-                  {branchContextNote(selectedBranch.name, canSwitch)}
+                  {SCOPED_ASSIGNMENTS_NOTE}
                 </Alert>
               )}
               {scan.value.truncated && (
@@ -163,11 +175,9 @@ export function RequestedAccess({
           )}
           {scan.value.items.length === 0 ? (
             <Typography variant="body2" sx={MUTED_SX}>
-              {/* A selected branch narrows the scan and a capped scan hides rows, so "none" would be
-                  a guess under the note saying so (rule 9; 10's branchAssignmentsEmptyState). */}
-              {selectedBranch === null && !scan.value.truncated
-                ? NO_ACTIVE_BRANCH
-                : NO_ACTIVE_BRANCH_SEEN}
+              {/* A branch-scoped view narrows the scan and a capped scan hides rows, so "none" would
+                  be a guess under the note saying so (rule 9; 10's branchAssignmentsEmptyState). */}
+              {!scopedView && !scan.value.truncated ? NO_ACTIVE_BRANCH : NO_ACTIVE_BRANCH_SEEN}
             </Typography>
           ) : (
             <UserBranchAssignmentsTable
@@ -181,6 +191,7 @@ export function RequestedAccess({
                   branchName: branch?.name ?? shortId(row.branchId),
                   branchCode: branch?.code ?? null,
                   assignmentType: row.assignmentType,
+                  revocable: false,
                 };
               })}
             />

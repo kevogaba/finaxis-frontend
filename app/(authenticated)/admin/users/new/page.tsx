@@ -12,6 +12,7 @@ import NextLink from '@/components/navigation/next-link';
 import { PageHeader } from '@/components/shell/page-header';
 import { load } from '@/lib/api/load';
 import type { ProblemView } from '@/lib/api/problem';
+import { scopedBranchView } from '@/modules/administration/branches/branch-rules';
 import { listBranches } from '@/modules/administration/branches/branch-service';
 import { listRoles } from '@/modules/administration/roles/role-service';
 import { InviteUserWizard } from '@/modules/administration/users/components/invite-user-wizard';
@@ -60,7 +61,8 @@ export default async function InviteUserPage() {
   );
 
   // Ruling 4: every code the wizard needs, before any read; no half-working wizard.
-  if (!canInviteUsers(resolved ? permissionHolder(resolved.profile) : { permissions: [] })) {
+  const holder = permissionHolder(resolved?.profile);
+  if (!canInviteUsers(holder)) {
     return withHeader(<ForbiddenState description={INVITE_FORBIDDEN} />);
   }
 
@@ -107,6 +109,7 @@ export default async function InviteUserPage() {
         }))}
         rolesCapped={roles.value.page.hasNext}
         branchesCapped={branches.value.page.hasNext}
+        branchesScoped={scopedBranchView(holder)}
         contextOrganisationId={resolved?.context.organization.id}
       />
     </>

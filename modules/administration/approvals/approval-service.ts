@@ -31,7 +31,8 @@ export interface BranchActivationQuery extends Paging {
   sort: ListSort<BranchSortField>;
 }
 
-/** The Branch activation tab: the `/branches` list is never branch-restricted (contract §E.4). */
+/** The Branch activation tab: the `/branches` list is target-aware (BG-03), and a pending branch is
+ * listed only to a tenant-wide `branch.view` (#242), as the tab's gate requires. */
 export function listBranchActivations(query: BranchActivationQuery) {
   return listBranches({
     status: 'PENDING_APPROVAL',

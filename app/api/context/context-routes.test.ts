@@ -398,6 +398,37 @@ describe('context routes', () => {
     });
   });
 
+  it('clears the branch for an explicit null, but never for an empty id (BG-03)', async () => {
+    selectBranch.mockResolvedValueOnce({
+      branch_id: null,
+      context_header: 'X-Active-Organisation-Context',
+      context_token: 'signed-institution-context',
+      membership_id: '6c2be1af-2e56-47b6-a9ba-26ef2cdbf73e',
+      organisation_id: organisationId,
+    });
+    const post = (body: unknown) =>
+      postBranch(
+        new Request('http://localhost/api/context/branch', {
+          body: JSON.stringify(body),
+          headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+        }),
+      );
+
+    expect((await post({ branch_id: '' })).status).toBe(400);
+    expect((await post({})).status).toBe(400);
+    expect(selectBranch).not.toHaveBeenCalled();
+
+    const response = await post({ branch_id: null });
+    expect(selectBranch).toHaveBeenCalledWith(requestHeaders, null);
+    expect(setContextToken).toHaveBeenCalledWith('signed-institution-context');
+    await expect(response.json()).resolves.toEqual({
+      branchId: null,
+      membershipId: '6c2be1af-2e56-47b6-a9ba-26ef2cdbf73e',
+      organisationId,
+    });
+  });
+
   it('clears stale branch context after a backend authorization rejection', async () => {
     selectBranch.mockRejectedValueOnce({ status: 403 });
 

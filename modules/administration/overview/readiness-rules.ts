@@ -1,10 +1,4 @@
-import {
-  can,
-  canAll,
-  canAllTenantWide,
-  canTenantWide,
-  type PermissionHolder,
-} from '@/auth/permissions';
+import { canAll, canAllTenantWide, canTenantWide, type PermissionHolder } from '@/auth/permissions';
 import { humanizeEnum, type StatusTone } from '@/components/data-display/status-chip';
 import { formatBusinessDate } from '@/lib/format';
 import {
@@ -42,11 +36,11 @@ export const READINESS_CODES: Record<ReadinessItemId, string> = {
   businessDate: 'business_date.view',
 };
 
-/** Whether an item's read can be made: every read but the target-aware branch counts is checked
- * tenant-wide (BG-33). */
+/** Whether an item's read can be made: every read is checked tenant-wide (BG-33). The branch counts
+ * are target-aware (BG-03), but a branch-scoped `branch.view` counts only its own branches, which
+ * must never pass for the institution's totals. */
 export function canCheckReadiness(holder: PermissionHolder, id: ReadinessItemId): boolean {
-  const code = READINESS_CODES[id];
-  return id === 'branches' ? can(holder, code) : canTenantWide(holder, code);
+  return canTenantWide(holder, READINESS_CODES[id]);
 }
 
 export const READINESS_LABELS: Record<ReadinessItemId, string> = {
@@ -155,13 +149,7 @@ export function provisioningNote(count: number): string {
 export function onboardingItem(counts: Settled<UserApprovalCounts>): ReadinessCheck {
   if (counts === null) return item('onboarding', 'unknown', NOT_PERMITTED);
   if (!counts.ok) return item('onboarding', 'failed', readFailed(counts.problem));
-  const waiting = approvalNotifications({
-    users: counts,
-    branches: null,
-    // Users only: the branch flags word a branch entry, which this item never has.
-    branchSelected: false,
-    canSwitch: true,
-  }).entries[0];
+  const waiting = approvalNotifications({ users: counts, branches: null }).entries[0];
   const note =
     counts.value.provisioning > 0 ? ` ${provisioningNote(counts.value.provisioning)}` : '';
   if (waiting) return item('onboarding', 'attention', `${waiting.text}${note}`);

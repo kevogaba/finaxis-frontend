@@ -123,6 +123,7 @@ describe('InviteUserPage', () => {
         branches: [{ id: WESTLANDS, label: 'Westlands Branch (WESTLANDS)' }],
         rolesCapped: false,
         branchesCapped: false,
+        branchesScoped: false,
         contextOrganisationId: ORG,
       },
     ]);
@@ -140,6 +141,15 @@ describe('InviteUserPage', () => {
       expect(wizards[0]).toMatchObject({ rolesCapped, branchesCapped });
     },
   );
+
+  // BG-03: the branch list is target-aware, so a branch-scoped branch.view lists only its branches.
+  it('tells the wizard when branch.view is held only at branch scope', async () => {
+    getCurrentContextProfile.mockResolvedValue(resolved(INVITE_CODES, ['branch.view']));
+    listRoles.mockResolvedValue(page([ROLE]));
+    listBranches.mockResolvedValue(page([BRANCH]));
+    renderWithProviders(await InviteUserPage());
+    expect(wizards[0]).toMatchObject({ branchesScoped: true });
+  });
 
   it.each(INVITE_CODES)('says why, and reads nothing, without %s (Ruling 4)', async (missing) => {
     getCurrentContextProfile.mockResolvedValue(

@@ -2,8 +2,6 @@ import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import LockOutlined from '@mui/icons-material/LockOutlined';
-import { ALL_BRANCHES_UNAVAILABLE } from '@/components/context/all-branches-copy';
-import { SwitchToAllBranchesButton } from '@/components/context/switch-to-all-branches-button';
 
 interface ForbiddenStateProps {
   title?: string;
@@ -43,29 +41,5 @@ export function ForbiddenState({
       </Typography>
       {action}
     </Box>
-  );
-}
-
-interface BranchContextStateProps {
-  /**
-   * `false` when the user has at most one distinct assigned branch, so All branches can't work:
-   * `resolved.profile.branches.length > 1` from `/auth/me` (already de-duplicated). Defaults to
-   * `true`. The button still handles stale data.
-   */
-  allBranchesAvailable?: boolean;
-}
-
-/** Spec §6.5: the current branch context can't reach the branch this page needs — offered instead
- * of a raw 404. Index Review Focus 3: never offer a meaningless "All branches". */
-export function BranchContextState({ allBranchesAvailable = true }: BranchContextStateProps) {
-  if (!allBranchesAvailable) {
-    return <ForbiddenState description={ALL_BRANCHES_UNAVAILABLE} />;
-  }
-  return (
-    <ForbiddenState
-      title="Switch to All branches to manage this branch"
-      description="With a branch selected, you can only reach that branch. Switch to All branches (institution level) to reach other branches, including drafts and branches awaiting approval, if your role allows it."
-      action={<SwitchToAllBranchesButton />}
-    />
   );
 }

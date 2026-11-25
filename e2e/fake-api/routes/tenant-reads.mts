@@ -1,5 +1,12 @@
-import { actorRef, requireContext, requirePermission, requireTenantContext } from '../access.mts';
-import type { AccessContext } from '../access.mts';
+import {
+  actorRef,
+  branchVisibility,
+  canSee,
+  requireContext,
+  requirePermission,
+  requireTenantContext,
+} from '../access.mts';
+import type { AccessContext, BranchVisibility } from '../access.mts';
 import { pageOf, problem, sendJson, sortKey } from '../http.mts';
 import { route } from '../router.mts';
 import type { Route } from '../router.mts';
@@ -25,6 +32,7 @@ export function branchPage(
   organisationId: string,
   query: URLSearchParams,
   { key, descending } = branchSort(query),
+  visibility: BranchVisibility = 'all',
 ) {
   const q = query.get('q')?.toLowerCase();
   const status = query.get('status');
@@ -33,6 +41,7 @@ export function branchPage(
     .filter(
       (branch) =>
         branch.organisationId === organisationId &&
+        canSee(visibility, branch.id) &&
         (!q || branch.code.toLowerCase().includes(q) || branch.name.toLowerCase().includes(q)) &&
         (!status || branch.status === status) &&
         (!type || branch.type === type),
@@ -150,8 +159,18 @@ export const tenantReadRoutes: Route[] = [
     // No endpoint gate here (ADR 0030 point 5), and FoundationQueryService.searchBranches checks
     // the sort before branch.view, so a bad sort is a 400 even for a caller who can't list.
     const sort = branchSort(context.query);
-    requirePermission(access, 'branch.view');
-    sendJson(context.res, 200, branchPage(access, access.organisation.id, context.query, sort));
+    // BG-03: target-aware. A tenant-wide `branch.view` lists every branch, a branch-scoped one the
+    // ACTIVE branches it covers, whichever branch is selected; held nowhere is a 403 naming nothing
+    // (`requireListRestriction`).
+    const visibility = branchVisibility(access, 'branch.view');
+    if (visibility !== 'all' && visibility.size === 0) {
+      throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
+    }
+    sendJson(
+      context.res,
+      200,
+      branchPage(access, access.organisation.id, context.query, sort, visibility),
+    );
   }),
 
   route('GET', '/api/v1/tenant/users', (context) => {
