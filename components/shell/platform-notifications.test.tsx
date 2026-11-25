@@ -18,9 +18,9 @@ function capturedRedirectError(): unknown {
   throw new Error('redirect() did not throw');
 }
 
-const { countTenantsInStatus, getCurrentContextProfile } = vi.hoisted(() => ({
-  countTenantsInStatus: vi.fn<(status: string) => Promise<number>>(),
+const { getCurrentContextProfile, readPlatformPendingCount } = vi.hoisted(() => ({
   getCurrentContextProfile: vi.fn<() => Promise<SelectedContextProfile>>(),
+  readPlatformPendingCount: vi.fn<() => Promise<number>>(),
 }));
 
 // `load()`'s catch reads the request headers; `next/navigation` stays real, so `redirect()` and
@@ -30,7 +30,7 @@ vi.mock('@/auth/context-service', () => ({
   getCurrentContextProfile: () => getCurrentContextProfile(),
 }));
 vi.mock('@/modules/platform-administration/overview/overview-service', () => ({
-  countTenantsInStatus: (status: string) => countTenantsInStatus(status),
+  readPlatformPendingCount: () => readPlatformPendingCount(),
 }));
 
 const { PendingInstitutionsNotifications } = await import('./platform-notifications');
@@ -74,9 +74,10 @@ beforeEach(() => {
 });
 
 describe('PendingInstitutionsNotifications', () => {
+  // BG-22: the platform's count, which leaves out what the caller requested or submitted.
   it('shows the pending count on the bell', async () => {
     resolved(['tenant.view', 'tenant.approve']);
-    countTenantsInStatus.mockResolvedValue(2);
+    readPlatformPendingCount.mockResolvedValue(2);
 
     await show();
 
@@ -84,7 +85,7 @@ describe('PendingInstitutionsNotifications', () => {
       name: 'Notifications: 2 institutions waiting for approval',
     });
     expect(within(bell).getByText('2')).toBeInTheDocument();
-    expect(countTenantsInStatus).toHaveBeenCalledExactlyOnceWith('PENDING_APPROVAL');
+    expect(readPlatformPendingCount).toHaveBeenCalledOnce();
   });
 
   it('reads nothing outside the platform workspace', async () => {
@@ -93,7 +94,7 @@ describe('PendingInstitutionsNotifications', () => {
     const { container } = await show();
 
     expect(container).toBeEmptyDOMElement();
-    expect(countTenantsInStatus).not.toHaveBeenCalled();
+    expect(readPlatformPendingCount).not.toHaveBeenCalled();
   });
 
   it('reads nothing without tenant.approve and tenant.view', async () => {
@@ -102,7 +103,7 @@ describe('PendingInstitutionsNotifications', () => {
     const { container } = await show();
 
     expect(container).toBeEmptyDOMElement();
-    expect(countTenantsInStatus).not.toHaveBeenCalled();
+    expect(readPlatformPendingCount).not.toHaveBeenCalled();
   });
 
   it('reads nothing without tenant.view, whatever else it holds', async () => {
@@ -111,7 +112,7 @@ describe('PendingInstitutionsNotifications', () => {
     const { container } = await show();
 
     expect(container).toBeEmptyDOMElement();
-    expect(countTenantsInStatus).not.toHaveBeenCalled();
+    expect(readPlatformPendingCount).not.toHaveBeenCalled();
   });
 
   it('reads nothing while the context is not resolved', async () => {
@@ -123,12 +124,12 @@ describe('PendingInstitutionsNotifications', () => {
     const { container } = await show();
 
     expect(container).toBeEmptyDOMElement();
-    expect(countTenantsInStatus).not.toHaveBeenCalled();
+    expect(readPlatformPendingCount).not.toHaveBeenCalled();
   });
 
   it("says the count couldn't be loaded instead of none", async () => {
     resolved(['tenant.view', 'tenant.approve']);
-    countTenantsInStatus.mockRejectedValue(new BackendApiError(503, {}));
+    readPlatformPendingCount.mockRejectedValue(new BackendApiError(503, {}));
 
     await show();
 
@@ -140,14 +141,14 @@ describe('PendingInstitutionsNotifications', () => {
 
   it('keeps a redirect propagating', async () => {
     resolved(['tenant.view', 'tenant.approve']);
-    countTenantsInStatus.mockRejectedValue(capturedRedirectError());
+    readPlatformPendingCount.mockRejectedValue(capturedRedirectError());
 
     await expect(PendingInstitutionsNotifications()).rejects.toThrow('NEXT_REDIRECT');
   });
 
   it('sends a lost session to sign-in instead of reading it as unavailable', async () => {
     resolved(['tenant.view', 'tenant.approve']);
-    countTenantsInStatus.mockRejectedValue(new BackendApiError(401));
+    readPlatformPendingCount.mockRejectedValue(new BackendApiError(401));
 
     // load() redirects to /login?reason=session_expired (rule 21).
     await expect(PendingInstitutionsNotifications()).rejects.toMatchObject({
@@ -157,7 +158,7 @@ describe('PendingInstitutionsNotifications', () => {
 
   it('sends a stale context to context selection instead of reading it as unavailable', async () => {
     resolved(['tenant.view', 'tenant.approve']);
-    countTenantsInStatus.mockRejectedValue(
+    readPlatformPendingCount.mockRejectedValue(
       new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
     );
 

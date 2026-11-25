@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { membershipDecisionSchema } from './approval-contract';
+import { membershipDecisionSchema, pendingCountSchema } from './approval-contract';
 
 // The activate response is a whole MembershipDetail; only its two statuses are read.
 const wire = {
@@ -31,5 +31,33 @@ describe('membershipDecisionSchema', () => {
     ['an empty body', {}],
   ])('rejects %s (the action then claims neither outcome)', (_case, body) => {
     expect(membershipDecisionSchema.safeParse(body).success).toBe(false);
+  });
+});
+
+// BG-22: `GET /tenant/approvals/pending-count` omits a key the caller can't approve
+// (`@JsonInclude(NON_NULL)`): an absent key and a 0 mean different things.
+describe('pendingCountSchema', () => {
+  it.each([
+    ['both kinds', { memberships: 8, branches: 2 }, { memberships: 8, branches: 2 }],
+    ['memberships only', { memberships: 0 }, { memberships: 0 }],
+    ['branches only', { branches: 3 }, { branches: 3 }],
+    ['neither (never sent: that caller is refused)', {}, {}],
+  ])('reads %s, keeping a missing key missing', (_case, wire, counts) => {
+    const parsed = pendingCountSchema.parse(wire);
+    expect(parsed).toEqual(counts);
+    expect(Object.keys(parsed)).toEqual(Object.keys(counts));
+  });
+
+  it('ignores keys it doesn’t read', () => {
+    expect(pendingCountSchema.parse({ memberships: 1, journals: 4 })).toEqual({ memberships: 1 });
+  });
+
+  it.each([
+    ['a null count (the platform omits the key instead)', { memberships: null }],
+    ['a fractional count', { branches: 1.5 }],
+    ['a negative count', { memberships: -1 }],
+    ['a count sent as text', { branches: '3' }],
+  ])('rejects %s', (_case, wire) => {
+    expect(pendingCountSchema.safeParse(wire).success).toBe(false);
   });
 });

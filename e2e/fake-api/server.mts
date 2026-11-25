@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { problem, respondToError, sendJson } from './http.mts';
 import { matchRoute } from './router.mts';
 import type { Route } from './router.mts';
+import { approvalCountRoutes } from './routes/approval-counts.mts';
 import { authRoutes } from './routes/auth.mts';
 import { auditRoutes } from './routes/audit.mts';
 import { branchRoutes } from './routes/branches.mts';
@@ -29,6 +30,7 @@ const routes: Route[] = [
   ...membershipRoutes,
   ...platformRecordRoutes,
   ...invitationRoutes,
+  ...approvalCountRoutes,
 ];
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {

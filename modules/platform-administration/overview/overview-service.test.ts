@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { platformPendingCountSchema } from '../tenants/tenant-contract';
 
-const { listPlatformUsers, listTenants } = vi.hoisted(() => ({
+const { apiGet, listPlatformUsers, listTenants } = vi.hoisted(() => ({
+  apiGet: vi.fn(),
   listPlatformUsers: vi.fn(),
   listTenants: vi.fn(),
+}));
+vi.mock('@/lib/api/tenant-api', () => ({
+  apiGet: (...args: unknown[]) => apiGet(...args) as unknown,
 }));
 vi.mock('../tenants/tenant-service', () => ({
   listTenants: (...args: unknown[]) => listTenants(...args) as unknown,
@@ -54,6 +59,16 @@ describe('overview service', () => {
     });
   });
 
+  // BG-22: the bell's count, from the platform's count route.
+  it('reads the pending institutions the caller could approve from the count route', async () => {
+    apiGet.mockResolvedValueOnce(1);
+    await expect(service.readPlatformPendingCount()).resolves.toBe(1);
+    expect(apiGet).toHaveBeenCalledExactlyOnceWith(
+      '/api/v1/platform/approvals/pending-count',
+      platformPendingCountSchema,
+    );
+  });
+
   it('rejects when the read fails (the page shows the failure)', async () => {
     listTenants.mockRejectedValueOnce(new Error('service unavailable'));
     await expect(service.listTenantsInStatus('DRAFT', 5)).rejects.toThrow('service unavailable');
@@ -61,5 +76,7 @@ describe('overview service', () => {
     await expect(service.countTenantsInStatus('SUSPENDED')).rejects.toThrow('service unavailable');
     listPlatformUsers.mockRejectedValueOnce(new Error('service unavailable'));
     await expect(service.countPlatformOperators()).rejects.toThrow('service unavailable');
+    apiGet.mockRejectedValueOnce(new Error('service unavailable'));
+    await expect(service.readPlatformPendingCount()).rejects.toThrow('service unavailable');
   });
 });

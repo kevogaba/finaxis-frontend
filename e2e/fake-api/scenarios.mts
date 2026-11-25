@@ -2200,6 +2200,19 @@ const BUILDERS = {
   // with a branch is refused, and the wizard isn't offered). `users` itself has no user.invite.
   'users-invite': usersInviteScenario,
   'users-invite-limited': () => withoutPermission(usersInviteScenario(), 'user.assign_branch'),
+  // BG-22: the same with the invites' maker-checker switch off, so the platform's count includes
+  // the invitations Jane sends herself and the bell reads one more after hers.
+  'users-invite-self-approval': () => {
+    const state = usersInviteScenario();
+    const off: FakeTenantSetting = {
+      organisationId: IDS.greenfield,
+      key: 'require_maker_checker_for_user_invites',
+      value: 'false',
+      valueType: 'BOOLEAN',
+      sensitive: false,
+    };
+    return { ...state, tenantSettings: [...state.tenantSettings, off] };
+  },
   // Layer 14 (overview). `overview-limited` is the attention data without the business date, audit,
   // membership and settings reads and without user.approve: two cards are omitted, the approvals card
   // lists branches only, and three readiness items can't be checked.

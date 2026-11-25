@@ -127,7 +127,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   Ruling 10).
   The administration overview's Pending approvals and Recent activity cards
   (`modules/administration/overview`: at most five requests, users then branches, beside the
-  bell's counts, from one bounded users read of at most 100 that reads past identities still
+  queue's tab counts, from one bounded users read of at most 100 that reads past identities still
   provisioning (BG-11) and one five-row branch read; and the five latest audit events; each card
   links to its paginated list, and the counts come from `totalItems`, with no scan) are a ninth,
   named exception: bounded previews, not data-listing directories — no licence for an unbounded

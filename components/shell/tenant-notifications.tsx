@@ -3,14 +3,14 @@ import { getCurrentContextProfile } from '@/auth/context-service';
 import { permissionHolder } from '@/auth/permissions';
 import { load } from '@/lib/api/load';
 import { administrationModule } from '@/modules/administration/administration-module';
-import { approvalNotifications } from '@/modules/administration/approvals/approval-notifications';
+import { bellNotifications } from '@/modules/administration/approvals/approval-notifications';
 import {
-  canSeeBranchActivations,
-  canSeeUserApprovals,
+  canCountPendingApprovals,
+  canCountUserApprovals,
 } from '@/modules/administration/approvals/approval-rules';
 import {
-  countBranchActivations,
   countUserApprovals,
+  readPendingCounts,
 } from '@/modules/administration/approvals/approval-service';
 import { NotificationsMenu } from './notifications-menu';
 
@@ -22,19 +22,18 @@ export async function PendingApprovalNotifications() {
   if (selected.kind !== 'resolved') return null;
   if (selected.context.module.id !== administrationModule.id) return null;
   const holder = permissionHolder(selected.profile);
-  const users = canSeeUserApprovals(holder);
-  const branches = canSeeBranchActivations(holder);
-  if (!users && !branches) return null;
-  // BG-22: no feed; three `size=1` reads, each settled by load() as the platform bell's is (rule
-  // 21): a lost session or a stale context redirects; any other failure reads as unknown, never
-  // as none (Ruling 9).
-  const [userCounts, branchCount] = await Promise.all([
-    users ? load(countUserApprovals()) : null,
-    branches ? load(countBranchActivations()) : null,
+  // BG-22: the count route refuses a caller who approves neither kind tenant-wide, and the user
+  // line needs the User onboarding tab's totals too, so only a caller the bell can show a line to
+  // asks it; the lines shown are the kinds it counted. Those totals cap the user line
+  // (`bellUserApprovals`), read beside it, not after it.
+  if (!canCountPendingApprovals(holder)) return null;
+  // Each read is settled by load() as the platform bell's is (rule 21): a lost session or a stale
+  // context redirects; any other failure reads as unknown, never as none (Ruling 9).
+  const [pending, users] = await Promise.all([
+    load(readPendingCounts()),
+    canCountUserApprovals(holder) ? load(countUserApprovals()) : null,
   ]);
-  return (
-    <NotificationsMenu {...approvalNotifications({ users: userCounts, branches: branchCount })} />
-  );
+  return <NotificationsMenu {...bellNotifications({ pending, users })} />;
 }
 
 /** Tenant workspace notifications slot (spec §8): its own boundary, so the shell never waits. */

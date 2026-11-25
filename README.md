@@ -304,9 +304,9 @@ components/
 ├── providers/                  # AppProviders (ThemeProvider/CssBaseline), ThemeModeToggle, ToastProvider
 └── shell/                      # AppShell, header, drawer, context switcher dialog, app switcher,
                                  # user menu, workspace navigation, tenant-/platform-notifications
-                                 # (app-bar slots, spec §8: the tenant bell counts approvals
-                                 # waiting; the platform bell counts institutions pending
-                                 # approval) and NotificationsMenu
+                                 # (app-bar slots, spec §8: each bell counts what its caller
+                                 # could approve, from the platform's count routes, BG-22) and
+                                 # NotificationsMenu
 theme/
 ├── tokens.ts                   # Raw token values (LIGHT/DARK/BRAND) — the source of truth
 ├── create-finaxis-theme.ts   # Single theme, light/dark colorSchemes, component defaults
@@ -402,8 +402,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   Settings, Business date, and Audit trail pages.
 - The Overview (`/admin`, `modules/administration/overview/`) shows four cards, each reading on its
   own behind its own Suspense boundary and each only to a holder who can read or decide it:
-  Business date (the date and its status), Pending approvals (the bell's counts with a link to each
-  tab, then up to five requests, users before branches, each newest first with Review), Operational
+  Business date (the date and its status), Pending approvals (the queue's tab counts with a link to
+  each tab, then up to five requests, users before branches, each newest first with Review), Operational
   readiness (five items, each Ready, Needs attention, Can't be checked or Couldn't be checked, each
   linking to the page where it is dealt with when the holder can open that page, under one teal
   bar for the share ready) and Recent activity (the latest audit events, up to five, each opening
@@ -424,7 +424,11 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   pending approval (User onboarding) and branches pending activation (Branch activation), each
   tab paged in the URL and counted in its label, and opens a page per request with who asked and
   when, the requested access (a user's) or the branch, control checks and a decision bar. The app
-  bar's bell counts the same approvals. Known limits:
+  bar's bell counts the approvals the caller could decide, from the platform's count route
+  (`GET /tenant/approvals/pending-count`, BG-22): it leaves out the caller's own requests while
+  maker-checker is on, and a kind they can't approve tenant-wide; its user count is capped by the
+  User onboarding tab's, so it never counts an identity still provisioning unless the caller has a
+  request of their own pending. Known limits:
   - A pending branch can be returned for changes (or withdrawn by its maker) beside Activate; a
     returned draft is resubmitted from its record. Approve takes an optional remark. There is no
     branch rejection, and still no approval-request model (`docs/backend-gaps.md` BG-01).
@@ -680,8 +684,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - The overview counts institutions by lifecycle (subtracting the platform organisation, which
     the platform already leaves out, so the active count reads one low, BG-29)
     and platform operators, one read each (`size=1`, or the total of a five-row preview, BG-15),
-    and lists up to five institutions pending approval and five drafts. The bell counts
-    institutions pending approval (BG-22).
+    and lists up to five institutions pending approval and five drafts. The bell counts the
+    institutions pending approval that the operator could approve, never one they requested or
+    submitted (`GET /platform/approvals/pending-count`, BG-22).
 - Legal/support links (`/legal/terms`, `/legal/privacy`, `mailto:support@finaxis.io`) and
   `/forgot-password` are placeholders; the first three routes resolve to the app's `not-found`
   page until real content exists.

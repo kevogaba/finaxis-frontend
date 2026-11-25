@@ -2,6 +2,7 @@ import { canAll, canAllTenantWide, canTenantWide, type PermissionHolder } from '
 import { humanizeEnum, type StatusTone } from '@/components/data-display/status-chip';
 import { formatBusinessDate } from '@/lib/format';
 import {
+  actionableUserApprovals,
   approvalNotifications,
   type UserApprovalCounts,
 } from '@/modules/administration/approvals/approval-notifications';
@@ -149,7 +150,10 @@ export function provisioningNote(count: number): string {
 export function onboardingItem(counts: Settled<UserApprovalCounts>): ReadinessCheck {
   if (counts === null) return item('onboarding', 'unknown', NOT_PERMITTED);
   if (!counts.ok) return item('onboarding', 'failed', readFailed(counts.problem));
-  const waiting = approvalNotifications({ users: counts, branches: null }).entries[0];
+  const waiting = approvalNotifications({
+    users: { ok: true, value: actionableUserApprovals(counts.value) },
+    branches: null,
+  }).entries[0];
   const note =
     counts.value.provisioning > 0 ? ` ${provisioningNote(counts.value.provisioning)}` : '';
   if (waiting) return item('onboarding', 'attention', `${waiting.text}${note}`);

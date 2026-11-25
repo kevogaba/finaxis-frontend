@@ -133,3 +133,11 @@ export type TenantDetail = z.output<typeof tenantDetailSchema>;
 export const tenantDraftResultSchema = z
   .object({ organisation_id: uuidSchema, status: z.string() })
   .transform((result) => ({ tenantId: result.organisation_id }));
+
+/** `GET /platform/approvals/pending-count` (BG-22, platform #169): the institutions pending approval
+ * that the caller could approve, leaving out those they requested or submitted (the platform
+ * checker's rule, never relaxed) and the platform organisation. Always sent to a holder of
+ * `tenant.approve` (with `tenant.view`) in the platform organisation; read as the bare count. */
+export const platformPendingCountSchema = z
+  .object({ tenants: z.number().int().nonnegative() })
+  .transform((body) => body.tenants);

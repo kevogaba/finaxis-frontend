@@ -378,3 +378,100 @@ test.describe('fake API: the approvals scenarios (layer 12)', () => {
     expect([users.page.total_items, branches.page.total_items]).toEqual([0, 0]);
   });
 });
+
+// BG-22 (platform #169, ADR 0038): a count per kind the caller approves, never an inbox.
+test.describe('fake API: the pending counts (entry 14)', () => {
+  const COUNTS = '/tenant/approvals/pending-count';
+  const PLATFORM_COUNTS = '/platform/approvals/pending-count';
+
+  async function counts(response: APIResponse) {
+    expect(response.status()).toBe(200);
+    return read<Record<string, number>>(response);
+  }
+
+  test('leaves out what the caller made, and counts identities still provisioning', async ({
+    request,
+  }) => {
+    const { get } = await signIn(request);
+    // Nine pending memberships less Carol, whom Jane invited; Daniel's identity is provisioning,
+    // and he counts. Three pending branches less Naivasha, which Jane drafted; Voi is a draft.
+    expect(await counts(await get(COUNTS))).toEqual({ memberships: 8, branches: 2 });
+  });
+
+  test('counts the same with a branch selected: both kinds are tenant-wide', async ({
+    request,
+  }) => {
+    const { get } = await signIn(request, 'approvals', IDS.headOffice);
+    expect(await counts(await get(COUNTS))).toEqual({ memberships: 8, branches: 2 });
+  });
+
+  test('counts the caller’s own while the switch is off', async ({ request }) => {
+    const { get } = await signIn(request, 'approvals-self-approval');
+    expect(await counts(await get(COUNTS))).toEqual({ memberships: 9, branches: 3 });
+  });
+
+  test('counts a decision: a pending request leaves, a provisioning one stays', async ({
+    request,
+  }) => {
+    const { get, post } = await signIn(request);
+    expect((await post(`/branches/${APPROVALS.kericho}/activate`)).status()).toBe(200);
+    // Zawadi has no identity yet: a 202, still PENDING_APPROVAL while it is created.
+    expect(
+      (await post(`/tenant/memberships/${APPROVALS.zawadiMembership}/activate`)).status(),
+    ).toBe(202);
+    // Tabitha has one: a 200, ACTIVE.
+    expect(
+      (await post(`/tenant/memberships/${APPROVALS.tabithaMembership}/activate`)).status(),
+    ).toBe(200);
+    expect(await counts(await get(COUNTS))).toEqual({ memberships: 7, branches: 1 });
+  });
+
+  // `@JsonInclude(NON_NULL)`: an absent key is a kind the caller can't approve, never 0 of it.
+  test('omits a kind the caller can’t approve tenant-wide, and sends 0 as 0', async ({
+    request,
+  }) => {
+    // No branch.approve: Amina, Brian and Daniel (Carol is Jane's).
+    const invite = await signIn(request, 'users-invite');
+    expect(await counts(await invite.get(COUNTS))).toEqual({ memberships: 3 });
+    // No user.approve: three branches, none with a maker.
+    const limited = await signIn(request, 'overview-limited');
+    expect(await counts(await limited.get(COUNTS))).toEqual({ branches: 3 });
+    // branch.approve held at Head Office only: a pending branch has no ACTIVE branch to hold it
+    // at, so it counts nowhere; four memberships with no maker.
+    const scoped = await signIn(request, 'overview-branch-scoped', IDS.headOffice);
+    expect(await counts(await scoped.get(COUNTS))).toEqual({ memberships: 4 });
+    const empty = await signIn(request, 'approvals-empty');
+    expect(await counts(await empty.get(COUNTS))).toEqual({ memberships: 0, branches: 0 });
+  });
+
+  test('refuses a caller who can approve neither kind', async ({ request }) => {
+    const { get } = await signIn(request, 'default');
+    const response = await get(COUNTS);
+    expect(response.status()).toBe(403);
+    // The endpoint gate's refusal (the selected context holds neither code), whose detail names no
+    // permission, unlike the service's named `Missing permission: user.approve.`, the same code.
+    expect(await read(response)).toMatchObject({
+      code: 'forbidden',
+      detail: 'You are not permitted to perform this action.',
+    });
+  });
+
+  test('platform: leaves out what the caller requested or submitted', async ({ request }) => {
+    const headers = await contextFor(request, 'platform-records', null, IDS.platformOrganisation);
+    const response = await request.get(api(PLATFORM_COUNTS), { headers });
+    // Harambee and Mwangaza are pending, and Jane submitted Mwangaza; never the platform's own.
+    expect(await counts(response)).toEqual({ tenants: 1 });
+  });
+
+  test('platform: refuses without tenant.approve, and in a tenant context', async ({ request }) => {
+    const headers = await contextFor(
+      request,
+      'platform-records-read-only',
+      null,
+      IDS.platformOrganisation,
+    );
+    expect((await request.get(api(PLATFORM_COUNTS), { headers })).status()).toBe(403);
+    const { get } = await signIn(request);
+    expect((await get(PLATFORM_COUNTS)).status()).toBe(403);
+  });
+});

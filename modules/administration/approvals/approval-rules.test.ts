@@ -7,6 +7,8 @@ import {
 } from '@/modules/administration/users/user-rules';
 import {
   approvalQueueTabs,
+  canCountPendingApprovals,
+  canCountUserApprovals,
   canSeeBranchActivations,
   canSeeUserApprovals,
   availableBranchDecisions,
@@ -87,6 +89,61 @@ describe('the queue', () => {
       'User onboarding',
       'Branch activation (3)',
     ]);
+  });
+
+  // BG-22: the count route counts each kind for its approve code and views tenant-wide, and refuses
+  // a caller who holds neither, so the bell asks it only of one it can show a line to.
+  it.each<[string, readonly string[], readonly string[], boolean, boolean]>([
+    [
+      'both kinds tenant-wide',
+      ['user.approve', 'membership.view', 'user.view', 'branch.approve', 'branch.view'],
+      [],
+      true,
+      true,
+    ],
+    [
+      'users, with the tab’s read',
+      ['user.approve', 'membership.view', 'user.view'],
+      [],
+      true,
+      true,
+    ],
+    // The platform counts them, but there is no User onboarding tab to read or open, so no line
+    // to show: no bell, never one that reads "nothing waiting" while members wait.
+    ['users, without user.view', ['user.approve', 'membership.view'], [], false, false],
+    [
+      'users without user.view, beside branches',
+      ['user.approve', 'membership.view', 'branch.approve', 'branch.view'],
+      [],
+      true,
+      false,
+    ],
+    // user.approve implies membership.view (ADR 0030): without it the platform counts none.
+    ['users, without membership.view', ['user.approve', 'user.view'], [], false, false],
+    ['branches tenant-wide', ['branch.approve', 'branch.view'], [], true, false],
+    // A branch-scope grant counts nothing: a pending branch has no ACTIVE branch to hold it at.
+    [
+      'branches at one branch only',
+      ['branch.approve', 'branch.view'],
+      ['branch.approve'],
+      false,
+      false,
+    ],
+    [
+      'users at one branch only',
+      ['user.approve', 'membership.view', 'user.view'],
+      ['user.approve'],
+      false,
+      false,
+    ],
+    ['the read codes alone', ['user.view', 'membership.view', 'branch.view'], [], false, false],
+  ])('asks for the counts with %s', (_case, permissions, branchOnly, counts, users) => {
+    const holder = {
+      permissions,
+      tenantPermissions: permissions.filter((code) => !branchOnly.includes(code)),
+    };
+    expect(canCountPendingApprovals(holder)).toBe(counts);
+    expect(canCountUserApprovals(holder)).toBe(users);
   });
 
   it('builds every href from one root', () => {

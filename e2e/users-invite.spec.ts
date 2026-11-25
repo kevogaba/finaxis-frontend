@@ -324,8 +324,32 @@ test.describe('users invite: sending', () => {
     const approve = page.getByRole('button', { name: 'Approve', exact: true });
     await expect(approve).toBeDisabled();
     await expect(approve).toHaveAccessibleDescription(USER_MAKER_CHECKER_BLOCKED);
-    // refresh() before the redirect (invite-actions.ts): the shell's bell sits in the layout the
-    // redirect keeps, so it must count the new member without a reload.
+    // The bell counts what the platform lets Jane decide (BG-22): her own invitation isn't hers
+    // to approve while maker-checker is on, so it still reads 3. The next test proves the bell
+    // refreshes, with the switch off.
+    await expect(bell(page, 3)).toBeVisible();
+  });
+
+  // With the invites' maker-checker switch off, the platform counts Jane's own invitation (BG-22):
+  // the bell reads one more once her record opens, so the layout's bell was refreshed before the
+  // redirect (as invite-actions.test.ts pins the refresh() itself).
+  test('counts an invitation of the caller’s own in the bell while maker-checker is off', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users-invite-self-approval');
+    await openWizard(page);
+    // Amina, Brian and Carol (Jane's own, counted with the switch off); Daniel is provisioning.
+    await expect(bell(page, 3)).toBeVisible();
+    await fillIdentity(page);
+    await next(page, 'Access');
+    await fillAccess(page);
+    await next(page, 'Invitation');
+    await next(page, 'Review');
+    await sendInvitation(page);
+
+    await expect(page).toHaveURL(RECORD);
+    await expect(page.getByRole('heading', { level: 1, name: NEEMA.name })).toBeVisible();
     await expect(bell(page, 4)).toBeVisible();
   });
 
