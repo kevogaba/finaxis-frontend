@@ -5,10 +5,10 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
-import { ConfirmDialog } from '@/components/data-display/confirm-dialog';
 import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { ReasonDialog } from '@/components/data-display/reason-dialog';
 import { useToast } from '@/components/providers/toast-provider';
+import type { ActionResult } from '@/lib/api/action-result';
 import { returnBranch } from '@/modules/administration/branches/branch-actions';
 import { sendBackCopy } from '@/modules/administration/branches/branch-rules';
 import { approveUser, rejectUser } from '../approval-actions';
@@ -18,7 +18,6 @@ import {
   decisionCopy,
   REJECTED_TOAST,
   type ApprovalOutcome,
-  type ApproveResult,
 } from '../approval-copy';
 import type { ApprovalDecision } from '../approval-rules';
 import { activatePendingBranch } from '../branch-activation-actions';
@@ -61,7 +60,8 @@ function successToast(decision: ApprovalDecision, outcome: ApprovalOutcome, name
   }
 }
 
-/** The reason-taking decisions' Server Actions; Withdraw and Return share the return route. */
+/** The decisions' Server Actions but Approve's, which the bar wraps to keep its outcome; Withdraw
+ * and Return share the return route. */
 const REASON_ACTIONS = {
   reject: rejectUser,
   activate: activatePendingBranch,
@@ -124,9 +124,9 @@ export function DecisionBar({
   }, []);
 
   const approve = async (
-    previous: ApproveResult | null,
+    previous: ActionResult | null,
     formData: FormData,
-  ): Promise<ApproveResult> => {
+  ): Promise<ActionResult> => {
     const result = await approveUser(previous, formData);
     if (result.ok) outcomeRef.current = result.outcome;
     return result;
@@ -220,23 +220,6 @@ export function DecisionBar({
           setOpen(null);
           notify(successToast(id, outcomeRef.current, name));
         };
-        if (id === 'approve') {
-          return (
-            <ConfirmDialog
-              key={id}
-              open={open === id}
-              title={copy.title}
-              description={copy.description}
-              confirmLabel={copy.label}
-              action={approve}
-              contextOrganisationId={contextOrganisationId}
-              onClose={close}
-              onSuccess={succeed}
-            >
-              {hiddenFields}
-            </ConfirmDialog>
-          );
-        }
         return (
           <ReasonDialog
             key={id}
@@ -244,10 +227,11 @@ export function DecisionBar({
             title={copy.title}
             description={copy.description}
             confirmLabel={copy.label}
-            reason={copy.reason ?? 'optional'}
+            reason={copy.reason}
             reasonLabel={copy.reasonLabel}
+            reasonHelperText={copy.reasonHelperText}
             tone={copy.destructive ? 'error' : 'default'}
-            action={REASON_ACTIONS[id]}
+            action={id === 'approve' ? approve : REASON_ACTIONS[id]}
             contextOrganisationId={contextOrganisationId}
             onClose={close}
             onSuccess={succeed}

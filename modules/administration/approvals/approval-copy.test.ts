@@ -9,10 +9,13 @@ import {
 
 describe('the decisions', () => {
   it('words each dialog, with Reject & revoke the only destructive one', () => {
+    // Decision Q7 (BG-01): Approve takes an optional remark.
     expect(decisionCopy('approve', 'Amina Odhiambo')).toMatchObject({
       label: 'Approve',
       title: 'Approve Amina Odhiambo?',
-      reason: null,
+      reason: 'optional',
+      reasonLabel: 'Remark (optional)',
+      reasonHelperText: 'Recorded with the approval. Up to 500 characters.',
       destructive: false,
     });
     expect(decisionCopy('approve', 'Amina').description).toContain("An approval can't be undone.");

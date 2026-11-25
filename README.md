@@ -426,9 +426,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   when, the requested access (a user's) or the branch, control checks and a decision bar. The app
   bar's bell counts the same approvals. Known limits:
   - A pending branch can be returned for changes (or withdrawn by its maker) beside Activate; a
-    returned draft is resubmitted from its record. There is no branch rejection, and no remark on
-    Approve or institution return yet, which the platform has; there is still no approval-request
-    model (`docs/backend-gaps.md` BG-01).
+    returned draft is resubmitted from its record. Approve takes an optional remark. There is no
+    branch rejection, and no institution return yet, which the platform has; there is still no
+    approval-request model (`docs/backend-gaps.md` BG-01).
   - User onboarding's "Newest first" is the users endpoint's own order, by when each account was
     created (BG-09): an invitation that reused an existing account sorts by that account's age.
   - The maker comes from the record (`created_by`, `submitted_by`), so naming it needs no

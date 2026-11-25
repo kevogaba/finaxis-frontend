@@ -112,6 +112,35 @@ describe('the user decisions', () => {
       expect(refresh).toHaveBeenCalledTimes(1);
     });
 
+    // Decision Q7 (BG-01): an optional remark, sent only when it isn't blank.
+    it.each([
+      [
+        'a remark',
+        '  Checked against the signed form  ',
+        { reason: 'Checked against the signed form' },
+      ],
+      ['a blank remark', '   ', {}],
+      ['exactly 500 characters', 'x'.repeat(500), { reason: 'x'.repeat(500) }],
+    ])('sends %s trimmed, or {} when blank', async (_case, reason, body) => {
+      await actions.approveUser(null, membershipForm({ reason }));
+      expect(apiPost).toHaveBeenCalledExactlyOnceWith(
+        `/api/v1/tenant/memberships/${MEMBERSHIP}/activate`,
+        body,
+        KEY,
+      );
+    });
+
+    it('refuses a remark over 500 characters as a field error, before any read', async () => {
+      const result = await actions.approveUser(null, membershipForm({ reason: 'x'.repeat(501) }));
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'validation_failed',
+        fieldErrors: { reason: 'Keep the remark to 500 characters or fewer.' },
+      });
+      expect(getMembership).not.toHaveBeenCalled();
+      expect(apiPost).not.toHaveBeenCalled();
+    });
+
     it.each([
       ['a 200 (ACTIVE)', { membership_status: 'ACTIVE', user_status: 'ACTIVE' }, 'active'],
       [
@@ -304,16 +333,19 @@ describe('the user decisions', () => {
       apiPost.mockRejectedValueOnce(
         new BackendApiError(409, { code: 'conflict', requestId: 'req-d' }),
       );
-      const first = await actions.approveUser(null, membershipForm());
+      const first = await actions.approveUser(null, membershipForm({ reason: 'Form checked' }));
       // A failure, never a thrown error: the dialog stays open with its own state.
       expect(first).toMatchObject({ ok: false, formError: APPROVE_CONFLICT, requestId: 'req-d' });
       expect(refresh).not.toHaveBeenCalled();
 
-      // The dialog resubmits the same form, so the retry carries the key it minted on open.
-      // The action only forwards the form's key; that the dialog keeps it across a failed submit
-      // is pinned in components/data-display/confirm-dialog.test.tsx.
-      await actions.approveUser(null, membershipForm());
-      expect(apiPost.mock.calls.map(([, , key]) => key)).toEqual([KEY, KEY]);
+      // The dialog resubmits the same form, so the retry carries the key it minted on open and
+      // the remark it kept. The action only forwards them; that the dialog keeps both across a
+      // failed submit is pinned in components/data-display/reason-dialog.test.tsx.
+      await actions.approveUser(null, membershipForm({ reason: 'Form checked' }));
+      expect(apiPost.mock.calls.map(([, body, key]) => [body, key])).toEqual([
+        [{ reason: 'Form checked' }, KEY],
+        [{ reason: 'Form checked' }, KEY],
+      ]);
     });
 
     it('refuses a submit after an organisation switch, before any read', async () => {

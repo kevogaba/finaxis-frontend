@@ -6,6 +6,7 @@ import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiPost } from '@/lib/api/tenant-api';
 import { uuidSchema } from '@/lib/api/wire';
+import { APPROVAL_REMARK_TOO_LONG } from '@/modules/administration/approvals/approval-copy';
 import { MEMBERSHIP_STATUSES, USER_STATUSES } from './user-contract';
 import {
   APPROVE_CONFLICT,
@@ -31,6 +32,8 @@ const optionalReason = z
   .trim()
   .max(500, 'Keep the reason under 500 characters.')
   .optional();
+// Decision Q7: Activate's remark, the same bound in the field's own word.
+const optionalRemark = z.string().trim().max(500, APPROVAL_REMARK_TOO_LONG).optional();
 
 function transition(
   path: 'activate' | 'suspend' | 'reactivate',
@@ -46,14 +49,19 @@ function transition(
   );
 }
 
-/** The activate endpoint reads no body (contract §E.3): `{}` is sent. 200 = ACTIVE, 202 =
- * identity provisioning queued; the refreshed record shows which (Ruling 9). 12 reuses it. The
- * maker-checker refusals keep their own codes' words (`describeProblem`, BG-08). */
+/** Activate takes an optional remark (decision Q7, BG-01): `{ reason }` when it isn't blank, else
+ * `{}`. The platform keeps it on the `user.approve` audit row. 200 = ACTIVE, 202 = identity
+ * provisioning queued; the refreshed record shows which (Ruling 9). The maker-checker refusals
+ * keep their own codes' words (`describeProblem`, BG-08). */
 export async function approveMembership(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const result = await transition('activate', membershipInput, formData);
+  const result = await transition(
+    'activate',
+    membershipInput.extend({ reason: optionalRemark }),
+    formData,
+  );
   const refused = explain(result, 'forbidden', APPROVE_FORBIDDEN);
   return explain(
     explain(refused, 'resource_not_found', APPROVE_NOT_FOUND),

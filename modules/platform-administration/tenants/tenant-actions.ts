@@ -7,6 +7,7 @@ import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiPatch, apiPost } from '@/lib/api/tenant-api';
 import { isoToBusinessDate } from '@/lib/business-date';
+import { APPROVAL_REMARK_TOO_LONG } from '@/modules/administration/approvals/approval-copy';
 import { isInstitutionId } from './institution-id';
 import { tenantDraftResultSchema } from './tenant-contract';
 import {
@@ -146,8 +147,8 @@ export async function amendTenantDraft(
 
 const tenantInput = z.object({ idempotencyKey, tenantId });
 
-/** Submit, approve and bootstrap retry take no body (contract §E.2). `apiPost` always sends JSON,
- * so the body is `{}`, which the backend never reads; a reason is never forwarded. */
+/** Submit and bootstrap retry take no body (contract §E.2). `apiPost` always sends JSON, so the
+ * body is `{}`, which the backend never reads; a reason is never forwarded. */
 function command(path: string, formData: FormData): Promise<ActionResult> {
   return runServerAction(tenantInput, formData, (input) =>
     apiPost(`${BASE}/${input.tenantId}/${path}`, {}, input.idempotencyKey),
@@ -155,6 +156,10 @@ function command(path: string, formData: FormData): Promise<ActionResult> {
 }
 
 const optionalReasonInput = tenantInput.extend({ reason: optionalReason });
+// Decision Q7: Approve's remark, the same bound in the field's own word.
+const optionalRemarkInput = tenantInput.extend({
+  reason: z.string().trim().max(500, APPROVAL_REMARK_TOO_LONG).optional(),
+});
 const requiredReasonInput = tenantInput.extend({ reason: requiredReason });
 // CRITICAL (spec §11.2): the tenant code typed back. A UX guard; the permission is the gate.
 const deprovisionInput = requiredReasonInput
@@ -167,7 +172,11 @@ const deprovisionInput = requiredReasonInput
 /** The body is `{}` when there's no reason (contract §D). */
 function reasoned(
   path: string,
-  schema: typeof optionalReasonInput | typeof requiredReasonInput | typeof deprovisionInput,
+  schema:
+    | typeof optionalReasonInput
+    | typeof optionalRemarkInput
+    | typeof requiredReasonInput
+    | typeof deprovisionInput,
   formData: FormData,
 ): Promise<ActionResult> {
   return runServerAction(schema, formData, (input) =>
@@ -196,9 +205,10 @@ export async function approveTenant(
   formData: FormData,
 ): Promise<ActionResult> {
   // A missing permission only: the maker, an amender and the first administrator have their own
-  // codes, explained by `describeProblem` (BG-08).
+  // codes, explained by `describeProblem` (BG-08). The optional remark (decision Q7, BG-01) becomes
+  // the tenant's `status_reason`.
   return explain(
-    await command('approve', formData),
+    await reasoned('approve', optionalRemarkInput, formData),
     'forbidden',
     "You can't approve this institution. Your role doesn't allow it.",
   );

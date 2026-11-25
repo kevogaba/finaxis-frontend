@@ -52,6 +52,11 @@ const SELF_APPROVAL_NOTE_USERS =
 const SELF_APPROVAL_NOTE_BRANCHES =
   'Maker-checker is off for branch creation. You drafted this branch. Activating is allowed and recorded as a high-severity event.';
 const MEMBERSHIP_MAKER_REFUSAL = 'You invited this person, so someone else must approve them.';
+const REMARK_HELPER = 'Recorded with the approval. Up to 500 characters.';
+/** A remark at the platform's bound (500 characters), in words, as an approver would write one. */
+const LONG_REMARK = 'Checked against the signed membership form and the branch roster. '
+  .repeat(8)
+  .slice(0, 500);
 const ROLES_NOT_PERMITTED = "Your role can't view role assignments.";
 const BRANCHES_NOT_PERMITTED = "Your role can't view branch assignments.";
 
@@ -369,6 +374,31 @@ test.describe('approvals: user onboarding decisions', () => {
     await decide(page, 'Approve');
     await expect(toast(page, APPROVED_ACTIVE)).toBeVisible();
     await expect(mainText(page, APPROVED_NOTE)).toBeVisible();
+  });
+
+  // Decision Q7 (BG-01): an optional remark, which the platform keeps on the approval's audit row.
+  test('approves with a remark, which the audit trail records', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'approvals');
+    await enterQueue(page);
+    await openRequest(page, userPath(APPROVALS.tabitha), 'Tabitha Wekesa');
+
+    await press(decision(page, 'Approve'));
+    const dialog = page.getByRole('dialog', { name: 'Approve Tabitha Wekesa?' });
+    const remark = dialog.getByRole('textbox', { name: 'Remark (optional)' });
+    await expect(remark).toHaveAccessibleDescription(REMARK_HELPER);
+    await remark.fill('  Signed form on file  ');
+    await dialog.getByRole('button', { name: 'Approve', exact: true }).click();
+    await expect(toast(page, APPROVED_ACTIVE)).toBeVisible();
+    await expect(mainText(page, APPROVED_NOTE)).toBeVisible();
+
+    await region(page, 'Request').getByRole('link', { name: 'Open the audit trail' }).click();
+    const trail = page.getByRole('region', { name: 'Audit trail' });
+    await expect(trail).toContainText('Approved user');
+    // Trimmed, by the action and by the platform.
+    await expect(trail.getByText('Signed form on file', { exact: true })).toBeVisible();
   });
 
   test('disables Approve for the signed-in user’s own invitation', async ({
@@ -702,6 +732,32 @@ const SURFACES = [
         page.getByRole('alertdialog', { name: 'Reject and revoke Carol Wambui?' }),
       ).toBeVisible();
       // Scan once the fade has finished: axe blends ancestor opacity into colour contrast.
+      await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1');
+    },
+  },
+  {
+    // Review Focus 5: a remark at its 500-character bound fits the dialog at 375 px.
+    label: 'approve dialog, a 500-character remark',
+    path: userPath(APPROVALS.tabitha),
+    heading: 'Tabitha Wekesa',
+    open: async (page: Page) => {
+      await press(decision(page, 'Approve'));
+      const dialog = page.getByRole('dialog', { name: 'Approve Tabitha Wekesa?' });
+      await dialog.getByRole('textbox', { name: 'Remark (optional)' }).fill(LONG_REMARK);
+      await expect(dialog.getByRole('textbox', { name: 'Remark (optional)' })).toHaveValue(
+        LONG_REMARK,
+      );
+      // A dialog is `position: fixed`, so the page-width check can't see it overflow. The remark
+      // wraps, so the dialog (the role element is MUI's Paper) must also stay inside the viewport,
+      // not only hold its content.
+      expect(
+        await dialog.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          return (
+            node.scrollWidth <= node.clientWidth && box.left >= 0 && box.right <= window.innerWidth
+          );
+        }),
+      ).toBe(true);
       await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1');
     },
   },

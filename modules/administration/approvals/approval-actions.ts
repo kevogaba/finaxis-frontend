@@ -19,6 +19,7 @@ import {
   ACCOUNT_BLOCKED_CODE,
   APPROVAL_CHANGED,
   APPROVAL_CHANGED_CODE,
+  APPROVAL_REMARK_TOO_LONG,
   approvalOutcome,
   type ApprovalOutcome,
   type ApproveResult,
@@ -32,6 +33,10 @@ const requiredReason = z
   .trim()
   .min(3, 'Give a reason of at least 3 characters.')
   .max(500, 'Keep the reason under 500 characters.');
+// Decision Q7: Approve's remark. No `|| null` transform: a trimmed '' is falsy, so a blank remark
+// still sends `{}`.
+const optionalRemark = z.string().trim().max(500, APPROVAL_REMARK_TOO_LONG).optional();
+const approveInput = membershipDecisionInput.extend({ reason: optionalRemark });
 
 /** Ruling 5: the membership the request writes, read back by its own id, and its user by the
  * membership's `user_id` (the backend's ids, never the form's): its state decides what may run. */
@@ -59,16 +64,17 @@ function explainApproval(result: ActionResult, blocked: UserStatus | null): Acti
  * The inviter is the platform's to refuse (a switch may let them approve, BG-08), and its named
  * refusal explains itself (`describeProblem`). Those end states (an active membership, a
  * provisioning one) reach the endpoint with the form's key, so a same-key retry replays the stored
- * answer (`postFromEndState`). 200 or 202 is read from the echo (Ruling 10). */
+ * answer (`postFromEndState`). 200 or 202 is read from the echo (Ruling 10). The optional remark
+ * (decision Q7, BG-01) is sent as `{ reason }` only when it isn't blank. */
 export async function approveUser(
-  _previous: ApproveResult | null,
+  _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ApproveResult> {
   const seen: { outcome: ApprovalOutcome; blocked: UserStatus | null } = {
     outcome: 'recorded',
     blocked: null,
   };
-  const result = await runServerAction(membershipDecisionInput, formData, async (input) => {
+  const result = await runServerAction(approveInput, formData, async (input) => {
     await decider();
     const { membership, userStatus, state } = await membershipState(input.membershipId);
     if (state === 'blocked') {
@@ -88,7 +94,7 @@ export async function approveUser(
       await postFromEndState(endState, () =>
         apiPost(
           `/api/v1/tenant/memberships/${membership.id.toLowerCase()}/activate`,
-          {},
+          input.reason ? { reason: input.reason } : {},
           input.idempotencyKey,
         ),
       ),

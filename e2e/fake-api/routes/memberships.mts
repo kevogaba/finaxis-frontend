@@ -156,8 +156,18 @@ export const membershipRoutes: Route[] = [
     const access = tenantAccess(context);
     requirePermission(access, 'user.approve');
     const raw = await readBody(context.req);
-    // The endpoint reads no body: none or `{}`, and any property is refused (ApiJsonCodec).
-    const body = raw === undefined ? {} : objectBody(raw, []);
+    // ActivateMembershipRequest (platform #179, BG-01): the body is optional, and its one property
+    // is an optional decision remark of at most 500 characters (Bean Validation, on the raw text).
+    // Any other property is refused (ApiJsonCodec).
+    const body = raw === undefined ? {} : objectBody(raw, ['reason']);
+    const reason = reasonField(body, false);
+    if (reason !== null && reason.length > 500) {
+      throw problem(400, 'validation_failed', 'Validation failed.', [
+        { field: 'reason', code: 'Size', message: 'size must be between 0 and 500' },
+      ]);
+    }
+    // DecisionRemark.optional: trimmed, and a blank one is none.
+    const remark = reason === null || reason.trim() === '' ? null : reason.trim();
     const target = memberOf(context, access);
     // Decided from the state before the change, so a replay answers with the stored status: a 202
     // whenever provisioning is (re)queued, for a user with no identity link or one still
@@ -243,11 +253,13 @@ export const membershipRoutes: Route[] = [
           }
         }
         membership.updatedAt = new Date().toISOString();
+        // The remark lands on the `user.approve` row. ponytail: the platform also stores it as the
+        // membership's status reason on a 200, which no read returns (BG-01), so the fake doesn't.
         recordAuditEvent(context.state, access, {
           entityType: 'USER',
           entityId: user.id,
           action: 'user.approve',
-          reason: null,
+          reason: remark,
           // UserProvisioningService.selfApprovalMetadata: a relaxed approval is HIGH and says so.
           ...(selfApproved && { severity: 'HIGH', metadata: { selfApproved: 'true' } }),
         });

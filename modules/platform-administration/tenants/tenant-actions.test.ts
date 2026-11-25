@@ -389,11 +389,50 @@ describe('tenant actions', () => {
 
   it.each([
     ['submitTenant', 'submit'],
-    ['approveTenant', 'approve'],
     ['retryTenantBootstrap', 'bootstrap/retry'],
   ] as const)('%s posts an empty body to …/%s, never a reason', async (name, path) => {
     await actions[name](null, form({ idempotencyKey: KEY, tenantId: TENANT, reason: 'ignored' }));
     expect(apiPost).toHaveBeenCalledWith(`/api/v1/platform/tenants/${TENANT}/${path}`, {}, KEY);
+  });
+
+  // Decision Q7 (BG-01): Approve takes an optional remark, sent only when it isn't blank.
+  it('approves with the trimmed remark, or {} when it is blank or absent', async () => {
+    const path = `/api/v1/platform/tenants/${TENANT}/approve`;
+    const base = { idempotencyKey: KEY, tenantId: TENANT };
+
+    await actions.approveTenant(null, form({ ...base, reason: '  KYC pack reviewed  ' }));
+    expect(apiPost).toHaveBeenLastCalledWith(path, { reason: 'KYC pack reviewed' }, KEY);
+    await actions.approveTenant(null, form({ ...base, reason: '  ' }));
+    expect(apiPost).toHaveBeenLastCalledWith(path, {}, KEY);
+    await actions.approveTenant(null, form(base));
+    expect(apiPost).toHaveBeenLastCalledWith(path, {}, KEY);
+    await actions.approveTenant(null, form({ ...base, reason: 'x'.repeat(500) }));
+    expect(apiPost).toHaveBeenLastCalledWith(path, { reason: 'x'.repeat(500) }, KEY);
+    expect(apiPost).toHaveBeenCalledTimes(4);
+  });
+
+  it('refuses an approval remark over 500 characters as a field error, before any call', async () => {
+    expect(
+      await actions.approveTenant(
+        null,
+        form({ idempotencyKey: KEY, tenantId: TENANT, reason: 'x'.repeat(501) }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      code: 'validation_failed',
+      fieldErrors: { reason: 'Keep the remark to 500 characters or fewer.' },
+    });
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  it('retries an approval with the minted key and the same remark', async () => {
+    const fields = { idempotencyKey: KEY, tenantId: TENANT, reason: 'KYC pack reviewed' };
+    await actions.approveTenant(null, form(fields));
+    await actions.approveTenant(null, form(fields));
+    expect(apiPost.mock.calls.map(([, body, key]) => [body, key])).toEqual([
+      [{ reason: 'KYC pack reviewed' }, KEY],
+      [{ reason: 'KYC pack reviewed' }, KEY],
+    ]);
   });
 
   it('explains an approve 403 as a missing permission only (BG-08)', async () => {

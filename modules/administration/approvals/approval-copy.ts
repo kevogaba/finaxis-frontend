@@ -9,13 +9,26 @@ export interface DecisionCopy {
   label: string;
   title: string;
   description: string;
-  /** `null`: the activate endpoint reads no body, so a confirmation without a reason. */
-  reason: 'optional' | 'required' | null;
+  reason: 'optional' | 'required';
   /** The reason field's label, when not "Reason". */
   reasonLabel?: string;
+  /** Said under the reason field. */
+  reasonHelperText?: string;
   /** Irreversible and destructive: an error-toned trigger and an alertdialog. */
   destructive: boolean;
 }
+
+/** Decision Q7 (BG-01): the optional remark every Approve dialog takes, for a member (the user
+ * record, the approval page) and an institution. The platform trims it, drops a blank one and
+ * refuses one over 500 characters; it keeps it on the approval's audit row, and an institution's
+ * as its status reason. */
+export const APPROVAL_REMARK = {
+  reasonLabel: 'Remark (optional)',
+  reasonHelperText: 'Recorded with the approval. Up to 500 characters.',
+} as const;
+
+/** The remark's field error over 500 characters: it says "remark", and exactly 500 is accepted. */
+export const APPROVAL_REMARK_TOO_LONG = 'Keep the remark to 500 characters or fewer.';
 
 export function decisionCopy(decision: ApprovalDecision, name: string): DecisionCopy {
   switch (decision) {
@@ -25,7 +38,8 @@ export function decisionCopy(decision: ApprovalDecision, name: string): Decision
         title: `Approve ${name}?`,
         description:
           "Their membership becomes active once their sign-in identity is ready. If they don't have one yet, it is created first and the invitation is sent when it completes. An approval can't be undone.",
-        reason: null,
+        reason: 'optional',
+        ...APPROVAL_REMARK,
         destructive: false,
       };
     case 'reject':
