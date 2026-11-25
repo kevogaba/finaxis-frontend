@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 
 // Lettered, so its upper-case form differs from it.
@@ -24,24 +24,34 @@ const { default: TenantOverviewPage } = await import('./page');
 
 type Actor = { id: string; displayName: string | null } | null;
 
-async function show(
-  bootstrapStatus: string | null,
-  makers: { requestedBy?: Actor; submittedBy?: Actor } = {},
-) {
+interface Overrides {
+  requestedBy?: Actor;
+  submittedBy?: Actor;
+  status?: string;
+  statusReason?: string | null;
+  legalName?: string | null;
+  registrationNumber?: string | null;
+}
+
+async function show(bootstrapStatus: string | null, overrides: Overrides = {}) {
   getTenant.mockResolvedValue({
     id: INSTITUTION,
     tenantCode: 'acme',
     displayName: 'Acme SACCO',
+    legalName: null,
+    registrationNumber: null,
     countryCode: 'KE',
     baseCurrencyCode: 'KES',
     timezone: 'Africa/Nairobi',
     status: 'DRAFT',
+    statusReason: null,
     bootstrapStatus,
     createdAt: '2026-09-03T07:15:00Z',
     updatedAt: '2026-09-03T07:15:00Z',
+    admin: null,
     requestedBy: null,
     submittedBy: null,
-    ...makers,
+    ...overrides,
   });
   const element = await TenantOverviewPage({ params: Promise.resolve({ tenantId: INSTITUTION }) });
   // The page renders nothing when the institution can't be read (the layout shows that failure).
@@ -92,5 +102,58 @@ describe('TenantOverviewPage', () => {
       screen.getByText(label, { selector: 'dt' }).nextElementSibling?.textContent;
     expect(value('Requested by')).toBe('—');
     expect(value('Submitted by')).toBe('—');
+  });
+});
+
+const value = (label: string) =>
+  screen.getByText(label, { selector: 'dt' }).nextElementSibling?.textContent;
+const RETURNED = 'Returned for changes.';
+
+// BG-14: the detail returns them since platform #166.
+describe('TenantOverviewPage: the legal identity', () => {
+  it('shows the legal name and registration number', async () => {
+    await show('DRAFT', {
+      legalName: 'Acme Savings and Credit Co-operative Society Ltd',
+      registrationNumber: 'CS/2019/0042',
+    });
+
+    expect(value('Legal name')).toBe('Acme Savings and Credit Co-operative Society Ltd');
+    expect(value('Registration number')).toBe('CS/2019/0042');
+    // No more "the platform doesn't return them".
+    expect(screen.queryByText(/doesn't return/)).toBeNull();
+  });
+
+  it.each([
+    ['never recorded', null],
+    // A blank one stored before the platform trimmed it reads as unset, never as a gap.
+    ['stored blank', ''],
+  ])('shows a dash for each one %s', async (_case, stored) => {
+    await show('DRAFT', { legalName: stored, registrationNumber: stored });
+
+    expect(value('Legal name')).toBe('—');
+    expect(value('Registration number')).toBe('—');
+  });
+});
+
+// BG-01: a draft carries a reason only when a checker returned it.
+describe('TenantOverviewPage: a returned draft', () => {
+  it('says it was returned for changes, and why, as a note', async () => {
+    await show('DRAFT', { statusReason: 'Attach the registration certificate.' });
+
+    const note = screen.getByRole('note');
+    expect(note).toHaveTextContent(`${RETURNED} Attach the registration certificate.`);
+    expect(within(note).getByText(RETURNED).tagName).toBe('STRONG');
+  });
+
+  it.each([
+    ['a draft never returned', { statusReason: null }],
+    // Every transition overwrites the reason: a rejection's or a suspension's is no return.
+    ['a rejected request', { status: 'REJECTED', statusReason: 'Duplicate request' }],
+    ['a suspended institution', { status: 'SUSPENDED', statusReason: 'Compliance review' }],
+  ])('says nothing of a return for %s', async (_case, overrides) => {
+    await show('DRAFT', overrides);
+
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(screen.queryByText(RETURNED)).toBeNull();
   });
 });

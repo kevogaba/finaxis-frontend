@@ -12,6 +12,7 @@ import { isInstitutionId } from './institution-id';
 import { tenantDraftResultSchema } from './tenant-contract';
 import {
   initialSettings,
+  tenantAmendBody,
   tenantAmendSchema,
   tenantDraftBody,
   tenantDraftSchema,
@@ -42,9 +43,9 @@ const requiredReason = z
   .max(500, 'Keep the reason under 500 characters.');
 
 /** Create and amend share these causes (contract §D, §I). Each 422 names its likely field and
- * hedges. Only create sends settings, so only its copy points at the initial settings. No base
- * currency setting is ever sent (it mirrors `base_currency_code`), so the currency 422 is the
- * institution's own. */
+ * hedges. Only create sends settings (amend never does: a non-empty `initial_settings` is a 422
+ * there), so only its copy points at the initial settings. No base currency setting is ever sent
+ * (it mirrors `base_currency_code`), so the currency 422 is the institution's own. */
 function explainDraft(result: ActionResult, withSettings: boolean): ActionResult {
   const taken = explain(
     result,
@@ -124,8 +125,9 @@ export async function amendTenantDraft(
     formData,
     async (input) => {
       try {
-        // A full replacement (contract §D). Settings and the business date are ignored: unsent.
-        await apiPatch(`${BASE}/${input.tenantId}`, tenantDraftBody(input), input.idempotencyKey);
+        // BG-14: only what changed, besides the five fields the PATCH requires; an absent optional
+        // field keeps the draft's (tenantAmendBody).
+        await apiPatch(`${BASE}/${input.tenantId}`, tenantAmendBody(input), input.idempotencyKey);
       } catch (error) {
         // BG-07: a 409 `conflict` is a draft no longer a draft OR a code another institution holds.
         // As on create, only the directory names the code, and only after the amend failed.
@@ -211,6 +213,21 @@ export async function approveTenant(
     await reasoned('approve', optionalRemarkInput, formData),
     'forbidden',
     "You can't approve this institution. Your role doesn't allow it.",
+  );
+}
+
+/** Platform #181 (BG-01): PENDING_APPROVAL back to DRAFT, the reason becoming its
+ * `status_reason`. Its requester or submitter is refused by name
+ * (`lifecycle.approver_is_tenant_maker`, which `describeProblem` explains); an amender may return
+ * it. A 409 is the state. */
+export async function returnTenant(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  return explain(
+    await reasoned('return', requiredReasonInput, formData),
+    'conflict',
+    "This request isn't waiting for approval any more: it was decided or returned elsewhere. Refresh to see where it stands.",
   );
 }
 

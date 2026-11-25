@@ -33,6 +33,7 @@ vi.mock('@/modules/platform-administration/tenants/tenant-actions', () => ({
   deprovisionTenant: vi.fn(),
   reactivateTenant: vi.fn(),
   rejectTenant: vi.fn(),
+  returnTenant: vi.fn(),
   submitTenant: vi.fn(),
   suspendTenant: vi.fn(),
 }));
@@ -134,22 +135,26 @@ describe('TenantRecordLayout: maker-checker', () => {
   it.each([
     ['its requester', { requestedBy: { id: ME, displayName: 'Jane' } }],
     ['its submitter', { submittedBy: { id: ME.toUpperCase(), displayName: null } }],
-  ])('disables Approve and Reject for %s, with the reason', async (_case, makers) => {
-    pending(makers);
-    await show(DECIDER);
+  ])(
+    'disables Approve, Return for changes and Reject for %s, with the reason',
+    async (_case, makers) => {
+      pending(makers);
+      await show(DECIDER);
 
-    for (const name of ['Approve', 'Reject']) {
-      const button = screen.getByRole('button', { name });
-      expect(button).toBeDisabled();
-      expect(button).toHaveAccessibleDescription(CAPTION);
-    }
-  });
+      for (const name of ['Approve', 'Return for changes', 'Reject']) {
+        const button = screen.getByRole('button', { name });
+        expect(button).toBeDisabled();
+        expect(button).toHaveAccessibleDescription(CAPTION);
+      }
+    },
+  );
 
-  it('offers both to another platform administrator', async () => {
+  it('offers all three to another platform administrator', async () => {
     pending({ requestedBy: { id: INSTITUTION, displayName: 'Other' } });
     await show(DECIDER);
 
     expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Return for changes' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled();
     expect(screen.queryByText(CAPTION)).toBeNull();
   });

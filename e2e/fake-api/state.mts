@@ -16,6 +16,21 @@ export interface FakeOrganisation {
   /** `requested_by` and `submitted_by` (BG-08); the maker-checker refuses both (contract §E.2). */
   createdBy?: string;
   submittedBy?: string;
+  /** `legal_name`, `registration_number` and `status_reason` (BG-14, BG-01); absent = `null`. */
+  legalName?: string | null;
+  registrationNumber?: string | null;
+  statusReason?: string | null;
+  /** The first administrator as drafted (BG-14); absent = none (a SQL-seeded tenant). */
+  admin?: FakeTenantAdmin;
+}
+
+/** A tenant draft's first administrator, as `admin` on create and amend takes it. */
+export interface FakeTenantAdmin {
+  email: string;
+  username: string;
+  displayName: string;
+  phoneE164: string | null;
+  sendApplicationInvite: boolean;
 }
 
 export interface FakeUser {

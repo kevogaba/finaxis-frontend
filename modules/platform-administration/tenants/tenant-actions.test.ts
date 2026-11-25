@@ -307,25 +307,72 @@ describe('tenant actions', () => {
     expect(apiPost).not.toHaveBeenCalled();
   });
 
-  it('amends with a PATCH that replaces the institution and administrator, and nothing else', async () => {
-    await expect(
+  // BG-14: the wizard sends what changed (changedTenantFields); an absent field keeps the draft's.
+  describe('the amend body', () => {
+    const REQUIRED = {
+      tenantCode: 'tujenge-traders',
+      displayName: 'Tujenge Traders SACCO',
+      countryCode: 'KE',
+      baseCurrencyCode: 'KES',
+      timezone: 'Africa/Nairobi',
+    };
+    const amend = (fields: Record<string, string>) =>
       actions.amendTenantDraft(
         null,
-        form({
-          ...FIELDS,
-          idempotencyKey: KEY,
-          tenantId: TENANT,
-          legalName: 'Tujenge Traders Co-operative Society Ltd',
-          auditRetentionDays: '365',
+        form({ ...REQUIRED, ...fields, idempotencyKey: KEY, tenantId: TENANT }),
+      );
+
+    it('sends only the five required fields when nothing optional changed, and never settings', async () => {
+      await expect(amend({ auditRetentionDays: '3650' })).rejects.toThrow(
+        `NEXT_REDIRECT:/platform-admin/tenants/${TENANT}`,
+      );
+      expect(apiPatch).toHaveBeenCalledWith(
+        `/api/v1/platform/tenants/${TENANT}`,
+        {
+          tenant_code: 'tujenge-traders',
+          display_name: 'Tujenge Traders SACCO',
+          country_code: 'KE',
+          base_currency_code: 'KES',
+          timezone: 'Africa/Nairobi',
+        },
+        KEY,
+      );
+      expect(tenantCodeTaken).not.toHaveBeenCalled();
+    });
+
+    it('sends a changed legal name, a cleared registration number as null, the whole administrator and the business date', async () => {
+      await expect(
+        amend({
+          legalName: ' Tujenge Traders Co-operative Society Ltd ',
+          registrationNumber: '',
+          businessDate: '2026-10-05',
+          adminEmail: 'amina@tujenge.example',
+          adminUsername: 'amina.otieno',
+          adminDisplayName: 'Amina Otieno',
+          adminPhone: '+254712000140',
+          adminSendApplicationInvite: 'false',
         }),
-      ),
-    ).rejects.toThrow(`NEXT_REDIRECT:/platform-admin/tenants/${TENANT}`);
-    expect(apiPatch).toHaveBeenCalledWith(
-      `/api/v1/platform/tenants/${TENANT}`,
-      { ...INSTITUTION, legal_name: 'Tujenge Traders Co-operative Society Ltd' },
-      KEY,
-    );
-    expect(tenantCodeTaken).not.toHaveBeenCalled();
+      ).rejects.toThrow(`NEXT_REDIRECT:/platform-admin/tenants/${TENANT}`);
+      expect(apiPatch).toHaveBeenCalledWith(
+        `/api/v1/platform/tenants/${TENANT}`,
+        {
+          ...INSTITUTION,
+          legal_name: 'Tujenge Traders Co-operative Society Ltd',
+          registration_number: null,
+          business_date: '05-10-2026',
+        },
+        KEY,
+      );
+    });
+
+    it('refuses a part of the administrator before any call', async () => {
+      expect(await amend({ adminEmail: 'amina@tujenge.example' })).toMatchObject({
+        ok: false,
+        code: 'validation_failed',
+        fieldErrors: { adminEmail: 'Enter the first administrator in full.' },
+      });
+      expect(apiPatch).not.toHaveBeenCalled();
+    });
   });
 
   describe('an amend 409 (BG-07: no longer a draft, or a code another institution holds)', () => {
@@ -433,6 +480,51 @@ describe('tenant actions', () => {
       [{ reason: 'KYC pack reviewed' }, KEY],
       [{ reason: 'KYC pack reviewed' }, KEY],
     ]);
+  });
+
+  // Platform #181 (BG-01): Return for changes takes a required reason of 3–500 characters.
+  describe('returnTenant', () => {
+    const path = `/api/v1/platform/tenants/${TENANT}/return`;
+    const base = { idempotencyKey: KEY, tenantId: TENANT };
+
+    it('posts the trimmed reason with the minted key, and the same on a retry', async () => {
+      const fields = { ...base, reason: '  Attach the registration certificate  ' };
+      await actions.returnTenant(null, form(fields));
+      await actions.returnTenant(null, form(fields));
+      expect(apiPost.mock.calls).toEqual([
+        [path, { reason: 'Attach the registration certificate' }, KEY],
+        [path, { reason: 'Attach the registration certificate' }, KEY],
+      ]);
+    });
+
+    it.each([
+      ['', 'Give a reason of at least 3 characters.'],
+      [' ab ', 'Give a reason of at least 3 characters.'],
+      ['x'.repeat(501), 'Keep the reason under 500 characters.'],
+    ])('refuses the reason %j as a field error, before any call', async (reason, message) => {
+      expect(await actions.returnTenant(null, form({ ...base, reason }))).toMatchObject({
+        ok: false,
+        code: 'validation_failed',
+        fieldErrors: { reason: message },
+      });
+      expect(apiPost).not.toHaveBeenCalled();
+    });
+
+    it('names a request decided or returned elsewhere (the 409), without the backend text', async () => {
+      runServerAction.mockResolvedValueOnce(failure('conflict'));
+      expect(await actions.returnTenant(null, form(base))).toEqual({
+        ...failure('conflict'),
+        formError:
+          "This request isn't waiting for approval any more: it was decided or returned elsewhere. Refresh to see where it stands.",
+      });
+    });
+
+    it('leaves its maker refusal to its own words (BG-08)', async () => {
+      runServerAction.mockResolvedValueOnce(failure('lifecycle.approver_is_tenant_maker'));
+      expect(await actions.returnTenant(null, form(base))).toEqual(
+        failure('lifecycle.approver_is_tenant_maker'),
+      );
+    });
   });
 
   it('explains an approve 403 as a missing permission only (BG-08)', async () => {
@@ -552,6 +644,7 @@ describe('tenant actions', () => {
   it.each([
     'submitTenant',
     'approveTenant',
+    'returnTenant',
     'rejectTenant',
     'suspendTenant',
     'reactivateTenant',

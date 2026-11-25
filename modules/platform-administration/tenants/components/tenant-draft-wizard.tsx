@@ -35,7 +35,9 @@ import { isoToBusinessDate } from '@/lib/business-date';
 import { formatBusinessDate } from '@/lib/format';
 import { amendTenantDraft, createTenantDraft } from '../tenant-actions';
 import {
+  changedTenantFields,
   tenantDraftSchema,
+  tenantDraftWithoutAdministratorSchema,
   type TenantDraftValues,
   type TenantFormOptions,
   type TenantOption,
@@ -46,6 +48,8 @@ type OptionName = 'countryCode' | 'baseCurrencyCode' | 'timezone' | 'defaultTime
 
 interface DraftStep extends WizardStep {
   fields: readonly FieldName[];
+  /** Said in place of the fields when the step has none (on the step and its review card). */
+  note?: string;
 }
 
 const INSTITUTION: DraftStep = {
@@ -73,6 +77,14 @@ const ADMINISTRATOR: DraftStep = {
     'adminSendApplicationInvite',
   ],
 };
+/** BG-14: amending a draft the platform keeps no first administrator for (no bootstrap record),
+ * whose `amendDraft` would discard one: the step says so and asks nothing. */
+const NO_ADMINISTRATOR: DraftStep = {
+  label: ADMINISTRATOR.label,
+  helper: 'None kept for this draft',
+  fields: [],
+  note: "The platform keeps no draft administrator for this institution, so there's none to change here.",
+};
 const SETTINGS: DraftStep = {
   label: 'Initial settings',
   helper: 'Optional settings stored with the draft',
@@ -85,18 +97,20 @@ const REVIEW: DraftStep = {
 };
 
 const CREATE_STEPS: readonly DraftStep[] = [INSTITUTION, ADMINISTRATOR, SETTINGS, REVIEW];
-// Amend ignores the business date and the settings (contract §D), so it never asks for them.
-const AMEND_STEPS: readonly DraftStep[] = [
-  {
-    ...INSTITUTION,
-    helper: 'Identity and locale',
-    fields: INSTITUTION.fields.filter((name) => name !== 'businessDate'),
-  },
-  ADMINISTRATOR,
+// Amend refuses settings (a non-empty `initial_settings` is a 422), so it never asks for them; it
+// applies a business date (BG-14).
+const AMEND_STEPS: readonly DraftStep[] = [INSTITUTION, ADMINISTRATOR, REVIEW];
+const AMEND_STEPS_WITHOUT_ADMINISTRATOR: readonly DraftStep[] = [
+  INSTITUTION,
+  NO_ADMINISTRATOR,
   REVIEW,
 ];
+// Module constants, so the failure effect that applies field errors sees a stable list.
 const CREATE_FIELDS = CREATE_STEPS.flatMap((step) => step.fields);
 const AMEND_FIELDS = AMEND_STEPS.flatMap((step) => step.fields);
+const AMEND_FIELDS_WITHOUT_ADMINISTRATOR = AMEND_STEPS_WITHOUT_ADMINISTRATOR.flatMap(
+  (step) => step.fields,
+);
 
 const LABELS: Record<FieldName, string> = {
   tenantCode: 'Tenant code',
@@ -192,13 +206,22 @@ interface TenantDraftReviewProps {
   values: TenantDraftValues;
   options: TenantFormOptions;
   steps: readonly DraftStep[];
+  /** An empty business date keeps the draft's on amend, rather than taking today's. */
+  amend: boolean;
   /** A save in flight: Edit would move the wizard under it. */
   pending: boolean;
   onEdit: (step: number) => void;
 }
 
 /** The review step: every answer by step, each step with a way back to it. */
-function TenantDraftReview({ values, options, steps, pending, onEdit }: TenantDraftReviewProps) {
+function TenantDraftReview({
+  values,
+  options,
+  steps,
+  amend,
+  pending,
+  onEdit,
+}: TenantDraftReviewProps) {
   const businessDate = isoToBusinessDate(values.businessDate);
   const shown: Record<FieldName, ReactNode> = {
     tenantCode: values.tenantCode,
@@ -210,7 +233,9 @@ function TenantDraftReview({ values, options, steps, pending, onEdit }: TenantDr
     timezone: values.timezone,
     businessDate: businessDate
       ? formatBusinessDate(businessDate, 'long')
-      : "Today in the institution's timezone",
+      : amend
+        ? 'Unchanged'
+        : "Today in the institution's timezone",
     adminEmail: values.adminEmail,
     adminUsername: values.adminUsername,
     adminDisplayName: values.adminDisplayName,
@@ -229,22 +254,29 @@ function TenantDraftReview({ values, options, steps, pending, onEdit }: TenantDr
           title={step.label}
           headingLevel="h3"
           actions={
-            <Button
-              size="small"
-              aria-label={`Edit ${step.label.toLowerCase()}`}
-              disabled={pending}
-              onClick={() => {
-                onEdit(index);
-              }}
-            >
-              Edit
-            </Button>
+            // A step with nothing to answer has nothing to edit.
+            step.note === undefined ? (
+              <Button
+                size="small"
+                aria-label={`Edit ${step.label.toLowerCase()}`}
+                disabled={pending}
+                onClick={() => {
+                  onEdit(index);
+                }}
+              >
+                Edit
+              </Button>
+            ) : undefined
           }
         >
-          <DescriptionList
-            columns={1}
-            items={step.fields.map((name) => ({ label: LABELS[name], value: shown[name] }))}
-          />
+          {step.note === undefined ? (
+            <DescriptionList
+              columns={1}
+              items={step.fields.map((name) => ({ label: LABELS[name], value: shown[name] }))}
+            />
+          ) : (
+            <Typography sx={{ color: 'text.secondary' }}>{step.note}</Typography>
+          )}
         </SectionCard>
       ))}
     </>
@@ -254,6 +286,11 @@ function TenantDraftReview({ values, options, steps, pending, onEdit }: TenantDr
 interface TenantDraftWizardProps {
   /** Amend when set: three steps, the code read-only. Create otherwise. */
   tenantId?: string;
+  /** Amend only: the platform keeps no first administrator for this draft (its detail's `admin` is
+   * `null`), so the administrator step says so, asks nothing and sends no `admin` (BG-14). */
+  withoutAdministrator?: boolean;
+  /** Create's empty draft, or the draft amend starts from (`tenantAmendDefaults`), which amend
+   * compares the answers with to send only what changed (BG-14). */
   defaults: TenantDraftValues;
   options: TenantFormOptions;
   /** I2: the organisation the page rendered for, appended to the submit. */
@@ -262,18 +299,24 @@ interface TenantDraftWizardProps {
 
 /**
  * Create tenant draft (spec §11.1) and amend: one React Hook Form across `WizardForm`'s steps.
- * Continue validates the step's own fields; Review submits them all with the key minted on mount,
- * so a retry after a failure replays (spec §6.4). A server field error returns to its step.
+ * Continue validates the step's own fields; Review submits them with the key minted on mount, so a
+ * retry after a failure replays (spec §6.4). Amend starts pre-filled from the draft and submits
+ * only what changed (`changedTenantFields`, BG-14). A server field error returns to its step.
  */
 export function TenantDraftWizard({
   tenantId,
+  withoutAdministrator = false,
   defaults,
   options,
   contextOrganisationId,
 }: TenantDraftWizardProps) {
   const amend = tenantId !== undefined;
-  const steps = amend ? AMEND_STEPS : CREATE_STEPS;
-  const fields = amend ? AMEND_FIELDS : CREATE_FIELDS;
+  const noAdministrator = amend && withoutAdministrator;
+  const [steps, fields] = amend
+    ? noAdministrator
+      ? [AMEND_STEPS_WITHOUT_ADMINISTRATOR, AMEND_FIELDS_WITHOUT_ADMINISTRATOR]
+      : [AMEND_STEPS, AMEND_FIELDS]
+    : [CREATE_STEPS, CREATE_FIELDS];
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [active, setActive] = useState(0);
   // After a refused Continue: the step's error summary.
@@ -290,7 +333,9 @@ export function TenantDraftWizard({
     setError,
     formState: { errors },
   } = useForm<TenantDraftValues>({
-    resolver: zodResolver(tenantDraftSchema),
+    resolver: zodResolver(
+      noAdministrator ? tenantDraftWithoutAdministratorSchema : tenantDraftSchema,
+    ),
     defaultValues: defaults,
   });
   const [state, formAction, pending] = useActionState<ActionResult | null, FormData>(
@@ -348,7 +393,10 @@ export function TenantDraftWizard({
     const formData = new FormData();
     formData.set('idempotencyKey', idempotencyKey);
     if (tenantId !== undefined) formData.set('tenantId', tenantId);
-    for (const name of fields) formData.set(name, values[name]);
+    const sent = amend
+      ? changedTenantFields(defaults, values)
+      : Object.fromEntries(fields.map((name) => [name, values[name]]));
+    for (const [name, value] of Object.entries(sent)) formData.set(name, value);
     if (contextOrganisationId) formData.set('contextOrganisationId', contextOrganisationId);
     startTransition(() => {
       formAction(formData);
@@ -473,19 +521,21 @@ export function TenantDraftWizard({
             options={options.timeZones}
             required
           />
-          {!amend && (
-            <TextField
-              type="date"
-              {...text(
-                'businessDate',
-                "Optional. Defaults to today in the institution's timezone.",
-              )}
-              slotProps={{ inputLabel: { shrink: true } }}
-            />
-          )}
+          <TextField
+            type="date"
+            {...text(
+              'businessDate',
+              amend
+                ? // The platform applies one but doesn't return it, so it can't be shown here.
+                  "Optional. Leave it empty to keep the draft's date, or today in the institution's timezone at approval if it has none."
+                : "Optional. Defaults to today in the institution's timezone.",
+            )}
+            slotProps={{ inputLabel: { shrink: true } }}
+          />
         </Box>
       )}
-      {current.label === ADMINISTRATOR.label && (
+      {current.note !== undefined && <Alert severity="info">{current.note}</Alert>}
+      {current === ADMINISTRATOR && (
         <Box sx={FIELD_GROUP}>
           <TextField required type="email" autoComplete="off" {...text('adminEmail')} />
           <TextField
@@ -558,12 +608,13 @@ export function TenantDraftWizard({
             values={values}
             options={options}
             steps={steps}
+            amend={amend}
             pending={pending}
             onEdit={goTo}
           />
           <Alert severity="info">
             {amend
-              ? 'Saving replaces the whole draft.'
+              ? "Saving keeps anything you didn't change."
               : 'Saving creates a draft. Nothing is provisioned until a different platform administrator approves it.'}
           </Alert>
         </>

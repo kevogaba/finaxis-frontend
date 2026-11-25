@@ -65,21 +65,45 @@ export type TenantSummary = z.output<typeof tenantSummarySchema>;
 
 export const tenantPageSchema = pageSchema(tenantSummarySchema);
 
-/** No legal name, registration number, first administrator or status reason: they are write-only
- * (BG-14). */
+/** The first administrator as drafted (BG-14): what amend's `admin` takes. */
+const administratorDraftSchema = z
+  .object({
+    email: z.string(),
+    username: z.string(),
+    display_name: z.string(),
+    phone_e164: z.string().nullable(),
+    send_application_invite: z.boolean(),
+  })
+  .transform((admin) => ({
+    email: admin.email,
+    username: admin.username,
+    displayName: admin.display_name,
+    phoneE164: admin.phone_e164,
+    sendApplicationInvite: admin.send_application_invite,
+  }));
+
+export type AdministratorDraft = z.output<typeof administratorDraftSchema>;
+
+/** BG-14: the legal name, registration number and status reason are always present, each `null`
+ * when unset. `admin` is filled only for a holder of `tenant.update_draft` while the tenant is a
+ * DRAFT (the people who would amend it), and `null` otherwise. */
 export const tenantDetailSchema = z
   .object({
     id: uuidSchema,
     tenant_code: z.string(),
     display_name: z.string(),
+    legal_name: z.string().nullable(),
+    registration_number: z.string().nullable(),
     country_code: z.string(),
     base_currency_code: z.string(),
     timezone: z.string(),
     status: z.enum(TENANT_STATUSES),
+    status_reason: z.string().nullable(),
     bootstrap_status: z.enum(BOOTSTRAP_STATUSES).nullable(),
     bootstrap_failure_code: z.string().nullable(),
     created_at: instantSchema,
     updated_at: instantSchema,
+    admin: administratorDraftSchema.nullable(),
     requested_by: actorRefSchema,
     submitted_by: actorRefSchema,
   })
@@ -87,14 +111,18 @@ export const tenantDetailSchema = z
     id: tenant.id,
     tenantCode: tenant.tenant_code,
     displayName: tenant.display_name,
+    legalName: tenant.legal_name,
+    registrationNumber: tenant.registration_number,
     countryCode: tenant.country_code,
     baseCurrencyCode: tenant.base_currency_code,
     timezone: tenant.timezone,
     status: tenant.status,
+    statusReason: tenant.status_reason,
     bootstrapStatus: tenant.bootstrap_status,
     bootstrapFailureCode: tenant.bootstrap_failure_code,
     createdAt: tenant.created_at,
     updatedAt: tenant.updated_at,
+    admin: tenant.admin,
     requestedBy: tenant.requested_by,
     submittedBy: tenant.submitted_by,
   }));

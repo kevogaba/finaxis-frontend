@@ -4,7 +4,11 @@ import { screen, waitFor, within } from '@testing-library/react';
 import { ownStyle } from '@/test/own-style';
 import { renderWithProviders } from '@/test/test-utils';
 import { UUID_PATTERN } from '@/lib/api/wire';
-import { EMPTY_TENANT_DRAFT, type TenantFormOptions } from '../tenant-rules';
+import {
+  EMPTY_TENANT_DRAFT,
+  type TenantDraftValues,
+  type TenantFormOptions,
+} from '../tenant-rules';
 import { TenantDraftWizard } from './tenant-draft-wizard';
 
 const { amendTenantDraft, createTenantDraft } = vi.hoisted(() => ({
@@ -435,49 +439,183 @@ describe('TenantDraftWizard', () => {
     expect(screen.queryByText(/socket hang up/)).toBeNull();
   });
 
-  it('amends in three steps, with the code read-only and no business date or settings', async () => {
-    const user = userEvent.setup();
-    amendTenantDraft.mockResolvedValueOnce({ ok: true });
-    renderWithProviders(
-      <TenantDraftWizard
-        tenantId={TENANT}
-        defaults={{
-          ...EMPTY_TENANT_DRAFT,
-          tenantCode: 'umoja-teachers',
-          displayName: 'Umoja Teachers SACCO',
-          countryCode: 'KE',
-          baseCurrencyCode: 'KES',
-          timezone: 'Africa/Nairobi',
-        }}
-        options={OPTIONS}
-        contextOrganisationId={ORG_ID}
-      />,
-    );
+  describe('amend (BG-14)', () => {
+    // As tenantAmendDefaults builds them from a draft the platform returned whole.
+    const DRAFT: TenantDraftValues = {
+      ...EMPTY_TENANT_DRAFT,
+      tenantCode: 'umoja-teachers',
+      displayName: 'Umoja Teachers SACCO',
+      legalName: 'Umoja Teachers Co-operative Society Ltd',
+      registrationNumber: 'CS/2019/0042',
+      countryCode: 'KE',
+      baseCurrencyCode: 'KES',
+      timezone: 'Africa/Nairobi',
+      adminEmail: 'amina@umoja.example',
+      adminUsername: 'amina.otieno',
+      adminDisplayName: 'Amina Otieno',
+      adminPhone: '+254712000140',
+      adminSendApplicationInvite: 'true',
+    };
+    const REQUIRED = {
+      tenantCode: 'umoja-teachers',
+      displayName: 'Umoja Teachers SACCO',
+      countryCode: 'KE',
+      baseCurrencyCode: 'KES',
+      timezone: 'Africa/Nairobi',
+    };
+    const sent = (call: number) =>
+      Object.fromEntries((amendTenantDraft.mock.calls[call]?.[1] as FormData | undefined) ?? []);
+    const renderAmend = () =>
+      renderWithProviders(
+        <TenantDraftWizard
+          tenantId={TENANT}
+          defaults={DRAFT}
+          options={OPTIONS}
+          contextOrganisationId={ORG_ID}
+        />,
+      );
 
-    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(3);
-    expect(screen.getByRole('textbox', { name: 'Tenant code' })).toHaveAttribute('readonly');
-    expect(screen.queryByLabelText('First business date')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute(
-      'href',
-      `/platform-admin/tenants/${TENANT}`,
-    );
+    it('opens pre-filled in three steps, with the code read-only and an optional business date', async () => {
+      const user = userEvent.setup();
+      amendTenantDraft.mockResolvedValueOnce({ ok: true });
+      renderAmend();
 
-    await next(user, 'First administrator');
-    await fillAdministrator(user);
-    await next(user, 'Review');
-    expect(screen.queryByRole('region', { name: 'Initial settings' })).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+      expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(3);
+      expect(screen.getByRole('textbox', { name: 'Tenant code' })).toHaveAttribute('readonly');
+      expect(screen.getByRole('textbox', { name: 'Legal name' })).toHaveValue(
+        'Umoja Teachers Co-operative Society Ltd',
+      );
+      expect(screen.getByRole('textbox', { name: 'Registration number' })).toHaveValue(
+        'CS/2019/0042',
+      );
+      // The platform applies a business date but never returns one: offered, never pre-filled.
+      const date = screen.getByLabelText('First business date');
+      expect(date).toHaveValue('');
+      expect(date).toHaveAccessibleDescription(
+        "Optional. Leave it empty to keep the draft's date, or today in the institution's timezone at approval if it has none.",
+      );
+      expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute(
+        'href',
+        `/platform-admin/tenants/${TENANT}`,
+      );
 
-    await waitFor(() => {
-      expect(amendTenantDraft).toHaveBeenCalledTimes(1);
+      await next(user, 'First administrator');
+      expect(screen.getByRole('textbox', { name: 'Email' })).toHaveValue('amina@umoja.example');
+      expect(screen.getByRole('textbox', { name: 'Phone' })).toHaveValue('+254712000140');
+      expect(screen.getByRole('checkbox', { name: 'Send application invite' })).toBeChecked();
+      await next(user, 'Review');
+      expect(screen.queryByRole('region', { name: 'Initial settings' })).toBeNull();
+      expect(screen.getByRole('region', { name: 'Institution' })).toHaveTextContent('Unchanged');
+      expect(screen.getByText("Saving keeps anything you didn't change.")).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+      // Nothing optional changed: the five fields the PATCH requires, and nothing else.
+      await waitFor(() => {
+        expect(amendTenantDraft).toHaveBeenCalledTimes(1);
+      });
+      expect(sent(0)).toEqual({
+        idempotencyKey: expect.stringMatching(UUID_PATTERN) as unknown,
+        tenantId: TENANT,
+        // The cross-tab guard (07's I2): a dropped forward would silently disable it.
+        contextOrganisationId: ORG_ID,
+        ...REQUIRED,
+      });
+      expect(createTenantDraft).not.toHaveBeenCalled();
     });
-    const sent = amendTenantDraft.mock.calls[0]?.[1] as FormData;
-    expect(sent.get('tenantId')).toBe(TENANT);
-    expect(sent.get('tenantCode')).toBe('umoja-teachers');
-    // The cross-tab guard (07's I2): a dropped forward would silently disable it.
-    expect(sent.get('contextOrganisationId')).toBe(ORG_ID);
-    expect(sent.has('businessDate')).toBe(false);
-    expect(sent.has('auditRetentionDays')).toBe(false);
-    expect(createTenantDraft).not.toHaveBeenCalled();
+
+    it('sends a cleared field, the whole administrator and a business date, and retries with the same key', async () => {
+      const user = userEvent.setup();
+      amendTenantDraft
+        .mockResolvedValueOnce({
+          ok: false,
+          formError: "The platform didn't respond as expected. Try again in a moment.",
+          fieldErrors: {},
+          code: null,
+          requestId: 'req-6',
+        })
+        .mockResolvedValueOnce({ ok: true });
+      renderAmend();
+
+      await user.clear(screen.getByRole('textbox', { name: 'Registration number' }));
+      await user.type(screen.getByLabelText('First business date'), '2026-10-05');
+      await next(user, 'First administrator');
+      const phone = screen.getByRole('textbox', { name: 'Phone' });
+      await user.clear(phone);
+      await user.type(phone, '+254712000141');
+      await next(user, 'Review');
+      expect(screen.getByRole('region', { name: 'Institution' })).toHaveTextContent(
+        'Monday, 5 October 2026',
+      );
+      await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+      expect(await screen.findByText(/Reference: req-6/)).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Save draft' }));
+      await waitFor(() => {
+        expect(amendTenantDraft).toHaveBeenCalledTimes(2);
+      });
+      const expected = {
+        idempotencyKey: expect.stringMatching(UUID_PATTERN) as unknown,
+        tenantId: TENANT,
+        contextOrganisationId: ORG_ID,
+        ...REQUIRED,
+        // Cleared: sent empty, which the action sends as null.
+        registrationNumber: '',
+        businessDate: '2026-10-05',
+        // One administrator field changed, so all five go: the platform replaces it whole.
+        adminEmail: 'amina@umoja.example',
+        adminUsername: 'amina.otieno',
+        adminDisplayName: 'Amina Otieno',
+        adminPhone: '+254712000141',
+        adminSendApplicationInvite: 'true',
+      };
+      expect(sent(0)).toEqual(expected);
+      // Review Focus 2: the same body under the key minted on mount, so a retry replays.
+      expect(sent(1)).toEqual(sent(0));
+    });
+
+    // A draft with no bootstrap record: the platform returns no administrator and would discard one
+    // sent, so the step says so, asks nothing, and the PATCH carries no `admin`.
+    it('says the platform keeps no administrator for a draft without one, and sends none', async () => {
+      const user = userEvent.setup();
+      amendTenantDraft.mockResolvedValueOnce({ ok: true });
+      const empty = {
+        adminEmail: '',
+        adminUsername: '',
+        adminDisplayName: '',
+        adminPhone: '',
+        adminSendApplicationInvite: 'false',
+      } as const;
+      renderWithProviders(
+        <TenantDraftWizard
+          tenantId={TENANT}
+          withoutAdministrator
+          defaults={{ ...DRAFT, ...empty }}
+          options={OPTIONS}
+          contextOrganisationId={ORG_ID}
+        />,
+      );
+      const NOTE =
+        "The platform keeps no draft administrator for this institution, so there's none to change here.";
+
+      expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(3);
+      await next(user, 'First administrator');
+      expect(screen.getByText(NOTE)).toBeInTheDocument();
+      expect(screen.queryByRole('textbox', { name: 'Email' })).toBeNull();
+      await next(user, 'Review');
+      const card = screen.getByRole('region', { name: 'First administrator' });
+      expect(card).toHaveTextContent(NOTE);
+      expect(within(card).queryByRole('button', { name: 'Edit first administrator' })).toBeNull();
+      await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+      await waitFor(() => {
+        expect(amendTenantDraft).toHaveBeenCalledTimes(1);
+      });
+      expect(sent(0)).toEqual({
+        idempotencyKey: expect.stringMatching(UUID_PATTERN) as unknown,
+        tenantId: TENANT,
+        contextOrganisationId: ORG_ID,
+        ...REQUIRED,
+      });
+    });
   });
 });

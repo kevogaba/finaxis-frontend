@@ -11,6 +11,7 @@ const {
   deprovisionTenant,
   reactivateTenant,
   rejectTenant,
+  returnTenant,
   submitTenant,
   suspendTenant,
 } = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ const {
   deprovisionTenant: vi.fn(),
   reactivateTenant: vi.fn(),
   rejectTenant: vi.fn(),
+  returnTenant: vi.fn(),
   submitTenant: vi.fn(),
   suspendTenant: vi.fn(),
 }));
@@ -25,6 +27,7 @@ vi.mock('../tenant-actions', () => ({
   submitTenant: (...args: unknown[]) => submitTenant(...args) as unknown,
   approveTenant: (...args: unknown[]) => approveTenant(...args) as unknown,
   rejectTenant: (...args: unknown[]) => rejectTenant(...args) as unknown,
+  returnTenant: (...args: unknown[]) => returnTenant(...args) as unknown,
   suspendTenant: (...args: unknown[]) => suspendTenant(...args) as unknown,
   reactivateTenant: (...args: unknown[]) => reactivateTenant(...args) as unknown,
   deprovisionTenant: (...args: unknown[]) => deprovisionTenant(...args) as unknown,
@@ -71,13 +74,13 @@ describe('TenantLifecycleActions', () => {
         tenantId={ID}
         tenantName={NAME}
         tenantCode="umoja-teachers"
-        actions={['approve', 'reject']}
-        blocked={{ approve: caption, reject: caption }}
+        actions={['approve', 'return', 'reject']}
+        blocked={{ approve: caption, return: caption, reject: caption }}
         contextOrganisationId={ORG_ID}
       />,
     );
 
-    for (const name of ['Approve', 'Reject']) {
+    for (const name of ['Approve', 'Return for changes', 'Reject']) {
       const button = screen.getByRole('button', { name });
       expect(button).toBeDisabled();
       expect(button).toHaveAccessibleDescription(caption);
@@ -168,6 +171,82 @@ describe('TenantLifecycleActions', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: NAME })).toHaveFocus();
     });
+  });
+
+  // Platform #181 (BG-01): the recoverable decision, between Approve and the final Reject.
+  it("returns for changes with a required reason, then focuses the draft's first action", async () => {
+    const user = userEvent.setup();
+    returnTenant.mockResolvedValueOnce({ ok: true });
+    const { rerender } = renderWithProviders(record(['approve', 'return', 'reject']));
+
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Approve',
+      'Return for changes',
+      'Reject',
+    ]);
+    const trigger = screen.getByRole('button', { name: 'Return for changes' });
+    expect(trigger).toHaveClass('MuiButton-outlined');
+    expect(trigger).not.toHaveClass('MuiButton-colorError');
+    await user.click(trigger);
+    // Recoverable, so a plain dialog, not an alertdialog.
+    const dialog = screen.getByRole('dialog', { name: `Return ${NAME} for changes?` });
+    expect(dialog).toHaveAccessibleDescription(
+      'It goes back to draft. The requester sees your reason and can amend and resubmit it.',
+    );
+    const reason = within(dialog).getByRole('textbox', { name: 'What needs to change' });
+    expect(reason).toBeRequired();
+    await user.type(reason, 'Attach the registration certificate');
+    await user.click(within(dialog).getByRole('button', { name: 'Return for changes' }));
+
+    await waitFor(() => {
+      expect(returnTenant).toHaveBeenCalledTimes(1);
+    });
+    const formData = returnTenant.mock.calls[0]?.[1] as FormData;
+    expect(formData.get('reason')).toBe('Attach the registration certificate');
+    expect(formData.get('idempotencyKey')).toMatch(/^[0-9a-f-]{36}$/);
+    expectScoped(formData);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Returned for changes');
+
+    // DRAFT offers Submit first, so focus lands there.
+    rerender(record(['submit', 'amend']));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Submit for approval' })).toHaveFocus();
+    });
+  });
+
+  it('keeps the reason and the key when a return is refused, and retries with them', async () => {
+    const user = userEvent.setup();
+    returnTenant
+      .mockResolvedValueOnce({
+        ok: false,
+        formError:
+          "This request isn't waiting for approval any more: it was decided or returned elsewhere. Refresh to see where it stands.",
+        fieldErrors: {},
+        code: 'conflict',
+        requestId: 'req-9',
+      })
+      .mockResolvedValueOnce({ ok: true });
+    renderWithProviders(record(['approve', 'return', 'reject']));
+
+    await user.click(screen.getByRole('button', { name: 'Return for changes' }));
+    const dialog = screen.getByRole('dialog', { name: `Return ${NAME} for changes?` });
+    const reason = within(dialog).getByRole('textbox', { name: 'What needs to change' });
+    await user.type(reason, 'Attach the registration certificate');
+    await user.click(within(dialog).getByRole('button', { name: 'Return for changes' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      /decided or returned elsewhere.*Reference: req-9/,
+    );
+    expect(reason).toHaveValue('Attach the registration certificate');
+
+    // Review Focus 2: the retry reuses the key minted when the dialog opened.
+    await user.click(within(dialog).getByRole('button', { name: 'Return for changes' }));
+    await waitFor(() => {
+      expect(returnTenant).toHaveBeenCalledTimes(2);
+    });
+    const [first, second] = returnTenant.mock.calls.map((call) => call[1] as FormData);
+    expect(second?.get('idempotencyKey')).toBe(first?.get('idempotencyKey'));
+    expect(second?.get('reason')).toBe('Attach the registration certificate');
   });
 
   // Decision Q7 (BG-01): Approve takes an optional remark.

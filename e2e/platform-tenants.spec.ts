@@ -19,7 +19,7 @@ import {
   expectHydrated,
   selectMuiOption,
 } from './support/auth';
-import { IDS, TENANT_SCENARIO_IDS } from './fake-api/scenarios.mts';
+import { IDS, LONG_RETURN_REASON, TENANT_SCENARIO_IDS } from './fake-api/scenarios.mts';
 
 async function openDirectory(page: Page) {
   // The platform operator has one branch, which selection picks by itself.
@@ -35,6 +35,19 @@ const dialogOf = (page: Page) => page.getByRole('alertdialog').or(page.getByRole
 // The app's copy, repeated: Playwright can't resolve the app's `@/` imports.
 const TENANT_MAKER_BLOCKED =
   'You requested or submitted this institution, so another platform administrator must decide it.';
+const DECISIONS = ['Approve', 'Return for changes', 'Reject'];
+
+/** The Overview's value for a label (its `dd`). */
+const fact = (page: Page, label: string) =>
+  page
+    .getByRole('main')
+    .locator('dt')
+    .filter({ hasText: label })
+    .locator('xpath=following-sibling::dd[1]');
+
+/** A returned draft's note on the Overview (BG-01). */
+const returnedNote = (page: Page) =>
+  page.getByRole('main').getByRole('note').filter({ hasText: 'Returned for changes.' });
 
 /** A hero lifecycle action through its dialog; the caller asserts the outcome. */
 async function act(page: Page, label: string, reason?: string) {
@@ -279,9 +292,9 @@ test.describe('platform tenants', () => {
 
     await expect(await act(page, 'Submit for approval')).toBeHidden();
     await expect(statusChip(page, 'Pending approval')).toBeVisible();
-    // Jane requested and submitted it (the record's makers, BG-08), so neither decision is hers;
-    // both are disabled, so focus falls back to the title.
-    for (const name of ['Approve', 'Reject']) {
+    // Jane requested and submitted it (the record's makers, BG-08), so no decision is hers; all
+    // are disabled, so focus falls back to the title.
+    for (const name of DECISIONS) {
       const decision = page.getByRole('button', { name, exact: true });
       await expect(decision).toBeDisabled();
       await expect(decision).toHaveAccessibleDescription(TENANT_MAKER_BLOCKED);
@@ -341,7 +354,7 @@ test.describe('platform tenants', () => {
     await expect(page.getByRole('button', { name: /^(Approve|Reject)$/ })).toHaveCount(0);
   });
 
-  test('disables Approve and Reject for its submitter, naming both makers (BG-08)', async ({
+  test('disables Approve, Return for changes and Reject for its submitter, naming both makers (BG-08)', async ({
     context,
     page,
   }, testInfo) => {
@@ -350,20 +363,67 @@ test.describe('platform tenants', () => {
     // Jane submitted Mwangaza; its requester has no account the platform can name.
     await openRecord(page, 'Institutions', 'Mwangaza Savings SACCO');
 
-    for (const name of ['Approve', 'Reject']) {
+    for (const name of DECISIONS) {
       const decision = page.getByRole('button', { name, exact: true });
       await expect(decision).toBeDisabled();
       await expect(decision).toHaveAccessibleDescription(TENANT_MAKER_BLOCKED);
     }
     await expect(mainText(page, TENANT_MAKER_BLOCKED)).toBeVisible();
-    const fact = (label: string) =>
-      page
-        .getByRole('main')
-        .locator('dt')
-        .filter({ hasText: label })
-        .locator('xpath=following-sibling::dd[1]');
-    await expect(fact('Requested by')).toHaveText('—');
-    await expect(fact('Submitted by')).toHaveText('You (Backend Jane Manager)');
+    await expect(fact(page, 'Requested by')).toHaveText('—');
+    await expect(fact(page, 'Submitted by')).toHaveText('You (Backend Jane Manager)');
+  });
+
+  // Platform #181 (BG-01), at 375 px with a reason at its 500-character bound (Review Focus 5).
+  test('returns a pending request for changes with a reason, which its draft then shows', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const narrow = A11Y_CASES[1];
+    expect(narrow.width).toBe(375);
+    await applyA11yCase(page, narrow);
+    await authenticate(context, testInfo, 'platform-tenants');
+    await openDirectory(page);
+    // Another operator requested and submitted Harambee, so Jane may return it.
+    await openRecord(page, 'Institutions', 'Harambee Farmers SACCO');
+    await expect(fact(page, 'Legal name')).toHaveText(
+      'Harambee Farmers Savings and Credit Co-operative Society Ltd',
+    );
+    await expect(fact(page, 'Registration number')).toHaveText('CS/2018/0117');
+
+    await page.getByRole('button', { name: 'Return for changes', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Return Harambee Farmers SACCO for changes?' });
+    await expect(dialog).toHaveAccessibleDescription(
+      'It goes back to draft. The requester sees your reason and can amend and resubmit it.',
+    );
+    const reason = dialog.getByRole('textbox', { name: 'What needs to change' });
+    await reason.fill(LONG_RETURN_REASON);
+    await expect(reason).toHaveValue(LONG_RETURN_REASON);
+    // A dialog is `position: fixed`, so the page-width check can't see it overflow. The reason
+    // wraps, so the dialog (the role element is MUI's Paper) must also stay inside the viewport,
+    // not only hold its content.
+    expect(
+      await dialog.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        return (
+          node.scrollWidth <= node.clientWidth && box.left >= 0 && box.right <= window.innerWidth
+        );
+      }),
+    ).toBe(true);
+    await dialog.getByRole('button', { name: 'Return for changes', exact: true }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('alert').filter({ hasText: 'Returned for changes' })).toBeVisible();
+    await expect(statusChip(page, 'Draft')).toBeVisible();
+    // DRAFT offers Submit first, so focus lands there (standing ruling 4).
+    await expect(page.getByRole('button', { name: 'Submit for approval' })).toBeFocused();
+    await expect(
+      page.getByRole('button', { name: /^(Approve|Return for changes|Reject)$/ }),
+    ).toHaveCount(0);
+    await expect(returnedNote(page)).toHaveText(`Returned for changes. ${LONG_RETURN_REASON}`);
+    // The returned submission is forgotten: no submitter until the next one.
+    await expect(fact(page, 'Submitted by')).toHaveText('—');
+    await expectA11yCaseApplied(page, narrow);
+    await expectNoSeriousOrCriticalViolations(page);
   });
 
   test('suspends an institution with a reason and reactivates it', async ({
@@ -430,30 +490,34 @@ test.describe('platform tenants', () => {
     ).toContainText('In progress');
   });
 
-  test('amends a draft as a full replacement, re-entering what the platform cannot return (BG-14)', async ({
+  test('amends a returned draft from its own values, keeping what it leaves, and resubmits it (BG-14)', async ({
     context,
     page,
   }, testInfo) => {
     await authenticate(context, testInfo, 'platform-tenants');
     await openDirectory(page);
+    // Seeded as returned for changes, with its legal name and first administrator.
     await openRecord(page, 'Institutions', 'Umoja Teachers SACCO');
+    await expect(returnedNote(page)).toBeVisible();
 
     await page.getByRole('link', { name: 'Amend draft' }).click();
     await expect(
       page.getByRole('heading', { level: 1, name: 'Amend Umoja Teachers SACCO' }),
     ).toBeVisible();
-    await expect(page.getByRole('textbox', { name: 'Tenant code' })).toHaveAttribute(
+    const main = page.getByRole('main');
+    await expect(main.getByRole('textbox', { name: 'Tenant code' })).toHaveAttribute(
       'readonly',
       '',
     );
-    await page
-      .getByRole('textbox', { name: 'Display name' })
-      .fill('Umoja Teachers Co-operative SACCO');
-    await page
-      .getByRole('textbox', { name: 'Legal name' })
-      .fill('Umoja Teachers Co-operative Society Ltd');
+    // Pre-filled from the draft: nothing is asked again.
+    await expect(main.getByRole('textbox', { name: 'Legal name' })).toHaveValue(
+      'Umoja Teachers Co-operative Society Ltd',
+    );
+    await main.getByRole('textbox', { name: 'Registration number' }).fill('CS/2019/0042');
     await next(page, 'First administrator');
-    await fillAdministrator(page);
+    await expect(main.getByRole('textbox', { name: 'Email' })).toHaveValue('wanjiku@umoja.example');
+    await expect(main.getByRole('textbox', { name: 'Phone' })).toHaveValue('+254712000201');
+    await expect(main.getByRole('checkbox', { name: 'Send application invite' })).toBeChecked();
     await next(page, 'Review');
     await page.getByRole('button', { name: 'Save draft' }).click();
 
@@ -461,9 +525,57 @@ test.describe('platform tenants', () => {
       new RegExp(`/platform-admin/tenants/${TENANT_SCENARIO_IDS.umoja}$`),
     );
     await expect(
-      page.getByRole('heading', { level: 1, name: 'Umoja Teachers Co-operative SACCO' }),
+      page.getByRole('heading', { level: 1, name: 'Umoja Teachers SACCO' }),
     ).toBeVisible();
-    await expect(statusChip(page, 'Draft')).toBeVisible();
+    // Only the registration number was sent; the legal name the PATCH left out is kept.
+    await expect(fact(page, 'Registration number')).toHaveText('CS/2019/0042');
+    await expect(fact(page, 'Legal name')).toHaveText('Umoja Teachers Co-operative Society Ltd');
+    // An amend is no transition: the reason stays until the draft is submitted again.
+    await expect(returnedNote(page)).toBeVisible();
+
+    await expect(await act(page, 'Submit for approval')).toBeHidden();
+    await expect(statusChip(page, 'Pending approval')).toBeVisible();
+    await expect(page.getByRole('note').filter({ hasText: 'Returned for changes.' })).toHaveCount(
+      0,
+    );
+    // Jane requested it and has now submitted it, so no decision is hers.
+    for (const name of DECISIONS) {
+      await expect(page.getByRole('button', { name, exact: true })).toBeDisabled();
+    }
+  });
+
+  // A draft with no bootstrap record (a SQL-seeded tenant): the platform keeps no first
+  // administrator for it and its amend would discard one, so the wizard asks for none (BG-14).
+  test('amends a draft the platform keeps no administrator for, asking for none (BG-14)', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'platform-tenants-no-administrator');
+    await openDirectory(page);
+
+    await page.goto(`/platform-admin/tenants/${TENANT_SCENARIO_IDS.umoja}/amend`);
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Amend Umoja Teachers SACCO' }),
+    ).toBeVisible();
+    await page
+      .getByRole('main')
+      .getByRole('textbox', { name: 'Registration number' })
+      .fill('CS/2019/0042');
+    await next(page, 'First administrator');
+    await expect(
+      mainText(
+        page,
+        "The platform keeps no draft administrator for this institution, so there's none to change here.",
+      ),
+    ).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Email' })).toHaveCount(0);
+    await next(page, 'Review');
+    await page.getByRole('button', { name: 'Save draft' }).click();
+
+    await expect(page).toHaveURL(
+      new RegExp(`/platform-admin/tenants/${TENANT_SCENARIO_IDS.umoja}$`),
+    );
+    await expect(fact(page, 'Registration number')).toHaveText('CS/2019/0042');
   });
 
   test('explains that only a draft can be amended, and links back to the record', async ({
@@ -537,8 +649,7 @@ test.describe('platform tenants', () => {
     await expect(mainText(page, "You don't have permission")).toBeVisible();
     await expect(mainText(page, 'Only a draft can be amended')).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: 'Tenant code' })).toHaveCount(0);
-    // No form follows, so no form instructions; the way back is the same as the draft guard's.
-    await expect(mainText(page, /so enter them again/)).toHaveCount(0);
+    // The way back is the same as the draft guard's.
     await expect(page.getByRole('link', { name: 'Back to the record' })).toHaveAttribute(
       'href',
       `/platform-admin/tenants/${IDS.acme}`,
@@ -615,6 +726,8 @@ test.describe('platform tenants', () => {
       for (const [path, heading] of [
         // The 100-character name: hero, tabs and Overview never scroll the page (index item 4).
         [`/platform-admin/tenants/${TENANT_SCENARIO_IDS.nairobiMetro}`, /^Nairobi Metropolitan/],
+        // A returned draft: its 500-character reason wraps inside the note (Review Focus 5).
+        [`/platform-admin/tenants/${TENANT_SCENARIO_IDS.umoja}`, 'Umoja Teachers SACCO'],
         [
           `/platform-admin/tenants/${TENANT_SCENARIO_IDS.pwani}/provisioning`,
           'Pwani Fishermen SACCO',

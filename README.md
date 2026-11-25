@@ -427,8 +427,7 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   bar's bell counts the same approvals. Known limits:
   - A pending branch can be returned for changes (or withdrawn by its maker) beside Activate; a
     returned draft is resubmitted from its record. Approve takes an optional remark. There is no
-    branch rejection, and no institution return yet, which the platform has; there is still no
-    approval-request model (`docs/backend-gaps.md` BG-01).
+    branch rejection, and still no approval-request model (`docs/backend-gaps.md` BG-01).
   - User onboarding's "Newest first" is the users endpoint's own order, by when each account was
     created (BG-09): an invitation that reused an existing account sorts by that account's age.
   - The maker comes from the record (`created_by`, `submitted_by`), so naming it needs no
@@ -647,8 +646,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) manages SACCO institutions through
   `modules/platform-administration/tenants/`: the directory, the create-draft wizard, amend, the
-  record's lifecycle (submit, approve, reject, suspend, reactivate, deprovision) and bootstrap
-  retry. Times show in UTC.
+  record's lifecycle (submit, approve, return for changes, reject, suspend, reactivate,
+  deprovision) and bootstrap retry. Times show in UTC.
   - The reserved platform organisation is hidden from the directory and its record URL shows the
     not-found page (the layout's `notFound()` answers HTTP 200). The platform now leaves it out of
     the list itself, but the count still subtracts it, so an unfiltered count reads one low
@@ -659,12 +658,15 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - The create is posted first, and only after a 500 does one lookup (one page of 100 matches)
     name a duplicate tenant code; the platform now answers a duplicate with 409 `conflict`, so the
     code isn't named (BG-07). A retry with the same idempotency key replays.
-  - Approve and Reject are disabled, with the reason, for the request's `requested_by` and
-    `submitted_by`, which the Overview names; no institution switch relaxes the platform's own
-    checker. Someone who amended the draft is refused by the platform, by name (BG-08).
-  - Amend re-asks the legal name, registration number and first administrator, which the
-    platform now returns but the UI doesn't read yet (BG-14). There are no Settings or Audit
-    tabs, though the platform now has both routes (BG-12, BG-06).
+  - Approve, Return for changes and Reject are disabled, with the reason, for the request's
+    `requested_by` and `submitted_by`, which the Overview names; no institution switch relaxes the
+    platform's own checker. Someone who amended the draft is refused an approval or a rejection by
+    the platform, by name, but may return it (BG-08).
+  - Return for changes sends a pending request back to draft with a required reason, which its
+    Overview shows until it is submitted again (BG-01). Amend opens pre-filled from the draft (the
+    legal name, registration number and first administrator, which the Overview also shows) and
+    sends only what changed, plus an optional business date (BG-14). There are no Settings or
+    Audit tabs, though the platform now has both routes (BG-12, BG-06).
   - The toolbar search commits on Enter or blur, not as you type.
   - The record's Branches and Users tabs list an institution's branches and users; a branch record
     is read-only (its address shown, no edit, BG-13), and "Create branch draft" is offered for an

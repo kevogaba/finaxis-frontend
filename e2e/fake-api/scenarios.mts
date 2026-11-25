@@ -914,6 +914,16 @@ export const TENANT_SCENARIO_IDS = {
   otherOperator: '16000000-0000-4000-8000-000000000007',
 } as const;
 
+/** A checker's reason at the platform's bound (500 characters), in words around one unbroken
+ * 70-character path: the 375 px cases prove a returned draft's Overview wraps it (Review Focus 5). */
+export const LONG_RETURN_REASON = (
+  'Attach the board resolution and the registration certificate ' +
+  '(CS-2019-0042/registration-certificate/board-resolution-2026-09-01.pdf), and correct the ' +
+  'registration number. '
+)
+  .repeat(4)
+  .slice(0, 500);
+
 /** Real platform codes (PLATFORM_SUPER_ADMIN holds all 80, contract §J), granted only here, so that
  * `platform-operator` stays the read-only gating scenario (e2e/platform-tenants.spec.ts). */
 const PLATFORM_TENANT_CODES = [
@@ -930,9 +940,10 @@ const PLATFORM_TENANT_CODES = [
 
 /**
  * Layer 16: a copy of `platform-operator` plus one institution per lifecycle state. Jane drafted
- * Umoja. Another operator drafted Mwangaza and Jane submitted it, so she can't approve it; another
- * operator drafted and submitted Harambee, so she can. Pwani's bootstrap failed, and the long-named
- * one was rejected.
+ * Umoja, which a checker returned for changes with a 500-character reason (BG-01). Another operator
+ * drafted Mwangaza and Jane submitted it, so she can't approve it; another operator drafted and
+ * submitted Harambee, so she can. The three requests hold the first administrator they were
+ * drafted with (BG-14). Pwani's bootstrap failed, and the long-named one was rejected.
  */
 function platformTenantsScenario(): RunState {
   const state = platformOperator();
@@ -947,6 +958,15 @@ function platformTenantsScenario(): RunState {
         status: 'DRAFT',
         bootstrapStatus: 'DRAFT',
         createdBy: IDS.jane,
+        legalName: 'Umoja Teachers Co-operative Society Ltd',
+        statusReason: LONG_RETURN_REASON,
+        admin: {
+          email: 'wanjiku@umoja.example',
+          username: 'wanjiku.kamau',
+          displayName: 'Wanjiku Kamau',
+          phoneE164: '+254712000201',
+          sendApplicationInvite: true,
+        },
       }),
       organisation(ids.harambee, 'harambee-farmers', 'Harambee Farmers SACCO', {
         ...on('2026-09-04T08:00:00Z'),
@@ -957,6 +977,15 @@ function platformTenantsScenario(): RunState {
         timezone: 'Africa/Kampala',
         createdBy: ids.otherOperator,
         submittedBy: ids.otherOperator,
+        legalName: 'Harambee Farmers Savings and Credit Co-operative Society Ltd',
+        registrationNumber: 'CS/2018/0117',
+        admin: {
+          email: 'okello@harambee.example',
+          username: 'james.okello',
+          displayName: 'James Okello',
+          phoneE164: '+256712000202',
+          sendApplicationInvite: false,
+        },
       }),
       organisation(ids.mwangaza, 'mwangaza-savings', 'Mwangaza Savings SACCO', {
         ...on('2026-09-03T08:00:00Z'),
@@ -964,6 +993,13 @@ function platformTenantsScenario(): RunState {
         bootstrapStatus: 'PENDING_ACTIVATION',
         createdBy: ids.otherOperator,
         submittedBy: IDS.jane,
+        admin: {
+          email: 'achieng@mwangaza.example',
+          username: 'achieng.odhiambo',
+          displayName: 'Achieng Odhiambo',
+          phoneE164: '+254712000203',
+          sendApplicationInvite: false,
+        },
       }),
       organisation(ids.pwani, 'pwani-fishermen', 'Pwani Fishermen SACCO', {
         ...on('2026-08-20T08:00:00Z'),
@@ -2045,8 +2081,19 @@ const BUILDERS = {
     );
     return state;
   },
-  // Layer 16 (platform tenants).
+  // Layer 16 (platform tenants). `platform-tenants-no-amend` lacks tenant.update_draft, so the
+  // detail withholds a draft's first administrator (BG-14).
   'platform-tenants': platformTenantsScenario,
+  'platform-tenants-no-amend': () =>
+    withoutPermission(platformTenantsScenario(), 'tenant.update_draft'),
+  // Umoja as a draft with no bootstrap record (a SQL-seeded tenant): the platform keeps no first
+  // administrator for it, and its amend discards one (BG-14).
+  'platform-tenants-no-administrator': () => {
+    const state = platformTenantsScenario();
+    const umoja = state.organisations.find((tenant) => tenant.id === TENANT_SCENARIO_IDS.umoja);
+    if (umoja) delete umoja.admin;
+    return state;
+  },
   // Layer 10 (users). `users-limited` lacks the membership read and audit; `users-read-only` lacks
   // every lifecycle and assignment code, for the gated-control cases.
   users: usersScenario,

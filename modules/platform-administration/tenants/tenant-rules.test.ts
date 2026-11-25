@@ -5,12 +5,16 @@ import {
   blockedTenantActions,
   bootstrapStatusLabel,
   canRetryBootstrap,
+  changedTenantFields,
   countryLabel,
   countryName,
   currencyLabel,
   EMPTY_TENANT_DRAFT,
   initialSettings,
   provisioningTimeline,
+  tenantAmendBody,
+  tenantAmendDefaults,
+  tenantAmendSchema,
   tenantDraftBody,
   tenantDraftSchema,
   tenantFormOptions,
@@ -47,7 +51,7 @@ const VALID: TenantDraftValues = {
 describe('tenant lifecycle availability', () => {
   it.each([
     ['DRAFT', ['submit', 'amend']],
-    ['PENDING_APPROVAL', ['approve', 'reject']],
+    ['PENDING_APPROVAL', ['approve', 'return', 'reject']],
     ['ACTIVE', ['suspend', 'deprovision']],
     ['SUSPENDED', ['reactivate', 'deprovision']],
     ['PROVISIONING', []],
@@ -70,6 +74,20 @@ describe('tenant lifecycle availability', () => {
     ).toEqual([]);
   });
 
+  // Platform #181 (BG-01): returning for changes is a checker's call on tenant.reject.
+  it('offers Return for changes with tenant.reject, beside Reject, and never with approve alone', () => {
+    expect(
+      availableTenantActions('PENDING_APPROVAL', {
+        permissions: ['tenant.view', 'tenant.reject'],
+      }),
+    ).toEqual(['return', 'reject']);
+    expect(
+      availableTenantActions('PENDING_APPROVAL', {
+        permissions: ['tenant.view', 'tenant.approve'],
+      }),
+    ).toEqual(['approve']);
+  });
+
   // BG-08 (TenantCheckerRule): its requester and its submitter never decide it; no switch applies.
   describe('blockedTenantActions', () => {
     const ME = 'a1000000-0000-4000-8000-0000000000aa';
@@ -81,16 +99,17 @@ describe('tenant lifecycle availability', () => {
     it.each([
       ['its requester', { requestedBy: actor(ME), submittedBy: actor(OTHER) }],
       ['its submitter, in any case', { requestedBy: null, submittedBy: actor(ME.toUpperCase()) }],
-    ])('disables Approve and Reject for %s', (_case, makers) => {
-      expect(blockedTenantActions(['approve', 'reject'], makers, ME)).toEqual({
+    ])('disables Approve, Return for changes and Reject for %s', (_case, makers) => {
+      expect(blockedTenantActions(['approve', 'return', 'reject'], makers, ME)).toEqual({
         approve: CAPTION,
+        return: CAPTION,
         reject: CAPTION,
       });
     });
 
     it('blocks nothing for anyone else, an unknown caller, or the other actions', () => {
       const makers = { requestedBy: actor(OTHER), submittedBy: null };
-      expect(blockedTenantActions(['approve', 'reject'], makers, ME)).toEqual({});
+      expect(blockedTenantActions(['approve', 'return', 'reject'], makers, ME)).toEqual({});
       expect(
         blockedTenantActions(['approve'], { requestedBy: actor(ME), submittedBy: null }, null),
       ).toEqual({});
@@ -332,5 +351,145 @@ describe('the draft body', () => {
       }),
     ).toEqual({ default_timezone: 'Africa/Nairobi', audit_retention_days: '3650' });
     expect(Object.keys(EMPTY_TENANT_DRAFT)).not.toContain('baseCurrencySetting');
+  });
+});
+
+// BG-14: amend starts from the draft as the platform returns it and sends only what changed.
+describe('the amend', () => {
+  const RECORD = {
+    tenantCode: 'umoja-teachers',
+    displayName: 'Umoja Teachers SACCO',
+    legalName: 'Umoja Teachers Co-operative Society Ltd',
+    registrationNumber: null,
+    countryCode: 'KE',
+    baseCurrencyCode: 'KES',
+    timezone: 'Africa/Nairobi',
+    admin: {
+      email: 'amina@umoja.example',
+      username: 'amina.otieno',
+      displayName: 'Amina Otieno',
+      phoneE164: '+254712000140',
+      sendApplicationInvite: true,
+    },
+  };
+  const STORED = tenantAmendDefaults(RECORD);
+  const REQUIRED = {
+    tenantCode: 'umoja-teachers',
+    displayName: 'Umoja Teachers SACCO',
+    countryCode: 'KE',
+    baseCurrencyCode: 'KES',
+    timezone: 'Africa/Nairobi',
+  };
+  const ADMIN = {
+    adminEmail: 'amina@umoja.example',
+    adminUsername: 'amina.otieno',
+    adminDisplayName: 'Amina Otieno',
+    adminPhone: '+254712000140',
+    adminSendApplicationInvite: 'true',
+  };
+
+  it('pre-fills the wizard from the detail, its first administrator included', () => {
+    expect(STORED).toEqual({
+      ...EMPTY_TENANT_DRAFT,
+      ...REQUIRED,
+      legalName: 'Umoja Teachers Co-operative Society Ltd',
+      registrationNumber: '',
+      ...ADMIN,
+    });
+  });
+
+  it('starts the administrator empty when the detail has none, and a missing phone empty', () => {
+    expect(tenantAmendDefaults({ ...RECORD, admin: null })).toMatchObject({
+      adminEmail: '',
+      adminPhone: '',
+      adminSendApplicationInvite: 'false',
+    });
+    expect(
+      tenantAmendDefaults({ ...RECORD, admin: { ...RECORD.admin, phoneE164: null } }),
+    ).toMatchObject({ adminEmail: 'amina@umoja.example', adminPhone: '' });
+  });
+
+  it('sends only the required fields when nothing optional changed', () => {
+    expect(changedTenantFields(STORED, STORED)).toEqual(REQUIRED);
+  });
+
+  it('sends a changed legal identity, a cleared one as empty, and an entered business date', () => {
+    expect(
+      changedTenantFields(STORED, {
+        ...STORED,
+        legalName: '',
+        registrationNumber: 'CS/2019/0042',
+        businessDate: '2026-10-05',
+      }),
+    ).toEqual({
+      ...REQUIRED,
+      legalName: '',
+      registrationNumber: 'CS/2019/0042',
+      businessDate: '2026-10-05',
+    });
+  });
+
+  it('sends the whole administrator when any of its fields changed, the invite flag included', () => {
+    expect(changedTenantFields(STORED, { ...STORED, adminPhone: '+254712000141' })).toEqual({
+      ...REQUIRED,
+      ...ADMIN,
+      adminPhone: '+254712000141',
+    });
+    expect(changedTenantFields(STORED, { ...STORED, adminSendApplicationInvite: 'false' })).toEqual(
+      { ...REQUIRED, ...ADMIN, adminSendApplicationInvite: 'false' },
+    );
+  });
+
+  it('compares with the stored values trimmed, as the form trims', () => {
+    const padded = { ...STORED, legalName: ' Umoja Teachers Co-operative Society Ltd ' };
+    expect(changedTenantFields(padded, STORED)).toEqual(REQUIRED);
+  });
+
+  it('accepts the required fields alone, and refuses a part of the administrator', () => {
+    expect(tenantAmendSchema.safeParse(REQUIRED).success).toBe(true);
+    expect(tenantAmendSchema.safeParse({ ...REQUIRED, ...ADMIN }).success).toBe(true);
+    const partial = tenantAmendSchema.safeParse({ ...REQUIRED, adminEmail: 'amina@umoja.example' });
+    expect(partial.error?.issues[0]).toMatchObject({
+      path: ['adminEmail'],
+      message: 'Enter the first administrator in full.',
+    });
+  });
+
+  it('builds the PATCH body with absent for kept fields, null for cleared ones', () => {
+    expect(tenantAmendBody(REQUIRED)).toEqual({
+      tenant_code: 'umoja-teachers',
+      display_name: 'Umoja Teachers SACCO',
+      country_code: 'KE',
+      base_currency_code: 'KES',
+      timezone: 'Africa/Nairobi',
+    });
+    expect(
+      tenantAmendBody({
+        ...REQUIRED,
+        legalName: '',
+        registrationNumber: 'CS/2019/0042',
+        businessDate: '2026-10-05',
+        ...ADMIN,
+        adminSendApplicationInvite: 'false',
+      }),
+    ).toEqual({
+      tenant_code: 'umoja-teachers',
+      display_name: 'Umoja Teachers SACCO',
+      country_code: 'KE',
+      base_currency_code: 'KES',
+      timezone: 'Africa/Nairobi',
+      legal_name: null,
+      registration_number: 'CS/2019/0042',
+      business_date: '05-10-2026',
+      admin: {
+        email: 'amina@umoja.example',
+        username: 'amina.otieno',
+        display_name: 'Amina Otieno',
+        phone_e164: '+254712000140',
+        send_application_invite: false,
+      },
+    });
+    // An empty business date is no date: the draft keeps its own.
+    expect(tenantAmendBody({ ...REQUIRED, businessDate: '' })).not.toHaveProperty('business_date');
   });
 });

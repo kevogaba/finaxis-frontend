@@ -147,11 +147,11 @@ miscount things today.
 
 ## Summary
 
-10 backend fixed · 8 partly fixed · 0 open · 1 adopted · 16 closed.
+9 backend fixed · 7 partly fixed · 0 open · 2 adopted · 17 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
-| BG-01 | P0       | Partly fixed  | No approval-request / pending-change model (no return-for-changes, resubmission, branch rejection) |
+| BG-01 | P0       | Adopted       | No approval-request / pending-change model (no return-for-changes, resubmission, branch rejection) |
 | BG-02 | P0       | Backend fixed | A tenant created through the API cannot onboard a second person through the API                    |
 | BG-03 | P0       | Closed        | Branch pinning: a selected branch hides every other branch; draft branches are unreachable         |
 | BG-04 | P0       | Closed        | Tenant settings `PUT` fails with 500 and rolls back (per source reading)                           |
@@ -164,7 +164,7 @@ miscount things today.
 | BG-11 | P1       | Partly fixed  | Invitation state not exposed; no resend; provisioning can stick with no recovery                   |
 | BG-12 | P1       | Backend fixed | Tenant settings catalogue unenforced and missing metadata; platform-only key unmanageable          |
 | BG-13 | P1       | Closed        | Branch address never returned; no branch update; opened/closed dates never set                     |
-| BG-14 | P1       | Backend fixed | Tenant legal name / registration number write-only; PATCH wipes them                               |
+| BG-14 | P1       | Closed        | Tenant legal name / registration number write-only; PATCH wipes them                               |
 | BG-15 | P1       | Backend fixed | No aggregate counts (role users/permissions, branch users, tenant branches/users)                  |
 | BG-16 | P1       | Backend fixed | Audit search and recording limitations                                                             |
 | BG-17 | P1       | Partly fixed  | Missing user profile fields (phone read/edit, member number, last activity, MFA/security)          |
@@ -194,10 +194,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-01 — No approval-request / pending-change model · P0
 
-- **Status:** Partly fixed. Platform #155 (sub-issues #178–#182), #221, #222, #282. ADR 0029 chose
-  per-resource extensions over an approval-request model. The branch return, withdrawal and discard
-  are **adopted** (frontend #117), and so are the decision remarks (frontend #119); the
-  institution return is still to adopt.
+- **Status:** Adopted (frontend #120). Platform #155 (sub-issues #178–#182), #221, #222, #282.
+  ADR 0029 chose per-resource extensions over an approval-request model, and declined the rest
+  (under **Still open**). The branch return, withdrawal and discard were adopted in frontend #117,
+  the decision remarks in #119, and the institution return in #120.
 - **Gap:** Maker-checker exists only as per-resource transitions: membership activate (approver ≠
   inviter), branch activate (activator ≠ drafter), tenant approve (approver ≠ creator and submitter).
   There is no approval-request entity, no "return for changes", no resubmission, no reject for a
@@ -258,8 +258,18 @@ the same bullets): the first is the gap as found, the second what the UI still d
   institution's is on its approval's transitions and audit rows and becomes its `status_reason`,
   which its detail returns. Branch activation already sent one, and keeps its "Reason (optional)"
   field.
-- **To adopt:** Return on pending institutions with their `status_reason`. (Activation is gated on
-  `branch.approve` since frontend #107.)
+- **Adopted** (frontend #120): a pending institution offers Return for changes (`tenant.reject`
+  with `tenant.view`) on its record, between Approve and Reject, outlined. Its dialog ("Return <name>
+  for changes?", "It goes back to draft. The requester sees your reason and can amend and resubmit
+  it.") takes a required "What needs to change" of 3–500 characters and forwards the minted key.
+  Its requester or submitter sees it disabled with the maker caption, as Approve and Reject;
+  `lifecycle.approver_is_tenant_maker` is explained by `describeProblem`, and the 409 says the
+  request was decided or returned elsewhere. A draft with a `status_reason` shows "**Returned for
+  changes.** <reason>" on its Overview until it is submitted again. The platform refuses no
+  amender a return (`refuseAmender = false`), and a return resets the bootstrap record, so
+  `submitted_by` reads null until the next submission. The e2e fake API mirrors the route, stores
+  every transition's reason (or null) as `status_reason`, and clears `submitted_by` on return and
+  reject. (Activation is gated on `branch.approve` since frontend #107.)
 
 ### BG-02 — A tenant created through the API cannot onboard a second person · P0
 
@@ -705,7 +715,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-14 — Tenant legal name and registration number · P1
 
-- **Status:** Backend fixed. Platform #166, #271.
+- **Status:** Closed (frontend #120). Platform #166, #271.
 - **Gap:** Accepted on create/amend but never returned (`TenantApiDtos.kt:172-194`); the admin draft
   details and `status_reason` can't be read either. PATCH replaces every field, so an amend without
   re-entering legal name / registration number nulls them; `initial_settings` and `business_date` are
@@ -724,8 +734,28 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Still open:** PATCH still requires `tenant_code`, `display_name`, `country_code`,
   `base_currency_code` and `timezone`; an `admin` that is sent replaces the whole draft (its
   `phone_e164` is still required); amend can't change settings.
-- **To adopt:** pre-fill the amend wizard from the detail instead of re-asking, and show
-  `status_reason`.
+- **Verified 2026-11-25:** `GET /tenant` returns the same three fields (its `admin` and makers are
+  always `null`), but the frontend reads only its `timezone` there (`tenantTimeZoneSchema`,
+  `lib/api/lookups.ts`), so nothing changes on the tenant side. The PATCH answers its state 409
+  before `validateAmend`'s 422s (currency, zone, a non-empty `initial_settings`), and bounds an
+  `Optional` legal name or registration number in the controller, after the bean violations, as a
+  400 `validation_failed` with no violations. A sent `admin` without `send_application_invite` is
+  a 400 violation (`@NotNull`); `admin: null` keeps the draft's, as an absent one does.
+- **To adopt:** done in frontend #120. The detail parses `legal_name`, `registration_number`,
+  `status_reason` and `admin` (each required and nullable, as the platform always sends them); the
+  Overview shows the legal name and registration number ("—" when unset) and a returned draft's
+  reason. The amend wizard opens pre-filled from the detail (`tenantAmendDefaults`: legal name,
+  registration number, the first administrator and `send_application_invite`), offers an optional
+  business date (not pre-filled: no read returns it), and sends what changed
+  (`changedTenantFields`): the five required fields always, the legal name and registration number
+  only when changed (a cleared one as `null`), the administrator whole only when any of its fields
+  changed, the business date only when entered, and never `initial_settings`. A draft the platform
+  keeps no administrator for (no bootstrap record, `admin` null, whose amend discards a sent one)
+  gets an administrator step that says so and asks nothing, and no `admin` is sent. "Enter them
+  again" is gone. The e2e fake API stores and returns the three fields and the administrator (to a
+  holder of `tenant.update_draft` while it is a draft), and answers the PATCH with the platform's
+  keep, clear and replace rules, its order and its 422 for settings, discarding an `admin` for a
+  tenant with no bootstrap record.
 
 ### BG-15 — No aggregate counts · P1
 

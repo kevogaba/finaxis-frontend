@@ -16,14 +16,18 @@ const DETAIL = {
   id: ACME,
   tenant_code: 'acme',
   display_name: 'Acme SACCO',
+  legal_name: null,
+  registration_number: null,
   country_code: 'KE',
   base_currency_code: 'KES',
   timezone: 'Africa/Nairobi',
   status: 'ACTIVE',
+  status_reason: null,
   bootstrap_status: 'FAILED',
   bootstrap_failure_code: 'KEYCLOAK_UNAVAILABLE',
   created_at: '2026-07-01T08:00:00Z',
   updated_at: '2026-07-24T08:00:00Z',
+  admin: null,
   requested_by: { id: OTHER, display_name: null },
   submitted_by: { id: JANE, display_name: 'Backend Jane Manager' },
 };
@@ -76,20 +80,68 @@ describe('tenant contract', () => {
       id: ACME,
       tenantCode: 'acme',
       displayName: 'Acme SACCO',
+      legalName: null,
+      registrationNumber: null,
       countryCode: 'KE',
       baseCurrencyCode: 'KES',
       timezone: 'Africa/Nairobi',
       status: 'ACTIVE',
+      statusReason: null,
       bootstrapStatus: 'FAILED',
       bootstrapFailureCode: 'KEYCLOAK_UNAVAILABLE',
       createdAt: '2026-07-01T08:00:00Z',
       updatedAt: '2026-07-24T08:00:00Z',
+      admin: null,
       requestedBy: { id: OTHER, displayName: null },
       submittedBy: { id: JANE, displayName: 'Backend Jane Manager' },
     });
     expect(
       tenantDetailSchema.parse({ ...DETAIL, bootstrap_status: null, bootstrap_failure_code: null }),
     ).toMatchObject({ bootstrapStatus: null, bootstrapFailureCode: null });
+  });
+
+  // BG-14: a returned draft, as a holder of tenant.update_draft reads it.
+  it('maps the legal identity, the status reason and the drafted first administrator', () => {
+    expect(
+      tenantDetailSchema.parse({
+        ...DETAIL,
+        status: 'DRAFT',
+        legal_name: 'Acme Savings and Credit Co-operative Society Ltd',
+        registration_number: 'CS/2019/0042',
+        status_reason: 'Attach the registration certificate.',
+        admin: {
+          email: 'amina@acme.example',
+          username: 'amina.otieno',
+          display_name: 'Amina Otieno',
+          phone_e164: null,
+          send_application_invite: true,
+        },
+      }),
+    ).toMatchObject({
+      legalName: 'Acme Savings and Credit Co-operative Society Ltd',
+      registrationNumber: 'CS/2019/0042',
+      statusReason: 'Attach the registration certificate.',
+      admin: {
+        email: 'amina@acme.example',
+        username: 'amina.otieno',
+        displayName: 'Amina Otieno',
+        phoneE164: null,
+        sendApplicationInvite: true,
+      },
+    });
+  });
+
+  it('requires the BG-14 fields, which the platform always sends (drift → the error state)', () => {
+    for (const key of ['legal_name', 'registration_number', 'status_reason', 'admin'] as const) {
+      const { [key]: _dropped, ...missing } = DETAIL;
+      expect(tenantDetailSchema.safeParse(missing).success, key).toBe(false);
+    }
+    expect(
+      tenantDetailSchema.safeParse({
+        ...DETAIL,
+        admin: { email: 'amina@acme.example', username: 'amina.otieno', display_name: 'Amina' },
+      }).success,
+    ).toBe(false);
   });
 
   it('keeps null makers: never submitted, or a tenant caller (BG-08)', () => {
