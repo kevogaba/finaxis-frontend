@@ -1,10 +1,11 @@
 import type { StatusTone } from '@/components/data-display/status-chip';
+import type { ActorRef } from '@/lib/api/wire';
 import { shortId } from '@/lib/format';
 import { MAKER_CHECKER_BLOCKED } from '@/modules/administration/branches/branch-rules';
 import type { MembershipType } from '@/modules/administration/users/user-contract';
 import { USER_MAKER_CHECKER_BLOCKED } from '@/modules/administration/users/user-rules';
 import { BRANCHES_NOT_PERMITTED, ROLES_NOT_PERMITTED } from './approval-copy';
-import { isSameUser } from './approval-rules';
+import { isSameUser, type SwitchState } from './maker-checker';
 
 // ── Control checks (spec §10.6, Rulings 5 and 7) ─────────────────────────────────────────────────
 
@@ -32,13 +33,6 @@ export interface ControlCheck {
 export type CheckRead<T> =
   { ok: true; value: T } | { ok: false; problem: { requestId: string | null } } | null;
 
-/** The maker's audit event, as the page resolved it: `null` value = no such event. */
-export interface MakerFact {
-  actorUserId: string | null;
-  /** From the user lookup; null falls back to the short id. */
-  name: string | null;
-}
-
 const reference = (requestId: string | null) => (requestId ? ` Reference: ${requestId}` : '');
 
 /** A check that can't be computed reads "Verified by the platform on approval", then says why. */
@@ -60,35 +54,45 @@ const MAKER_COPY = {
   user: {
     label: 'Invited by someone else',
     passed: (who: string) => `Invited by ${who}.`,
+    notMine: "They weren't invited by you.",
     failed: USER_MAKER_CHECKER_BLOCKED,
-    notPermitted: "Your role can't view the audit trail, so this page can't tell who invited them.",
-    failedRead: "Who invited them couldn't be loaded.",
-    unrecorded: "The audit trail doesn't say who invited them.",
+    switchedOff:
+      'Maker-checker is off for user invitations, so you may approve your own invitation.',
+    unknownSwitch: "You invited them, and this page couldn't read whether maker-checker is on.",
   },
   branch: {
     label: 'Drafted by someone else',
     passed: (who: string) => `Drafted by ${who}.`,
+    notMine: "It wasn't drafted by you.",
     failed: MAKER_CHECKER_BLOCKED,
-    notPermitted: "Your role can't view the audit trail, so this page can't tell who drafted it.",
-    failedRead: "Who drafted it couldn't be loaded.",
-    unrecorded: "The audit trail doesn't say who drafted it.",
+    switchedOff: 'Maker-checker is off for branch creation, so you may activate your own draft.',
+    unknownSwitch: "You drafted it, and this page couldn't read whether maker-checker is on.",
   },
 } as const;
 
+/** BG-08: the maker is the record's own `created_by`, so this check needs no `audit.view`. A `null`
+ * maker (the system, or someone the caller may not see) is never the caller. */
 function makerCheck(
   kind: 'user' | 'branch',
-  maker: CheckRead<MakerFact | null>,
+  maker: ActorRef,
   me: string,
+  switchState: SwitchState,
 ): ControlCheck {
   const copy = MAKER_COPY[kind];
   const check = (state: CheckState, detail: string) => checkOf('maker', copy.label, state, detail);
-  if (maker === null) return check('platform', copy.notPermitted);
-  if (!maker.ok)
-    return check('platform', `${copy.failedRead}${reference(maker.problem.requestId)}`);
-  const actor = maker.value?.actorUserId ?? null;
-  if (actor === null) return check('platform', copy.unrecorded);
-  if (isSameUser(actor, me)) return check('failed', copy.failed);
-  return check('passed', copy.passed(maker.value?.name ?? shortId(actor)));
+  if (maker === null) return check('passed', copy.notMine);
+  if (!isSameUser(maker.id, me)) {
+    return check('passed', copy.passed(maker.displayName ?? shortId(maker.id)));
+  }
+  // Your own request: the switch decides (`makerGate`); unread, the platform does (Q4).
+  switch (switchState) {
+    case 'on':
+      return check('failed', copy.failed);
+    case 'off':
+      return check('not-required', copy.switchedOff);
+    default:
+      return check('platform', copy.unknownSwitch);
+  }
 }
 
 /** Contract §A: every request re-validates the organisation ACTIVE, so a page that loaded knows. */
@@ -153,9 +157,12 @@ function branchCheck(
 }
 
 export function userControlChecks(input: {
-  maker: CheckRead<MakerFact | null>;
+  /** The record's inviter (`created_by`). */
+  maker: ActorRef;
   /** The signed-in user's id, from `/auth/me` (never the URL's). */
   me: string;
+  /** `require_maker_checker_for_user_invites`, as the page could read it. */
+  switchState: SwitchState;
   /** ACTIVE role assignments found (one page). */
   roles: CheckRead<number>;
   /** ACTIVE branch assignments found; `complete`: the scan wasn't capped and no branch narrowed it. */
@@ -165,7 +172,7 @@ export function userControlChecks(input: {
   organisationName: string;
 }): ControlCheck[] {
   return [
-    makerCheck('user', input.maker, input.me),
+    makerCheck('user', input.maker, input.me, input.switchState),
     roleCheck(input.roles),
     branchCheck(input.branches, input.membershipType),
     institutionCheck(input.organisationName),
@@ -173,9 +180,14 @@ export function userControlChecks(input: {
 }
 
 export function branchControlChecks(input: {
-  maker: CheckRead<MakerFact | null>;
+  /** The record's creator (`created_by`): the tenant route refuses it, not the submitter. */
+  maker: ActorRef;
   me: string;
+  switchState: SwitchState;
   organisationName: string;
 }): ControlCheck[] {
-  return [makerCheck('branch', input.maker, input.me), institutionCheck(input.organisationName)];
+  return [
+    makerCheck('branch', input.maker, input.me, input.switchState),
+    institutionCheck(input.organisationName),
+  ];
 }

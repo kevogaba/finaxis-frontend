@@ -17,23 +17,11 @@ import { humanizeEnum, StatusChip } from '@/components/data-display/status-chip'
 import NextLink from '@/components/navigation/next-link';
 import { PageHeader } from '@/components/shell/page-header';
 import { load, type Loaded } from '@/lib/api/load';
-import {
-  getBranchIndex,
-  getOrganisationTimeZone,
-  getRoleIndex,
-  getTenantUser,
-} from '@/lib/api/lookups';
+import { getBranchIndex, getOrganisationTimeZone, getRoleIndex } from '@/lib/api/lookups';
 import { formatInstant } from '@/lib/format';
-import {
-  userControlChecks,
-  type CheckRead,
-  type MakerFact,
-} from '@/modules/administration/approvals/approval-checks';
+import { userControlChecks } from '@/modules/administration/approvals/approval-checks';
 import {
   CHECKS_DESCRIPTION,
-  MAKER_NOT_PERMITTED,
-  MAKER_NOT_RECORDED,
-  READ_FAILED,
   REQUEST_DESCRIPTION,
   USER_APPROVAL_EYEBROW,
   USER_APPROVAL_FORBIDDEN,
@@ -43,19 +31,21 @@ import {
   availableUserDecisions,
   blockedUserDecisions,
   canSeeUserApprovals,
-  isSameUser,
   USER_QUEUE_HREF,
   userApprovalState,
   userOutcomeNote,
 } from '@/modules/administration/approvals/approval-rules';
-import {
-  getMakerEvent,
-  listRequestedRoles,
-} from '@/modules/administration/approvals/approval-service';
+import { listRequestedRoles } from '@/modules/administration/approvals/approval-service';
 import { ControlChecks } from '@/modules/administration/approvals/components/control-checks';
 import { DecisionBar } from '@/modules/administration/approvals/components/decision-bar';
-import { MakerValue } from '@/modules/administration/approvals/components/request-facts';
+import { makerLabel } from '@/modules/administration/approvals/components/request-facts';
 import { RequestedAccess } from '@/modules/administration/approvals/components/requested-access';
+import {
+  isMaker,
+  makerGate,
+  SELF_APPROVAL_NOTE_USERS,
+} from '@/modules/administration/approvals/maker-checker';
+import { readMakerCheckerSwitch } from '@/modules/administration/settings/settings-service';
 import type { MembershipSummary } from '@/modules/administration/users/user-contract';
 import {
   membershipActionsNote,
@@ -120,39 +110,37 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
   const me = resolved.profile.user_id;
   const selectedBranch = resolved.context.branch;
   const state = userApprovalState(record.membershipStatus, record.userStatus);
+  // BG-08: the inviter is the record's own `created_by`; the switch is read only for them.
+  const makers = [record.createdBy?.id];
   // Each read only with its own code; load() redirects on a lost session or a stale context, and
   // any other failure is shown where its fact would be (rule 9).
-  const [membership, maker, roles, scan, roleIndex, branchIndex, timeZone] = await Promise.all([
-    can(holder, 'membership.view') ? load(findUserMembership(record.id, record.email)) : null,
-    can(holder, 'audit.view') ? load(getMakerEvent('user', record.id)) : null,
-    can(holder, 'role_assignment.view') ? load(listRequestedRoles(record.id)) : null,
-    can(holder, 'branch_assignment.view') ? load(listUserBranchAssignments(record.id)) : null,
-    getRoleIndex(), // empty without role.view: names fall back to short ids
-    getBranchIndex(), // empty without branch.view: names fall back to short ids
-    getOrganisationTimeZone(),
-  ]);
-  const actor = maker?.ok ? (maker.value?.actorUserId ?? null) : null;
-  // One cached lookup; an unreadable user falls back to the short id.
-  const makerName = actor ? ((await getTenantUser(actor))?.displayName ?? null) : null;
+  const [membership, roles, scan, roleIndex, branchIndex, timeZone, switchState] =
+    await Promise.all([
+      can(holder, 'membership.view') ? load(findUserMembership(record.id, record.email)) : null,
+      can(holder, 'role_assignment.view') ? load(listRequestedRoles(record.id)) : null,
+      can(holder, 'branch_assignment.view') ? load(listUserBranchAssignments(record.id)) : null,
+      getRoleIndex(), // empty without role.view: names fall back to short ids
+      getBranchIndex(), // empty without branch.view: names fall back to short ids
+      getOrganisationTimeZone(),
+      isMaker(makers, me) ? readMakerCheckerSwitch('user_invites', holder) : ('unknown' as const),
+    ]);
 
   const membershipId = membership?.ok ? (membership.value?.id ?? null) : null;
   const decisions = membershipId ? availableUserDecisions(state, holder) : [];
+  const gate = makerGate({ makerIds: makers, callerId: me, switchState });
   const blocked = blockedUserDecisions(decisions, {
     state,
     userStatus: record.userStatus,
-    invitedByMe: isSameUser(actor, me),
+    makerGate: gate,
   });
+  const warning =
+    decisions.includes('approve') && !blocked.approve && gate === 'allowed-self-approval'
+      ? SELF_APPROVAL_NOTE_USERS
+      : null;
   const outcome = userOutcomeNote(state, record.membershipStatus);
   const note = outcome === null ? membershipActionsNote(holder, lookupOutcome(membership)) : null;
   const onboarding = onboardingState(record.membershipStatus, record.userStatus);
-  const invitedAt =
-    maker?.ok && maker.value ? formatInstant(maker.value.occurredAt, timeZone) : null;
-  const makerFact: CheckRead<MakerFact | null> =
-    maker === null
-      ? null
-      : maker.ok
-        ? { ok: true, value: maker.value ? { actorUserId: actor, name: makerName } : null }
-        : maker;
+  const invitedAt = formatInstant(record.membershipCreatedAt, timeZone);
 
   return (
     <>
@@ -180,6 +168,7 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
               decisions={decisions}
               blocked={blocked}
               note={note}
+              warning={warning}
               contextOrganisationId={resolved.context.organization.id}
             />
           ) : undefined
@@ -209,19 +198,11 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
             items={[
               { label: 'Request', value: USER_REQUEST },
               { label: 'Institution', value: resolved.context.organization.name },
-              { label: 'Invited by', value: <MakerValue maker={maker} name={makerName} me={me} /> },
+              { label: 'Invited by', value: makerLabel(record.createdBy, me) },
               {
-                label: `Invited (${timeZone})`,
-                // The maker read's own state, never a dash for a read that failed or wasn't made
-                // (rule 9). The reference stays once, on "Invited by".
-                value:
-                  maker === null
-                    ? MAKER_NOT_PERMITTED
-                    : !maker.ok
-                      ? READ_FAILED
-                      : invitedAt
-                        ? `${invitedAt.date} · ${invitedAt.time}`
-                        : MAKER_NOT_RECORDED,
+                // The membership's creation, which a re-invite keeps: the first invitation.
+                label: `First invited (${timeZone})`,
+                value: `${invitedAt.date} · ${invitedAt.time}`,
               },
             ]}
           />
@@ -261,8 +242,9 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
           <SectionCard title="Control checks" description={CHECKS_DESCRIPTION}>
             <ControlChecks
               checks={userControlChecks({
-                maker: makerFact,
+                maker: record.createdBy,
                 me,
+                switchState,
                 roles:
                   roles === null
                     ? null

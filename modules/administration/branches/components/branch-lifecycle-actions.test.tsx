@@ -23,6 +23,27 @@ const ID = '44444444-4444-4444-8444-444444444444';
 const ORG_ID = '55555555-5555-4555-8555-555555555555';
 
 describe('BranchLifecycleActions', () => {
+  // BG-08: maker-checker off lets the drafter activate, warned before the decision.
+  it('shows a self-approval warning above the actions, leaving Activate enabled', () => {
+    const warning = 'Maker-checker is off for branch creation. You drafted this branch.';
+    renderWithProviders(
+      <BranchLifecycleActions
+        branchId={ID}
+        branchName="Karen Branch"
+        actions={['activate']}
+        activateBlocked={false}
+        warning={warning}
+        selectedHere={false}
+      />,
+    );
+
+    const note = screen.getByRole('note');
+    expect(note).toHaveTextContent(warning);
+    const activate = screen.getByRole('button', { name: 'Activate' });
+    expect(activate).toBeEnabled();
+    expect(note.compareDocumentPosition(activate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('explains a blocked activation, tied to the disabled button (BG-08)', () => {
     renderWithProviders(
       <BranchLifecycleActions

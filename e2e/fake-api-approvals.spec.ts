@@ -28,10 +28,7 @@ interface BranchRow {
   status: string;
 }
 
-interface AuditRow {
-  actor_id: string | null;
-  occurred_at: string;
-}
+type Actor = { id: string; display_name: string | null } | null;
 
 interface MembershipEcho {
   membership_status: string;
@@ -109,28 +106,99 @@ test.describe('fake API: the approvals scenarios (layer 12)', () => {
     expect(await read<BranchRow>(voi)).toMatchObject({ status: 'DRAFT' });
   });
 
-  test('names each request’s maker in the audit trail', async ({ request }) => {
+  // BG-08: the record names its maker (ActorRefResponse); a tenant caller sees a member only.
+  test('names each request’s maker on its record', async ({ request }) => {
     const { get } = await signIn(request);
-    const maker = async (entityType: string, entityId: string, action: string) =>
-      read<Paged<AuditRow>>(
+    const inviter = async (userId: string) =>
+      (await read<{ created_by: Actor }>(await get(`/tenant/users/${userId}`))).created_by;
+    expect(await inviter(APPROVALS.rose)).toEqual({
+      id: USERS.victor,
+      display_name: 'Victor Otieno',
+    });
+    expect((await inviter(USERS.carol))?.id).toBe(IDS.jane);
+    // Seeded by the system: no maker.
+    expect(await inviter(IDS.jane)).toBeNull();
+    const memberships = await read<Paged<{ user_id: string; created_by: Actor }>>(
+      await get('/tenant/memberships?membership_status=PENDING_APPROVAL&size=100'),
+    );
+    expect(memberships.items.find((row) => row.user_id === USERS.carol)?.created_by?.id).toBe(
+      IDS.jane,
+    );
+    const branch = async (id: string) =>
+      read<{ created_by: Actor; submitted_by: Actor }>(await get(`/branches/${id}`));
+    expect((await branch(APPROVALS.naivasha)).created_by?.id).toBe(IDS.jane);
+    expect(await branch(APPROVALS.kericho)).toMatchObject({
+      created_by: { id: USERS.victor, display_name: 'Victor Otieno' },
+      submitted_by: { id: USERS.victor, display_name: 'Victor Otieno' },
+    });
+    const list = await read<Paged<{ id: string; created_by: Actor }>>(
+      await get('/branches?status=PENDING_APPROVAL&size=100'),
+    );
+    expect(list.items.find((row) => row.id === APPROVALS.lamu)?.created_by?.id).toBe(USERS.victor);
+  });
+
+  // ADR 0032: a stored `false` relaxes the tenant's own maker; reading it needs settings.view.
+  test.describe('the maker-checker switches', () => {
+    test('reads a switch by its key, and refuses one without settings.view', async ({
+      request,
+    }) => {
+      const on = await signIn(request);
+      const key = 'require_maker_checker_for_user_invites';
+      expect(await read(await on.get(`/tenant/settings/${key}`))).toMatchObject({
+        key,
+        value: 'true',
+        is_default: true,
+      });
+      const off = await signIn(request, 'approvals-self-approval');
+      expect(await read(await off.get(`/tenant/settings/${key}`))).toMatchObject({
+        value: 'false',
+        is_default: false,
+      });
+      const blind = await signIn(request, 'approvals-no-settings');
+      expect((await blind.get(`/tenant/settings/${key}`)).status()).toBe(403);
+    });
+
+    test('off: the inviter approves, audited HIGH with selfApproved', async ({ request }) => {
+      const { get, post } = await signIn(request, 'approvals-self-approval');
+      const response = await post(`/tenant/memberships/${USERS.carolMembership}/activate`);
+      expect(response.status()).toBe(202);
+      const rows = await read<Paged<{ id: string; severity: string }>>(
+        await get(`/tenant/audit-events?entity_id=${USERS.carol}&action=user.approve`),
+      );
+      expect(rows.items).toHaveLength(1);
+      expect(rows.items[0]?.severity).toBe('HIGH');
+      const detail = await read<{ metadata_json: string }>(
+        await get(`/tenant/audit-events/${rows.items[0]?.id}`),
+      );
+      expect(JSON.parse(detail.metadata_json)).toEqual({ selfApproved: 'true' });
+    });
+
+    test('off: the drafter activates, with a branch.self_approve row, HIGH', async ({
+      request,
+    }) => {
+      const { get, post } = await signIn(request, 'approvals-self-approval');
+      const response = await post(`/branches/${APPROVALS.naivasha}/activate`, {
+        reason: 'Licence received',
+      });
+      expect(response.status()).toBe(200);
+      const rows = await read<Paged<{ severity: string; reason: string | null }>>(
         await get(
-          `/tenant/audit-events?entity_type=${entityType}&entity_id=${entityId}&action=${action}&page=0&size=1`,
+          `/tenant/audit-events?entity_id=${APPROVALS.naivasha}&action=branch.self_approve`,
         ),
       );
-    expect((await maker('USER', APPROVALS.rose, 'user.invite')).items[0]).toMatchObject({
-      actor_id: USERS.victor,
-      occurred_at: '2026-09-24T08:00:00Z',
+      expect(rows.items).toEqual([
+        expect.objectContaining({ severity: 'HIGH', reason: 'Licence received' }),
+      ]);
     });
-    expect((await maker('USER', USERS.carol, 'user.invite')).items[0]?.actor_id).toBe(IDS.jane);
-    expect(
-      (await maker('BRANCH', APPROVALS.naivasha, 'branch.create_draft')).items[0]?.actor_id,
-    ).toBe(IDS.jane);
-    expect(
-      (await maker('BRANCH', APPROVALS.kericho, 'branch.create_draft')).items[0]?.actor_id,
-    ).toBe(USERS.victor);
-    expect((await maker('BRANCH', APPROVALS.lamu, 'branch.create_draft')).items[0]?.actor_id).toBe(
-      USERS.victor,
-    );
+
+    test('off: someone else’s approval is ordinary, with no extra row', async ({ request }) => {
+      const { get, post } = await signIn(request, 'approvals-self-approval');
+      expect((await post(`/branches/${APPROVALS.kericho}/activate`)).status()).toBe(200);
+      const rows = await read<Paged<unknown>>(
+        await get(`/tenant/audit-events?entity_id=${APPROVALS.kericho}&action=branch.self_approve`),
+      );
+      expect(rows.items).toHaveLength(0);
+    });
   });
 
   test.describe('approves by the contract (§E.3, §F)', () => {

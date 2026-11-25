@@ -39,10 +39,12 @@ vi.mock('@/modules/platform-administration/tenants/tenant-actions', () => ({
 
 const { default: TenantRecordLayout } = await import('./layout');
 
+const ME = '17000000-0000-4000-8000-0000000000ef';
+
 async function show(permissions: string[]) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions, user_id: '17000000-0000-4000-8000-0000000000ef' },
+    profile: { permissions, user_id: ME },
     context: { organization: { id: PLATFORM, name: 'Platform' }, branch: null },
   });
   renderWithProviders(
@@ -66,6 +68,8 @@ beforeEach(() => {
     displayName: 'Acme SACCO',
     countryCode: 'KE',
     status: 'ACTIVE',
+    requestedBy: null,
+    submittedBy: null,
   });
 });
 
@@ -106,5 +110,47 @@ describe('TenantRecordLayout: the hero', () => {
     await show(['tenant.view']);
 
     expect(screen.getByText('acme · KE · Kenya')).toBeInTheDocument();
+  });
+});
+
+// BG-08 (TenantCheckerRule): the request's own makers never decide it, whatever any switch says.
+describe('TenantRecordLayout: maker-checker', () => {
+  const CAPTION =
+    'You requested or submitted this institution, so another platform administrator must decide it.';
+  const DECIDER = ['tenant.view', 'tenant.approve', 'tenant.reject'];
+  const pending = (makers: Record<string, unknown>) => {
+    getTenant.mockResolvedValue({
+      id: INSTITUTION,
+      tenantCode: 'acme',
+      displayName: 'Acme SACCO',
+      countryCode: 'KE',
+      status: 'PENDING_APPROVAL',
+      requestedBy: null,
+      submittedBy: null,
+      ...makers,
+    });
+  };
+
+  it.each([
+    ['its requester', { requestedBy: { id: ME, displayName: 'Jane' } }],
+    ['its submitter', { submittedBy: { id: ME.toUpperCase(), displayName: null } }],
+  ])('disables Approve and Reject for %s, with the reason', async (_case, makers) => {
+    pending(makers);
+    await show(DECIDER);
+
+    for (const name of ['Approve', 'Reject']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAccessibleDescription(CAPTION);
+    }
+  });
+
+  it('offers both to another platform administrator', async () => {
+    pending({ requestedBy: { id: INSTITUTION, displayName: 'Other' } });
+    await show(DECIDER);
+
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled();
+    expect(screen.queryByText(CAPTION)).toBeNull();
   });
 });

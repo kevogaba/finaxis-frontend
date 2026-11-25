@@ -32,6 +32,9 @@ async function openDirectory(page: Page) {
 
 // Reject and Deprovision are alertdialogs once ReasonDialog has 08's V3 tone; the rest are dialogs.
 const dialogOf = (page: Page) => page.getByRole('alertdialog').or(page.getByRole('dialog'));
+// The app's copy, repeated: Playwright can't resolve the app's `@/` imports.
+const TENANT_MAKER_BLOCKED =
+  'You requested or submitted this institution, so another platform administrator must decide it.';
 
 /** A hero lifecycle action through its dialog; the caller asserts the outcome. */
 async function act(page: Page, label: string, reason?: string) {
@@ -226,7 +229,7 @@ test.describe('platform tenants', () => {
     }
   });
 
-  test('creates a draft, naming a taken code after the create fails, then explains the maker-checker refusal', async ({
+  test('creates a draft, naming a taken code after the create fails, then withholds its own decision', async ({
     context,
     page,
   }, testInfo) => {
@@ -276,11 +279,16 @@ test.describe('platform tenants', () => {
 
     await expect(await act(page, 'Submit for approval')).toBeHidden();
     await expect(statusChip(page, 'Pending approval')).toBeVisible();
-    // Jane created and submitted it, so the platform refuses her approval by name (BG-08).
-    const refused = await act(page, 'Approve');
-    await expect(refused.getByRole('alert')).toContainText(
-      'You requested or submitted this institution, so another platform administrator must decide it.',
-    );
+    // Jane requested and submitted it (the record's makers, BG-08), so neither decision is hers;
+    // both are disabled, so focus falls back to the title.
+    for (const name of ['Approve', 'Reject']) {
+      const decision = page.getByRole('button', { name, exact: true });
+      await expect(decision).toBeDisabled();
+      await expect(decision).toHaveAccessibleDescription(TENANT_MAKER_BLOCKED);
+    }
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Tujenge Traders SACCO' }),
+    ).toBeFocused();
   });
 
   test('approves a request another administrator submitted, and shows provisioning queued', async ({
@@ -324,25 +332,29 @@ test.describe('platform tenants', () => {
     await expect(page.getByRole('button', { name: /^(Approve|Reject)$/ })).toHaveCount(0);
   });
 
-  test("names the platform's refusal of its submitter's reject, keeping the typed reason (BG-08)", async ({
+  test('disables Approve and Reject for its submitter, naming both makers (BG-08)', async ({
     context,
     page,
   }, testInfo) => {
     await authenticate(context, testInfo, 'platform-tenants');
     await openDirectory(page);
-    // Jane submitted Mwangaza, so the platform refuses her decision by name.
+    // Jane submitted Mwangaza; its requester has no account the platform can name.
     await openRecord(page, 'Institutions', 'Mwangaza Savings SACCO');
 
-    const dialog = await act(page, 'Reject', 'Duplicate of another request');
-    await expect(dialog.getByRole('alert')).toContainText(
-      'You requested or submitted this institution, so another platform administrator must decide it.',
-    );
-    await expect(dialog.getByRole('textbox', { name: /^Reason/ })).toHaveValue(
-      'Duplicate of another request',
-    );
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(dialog).toBeHidden();
-    await expect(statusChip(page, 'Pending approval')).toBeVisible();
+    for (const name of ['Approve', 'Reject']) {
+      const decision = page.getByRole('button', { name, exact: true });
+      await expect(decision).toBeDisabled();
+      await expect(decision).toHaveAccessibleDescription(TENANT_MAKER_BLOCKED);
+    }
+    await expect(mainText(page, TENANT_MAKER_BLOCKED)).toBeVisible();
+    const fact = (label: string) =>
+      page
+        .getByRole('main')
+        .locator('dt')
+        .filter({ hasText: label })
+        .locator('xpath=following-sibling::dd[1]');
+    await expect(fact('Requested by')).toHaveText('—');
+    await expect(fact('Submitted by')).toHaveText('You (Backend Jane Manager)');
   });
 
   test('suspends an institution with a reason and reactivates it', async ({

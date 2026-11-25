@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  actorRef,
   PLATFORM_ORGANISATION_ID,
   requireContext,
   requirePermission,
@@ -73,7 +74,7 @@ function sortTenants(tenants: FakeOrganisation[], query: URLSearchParams): FakeO
   return descending ? sorted.reverse() : sorted;
 }
 
-function summary(tenant: FakeOrganisation) {
+function summary(access: AccessContext, tenant: FakeOrganisation) {
   return {
     id: tenant.id,
     tenant_code: tenant.code,
@@ -81,12 +82,15 @@ function summary(tenant: FakeOrganisation) {
     country_code: tenant.countryCode,
     status: tenant.status,
     created_at: tenant.createdAt,
+    // A platform caller sees every maker (BG-08); a seed's maker with no account reads null.
+    requested_by: actorRef(access, tenant.id, tenant.createdBy),
+    submitted_by: actorRef(access, tenant.id, tenant.submittedBy),
   };
 }
 
-function detail(tenant: FakeOrganisation) {
+function detail(access: AccessContext, tenant: FakeOrganisation) {
   return {
-    ...summary(tenant),
+    ...summary(access, tenant),
     base_currency_code: tenant.baseCurrencyCode,
     timezone: tenant.timezone,
     bootstrap_status: tenant.bootstrapStatus,
@@ -299,7 +303,7 @@ function transition(
         tenant.updatedAt = new Date().toISOString();
         // ponytail: no audit row — platform actions land in the tenant's log, which nothing in the
         // platform workspace reads (BG-06). Add one when a platform audit view exists.
-        return detail(tenant);
+        return detail(access, tenant);
       },
       options.status,
     );
@@ -329,13 +333,20 @@ export const platformTenantRoutes: Route[] = [
         (createdFrom === undefined || Date.parse(tenant.createdAt) >= createdFrom) &&
         (createdTo === undefined || Date.parse(tenant.createdAt) <= createdTo),
     );
-    sendJson(context.res, 200, pageOf(sortTenants(tenants, query).map(summary), query));
+    sendJson(
+      context.res,
+      200,
+      pageOf(
+        sortTenants(tenants, query).map((tenant) => summary(access, tenant)),
+        query,
+      ),
+    );
   }),
 
   route('GET', '/api/v1/platform/tenants/:tenant_id', (context) => {
     const access = platformAccess(context);
     requirePermission(access, 'tenant.view');
-    sendJson(context.res, 200, detail(findTenant(context)));
+    sendJson(context.res, 200, detail(access, findTenant(context)));
   }),
 
   route('POST', '/api/v1/platform/tenants', async (context) => {
@@ -395,7 +406,7 @@ export const platformTenantRoutes: Route[] = [
       tenant.baseCurrencyCode = draft.baseCurrencyCode;
       tenant.timezone = draft.timezone;
       tenant.updatedAt = new Date().toISOString();
-      return detail(tenant);
+      return detail(access, tenant);
     });
   }),
 

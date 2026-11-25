@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { instantSchema, pageSchema, uuidSchema } from '@/lib/api/wire';
+import { actorRefSchema, instantSchema, pageSchema, uuidSchema } from '@/lib/api/wire';
 
 /** Organisation lifecycle (contract §F). */
 export const TENANT_STATUSES = [
@@ -37,7 +37,8 @@ export const TENANT_SORT_FIELDS = [
 ] as const;
 export type TenantSortField = (typeof TENANT_SORT_FIELDS)[number];
 
-/** List items carry only these six fields (contract §C, spec §11.1). */
+/** The list item's fields this UI reads (contract §C, spec §11.1). The makers are shown to platform
+ * callers only (BG-08). */
 const tenantSummarySchema = z
   .object({
     id: uuidSchema,
@@ -46,6 +47,8 @@ const tenantSummarySchema = z
     country_code: z.string(),
     status: z.enum(TENANT_STATUSES),
     created_at: instantSchema,
+    requested_by: actorRefSchema,
+    submitted_by: actorRefSchema,
   })
   .transform((tenant) => ({
     id: tenant.id,
@@ -54,6 +57,8 @@ const tenantSummarySchema = z
     countryCode: tenant.country_code,
     status: tenant.status,
     createdAt: tenant.created_at,
+    requestedBy: tenant.requested_by,
+    submittedBy: tenant.submitted_by,
   }));
 
 export type TenantSummary = z.output<typeof tenantSummarySchema>;
@@ -75,6 +80,8 @@ export const tenantDetailSchema = z
     bootstrap_failure_code: z.string().nullable(),
     created_at: instantSchema,
     updated_at: instantSchema,
+    requested_by: actorRefSchema,
+    submitted_by: actorRefSchema,
   })
   .transform((tenant) => ({
     id: tenant.id,
@@ -88,6 +95,8 @@ export const tenantDetailSchema = z
     bootstrapFailureCode: tenant.bootstrap_failure_code,
     createdAt: tenant.created_at,
     updatedAt: tenant.updated_at,
+    requestedBy: tenant.requested_by,
+    submittedBy: tenant.submitted_by,
   }));
 
 export type TenantDetail = z.output<typeof tenantDetailSchema>;

@@ -13,8 +13,7 @@ export interface FakeOrganisation {
   bootstrapFailureCode: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Maker-checker only (approve ≠ creator and submitter, contract §E.2); the real API keeps both
-   * on its bootstrap record. */
+  /** `requested_by` and `submitted_by` (BG-08); the maker-checker refuses both (contract §E.2). */
   createdBy?: string;
   submittedBy?: string;
 }
@@ -40,7 +39,7 @@ export interface FakeMembership {
   primaryBranchId: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Layer 10 maker-checker (approver ≠ inviter); the real API keeps the inviter in the audit log. */
+  /** The membership's `created_by`, its inviter (BG-08); absent = the system. */
   invitedBy?: string;
 }
 
@@ -56,8 +55,9 @@ export interface FakeBranch {
   statusReason: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Maker-checker only (activate ≠ drafter); the real API keeps the drafter in the audit log. */
+  /** `created_by` and the latest submitter, `submitted_by` (BG-08); absent = the system. */
   draftedBy?: string;
+  submittedBy?: string;
 }
 
 export interface FakeBranchAssignment {

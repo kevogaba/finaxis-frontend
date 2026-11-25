@@ -11,7 +11,12 @@ import { RecordTabs } from '@/components/data-display/record-tabs';
 import { humanizeEnum, StatusChip } from '@/components/data-display/status-chip';
 import { PageHeader } from '@/components/shell/page-header';
 import { load } from '@/lib/api/load';
-import { activateBlocked } from '@/modules/administration/branches/branch-rules';
+import {
+  isMaker,
+  makerGate,
+  SELF_APPROVAL_NOTE_USERS,
+} from '@/modules/administration/approvals/maker-checker';
+import { readMakerCheckerSwitch } from '@/modules/administration/settings/settings-service';
 import { UserLifecycleActions } from '@/modules/administration/users/components/user-lifecycle-actions';
 import {
   availableMembershipActions,
@@ -20,11 +25,7 @@ import {
   onboardingState,
   parseUserId,
 } from '@/modules/administration/users/user-rules';
-import {
-  findUserMembership,
-  getUser,
-  getUserInviter,
-} from '@/modules/administration/users/user-service';
+import { findUserMembership, getUser } from '@/modules/administration/users/user-service';
 
 export const metadata: Metadata = { title: 'User record' };
 
@@ -67,19 +68,27 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
     : null;
   const membershipId = membership?.ok ? (membership.value?.id ?? null) : null;
   const actions = membershipId ? availableMembershipActions(status, holder) : [];
-  // BG-08: the inviter is only in the audit log; look it up only when Approve is on offer. load()
-  // redirects on a lost session or a stale context; any other failure leaves the inviter unknown
-  // and Approve on offer, where the backend's maker-checker 403 (BG-08) is the guard.
-  const inviterRead =
-    actions.includes('approve') && can(holder, 'audit.view')
-      ? await load(getUserInviter(record.id))
-      : null;
-  const inviter = inviterRead?.ok ? inviterRead.value : null;
+  // BG-08: the inviter is the record's own `created_by`; the switch is read only when they are
+  // the one who could approve (decision Q4: unread, Approve stays on offer for the platform).
+  const me = resolved?.profile.user_id ?? '';
+  const makers = [record.createdBy?.id];
+  const gate = makerGate({
+    makerIds: makers,
+    callerId: me,
+    switchState:
+      actions.includes('approve') && isMaker(makers, me)
+        ? await readMakerCheckerSwitch('user_invites', holder)
+        : 'unknown',
+  });
   const blocked = blockedMembershipActions(actions, {
     ...status,
     self: record.id === resolved?.profile.user_id, // the backend's id, not the URL's (Ruling 6)
-    invitedByMe: activateBlocked(inviter, resolved?.profile.user_id ?? null),
+    makerGate: gate,
   });
+  const warning =
+    actions.includes('approve') && !blocked.approve && gate === 'allowed-self-approval'
+      ? SELF_APPROVAL_NOTE_USERS
+      : null;
   const note = membershipActionsNote(
     holder,
     membership?.ok === false ? 'failed' : membershipId ? 'found' : 'missing',
@@ -114,6 +123,7 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
               actions={actions}
               blocked={blocked}
               note={note}
+              warning={warning}
               userStatus={record.userStatus}
               contextOrganisationId={resolved?.context.organization.id}
             />

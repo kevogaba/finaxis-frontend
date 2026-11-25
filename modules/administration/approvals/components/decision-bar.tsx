@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -20,6 +21,9 @@ import {
 import type { ApprovalDecision } from '../approval-rules';
 import { activatePendingBranch } from '../branch-activation-actions';
 
+/** The self-approval note, which describes the decision it relaxes. */
+const WARNING_ID = 'approval-decision-warning';
+
 /** What the dialogs post: the membership or the branch the decision writes; the action reads its
  * state again by that id. `membershipId` is null when the page's lookup found none (no decision). */
 export type DecisionSubject =
@@ -34,6 +38,9 @@ interface DecisionBarProps {
   blocked: Partial<Record<ApprovalDecision, string>>;
   /** Why the bar offers less than the holder's codes suggest (no `membership.view`, …). */
   note: string | null;
+  /** Said above the decisions before one is taken: the maker deciding while maker-checker is off
+   * (BG-08). */
+  warning: string | null;
   /** I2: the organisation the page rendered for; forwarded to every dialog as a hidden field. */
   contextOrganisationId: string;
 }
@@ -57,6 +64,7 @@ export function DecisionBar({
   decisions,
   blocked,
   note,
+  warning,
   contextOrganisationId,
 }: DecisionBarProps) {
   const notify = useToast();
@@ -137,6 +145,11 @@ export function DecisionBar({
           '& > *': { flexGrow: { xs: 1, md: 0 } },
         }}
       >
+        {warning && offered.length > 0 && (
+          <Alert id={WARNING_ID} severity="warning" role="note" sx={{ flexBasis: '100%' }}>
+            {warning}
+          </Alert>
+        )}
         {offered.map((id, index) => {
           const reason = blocked[id];
           const copy = decisionCopy(id, name);
@@ -149,7 +162,14 @@ export function DecisionBar({
               variant={index === 0 ? 'contained' : 'outlined'}
               color={copy.destructive ? 'error' : 'primary'}
               disabled={reason !== undefined}
-              aria-describedby={reason === undefined ? undefined : captionId(reason)}
+              aria-describedby={
+                reason !== undefined
+                  ? captionId(reason)
+                  : // The self-approval note describes the decision it relaxes.
+                    warning && (id === 'approve' || id === 'activate')
+                    ? WARNING_ID
+                    : undefined
+              }
               onClick={() => {
                 setOpen(id);
               }}

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  actorRef,
   requireAssignSelf,
   requireContext,
   requirePermission,
@@ -19,6 +20,7 @@ import {
 } from '../http.mts';
 import type { Violation } from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
+import { makerCheckerRequired } from './settings.mts';
 import { route } from '../router.mts';
 import type { Route, RouteContext } from '../router.mts';
 import type { FakeBranch, FakeBranchAssignment } from '../state.mts';
@@ -46,7 +48,13 @@ function reachableBranch(access: AccessContext, branchId: string): FakeBranch {
   return branch;
 }
 
-export const branchDetailWire = (branch: FakeBranch) => ({
+/** The makers every branch body carries (BranchSummaryResponse, BranchDetailResponse; BG-08). */
+export const branchMakersWire = (access: AccessContext, branch: FakeBranch) => ({
+  created_by: actorRef(access, branch.organisationId, branch.draftedBy),
+  submitted_by: actorRef(access, branch.organisationId, branch.submittedBy),
+});
+
+export const branchDetailWire = (access: AccessContext, branch: FakeBranch) => ({
   id: branch.id,
   organisation_id: branch.organisationId,
   branch_code: branch.code,
@@ -61,6 +69,7 @@ export const branchDetailWire = (branch: FakeBranch) => ({
   status_reason: branch.statusReason,
   created_at: branch.createdAt,
   updated_at: branch.updatedAt,
+  ...branchMakersWire(access, branch),
 });
 
 export const BRANCH_DRAFT_KEYS = [
@@ -115,18 +124,39 @@ const assignmentWire = (row: FakeBranchAssignment) => ({
   status: row.status,
 });
 
-type Guard = (access: AccessContext, branch: FakeBranch) => void;
+/** Runs before the state check; what it returns runs after the transition is recorded. */
+type Guard = (
+  access: AccessContext,
+  branch: FakeBranch,
+) => ((reason: string | null) => void) | undefined;
 
 /** BG-08: the drafter is refused by name, before the state check (BranchProvisioningService). The
- * tenant route doesn't refuse the submitter; the fake keeps no amenders yet. */
+ * tenant route doesn't refuse the submitter; the fake keeps no amenders yet. A stored `false`
+ * switch lets the drafter activate, with an extra `branch.self_approve` row, HIGH (ADR 0032). */
 const makerChecker: Guard = (access, branch) => {
-  if (branch.draftedBy === access.claims.userId) {
+  if (branch.draftedBy !== access.claims.userId) return undefined;
+  if (
+    makerCheckerRequired(
+      access.state,
+      access.organisation.id,
+      'require_maker_checker_for_branch_creation',
+    )
+  ) {
     throw problem(
       403,
       'lifecycle.approver_is_branch_maker',
       "The approver cannot be the branch's creator or submitter.",
     );
   }
+  return (reason) => {
+    recordAuditEvent(access.state, access, {
+      entityType: 'BRANCH',
+      entityId: branch.id,
+      action: 'branch.self_approve',
+      reason,
+      severity: 'HIGH',
+    });
+  };
 };
 
 const nothingActiveBelow: Guard = (access, branch) => {
@@ -161,11 +191,12 @@ function transition(
     sendIdempotent(context, body, () => {
       // The guard first: activate's maker-checker precedes the state (BG-08); close's guard and its
       // state check are both 409 `conflict`, so their order doesn't show.
-      guard(access, branch);
+      const after = guard(access, branch);
       if (!from.includes(branch.status)) {
         throw problem(409, 'conflict', `The branch must be ${from.join(' or ')}.`);
       }
       branch.status = to;
+      if (path === 'submit') branch.submittedBy = access.claims.userId; // the latest submitter
       branch.statusReason = reason; // overwritten by every transition (contract §C)
       branch.updatedAt = new Date().toISOString();
       recordAuditEvent(context.state, access, {
@@ -174,7 +205,8 @@ function transition(
         action,
         reason,
       });
-      return branchDetailWire(branch);
+      after?.(reason);
+      return branchDetailWire(access, branch);
     });
   });
 }
@@ -186,7 +218,7 @@ export const branchRoutes: Route[] = [
     sendJson(
       context.res,
       200,
-      branchDetailWire(reachableBranch(access, context.params.branch_id ?? '')),
+      branchDetailWire(access, reachableBranch(access, context.params.branch_id ?? '')),
     );
   }),
 

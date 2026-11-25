@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BOOTSTRAP_STATUSES } from './tenant-contract';
 import {
   availableTenantActions,
+  blockedTenantActions,
   bootstrapStatusLabel,
   canRetryBootstrap,
   countryLabel,
@@ -67,6 +68,40 @@ describe('tenant lifecycle availability', () => {
         permissions: ['tenant.approve', 'tenant.reject'],
       }),
     ).toEqual([]);
+  });
+
+  // BG-08 (TenantCheckerRule): its requester and its submitter never decide it; no switch applies.
+  describe('blockedTenantActions', () => {
+    const ME = 'a1000000-0000-4000-8000-0000000000aa';
+    const OTHER = 'b2000000-0000-4000-8000-0000000000bb';
+    const actor = (id: string) => ({ id, displayName: null });
+    const CAPTION =
+      'You requested or submitted this institution, so another platform administrator must decide it.';
+
+    it.each([
+      ['its requester', { requestedBy: actor(ME), submittedBy: actor(OTHER) }],
+      ['its submitter, in any case', { requestedBy: null, submittedBy: actor(ME.toUpperCase()) }],
+    ])('disables Approve and Reject for %s', (_case, makers) => {
+      expect(blockedTenantActions(['approve', 'reject'], makers, ME)).toEqual({
+        approve: CAPTION,
+        reject: CAPTION,
+      });
+    });
+
+    it('blocks nothing for anyone else, an unknown caller, or the other actions', () => {
+      const makers = { requestedBy: actor(OTHER), submittedBy: null };
+      expect(blockedTenantActions(['approve', 'reject'], makers, ME)).toEqual({});
+      expect(
+        blockedTenantActions(['approve'], { requestedBy: actor(ME), submittedBy: null }, null),
+      ).toEqual({});
+      expect(
+        blockedTenantActions(
+          ['submit', 'amend', 'suspend'],
+          { requestedBy: actor(ME), submittedBy: actor(ME) },
+          ME,
+        ),
+      ).toEqual({});
+    });
   });
 
   it('offers a bootstrap retry only for a FAILED bootstrap, with both codes', () => {

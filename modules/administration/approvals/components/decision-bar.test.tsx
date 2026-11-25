@@ -37,6 +37,7 @@ interface Overrides {
   decisions?: readonly ApprovalDecision[];
   blocked?: Partial<Record<ApprovalDecision, string>>;
   note?: string | null;
+  warning?: string | null;
 }
 
 /** The hero's slot: the record title is the page's `h1`, the focus fallback's target. */
@@ -45,6 +46,7 @@ const record = ({
   decisions = ['approve', 'reject'],
   blocked = {},
   note = null,
+  warning = null,
 }: Overrides = {}) => (
   <main>
     <h1>{subject.kind === 'branch' ? BRANCH_NAME : NAME}</h1>
@@ -54,6 +56,7 @@ const record = ({
       decisions={decisions}
       blocked={blocked}
       note={note}
+      warning={warning}
       contextOrganisationId={ORG}
     />
   </main>
@@ -70,6 +73,23 @@ function expectScoped(sent: FormData | undefined, field: 'membershipId' | 'branc
 describe('DecisionBar', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+  });
+
+  // BG-08: maker-checker off lets the maker decide, warned before the decision.
+  it('shows a self-approval warning above the decisions, which stay enabled', () => {
+    const warning = 'Maker-checker is off for user invitations. You invited this person.';
+    renderWithProviders(record({ warning }));
+
+    const note = screen.getByRole('note');
+    expect(note).toHaveTextContent(warning);
+    const approve = screen.getByRole('button', { name: 'Approve' });
+    expect(approve).toBeEnabled();
+    expect(note.compareDocumentPosition(approve) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows no warning without one', () => {
+    renderWithProviders(record());
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
   });
 
   it.each([

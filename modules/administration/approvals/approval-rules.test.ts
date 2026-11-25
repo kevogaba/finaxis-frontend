@@ -14,15 +14,13 @@ import {
   BRANCH_QUEUE_HREF,
   branchApprovalHref,
   branchOutcomeNote,
-  isSameUser,
   USER_QUEUE_HREF,
   userApprovalHref,
   userApprovalState,
   userOutcomeNote,
 } from './approval-rules';
 
-// Distinct first blocks, so a short id names its id; lettered, so upper case differs.
-const ME = 'a1000000-0000-4000-8000-0000000000aa';
+// Distinct first blocks, so a short id names its id.
 const VICTOR = 'b2000000-0000-4000-8000-0000000000bb';
 
 /** Every code held tenant-wide. */
@@ -80,14 +78,6 @@ describe('the queue', () => {
     expect(userApprovalHref(VICTOR)).toBe(`/admin/approvals/users/${VICTOR}`);
     expect(branchApprovalHref(VICTOR)).toBe(`/admin/approvals/branches/${VICTOR}`);
   });
-
-  it('compares user ids without letter case, and never matches an unknown one', () => {
-    expect(isSameUser(ME.toUpperCase(), ME)).toBe(true);
-    expect(isSameUser(ME, ME.toUpperCase())).toBe(true);
-    expect(isSameUser(VICTOR, ME)).toBe(false);
-    expect(isSameUser(null, ME)).toBe(false);
-    expect(isSameUser(null, null)).toBe(false);
-  });
 });
 
 describe('where a user approval stands', () => {
@@ -137,12 +127,12 @@ describe('where a user approval stands', () => {
     expect(availableUserDecisions('decided', APPROVER)).toEqual([]);
   });
 
-  it('disables Approve for a blocked account first, then for its inviter, never Reject', () => {
+  it('disables Approve for a blocked account first, then for a blocked maker, never Reject', () => {
     expect(
       blockedUserDecisions(['approve', 'reject'], {
         state: 'blocked',
         userStatus: 'SUSPENDED',
-        invitedByMe: true,
+        makerGate: 'blocked',
       }),
     ).toEqual({
       approve: "Their account is suspended on the platform, so this membership can't be approved.",
@@ -151,24 +141,31 @@ describe('where a user approval stands', () => {
       blockedUserDecisions(['approve', 'reject'], {
         state: 'awaiting',
         userStatus: 'DRAFT',
-        invitedByMe: true,
+        makerGate: 'blocked',
       }),
     ).toEqual({ approve: USER_MAKER_CHECKER_BLOCKED });
-    expect(
-      blockedUserDecisions(['approve', 'reject'], {
-        state: 'awaiting',
-        userStatus: 'DRAFT',
-        invitedByMe: false,
-      }),
-    ).toEqual({});
     expect(
       blockedUserDecisions(['reject'], {
         state: 'awaiting',
         userStatus: 'DRAFT',
-        invitedByMe: true,
+        makerGate: 'blocked',
       }),
     ).toEqual({});
   });
+
+  // A maker whose switch is off, or can't be read, keeps Approve (decision Q4).
+  it.each(['allowed', 'allowed-self-approval'] as const)(
+    'keeps Approve enabled for a %s maker gate',
+    (makerGate) => {
+      expect(
+        blockedUserDecisions(['approve', 'reject'], {
+          state: 'awaiting',
+          userStatus: 'DRAFT',
+          makerGate,
+        }),
+      ).toEqual({});
+    },
+  );
 
   it('says what happened instead of offering a decision', () => {
     expect(userOutcomeNote('awaiting', 'PENDING_APPROVAL')).toBeNull();
@@ -198,12 +195,15 @@ describe('where a branch activation stands', () => {
     );
   });
 
-  it('disables Activate for its drafter', () => {
-    expect(blockedBranchDecisions(['activate'], { draftedByMe: true })).toEqual({
+  it('disables Activate only while the maker gate blocks it', () => {
+    expect(blockedBranchDecisions(['activate'], { makerGate: 'blocked' })).toEqual({
       activate: MAKER_CHECKER_BLOCKED,
     });
-    expect(blockedBranchDecisions(['activate'], { draftedByMe: false })).toEqual({});
-    expect(blockedBranchDecisions([], { draftedByMe: true })).toEqual({});
+    expect(blockedBranchDecisions(['activate'], { makerGate: 'allowed' })).toEqual({});
+    expect(blockedBranchDecisions(['activate'], { makerGate: 'allowed-self-approval' })).toEqual(
+      {},
+    );
+    expect(blockedBranchDecisions([], { makerGate: 'blocked' })).toEqual({});
   });
 
   it.each([

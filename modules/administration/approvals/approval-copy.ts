@@ -73,7 +73,6 @@ export type ApproveResult =
  * `own_account`, 16's `tenant_code_taken`). */
 export const APPROVAL_CHANGED_CODE = 'approval_changed';
 export const ACCOUNT_BLOCKED_CODE = 'account_blocked';
-export const MAKER_CHECKER_CODE = 'maker_checker';
 export const BRANCH_CONTEXT_CODE = 'branch_context';
 
 export const APPROVAL_CHANGED =
@@ -115,8 +114,6 @@ export const BRANCH_REQUEST = 'Branch activation: a submitted branch';
 export const REQUEST_DESCRIPTION = 'Who asked, and when. The full history is in the audit trail.';
 export const CHECKS_DESCRIPTION =
   "What the platform requires before it approves or activates. A check this page can't read is left to the platform.";
-export const MAKER_NOT_PERMITTED = "Your role can't view the audit trail";
-export const MAKER_NOT_RECORDED = 'Not in the audit trail';
 export const MEMBERSHIP_NOT_FOUND = "Their membership couldn't be found";
 export const READ_FAILED = "Couldn't be loaded";
 

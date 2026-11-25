@@ -46,12 +46,6 @@ export const MAKER_CHECKER_BLOCKED =
  * their own codes (BG-08). The branch record and the approval page share it. */
 export const ACTIVATE_FORBIDDEN = "You can't activate this branch. Your role doesn't allow it.";
 
-/** BG-08: the drafter comes from the audit log. An unknown drafter never blocks — the backend
- * decides, and a 403 is explained then. */
-export function activateBlocked(makerId: string | null, userId: string | null): boolean {
-  return makerId !== null && makerId === userId;
-}
-
 /** Assigning needs an ACTIVE branch (else 409) and the write's views (ADR 0030); the drawer's user
  * search reads `/tenant/users`, which needs `user.view` tenant-wide (BG-33). */
 export function canAssignUsers(status: BranchStatus, holder: PermissionHolder): boolean {

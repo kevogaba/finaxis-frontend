@@ -13,7 +13,7 @@ import {
 import { sendIdempotent } from '../idempotency.mts';
 import { route } from '../router.mts';
 import type { Route, RouteContext } from '../router.mts';
-import type { FakeTenantSetting } from '../state.mts';
+import type { FakeTenantSetting, RunState } from '../state.mts';
 
 const BASE = '/api/v1/tenant/settings';
 const MASK = '***REDACTED***';
@@ -153,6 +153,18 @@ function toWire(access: AccessContext, key: string, row: FakeTenantSetting | und
   };
 }
 
+/** MakerCheckerPolicy: segregation is on unless the tenant stored the literal `false`. */
+export function makerCheckerRequired(
+  state: RunState,
+  organisationId: string,
+  key: string,
+): boolean {
+  const row = state.tenantSettings.find(
+    (candidate) => candidate.organisationId === organisationId && candidate.key === key,
+  );
+  return row?.value !== 'false';
+}
+
 /** The service's order: unknown key → 422, platform-only → 403, `settings.update` (and its view)
  * → 403, then `base_currency` → 422. (A non-ACTIVE organisation's 409 comes first on the platform,
  * but the context check refuses it here before any route runs.) */
@@ -224,6 +236,23 @@ export const settingsRoutes: Route[] = [
       ),
     );
     sendJson(context.res, 200, pageOf(items, context.query));
+  }),
+
+  // TenantSettingsService.get: each key's own permission before the stored row is read (a
+  // platform-only key needs the platform permission a tenant context never holds), then 422 for a
+  // key neither in the catalogue nor stored. Sensitive values are masked; nothing stored here is.
+  route('GET', `${BASE}/:key`, (context) => {
+    const access = tenantAccess(context);
+    const key = context.params.key ?? '';
+    if (CATALOGUE.get(key)?.platformAdminOnly) {
+      throw problem(403, 'forbidden', 'Missing permission: tenant_setting.manage_platform.');
+    }
+    requirePermission(access, 'settings.view');
+    const row = rowOf(context, access, key);
+    if (!CATALOGUE.has(key) && !row) {
+      throw problem(422, 'invalid_operation', 'Unknown tenant setting key.');
+    }
+    sendJson(context.res, 200, toWire(access, key, row));
   }),
 
   route('PUT', `${BASE}/:key`, async (context) => {

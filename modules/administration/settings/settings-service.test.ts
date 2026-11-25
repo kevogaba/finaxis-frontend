@@ -6,7 +6,17 @@ vi.mock('@/lib/api/tenant-api', () => ({
   apiGet: (...args: unknown[]) => apiGet(...args) as unknown,
 }));
 
-const { listSettings } = await import('./settings-service');
+vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
+const redirect = vi.fn((path: string) => {
+  throw new Error(`NEXT_REDIRECT ${path}`);
+});
+vi.mock('next/navigation', () => ({
+  redirect: (path: string) => redirect(path),
+  unstable_rethrow: () => undefined,
+}));
+
+const { BackendApiError } = await import('@/auth/backend-api');
+const { listSettings, readMakerCheckerSwitch } = await import('./settings-service');
 
 /** Parses `raw` with whatever schema the call site passes, so a schema miss rejects like the real `apiGet`. */
 const wire =
@@ -79,5 +89,69 @@ describe('settings service', () => {
       },
     ]);
     expect(result.page).toMatchObject({ hasNext: false });
+  });
+});
+
+describe('readMakerCheckerSwitch (BG-08, decision Q4)', () => {
+  const VIEWER = { permissions: ['settings.view'], tenantPermissions: ['settings.view'] };
+  const setting = (value: string | null) => ({
+    key: 'require_maker_checker_for_user_invites',
+    value,
+    value_type: 'BOOLEAN',
+    sensitive: false,
+    platform_admin_only: false,
+    is_default: value === null,
+    label: 'Require maker-checker for user invitations',
+    description: null,
+    group: 'Approvals',
+  });
+
+  it.each([
+    ['"false" is off', 'false', 'off'],
+    ['"true" is on', 'true', 'on'],
+    // On unless the stored value is the literal "false" (MakerCheckerPolicy).
+    ['any other value is on', 'FALSE', 'on'],
+    ['an unset value is on', null, 'on'],
+  ] as const)('reads the key: %s', async (_case, value, state) => {
+    apiGet.mockImplementationOnce(wire(setting(value)));
+    await expect(readMakerCheckerSwitch('user_invites', VIEWER)).resolves.toBe(state);
+    expect(apiGet).toHaveBeenLastCalledWith(
+      '/api/v1/tenant/settings/require_maker_checker_for_user_invites',
+      expect.anything(),
+    );
+  });
+
+  it('reads the branch switch by its own key', async () => {
+    apiGet.mockImplementationOnce(
+      wire({ ...setting('false'), key: 'require_maker_checker_for_branch_creation' }),
+    );
+    await expect(readMakerCheckerSwitch('branch_creation', VIEWER)).resolves.toBe('off');
+    expect(apiGet).toHaveBeenLastCalledWith(
+      '/api/v1/tenant/settings/require_maker_checker_for_branch_creation',
+      expect.anything(),
+    );
+  });
+
+  it('answers unknown without settings.view tenant-wide, reading nothing', async () => {
+    apiGet.mockClear();
+    await expect(readMakerCheckerSwitch('user_invites', { permissions: [] })).resolves.toBe(
+      'unknown',
+    );
+    // A branch-scoped grant doesn't count: the platform checks it tenant-wide.
+    await expect(
+      readMakerCheckerSwitch('user_invites', { permissions: ['settings.view'] }),
+    ).resolves.toBe('unknown');
+    expect(apiGet).not.toHaveBeenCalled();
+  });
+
+  it('answers unknown when the read fails', async () => {
+    apiGet.mockRejectedValueOnce(new BackendApiError(503, { requestId: 'req-1' }));
+    await expect(readMakerCheckerSwitch('user_invites', VIEWER)).resolves.toBe('unknown');
+  });
+
+  it('still sends a lost session to sign in again', async () => {
+    apiGet.mockRejectedValueOnce(new BackendApiError(401));
+    await expect(readMakerCheckerSwitch('user_invites', VIEWER)).rejects.toThrow('NEXT_REDIRECT');
+    expect(redirect).toHaveBeenCalledWith('/login?reason=session_expired');
   });
 });

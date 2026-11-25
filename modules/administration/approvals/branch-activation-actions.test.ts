@@ -1,29 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
-import {
-  ACTIVATE_FORBIDDEN,
-  MAKER_CHECKER_BLOCKED,
-} from '@/modules/administration/branches/branch-rules';
+import { ACTIVATE_FORBIDDEN } from '@/modules/administration/branches/branch-rules';
 import { BRANCH_CHANGED, BRANCH_CONTEXT_REFUSAL } from './approval-copy';
 
-const {
-  apiPost,
-  getAuthenticatedUser,
-  getBranch,
-  getCurrentContextProfile,
-  getMakerEvent,
-  refresh,
-} = vi.hoisted(() => ({
-  apiPost: vi.fn((_path: string, _body: Record<string, unknown>, _key: string) =>
-    Promise.resolve<unknown>({}),
-  ),
-  getAuthenticatedUser: vi.fn(),
-  getBranch: vi.fn(),
-  getCurrentContextProfile: vi.fn(),
-  getMakerEvent: vi.fn(),
-  refresh: vi.fn(),
-}));
+const { apiPost, getAuthenticatedUser, getBranch, getCurrentContextProfile, refresh } = vi.hoisted(
+  () => ({
+    apiPost: vi.fn((_path: string, _body: Record<string, unknown>, _key: string) =>
+      Promise.resolve<unknown>({}),
+    ),
+    getAuthenticatedUser: vi.fn(),
+    getBranch: vi.fn(),
+    getCurrentContextProfile: vi.fn(),
+    refresh: vi.fn(),
+  }),
+);
 vi.mock('@/config/env.server', () => ({ serverEnv: {} }));
 vi.mock('@/lib/api/tenant-api', () => ({
   apiPost: (path: string, body: Record<string, unknown>, key: string) => apiPost(path, body, key),
@@ -46,15 +36,11 @@ vi.mock('@/auth/context-service', () => ({
 vi.mock('@/modules/administration/branches/branch-service', () => ({
   getBranch: (id: string) => getBranch(id) as unknown,
 }));
-vi.mock('./approval-service', () => ({
-  getMakerEvent: (kind: string, id: string) => getMakerEvent(kind, id) as unknown,
-}));
 
 const { activatePendingBranch } = await import('./branch-activation-actions');
 
 // Distinct first blocks, so a short id names its id; lettered, so upper case differs.
 const ME = 'a1000000-0000-4000-8000-0000000000aa';
-const VICTOR = 'b2000000-0000-4000-8000-0000000000bb';
 const BRANCH = 'e5000000-0000-4000-8000-0000000000ee';
 const WESTLANDS = 'c3000000-0000-4000-8000-0000000000cc';
 const ORGANISATION = 'f6000000-0000-4000-8000-0000000000ff';
@@ -63,7 +49,7 @@ const KEY = '0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
 
 function resolved(
   branch: { id: string; name: string } | null = null,
-  permissions: string[] = ['branch.approve', 'branch.view', 'audit.view'],
+  permissions: string[] = ['branch.approve', 'branch.view'],
 ) {
   return {
     kind: 'resolved',
@@ -95,7 +81,6 @@ describe('activatePendingBranch', () => {
     apiPost.mockReset();
     getAuthenticatedUser.mockResolvedValue({ id: 'session-user' });
     getCurrentContextProfile.mockResolvedValue(resolved());
-    getMakerEvent.mockResolvedValue({ actorUserId: VICTOR, occurredAt: '2026-09-10T08:00:00Z' });
     getBranch.mockResolvedValue({ id: BRANCH, status: 'PENDING_APPROVAL' });
   });
 
@@ -107,7 +92,6 @@ describe('activatePendingBranch', () => {
       ok: true,
     });
     expect(getBranch).toHaveBeenCalledExactlyOnceWith(BRANCH);
-    expect(getMakerEvent).toHaveBeenCalledExactlyOnceWith('branch', BRANCH);
     expect(apiPost).toHaveBeenCalledExactlyOnceWith(
       `/api/v1/branches/${BRANCH}/activate`,
       body,
@@ -188,17 +172,6 @@ describe('activatePendingBranch', () => {
     );
   });
 
-  it('still refuses the drafter of an ACTIVE branch before any write', async () => {
-    getBranch.mockResolvedValue({ id: BRANCH, status: 'ACTIVE' });
-    getMakerEvent.mockResolvedValue({ actorUserId: ME, occurredAt: '2026-09-10T08:00:00Z' });
-    await expect(activatePendingBranch(null, branchForm())).resolves.toMatchObject({
-      ok: false,
-      code: 'maker_checker',
-      formError: MAKER_CHECKER_BLOCKED,
-    });
-    expect(apiPost).not.toHaveBeenCalled();
-  });
-
   it('keeps a 500 from a pending branch as the generic failure, not as changed', async () => {
     apiPost.mockRejectedValueOnce(new BackendApiError(500, { requestId: 'req-z' }));
     // No backend code and no changed reading: the generic failure keeps its reference.
@@ -207,19 +180,6 @@ describe('activatePendingBranch', () => {
       code: null,
       requestId: 'req-z',
     });
-  });
-
-  it('refuses its drafter, matched case-insensitively, before any write', async () => {
-    getMakerEvent.mockResolvedValue({
-      actorUserId: ME.toUpperCase(),
-      occurredAt: '2026-09-10T08:00:00Z',
-    });
-    await expect(activatePendingBranch(null, branchForm())).resolves.toMatchObject({
-      ok: false,
-      code: 'maker_checker',
-      formError: MAKER_CHECKER_BLOCKED,
-    });
-    expect(apiPost).not.toHaveBeenCalled();
   });
 
   it('explains the backend’s `forbidden` as a missing permission only (BG-08)', async () => {
@@ -261,7 +221,8 @@ describe('activatePendingBranch', () => {
   });
 
   // Beyond the plan's rows: the layer's Review Focus 1 and the 4a review's lessons (the guard
-  // reads' own failures, the maker compare in both orders, the cross-tab and id guards).
+  // reads' own failures, the cross-tab and id guards). The drafter is the platform's to refuse: a
+  // switch may let them activate (BG-08), and its named refusal is explained below.
 
   it('sends a reason of exactly 500 characters', async () => {
     const reason = 'x'.repeat(500);
@@ -271,79 +232,6 @@ describe('activatePendingBranch', () => {
       { reason },
       KEY,
     );
-  });
-
-  it('refuses its drafter when the signed-in id is the upper-case one, before any write', async () => {
-    getCurrentContextProfile.mockResolvedValue({
-      ...resolved(),
-      profile: { user_id: ME.toUpperCase(), permissions: ['branch.approve', 'audit.view'] },
-    });
-    getMakerEvent.mockResolvedValue({ actorUserId: ME, occurredAt: '2026-09-10T08:00:00Z' });
-    await expect(activatePendingBranch(null, branchForm())).resolves.toMatchObject({
-      ok: false,
-      code: 'maker_checker',
-      formError: MAKER_CHECKER_BLOCKED,
-    });
-    expect(apiPost).not.toHaveBeenCalled();
-  });
-
-  it('leaves maker-checker to the backend without audit.view (no maker read)', async () => {
-    getCurrentContextProfile.mockResolvedValue(resolved(null, ['branch.approve', 'branch.view']));
-    await expect(activatePendingBranch(null, branchForm())).resolves.toEqual({ ok: true });
-    expect(getMakerEvent).not.toHaveBeenCalled();
-    expect(apiPost).toHaveBeenCalledExactlyOnceWith(`/api/v1/branches/${BRANCH}/activate`, {}, KEY);
-  });
-
-  it('leaves maker-checker to the backend when the audit log records no drafter', async () => {
-    getMakerEvent.mockResolvedValue(null);
-    await expect(activatePendingBranch(null, branchForm())).resolves.toEqual({ ok: true });
-    expect(apiPost).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([
-    ['a 403', new BackendApiError(403, { code: 'forbidden' })],
-    ['a 5xx', new BackendApiError(503, { requestId: 'req-maker' })],
-  ])('leaves maker-checker to the backend when the maker read fails with %s', async (_c, error) => {
-    getMakerEvent.mockRejectedValue(error);
-    apiPost.mockRejectedValueOnce(
-      new BackendApiError(403, { code: 'forbidden', requestId: 'req-2' }),
-    );
-    await expect(activatePendingBranch(null, branchForm())).resolves.toMatchObject({
-      ok: false,
-      code: 'forbidden',
-      formError: ACTIVATE_FORBIDDEN,
-      requestId: 'req-2',
-    });
-    expect(apiPost).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([
-    ['a lost session', new BackendApiError(401), 'NEXT_REDIRECT:/login?reason=session_expired'],
-    [
-      'a stale context',
-      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
-      'NEXT_REDIRECT:/select-context',
-    ],
-  ])('redirects when the maker read finds %s, before any write', async (_case, error, to) => {
-    getMakerEvent.mockRejectedValue(error);
-    await expect(activatePendingBranch(null, branchForm())).rejects.toThrow(to);
-    expect(apiPost).not.toHaveBeenCalled();
-  });
-
-  it('fails the action with a reference, before any write, when the audit page is unreadable', async () => {
-    // Ruling 5's one asymmetry: only a BackendApiError leaves the maker unknown; the action never
-    // guesses past a response it can't read.
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const unreadable = z.object({ items: z.array(z.unknown()) }).safeParse({}).error;
-    getMakerEvent.mockRejectedValue(unreadable);
-    await expect(activatePendingBranch(null, branchForm())).resolves.toMatchObject({
-      ok: false,
-      code: 'contract_mismatch',
-      requestId: expect.any(String),
-    });
-    expect(apiPost).not.toHaveBeenCalled();
-    expect(logged).toHaveBeenCalledTimes(1);
-    logged.mockRestore();
   });
 
   it('redirects a lost session reading the branch, before any write', async () => {
@@ -360,7 +248,6 @@ describe('activatePendingBranch', () => {
       ok: false,
       requestId: 'req-read',
     });
-    expect(getMakerEvent).not.toHaveBeenCalled();
     expect(apiPost).not.toHaveBeenCalled();
   });
 

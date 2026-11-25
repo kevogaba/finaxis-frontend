@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import Paper from '@mui/material/Paper';
 import AccountTreeOutlined from '@mui/icons-material/AccountTreeOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can } from '@/auth/permissions';
+import { can, permissionHolder } from '@/auth/permissions';
 import { ErrorState } from '@/components/data-display/error-state';
 import { BranchContextState } from '@/components/data-display/forbidden-state';
 import { RecordHero } from '@/components/data-display/record-hero';
@@ -14,12 +14,17 @@ import { PageHeader } from '@/components/shell/page-header';
 import { load } from '@/lib/api/load';
 import { UUID_PATTERN } from '@/lib/api/wire';
 import {
-  activateBlocked,
+  isMaker,
+  makerGate,
+  SELF_APPROVAL_NOTE_BRANCHES,
+} from '@/modules/administration/approvals/maker-checker';
+import {
   availableBranchActions,
   branchTypeLabel,
 } from '@/modules/administration/branches/branch-rules';
-import { getBranch, getBranchMaker } from '@/modules/administration/branches/branch-service';
+import { getBranch } from '@/modules/administration/branches/branch-service';
 import { BranchLifecycleActions } from '@/modules/administration/branches/components/branch-lifecycle-actions';
+import { readMakerCheckerSwitch } from '@/modules/administration/settings/settings-service';
 
 export const metadata: Metadata = { title: 'Branch record' };
 
@@ -70,16 +75,21 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
   }
 
   const record = branch.value;
-  const holder = { permissions: resolved?.profile.permissions ?? [] };
+  const holder = permissionHolder(resolved?.profile);
   const actions = availableBranchActions(record.status, holder);
-  // BG-08: the drafter is only in the audit log — look it up only when Activate is on offer.
-  // load() redirects on a lost session or a stale context; any other failure leaves the drafter
-  // unknown and Activate on offer, where the backend's maker-checker 403 (BG-08) is the guard.
-  const makerRead =
-    actions.includes('activate') && can(holder, 'audit.view')
-      ? await load(getBranchMaker(branchId))
-      : null;
-  const maker = makerRead?.ok ? makerRead.value : null;
+  // BG-08: the tenant route refuses the record's creator (`created_by`), not its submitter. The
+  // switch is read only when the caller drafted it and Activate is on offer (decision Q4: unread,
+  // Activate stays on offer, and the platform's named refusal explains a refusal).
+  const me = resolved?.profile.user_id ?? '';
+  const makers = [record.createdBy?.id];
+  const gate = makerGate({
+    makerIds: makers,
+    callerId: me,
+    switchState:
+      actions.includes('activate') && isMaker(makers, me)
+        ? await readMakerCheckerSwitch('branch_creation', holder)
+        : 'unknown',
+  });
   const base = `/admin/branches/${branchId}`;
 
   return (
@@ -100,7 +110,8 @@ export default async function BranchRecordLayout({ children, params }: BranchRec
               branchId={branchId}
               branchName={record.branchName}
               actions={actions}
-              activateBlocked={activateBlocked(maker, resolved?.profile.user_id ?? null)}
+              activateBlocked={gate === 'blocked'}
+              warning={gate === 'allowed-self-approval' ? SELF_APPROVAL_NOTE_BRANCHES : null}
               selectedHere={resolved?.context.branch?.id === branchId}
               contextOrganisationId={resolved?.context.organization.id}
             />

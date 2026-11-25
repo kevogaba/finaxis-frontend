@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
 import {
   accountBlockedNote,
@@ -7,29 +6,20 @@ import {
   APPROVE_FORBIDDEN,
   APPROVE_NOT_FOUND,
   REVOKE_CONFLICT,
-  USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
 import { APPROVAL_CHANGED } from './approval-copy';
 
-const {
-  apiPost,
-  getAuthenticatedUser,
-  getCurrentContextProfile,
-  getMakerEvent,
-  getMembership,
-  getUser,
-  refresh,
-} = vi.hoisted(() => ({
-  apiPost: vi.fn((_path: string, _body: Record<string, unknown>, _key: string) =>
-    Promise.resolve<unknown>({}),
-  ),
-  getAuthenticatedUser: vi.fn(),
-  getCurrentContextProfile: vi.fn(),
-  getMakerEvent: vi.fn(),
-  getMembership: vi.fn(),
-  getUser: vi.fn(),
-  refresh: vi.fn(),
-}));
+const { apiPost, getAuthenticatedUser, getCurrentContextProfile, getMembership, getUser, refresh } =
+  vi.hoisted(() => ({
+    apiPost: vi.fn((_path: string, _body: Record<string, unknown>, _key: string) =>
+      Promise.resolve<unknown>({}),
+    ),
+    getAuthenticatedUser: vi.fn(),
+    getCurrentContextProfile: vi.fn(),
+    getMembership: vi.fn(),
+    getUser: vi.fn(),
+    refresh: vi.fn(),
+  }));
 vi.mock('@/config/env.server', () => ({ serverEnv: {} }));
 vi.mock('@/lib/api/tenant-api', () => ({
   apiPost: (path: string, body: Record<string, unknown>, key: string) => apiPost(path, body, key),
@@ -53,27 +43,17 @@ vi.mock('@/modules/administration/users/user-service', () => ({
   getMembership: (id: string) => getMembership(id) as unknown,
   getUser: (id: string) => getUser(id) as unknown,
 }));
-vi.mock('./approval-service', () => ({
-  getMakerEvent: (kind: string, id: string) => getMakerEvent(kind, id) as unknown,
-}));
 
 const actions = await import('./approval-actions');
 
 // Distinct first blocks, so a short id names its id; lettered, so upper case differs.
 const ME = 'a1000000-0000-4000-8000-0000000000aa';
-const VICTOR = 'b2000000-0000-4000-8000-0000000000bb';
 const USER = 'c3000000-0000-4000-8000-0000000000cc';
 const MEMBERSHIP = 'd4000000-0000-4000-8000-0000000000dd';
 const ORGANISATION = 'f6000000-0000-4000-8000-0000000000ff';
 const OTHER_ORGANISATION = '17000000-0000-4000-8000-000000000011';
 const KEY = '0b6f2f3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
-const ALL_CODES = [
-  'user.approve',
-  'user.view',
-  'membership.view',
-  'membership.revoke',
-  'audit.view',
-];
+const ALL_CODES = ['user.approve', 'user.view', 'membership.view', 'membership.revoke'];
 
 function resolved(permissions: string[] = ALL_CODES) {
   return {
@@ -116,7 +96,6 @@ describe('the user decisions', () => {
     apiPost.mockReset();
     getAuthenticatedUser.mockResolvedValue({ id: 'session-user' });
     getCurrentContextProfile.mockResolvedValue(resolved());
-    getMakerEvent.mockResolvedValue({ actorUserId: VICTOR, occurredAt: '2026-09-24T08:00:00Z' });
     pending();
   });
 
@@ -125,7 +104,6 @@ describe('the user decisions', () => {
       await actions.approveUser(null, membershipForm());
       expect(getMembership).toHaveBeenCalledExactlyOnceWith(MEMBERSHIP);
       expect(getUser).toHaveBeenCalledExactlyOnceWith(USER);
-      expect(getMakerEvent).toHaveBeenCalledExactlyOnceWith('user', USER);
       expect(apiPost).toHaveBeenCalledExactlyOnceWith(
         `/api/v1/tenant/memberships/${MEMBERSHIP}/activate`,
         {},
@@ -269,102 +247,6 @@ describe('the user decisions', () => {
       },
     );
 
-    it('still refuses the inviter of an approved membership before any write', async () => {
-      pending('ACTIVE', 'ACTIVE');
-      getMakerEvent.mockResolvedValue({ actorUserId: ME, occurredAt: '2026-09-24T08:00:00Z' });
-      await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
-        ok: false,
-        code: 'maker_checker',
-        formError: USER_MAKER_CHECKER_BLOCKED,
-      });
-      expect(apiPost).not.toHaveBeenCalled();
-    });
-
-    it('refuses the inviter, matched case-insensitively, before any write', async () => {
-      getMakerEvent.mockResolvedValue({
-        actorUserId: ME.toUpperCase(),
-        occurredAt: '2026-09-24T08:00:00Z',
-      });
-      await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
-        ok: false,
-        code: 'maker_checker',
-        formError: USER_MAKER_CHECKER_BLOCKED,
-      });
-      expect(apiPost).not.toHaveBeenCalled();
-    });
-
-    it('refuses the inviter when the signed-in id is the upper-case one, before any write', async () => {
-      getCurrentContextProfile.mockResolvedValue({
-        ...resolved(),
-        profile: { user_id: ME.toUpperCase(), permissions: ALL_CODES },
-      });
-      getMakerEvent.mockResolvedValue({ actorUserId: ME, occurredAt: '2026-09-24T08:00:00Z' });
-      await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
-        ok: false,
-        code: 'maker_checker',
-        formError: USER_MAKER_CHECKER_BLOCKED,
-      });
-      expect(apiPost).not.toHaveBeenCalled();
-    });
-
-    it('leaves maker-checker to the backend without audit.view (no maker read)', async () => {
-      getCurrentContextProfile.mockResolvedValue(
-        resolved(ALL_CODES.filter((code) => code !== 'audit.view')),
-      );
-      await actions.approveUser(null, membershipForm());
-      expect(getMakerEvent).not.toHaveBeenCalled();
-      expect(apiPost).toHaveBeenCalledTimes(1);
-    });
-
-    it.each([
-      ['a 403', new BackendApiError(403, { code: 'forbidden' })],
-      ['a 5xx', new BackendApiError(503, { requestId: 'req-maker' })],
-    ])(
-      'leaves maker-checker to the backend when the maker read fails with %s',
-      async (_case, error) => {
-        getMakerEvent.mockRejectedValue(error);
-        apiPost.mockRejectedValueOnce(
-          new BackendApiError(403, { code: 'forbidden', requestId: 'req-2' }),
-        );
-        await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
-          ok: false,
-          code: 'forbidden',
-          formError: APPROVE_FORBIDDEN,
-          requestId: 'req-2',
-        });
-        expect(apiPost).toHaveBeenCalledTimes(1);
-      },
-    );
-
-    it.each([
-      ['a lost session', new BackendApiError(401), 'NEXT_REDIRECT:/login?reason=session_expired'],
-      [
-        'a stale context',
-        new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
-        'NEXT_REDIRECT:/select-context',
-      ],
-    ])('redirects when the maker read finds %s, before any write', async (_case, error, to) => {
-      getMakerEvent.mockRejectedValue(error);
-      await expect(actions.approveUser(null, membershipForm())).rejects.toThrow(to);
-      expect(apiPost).not.toHaveBeenCalled();
-    });
-
-    it('fails the action with a reference, before any write, when the audit page is unreadable', async () => {
-      // Ruling 5's one asymmetry: only a BackendApiError leaves the maker unknown; the action never
-      // guesses past a response it can't read.
-      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-      const unreadable = z.object({ items: z.array(z.unknown()) }).safeParse({}).error;
-      getMakerEvent.mockRejectedValue(unreadable);
-      await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
-        ok: false,
-        code: 'contract_mismatch',
-        requestId: expect.any(String),
-      });
-      expect(apiPost).not.toHaveBeenCalled();
-      expect(logged).toHaveBeenCalledTimes(1);
-      logged.mockRestore();
-    });
-
     it('fails closed when nobody can say who is deciding (no resolved profile)', async () => {
       getCurrentContextProfile.mockResolvedValue({
         kind: 'redirect-to-context-selection',
@@ -405,11 +287,8 @@ describe('the user decisions', () => {
     ])(
       'names the platform’s %s refusal by its code, not as a permission (BG-08)',
       async (code, copy) => {
-        // No audit.view, so the page couldn't name the inviter: the platform's refusal is the
-        // guard.
-        getCurrentContextProfile.mockResolvedValue(
-          resolved(ALL_CODES.filter((held) => held !== 'audit.view')),
-        );
+        // No pre-write maker refusal: a switch may let the inviter approve, so the platform decides
+        // (decision Q4) and its named refusal explains itself.
         apiPost.mockRejectedValueOnce(new BackendApiError(403, { code, requestId: 'req-m' }));
         await expect(actions.approveUser(null, membershipForm())).resolves.toMatchObject({
           ok: false,

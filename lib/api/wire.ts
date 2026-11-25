@@ -45,3 +45,12 @@ export function pageSchema<Item extends z.ZodType>(item: Item) {
 export const businessDateSchema = z
   .string()
   .refine((value) => businessDateDay(value) !== null, 'Expected a dd-MM-yyyy business date');
+
+/** Who made a record (`ActorRefResponse`, BG-08): `null` for the system, an unknown actor, or one
+ * the caller may not see (a tenant caller sees only its own members). The key is always sent. */
+export const actorRefSchema = z
+  .object({ id: uuidSchema, display_name: z.string().nullable() })
+  .transform((actor) => ({ id: actor.id, displayName: actor.display_name }))
+  .nullable();
+
+export type ActorRef = z.output<typeof actorRefSchema>;

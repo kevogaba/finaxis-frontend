@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import userEvent from '@testing-library/user-event';
 import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
+import { SELF_APPROVAL_NOTE_USERS } from '@/modules/administration/approvals/maker-checker';
 import {
   accountBlockedNote,
   MEMBERSHIP_MISSING,
@@ -21,16 +22,22 @@ const CONTEXT_NOT_SELECTED = {
   reason: 'invalid-context',
 } satisfies SelectedContextProfile;
 
-const { findUserMembership, getCurrentContextProfile, getUser, getUserInviter, redirect, router } =
-  vi.hoisted(() => ({
-    findUserMembership: vi.fn(),
-    getCurrentContextProfile: vi.fn(),
-    getUser: vi.fn(),
-    getUserInviter: vi.fn(),
-    redirect: vi.fn(),
-    // One stable router object, as in table-pagination-bar.test.tsx.
-    router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
-  }));
+const {
+  findUserMembership,
+  getCurrentContextProfile,
+  getUser,
+  readMakerCheckerSwitch,
+  redirect,
+  router,
+} = vi.hoisted(() => ({
+  findUserMembership: vi.fn(),
+  getCurrentContextProfile: vi.fn(),
+  getUser: vi.fn(),
+  readMakerCheckerSwitch: vi.fn(),
+  redirect: vi.fn(),
+  // One stable router object, as in table-pagination-bar.test.tsx.
+  router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
+}));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('next/navigation', async (importOriginal) => ({
@@ -48,7 +55,9 @@ vi.mock('@/auth/context-service', () => ({
 vi.mock('@/modules/administration/users/user-service', () => ({
   getUser: (...args: unknown[]) => getUser(...args) as unknown,
   findUserMembership: (...args: unknown[]) => findUserMembership(...args) as unknown,
-  getUserInviter: (...args: unknown[]) => getUserInviter(...args) as unknown,
+}));
+vi.mock('@/modules/administration/settings/settings-service', () => ({
+  readMakerCheckerSwitch: (...args: unknown[]) => readMakerCheckerSwitch(...args) as unknown,
 }));
 // The hero's dialogs import the Server Actions; nothing here submits one.
 vi.mock('@/modules/administration/users/membership-actions', () => ({
@@ -86,8 +95,10 @@ interface Setup {
   userStatus?: string;
   /** What the membership lookup settles with; an Error rejects it. */
   membership?: { id: string } | null | Error;
-  /** What the inviter read settles with; an Error rejects it. */
-  inviter?: string | null | Error;
+  /** The record's inviter id (`created_by`, BG-08); null for the system, or someone hidden. */
+  inviter?: string | null;
+  /** `require_maker_checker_for_user_invites`, as the reader answers it. */
+  switchState?: 'on' | 'off' | 'unknown';
 }
 
 /** Programs every service the layout reads. A test names only what it varies. */
@@ -98,6 +109,7 @@ function setup({
   userStatus = 'ACTIVE',
   membership = { id: MEMBERSHIP },
   inviter = null,
+  switchState = 'on',
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
@@ -111,11 +123,11 @@ function setup({
     displayName: 'Felix Omondi',
     membershipStatus,
     userStatus,
+    createdBy: inviter === null ? null : { id: inviter, displayName: null },
   });
   if (membership instanceof Error) findUserMembership.mockRejectedValue(membership);
   else findUserMembership.mockResolvedValue(membership);
-  if (inviter instanceof Error) getUserInviter.mockRejectedValue(inviter);
-  else getUserInviter.mockResolvedValue(inviter);
+  readMakerCheckerSwitch.mockResolvedValue(switchState);
 }
 
 async function show(userId = FELIX, children: ReactNode = <p>Tab body</p>) {
@@ -349,73 +361,64 @@ describe('UserRecordLayout: the membership actions', () => {
     expect(screen.queryByText(OWN_MEMBERSHIP)).not.toBeInTheDocument();
   });
 
-  it("disables Approve for the user's inviter, with the reason, after asking who invited them", async () => {
+  // BG-08: the inviter is the record's `created_by`; the switch decides (decision Q4).
+  it("disables Approve for the user's inviter while maker-checker is on, with the reason", async () => {
     setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'DRAFT', inviter: ME });
 
     await show();
 
-    expect(getUserInviter).toHaveBeenCalledWith(FELIX);
+    expect(readMakerCheckerSwitch).toHaveBeenCalledExactlyOnceWith(
+      'user_invites',
+      expect.objectContaining({ permissions: ALL_CODES }),
+    );
     expect(button('Approve')).toBeDisabled();
     expect(button('Approve')).toHaveAccessibleDescription(USER_MAKER_CHECKER_BLOCKED);
     // Rejecting is not approving: it stays available.
     expect(button('Reject & revoke')).toBeEnabled();
   });
 
-  // AGENTS.md: a page settles a read with load(), which redirects on a lost session or a stale
-  // context. A quiet null here would render a stale page with Approve enabled.
-  it.each([
-    ['a 401', new BackendApiError(401), '/login?reason=session_expired'],
-    [
-      'a stale context',
-      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
-      '/select-context',
-    ],
-  ])(
-    'redirects, rendering nothing, when the inviter read fails with %s',
-    async (_n, failure, to) => {
-      setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'DRAFT', inviter: failure });
+  it('lets the inviter approve while maker-checker is off, saying so above the actions', async () => {
+    setup({
+      membershipStatus: 'PENDING_APPROVAL',
+      userStatus: 'DRAFT',
+      inviter: ME,
+      switchState: 'off',
+    });
 
-      await expect(
-        UserRecordLayout({ children: <p>Tab body</p>, params: Promise.resolve({ userId: FELIX }) }),
-      ).rejects.toThrow(`NEXT_REDIRECT:${to}`);
+    await show();
 
-      expect(getUserInviter).toHaveBeenCalledWith(FELIX);
-      expect(redirect).toHaveBeenCalledTimes(1);
-    },
-  );
+    expect(button('Approve')).toBeEnabled();
+    expect(screen.getByRole('note')).toHaveTextContent(SELF_APPROVAL_NOTE_USERS);
+    // Tabbing to Approve reads the warning too.
+    expect(button('Approve')).toHaveAccessibleDescription(SELF_APPROVAL_NOTE_USERS);
+  });
 
-  // The backend's maker-checker 403 (BG-08) is the guard when the inviter can't be read, so an ordinary
-  // failure (a permission that changed, a 5xx) leaves Approve on offer rather than blocking it.
-  it.each([
-    ['a 403', new BackendApiError(403, { code: 'forbidden' })],
-    ['a 5xx', new BackendApiError(500, { requestId: 'req-3' })],
-  ])(
-    'renders the record, with Approve on offer, when the inviter read fails with %s',
-    async (_n, failure) => {
-      setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'DRAFT', inviter: failure });
+  it('leaves Approve enabled for the inviter when the switch can’t be read, for the platform to decide', async () => {
+    setup({
+      membershipStatus: 'PENDING_APPROVAL',
+      userStatus: 'DRAFT',
+      inviter: ME,
+      switchState: 'unknown',
+    });
 
-      await show();
+    await show();
 
-      expect(getUserInviter).toHaveBeenCalledWith(FELIX);
-      expect(redirect).not.toHaveBeenCalled();
-      expect(screen.getByRole('heading', { level: 1, name: 'Felix Omondi' })).toBeInTheDocument();
-      expect(button('Approve')).toBeEnabled();
-      expect(screen.queryByText(USER_MAKER_CHECKER_BLOCKED)).not.toBeInTheDocument();
-      expect(screen.getByText('Tab body')).toBeInTheDocument();
-    },
-  );
+    expect(button('Approve')).toBeEnabled();
+    expect(screen.queryByText(USER_MAKER_CHECKER_BLOCKED)).not.toBeInTheDocument();
+    expect(screen.queryByText(SELF_APPROVAL_NOTE_USERS)).not.toBeInTheDocument();
+  });
 
-  it('leaves Approve enabled when someone else invited them (the control for the case above)', async () => {
+  it('leaves Approve enabled when someone else invited them, reading no switch', async () => {
     setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'DRAFT', inviter: VICTOR });
 
     await show();
 
-    expect(getUserInviter).toHaveBeenCalledWith(FELIX);
+    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
     expect(button('Approve')).toBeEnabled();
     expect(screen.queryByText(USER_MAKER_CHECKER_BLOCKED)).not.toBeInTheDocument();
   });
 
-  it('does not look up the inviter without audit.view, and leaves Approve enabled (the backend explains a 403)', async () => {
+  it('knows its inviter from the record without audit.view', async () => {
     setup({
       permissions: without('audit.view'),
       membershipStatus: 'PENDING_APPROVAL',
@@ -425,21 +428,20 @@ describe('UserRecordLayout: the membership actions', () => {
 
     await show();
 
-    expect(getUserInviter).not.toHaveBeenCalled();
-    expect(button('Approve')).toBeEnabled();
+    expect(button('Approve')).toBeDisabled();
   });
 
-  it('does not look up the inviter when Approve is not on offer', async () => {
+  it('reads no switch when Approve is not on offer', async () => {
     setup({ membershipStatus: 'ACTIVE', inviter: ME });
 
     await show();
 
     expect(button('Suspend')).toBeInTheDocument(); // the hero did render its actions
     expect(button('Approve')).not.toBeInTheDocument();
-    expect(getUserInviter).not.toHaveBeenCalled();
+    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
   });
 
-  it('does not ask who invited them when no membership was found, since no action is on offer', async () => {
+  it('reads no switch when no membership was found, since no action is on offer', async () => {
     setup({
       membershipStatus: 'PENDING_APPROVAL',
       userStatus: 'DRAFT',
@@ -451,7 +453,7 @@ describe('UserRecordLayout: the membership actions', () => {
 
     expect(screen.getByText(MEMBERSHIP_MISSING)).toBeInTheDocument(); // the lookup did run
     expect(button('Approve')).not.toBeInTheDocument();
-    expect(getUserInviter).not.toHaveBeenCalled();
+    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
   });
 
   it('withholds Approve for a user whose identity is being provisioned, and keeps Reject & revoke', async () => {

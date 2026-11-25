@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { businessDateSchema, instantSchema, pageSchema, uuidSchema } from './wire';
+import { actorRefSchema, businessDateSchema, instantSchema, pageSchema, uuidSchema } from './wire';
 
 const envelope = {
   items: [{ id: 'a' }],
@@ -49,5 +49,18 @@ describe('wire helpers', () => {
     expect(businessDateSchema.safeParse('07-09-2026').success).toBe(true);
     expect(businessDateSchema.safeParse('2026-09-07').success).toBe(false);
     expect(businessDateSchema.safeParse('31-02-2026').success).toBe(false);
+  });
+
+  it('maps a maker reference, keeping a null one and a null display name (BG-08)', () => {
+    const id = '10000000-0000-4000-8000-000000000001';
+    expect(actorRefSchema.parse({ id, display_name: 'Victor Otieno' })).toEqual({
+      id,
+      displayName: 'Victor Otieno',
+    });
+    expect(actorRefSchema.parse({ id, display_name: null })).toEqual({ id, displayName: null });
+    expect(actorRefSchema.parse(null)).toBeNull();
+    // The platform always sends the key: an absent one is drift, not "no maker".
+    expect(actorRefSchema.safeParse(undefined).success).toBe(false);
+    expect(actorRefSchema.safeParse({ id: 'not-a-uuid', display_name: 'x' }).success).toBe(false);
   });
 });

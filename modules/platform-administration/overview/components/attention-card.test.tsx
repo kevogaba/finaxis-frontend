@@ -19,6 +19,8 @@ const MWANGAZA: TenantSummary = {
   status: 'PENDING_APPROVAL',
   // 23:30 UTC: a viewer east of Greenwich would read 04 Sep, so this proves the column is UTC.
   createdAt: '2026-09-03T23:30:00Z',
+  requestedBy: null,
+  submittedBy: null,
 };
 const UMOJA: TenantSummary = {
   id: '16000000-0000-4000-8000-0000000000A1',
@@ -27,6 +29,8 @@ const UMOJA: TenantSummary = {
   countryCode: 'UG',
   status: 'DRAFT',
   createdAt: '2026-09-05T08:00:00Z',
+  requestedBy: null,
+  submittedBy: null,
 };
 
 const view = (overrides: Partial<AttentionView> = {}): AttentionView => ({

@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { businessDateSchema, instantSchema, pageSchema, uuidSchema } from '@/lib/api/wire';
+import {
+  actorRefSchema,
+  businessDateSchema,
+  instantSchema,
+  pageSchema,
+  uuidSchema,
+} from '@/lib/api/wire';
 
 export const BRANCH_STATUSES = [
   'DRAFT',
@@ -36,6 +42,8 @@ const branchSummarySchema = z
     branch_type: z.string(),
     status: z.enum(BRANCH_STATUSES),
     created_at: instantSchema,
+    created_by: actorRefSchema,
+    submitted_by: actorRefSchema,
   })
   .transform((branch) => ({
     id: branch.id,
@@ -44,6 +52,8 @@ const branchSummarySchema = z
     branchType: branch.branch_type,
     status: branch.status,
     createdAt: branch.created_at,
+    createdBy: branch.created_by,
+    submittedBy: branch.submitted_by,
   }));
 
 export type BranchSummary = z.output<typeof branchSummarySchema>;
@@ -66,6 +76,10 @@ export const branchDetailSchema = z
     status_reason: z.string().nullable(),
     created_at: instantSchema,
     updated_at: instantSchema,
+    // The latest submitter: the tenant activate route refuses only the creator (and editors), the
+    // platform route the submitter too (BG-08).
+    created_by: actorRefSchema,
+    submitted_by: actorRefSchema,
   })
   .transform((branch) => ({
     id: branch.id,
@@ -80,6 +94,8 @@ export const branchDetailSchema = z
     statusReason: branch.status_reason,
     createdAt: branch.created_at,
     updatedAt: branch.updated_at,
+    createdBy: branch.created_by,
+    submittedBy: branch.submitted_by,
   }));
 
 export type BranchDetail = z.output<typeof branchDetailSchema>;

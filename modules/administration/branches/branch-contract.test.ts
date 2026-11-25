@@ -8,6 +8,8 @@ import {
 
 const WESTLANDS = '44444444-4444-4444-8444-444444444444';
 const HEAD_OFFICE = '22222222-2222-4222-8222-222222222222';
+const VICTOR = '10000000-0000-4000-8000-000000000001';
+const MARY = '08000000-0000-4000-8000-000000000001';
 const PAGE = {
   number: 0,
   size: 10,
@@ -31,6 +33,8 @@ const DETAIL = {
   status_reason: 'Cash audit',
   created_at: '2026-07-01T08:00:00Z',
   updated_at: '2026-07-24T08:00:00Z',
+  created_by: { id: VICTOR, display_name: 'Victor Otieno' },
+  submitted_by: { id: MARY, display_name: null },
 };
 
 describe('branch contract', () => {
@@ -48,7 +52,16 @@ describe('branch contract', () => {
       statusReason: 'Cash audit',
       createdAt: '2026-07-01T08:00:00Z',
       updatedAt: '2026-07-24T08:00:00Z',
+      createdBy: { id: VICTOR, displayName: 'Victor Otieno' },
+      submittedBy: { id: MARY, displayName: null },
     });
+  });
+
+  it('keeps a null maker: the system, or one the caller may not see (BG-08)', () => {
+    expect(
+      branchDetailSchema.parse({ ...DETAIL, created_by: null, submitted_by: null }),
+    ).toMatchObject({ createdBy: null, submittedBy: null });
+    expect(branchDetailSchema.safeParse({ ...DETAIL, created_by: undefined }).success).toBe(false);
   });
 
   it('rejects an unknown status or an ISO date (schema drift → error state)', () => {
@@ -58,7 +71,7 @@ describe('branch contract', () => {
     );
   });
 
-  it('maps directory and assignment pages, which carry nothing else (D8)', () => {
+  it('maps directory and assignment pages', () => {
     const branches = branchPageSchema.parse({
       items: [
         {
@@ -69,6 +82,8 @@ describe('branch contract', () => {
           branch_type: 'OPERATIONS',
           status: 'ACTIVE',
           created_at: '2026-07-01T08:00:00Z',
+          created_by: null,
+          submitted_by: { id: VICTOR, display_name: 'Victor Otieno' },
         },
       ],
       page: PAGE,
@@ -80,6 +95,8 @@ describe('branch contract', () => {
       branchType: 'OPERATIONS',
       status: 'ACTIVE',
       createdAt: '2026-07-01T08:00:00Z',
+      createdBy: null,
+      submittedBy: { id: VICTOR, displayName: 'Victor Otieno' },
     });
 
     const assignments = branchAssignmentPageSchema.parse({

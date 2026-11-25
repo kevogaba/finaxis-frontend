@@ -1,10 +1,9 @@
 import Typography from '@mui/material/Typography';
-import type { Loaded } from '@/lib/api/load';
 import type { ProblemView } from '@/lib/api/problem';
+import type { ActorRef } from '@/lib/api/wire';
 import { shortId } from '@/lib/format';
-import { MAKER_NOT_PERMITTED, MAKER_NOT_RECORDED, READ_FAILED } from '../approval-copy';
-import { isSameUser } from '../approval-rules';
-import type { MakerEvent } from '../approval-service';
+import { READ_FAILED } from '../approval-copy';
+import { isSameUser } from '../maker-checker';
 
 /** A fact whose read failed: said so, with its reference, never backend text (rule 9). */
 export function ReadFailed({ problem }: { problem: ProblemView }) {
@@ -24,21 +23,11 @@ export function ReadFailed({ problem }: { problem: ProblemView }) {
   );
 }
 
-/** Who asked (BG-08): not permitted, failed, not recorded, or the name (the short id when the user
- * lookup can't name them), marked "(you)" for the signed-in user. Server-Component safe. */
-export function MakerValue({
-  maker,
-  name,
-  me,
-}: {
-  /** `null`: no `audit.view`, so nothing was read. */
-  maker: Loaded<MakerEvent | null> | null;
-  name: string | null;
-  me: string;
-}) {
-  if (maker === null) return MAKER_NOT_PERMITTED;
-  if (!maker.ok) return <ReadFailed problem={maker.problem} />;
-  const actor = maker.value?.actorUserId ?? null;
-  if (actor === null) return MAKER_NOT_RECORDED;
-  return `${name ?? shortId(actor)}${isSameUser(actor, me) ? ' (you)' : ''}`;
+/** Who asked (BG-08): the record's maker by name (its short id when it has none), "You (…)" for
+ * the signed-in user, and "—" when the record names nobody (the system, or someone the caller may
+ * not see). */
+export function makerLabel(maker: ActorRef, me: string): string {
+  if (maker === null) return '—';
+  const name = maker.displayName ?? shortId(maker.id);
+  return isSameUser(maker.id, me) ? `You (${name})` : name;
 }

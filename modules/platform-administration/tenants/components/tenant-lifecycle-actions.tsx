@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 import { ConfirmDialog } from '@/components/data-display/confirm-dialog';
 import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { ReasonDialog } from '@/components/data-display/reason-dialog';
@@ -109,6 +110,8 @@ interface TenantLifecycleActionsProps {
   /** Typed back before a deprovision (CRITICAL, spec §11.2). */
   tenantCode: string;
   actions: readonly TenantLifecycleAction[];
+  /** The offered actions shown disabled, each with the caption that says why (BG-08). */
+  blocked?: Partial<Record<TenantLifecycleAction, string>>;
   /** I2: the organisation the page rendered for. */
   contextOrganisationId?: string;
 }
@@ -119,6 +122,7 @@ export function TenantLifecycleActions({
   tenantName,
   tenantCode,
   actions,
+  blocked = {},
   contextOrganisationId,
 }: TenantLifecycleActionsProps) {
   const notify = useToast();
@@ -138,7 +142,8 @@ export function TenantLifecycleActions({
     const target = [succeeded, ...current]
       .filter((id) => current.includes(id))
       .map((id) => buttonRefs.current.get(id))
-      .find((node) => node?.isConnected);
+      // A disabled decision (its maker's, BG-08) can't take focus: focus() on it is a no-op.
+      .find((node) => node?.isConnected && !(node instanceof HTMLButtonElement && node.disabled));
     if (target) target.focus();
     else focusRecordTitle();
   }, [actionKey]);
@@ -153,6 +158,8 @@ export function TenantLifecycleActions({
   }, []);
 
   const dialogActions = actions.filter((id): id is DialogAction => id !== 'amend');
+  const captions = [...new Set(actions.flatMap((id) => blocked[id] ?? []))];
+  const captionId = (text: string) => `tenant-action-blocked-${captions.indexOf(text)}`;
 
   return (
     <>
@@ -175,12 +182,15 @@ export function TenantLifecycleActions({
           );
         }
         const copy = copyFor(id, tenantName);
+        const reason = blocked[id];
         return (
           <Button
             key={id}
             ref={register}
             variant={variant}
             color={copy.destructive ? 'error' : 'primary'}
+            disabled={reason !== undefined}
+            aria-describedby={reason === undefined ? undefined : captionId(reason)}
             onClick={() => {
               setOpen(id);
             }}
@@ -189,6 +199,24 @@ export function TenantLifecycleActions({
           </Button>
         );
       })}
+      {captions.map((text, index) => (
+        // Visible text, not a tooltip: a disabled button can't take focus to reveal one. Capped
+        // from md, so a long caption wraps instead of squeezing the title column.
+        <Typography
+          key={text}
+          id={`tenant-action-blocked-${index}`}
+          variant="caption"
+          sx={{
+            color: 'text.secondary',
+            flexBasis: '100%',
+            maxWidth: { md: 320 },
+            ml: 'auto',
+            textAlign: 'right',
+          }}
+        >
+          {text}
+        </Typography>
+      ))}
       {dialogActions.map((id) => {
         const copy = copyFor(id, tenantName);
         const close = () => {

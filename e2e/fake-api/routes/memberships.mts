@@ -1,5 +1,6 @@
 import {
   activeAssignmentRows,
+  actorRef,
   requireContext,
   requirePermission,
   requireTenantContext,
@@ -8,6 +9,7 @@ import type { AccessContext } from '../access.mts';
 import { recordAuditEvent } from '../audit-log.mts';
 import { objectBody, pageOf, problem, readBody, reasonField, sendJson } from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
+import { makerCheckerRequired } from './settings.mts';
 import { route } from '../router.mts';
 import type { Route, RouteContext } from '../router.mts';
 import type { FakeMembership, FakeUser } from '../state.mts';
@@ -42,15 +44,21 @@ function likeMatcher(q: string): RegExp {
   return new RegExp(pattern, 'i');
 }
 
-const summaryWire = (membership: FakeMembership) => ({
+/** Who invited the member (BG-08): the re-inviter after a re-invite. */
+const inviterWire = (access: AccessContext, membership: FakeMembership) => ({
+  created_by: actorRef(access, membership.organisationId, membership.invitedBy),
+});
+
+const summaryWire = (access: AccessContext, membership: FakeMembership) => ({
   id: membership.id,
   user_id: membership.userId,
   membership_status: membership.status,
   membership_type: membership.type,
   primary_branch_id: membership.primaryBranchId,
+  ...inviterWire(access, membership),
 });
 
-const detailWire = ({ membership, user }: Member) => ({
+const detailWire = (access: AccessContext, { membership, user }: Member) => ({
   id: membership.id,
   organisation_id: membership.organisationId,
   user_id: membership.userId,
@@ -63,6 +71,7 @@ const detailWire = ({ membership, user }: Member) => ({
   primary_branch_id: membership.primaryBranchId,
   created_at: membership.createdAt,
   updated_at: membership.updatedAt,
+  ...inviterWire(access, membership),
 });
 
 function memberOf(context: RouteContext, access: AccessContext): Member | null {
@@ -101,7 +110,7 @@ function transition(
       if (!member) throw membershipNotFound(); // BG-07: once a 500
       apply(access, member, reason);
       member.membership.updatedAt = new Date().toISOString();
-      return detailWire(member);
+      return detailWire(access, member);
     });
   });
 }
@@ -131,7 +140,7 @@ export const membershipRoutes: Route[] = [
       // `sort_*` is accepted and ignored (contract §E.3); newest first = reverse seed order, as the
       // fake's /tenant/users does.
       .reverse()
-      .map(({ membership }) => summaryWire(membership));
+      .map(({ membership }) => summaryWire(access, membership));
     sendJson(context.res, 200, pageOf(rows, query));
   }),
 
@@ -140,7 +149,7 @@ export const membershipRoutes: Route[] = [
     requirePermission(access, 'membership.view');
     const member = memberOf(context, access);
     if (!member) throw membershipNotFound();
-    sendJson(context.res, 200, detailWire(member));
+    sendJson(context.res, 200, detailWire(access, member));
   }),
 
   route('POST', '/api/v1/tenant/memberships/:membership_id/activate', async (context) => {
@@ -162,16 +171,26 @@ export const membershipRoutes: Route[] = [
       () => {
         if (!target) throw membershipNotFound();
         const { membership, user } = target;
-        // Maker-checker (BG-08, UserProvisioningService.approve): before the state check, inside
-        // `produce`, so the key rolls back. The inviter first, then the member themself.
-        if (membership.invitedBy === access.claims.userId) {
+        // Maker-checker (BG-08, MembershipCheckerRule): before the state check, inside `produce`,
+        // so the key rolls back. The inviter first, then the member themself; a stored `false`
+        // switch lets either approve, audited HIGH (ADR 0032).
+        const isMaker = membership.invitedBy === access.claims.userId;
+        const isBeneficiary = membership.userId === access.claims.userId;
+        const selfApproved =
+          (isMaker || isBeneficiary) &&
+          !makerCheckerRequired(
+            context.state,
+            access.organisation.id,
+            'require_maker_checker_for_user_invites',
+          );
+        if (isMaker && !selfApproved) {
           throw problem(
             403,
             'lifecycle.approver_is_membership_maker',
             "The approver cannot be the member's inviter.",
           );
         }
-        if (membership.userId === access.claims.userId) {
+        if (isBeneficiary && !selfApproved) {
           throw problem(
             403,
             'lifecycle.approver_is_membership_beneficiary',
@@ -229,8 +248,10 @@ export const membershipRoutes: Route[] = [
           entityId: user.id,
           action: 'user.approve',
           reason: null,
+          // UserProvisioningService.selfApprovalMetadata: a relaxed approval is HIGH and says so.
+          ...(selfApproved && { severity: 'HIGH', metadata: { selfApproved: 'true' } }),
         });
-        return detailWire(target);
+        return detailWire(access, target);
       },
       status,
     );

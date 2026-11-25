@@ -6,17 +6,28 @@ import { renderWithProviders } from '@/test/test-utils';
 const PLATFORM = 'abcdef01-2345-4678-89ab-cdef01234567';
 const INSTITUTION = '17000000-0000-4000-8000-0000000000ac';
 
+const ME = '17000000-0000-4000-8000-0000000000ef';
+
 const { getTenant } = vi.hoisted(() => ({ getTenant: vi.fn() }));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('@/config/env.server', () => ({ serverEnv: { PLATFORM_ORGANISATION_ID: PLATFORM } }));
+vi.mock('@/auth/context-service', () => ({
+  getCurrentContextProfile: () =>
+    Promise.resolve({ kind: 'resolved', profile: { user_id: ME, permissions: [] } }),
+}));
 vi.mock('@/modules/platform-administration/tenants/tenant-service', () => ({
   getTenant: (...args: unknown[]) => getTenant(...args) as unknown,
 }));
 
 const { default: TenantOverviewPage } = await import('./page');
 
-async function show(bootstrapStatus: string | null) {
+type Actor = { id: string; displayName: string | null } | null;
+
+async function show(
+  bootstrapStatus: string | null,
+  makers: { requestedBy?: Actor; submittedBy?: Actor } = {},
+) {
   getTenant.mockResolvedValue({
     id: INSTITUTION,
     tenantCode: 'acme',
@@ -28,6 +39,9 @@ async function show(bootstrapStatus: string | null) {
     bootstrapStatus,
     createdAt: '2026-09-03T07:15:00Z',
     updatedAt: '2026-09-03T07:15:00Z',
+    requestedBy: null,
+    submittedBy: null,
+    ...makers,
   });
   const element = await TenantOverviewPage({ params: Promise.resolve({ tenantId: INSTITUTION }) });
   // The page renders nothing when the institution can't be read (the layout shows that failure).
@@ -56,5 +70,27 @@ describe('TenantOverviewPage', () => {
     await show(null);
 
     expect(screen.getByText('Not tracked')).toBeInTheDocument();
+  });
+
+  // BG-08: the record names who asked, so the disabled decisions explain themselves.
+  it('names who requested and who submitted it, marking the signed-in administrator', async () => {
+    await show('PENDING_ACTIVATION', {
+      requestedBy: { id: '16000000-0000-4000-8000-000000000007', displayName: 'Otieno Operator' },
+      submittedBy: { id: ME, displayName: 'Jane' },
+    });
+
+    const value = (label: string) =>
+      screen.getByText(label, { selector: 'dt' }).nextElementSibling?.textContent;
+    expect(value('Requested by')).toBe('Otieno Operator');
+    expect(value('Submitted by')).toBe('You (Jane)');
+  });
+
+  it('shows a dash for a maker the platform names nobody for', async () => {
+    await show('DRAFT');
+
+    const value = (label: string) =>
+      screen.getByText(label, { selector: 'dt' }).nextElementSibling?.textContent;
+    expect(value('Requested by')).toBe('—');
+    expect(value('Submitted by')).toBe('—');
   });
 });

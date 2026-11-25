@@ -38,6 +38,11 @@ const user = (tail: string, name: string, userStatus: UserSummary['userStatus'])
   displayName: name,
   userStatus,
   membershipStatus: 'PENDING_APPROVAL',
+  membershipId: '20000000-0000-4000-8000-000000000001',
+  membershipType: 'STAFF',
+  createdAt: '2026-07-01T08:00:00Z',
+  membershipCreatedAt: '2026-07-01T08:00:00Z',
+  createdBy: null,
 });
 
 const branch = (tail: string, name: string, code: string): BranchSummary => ({
@@ -47,6 +52,8 @@ const branch = (tail: string, name: string, code: string): BranchSummary => ({
   branchType: 'OPERATIONS',
   status: 'PENDING_APPROVAL',
   createdAt: '2026-09-15T08:00:00Z',
+  createdBy: null,
+  submittedBy: null,
 });
 
 const WANJIKU = user('a4', 'Wanjiku Kariuki', 'DRAFT');

@@ -14,6 +14,8 @@ const TENANTS: TenantSummary[] = [
     countryCode: 'KE',
     status: 'SUSPENDED',
     createdAt: '2026-08-10T08:00:00Z',
+    requestedBy: null,
+    submittedBy: null,
   },
   {
     id: '16000000-0000-4000-8000-000000000006',
@@ -22,6 +24,8 @@ const TENANTS: TenantSummary[] = [
     countryCode: 'TZ',
     status: 'REJECTED',
     createdAt: '2026-08-01T08:00:00Z',
+    requestedBy: null,
+    submittedBy: null,
   },
 ];
 

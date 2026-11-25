@@ -79,7 +79,12 @@ miscount things today.
    the approval actions refuse the maker before any write even when the switch is off (BG-01,
    BG-12). **Adopted on Settings** (frontend #113): the three switches show their stored state
    and change after a confirmation; turning a maker-checker switch off needs a reason and says what
-   it relaxes. The approval actions' maker refusals are entry 08's.
+   it relaxes. **Adopted on approvals** (frontend #114): the approval pages and the user and
+   branch records read the matching switch (`readMakerCheckerSwitch`, with `settings.view`
+   tenant-wide) only when the caller made the request; on, the decision shows disabled with its
+   reason; off, it stays enabled under a warning that the approval is recorded as a high-severity
+   event; unread, it stays enabled and the platform's named refusal explains a refusal. The
+   actions no longer refuse the maker before any write.
 7. **A mutation implies more views** (ADR 0030, V22): `user.invite` needs `membership.view` and
    `user.view`; `user.assign_role` needs `role_assignment.view`. `INVITE_CODES` and the assign-role
    gates don't include them, so the action shows and then gets a 403. Role composition refuses a
@@ -91,7 +96,9 @@ miscount things today.
    sets `created_by` to the re-inviter and audits `membership.reinvite`, not `user.invite`. The
    invite wizard still refuses a revoked member's email, and `getUserInviter` (the `user.invite`
    audit actor) names the original inviter, so the user record disables Approve for the wrong
-   person (BG-28, BG-08).
+   person (BG-28, BG-08). **Adopted** (frontend #114) for the maker: the user record and the
+   approval page read the inviter from `created_by`, so a re-invited membership's maker is its
+   re-inviter. Re-inviting from the wizard is entry 18's (BG-28).
 9. **Roles can be archived, and status changes only from the named state** (platform #289, #302):
    `roleStatusAction` offers Activate for an `ARCHIVED` role, which is a 409 explained as a system
    role, and the default role list leaves archived roles out, so their names on old assignments fall
@@ -140,7 +147,7 @@ miscount things today.
 
 ## Summary
 
-13 backend fixed · 8 partly fixed · 0 open · 1 adopted · 13 closed.
+12 backend fixed · 8 partly fixed · 0 open · 1 adopted · 14 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -151,7 +158,7 @@ miscount things today.
 | BG-05 | P0       | Closed        | Published OpenAPI casing is wrong and list-item schemas are missing                                |
 | BG-06 | P0       | Backend fixed | No platform audit endpoint; tenant audit is 403 in the platform context                            |
 | BG-07 | P1       | Adopted       | Business-rule failures return 500 instead of 4xx                                                   |
-| BG-08 | P1       | Backend fixed | Maker identity not exposed; maker-checker 403 indistinguishable from missing permission            |
+| BG-08 | P1       | Closed        | Maker identity not exposed; maker-checker 403 indistinguishable from missing permission            |
 | BG-09 | P1       | Partly fixed  | No `user_id` filters on branch assignments / memberships; thin list items                          |
 | BG-10 | P1       | Backend fixed | No global user directory or global user read                                                       |
 | BG-11 | P1       | Partly fixed  | Invitation state not exposed; no resend; provisioning can stick with no recovery                   |
@@ -264,9 +271,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
   route, so the tenant administrator is always the maker of an invitation. The checker window can
   reopen if the tenant suspends members or branches (accepted on platform #223).
 - **To adopt:** the platform checker routes on the institution record (handling 409
-  `lifecycle.platform_checker_closed`); read the switches (`GET /tenant/settings`) before refusing
-  the maker; revisit the overview's People rule, since two active members is no longer the only way
-  through.
+  `lifecycle.platform_checker_closed`); revisit the overview's People rule, since two active members
+  is no longer the only way through. Done in frontend #114: the switches are read
+  (`GET /tenant/settings/{key}`) before the maker is refused, and a switch that is off lets the
+  maker decide.
 
 ### BG-03 — Branch pinning · P0
 
@@ -427,8 +435,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-08 — Maker not exposed; ambiguous 403 · P1
 
-- **Status:** Backend fixed. Platform #156 (also #221, #251), with one code per cause instead of a
-  single `maker_checker_violation`.
+- **Status:** Closed (frontend #114). Platform #156 (also #221, #251), with one code per cause
+  instead of a single `maker_checker_violation`.
 - **Gap:** No membership, branch, or tenant DTO exposes the maker; the only source is the audit
   `actor_id` on `user.invite` / `branch.create_draft` / `organisation.create_draft`/`submit`, which
   needs `audit.view` (and isn't readable at all for tenants from the platform context). Maker-checker
@@ -459,11 +467,18 @@ the same bullets): the first is the gap as found, the second what the UI still d
   `approver_is_branch_modifier` can only be explained after the refusal. Tenant **reject** also
   answers the `approver_is_tenant_*` codes. `/tenant/users` items and detail also carry
   `membership_id`, `membership_type`, `created_at` (the account's) and `membership_created_at`.
-- **To adopt:** read the maker from `created_by`, `submitted_by` and `requested_by` instead of the
-  audit log (no `audit.view` needed, and it works from the platform context). A re-invited
-  membership's maker is its `created_by`, not the `user.invite` actor (BG-28). Each code is
-  explained since frontend #109 (`describeProblem`), and the `forbidden` copy names a missing
-  permission only.
+- **To adopt:** done in frontend #114. The branch, membership, user and tenant contracts parse the
+  makers with one `actorRefSchema` (`lib/api/wire.ts`), and the users' `membership_id`,
+  `membership_type`, `created_at` and `membership_created_at`. The audit-log lookups
+  (`getMakerEvent`, `knownMaker`, `getBranchMaker`, `getUserInviter`) are gone, so naming a maker
+  needs no `audit.view`: the approval pages show Invited by, or Drafted by and Submitted by ("You
+  (…)" for the caller, "—" when the record names nobody), and the institution Overview shows
+  Requested by and Submitted by. `makerGate` (`modules/administration/approvals/maker-checker.ts`)
+  decides from the record's maker, the caller and the switch; the institution record disables
+  Approve and Reject for its requester or submitter (no switch applies to the platform checker).
+  The actions' pre-write maker refusals are gone: the platform decides, and each code is explained
+  since frontend #109 (`describeProblem`). Amenders aren't exposed, so `…_branch_modifier` and
+  `…_tenant_modifier` are still explained only after the refusal.
 
 ### BG-09 — Missing filters; thin list items · P1
 
@@ -1094,7 +1109,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
   assign-branch checks the target branch; `GET /tenant/users` still needs tenant-scope `user.view`.
 - **Still open:** nothing on the platform. In the frontend, a few read gates still use the
   effective set, so a branch-scoped holder gets their failure state from the platform's 403 instead
-  of no offer: the record pages' Audit tabs and maker lookups and the profile's Activity tab
+  of no offer: the record pages' Audit tabs and the profile's Activity tab
   (`audit.view`), the user record's and approval page's membership lookup (`membership.view`), and
   the per-user name lookups (`getTenantUser`, `user.view`), which show the short id.
 - **Verified 2026-11-24:** `branch_ids` is absent (not null) on TENANT entries; a code held at

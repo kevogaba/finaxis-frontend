@@ -79,13 +79,14 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
     const nested = await list('?q=ann.mwangi@greenfield.example');
     expect(nested.items.map((item) => item.user_id)).toEqual([USERS.joann, USERS.ann]);
     expect(nested.page.total_items).toBe(2);
-    // No names on a summary (BG-09): exactly these five fields.
+    // No names on a summary (BG-09): exactly these fields, with the inviter (BG-08).
     expect(Object.keys(nested.items[0] ?? {})).toEqual([
       'id',
       'user_id',
       'membership_status',
       'membership_type',
       'primary_branch_id',
+      'created_by',
     ]);
     expect(nested.items[0]).toMatchObject({
       id: USERS.joannMembership,
@@ -178,6 +179,7 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       'primary_branch_id',
       'created_at',
       'updated_at',
+      'created_by',
     ]);
 
     await expectProblem(await get(membershipPath(randomUUID())), 404, 'resource_not_found');
@@ -494,7 +496,7 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       ).page.total_items,
     ).toBe(0);
 
-    // The seeded maker lookup: who invited Amina.
+    // The seeded invite event for Amina.
     const invite = await rows(`entity_type=USER&entity_id=${USERS.amina}&action=user.invite`);
     expect(invite.page.total_items).toBe(1);
     expect(invite.items[0]?.actor_id).toBe(USERS.victor);

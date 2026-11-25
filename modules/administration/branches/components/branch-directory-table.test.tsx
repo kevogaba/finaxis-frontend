@@ -14,6 +14,8 @@ const BRANCHES: BranchSummary[] = [
     branchType: 'OPERATIONS',
     status: 'SUSPENDED',
     createdAt: '2026-07-01T08:00:00Z',
+    createdBy: null,
+    submittedBy: null,
   },
   {
     id: '08000000-0000-4000-8000-000000000008',
@@ -22,6 +24,8 @@ const BRANCHES: BranchSummary[] = [
     branchType: 'Service centre',
     status: 'CLOSED',
     createdAt: '2026-07-15T08:00:00Z',
+    createdBy: null,
+    submittedBy: null,
   },
 ];
 

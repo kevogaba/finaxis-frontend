@@ -10,6 +10,11 @@ const WIRE = {
       display_name: 'Peter Otieno',
       user_status: 'ACTIVE',
       membership_status: 'ACTIVE',
+      membership_id: '08000000-0000-4000-8000-000000000003',
+      membership_type: 'STAFF',
+      created_at: '2026-07-01T08:00:00Z',
+      membership_created_at: '2026-07-01T08:00:00Z',
+      created_by: null,
     },
   ],
   page: {

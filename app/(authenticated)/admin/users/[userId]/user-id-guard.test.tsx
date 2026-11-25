@@ -18,7 +18,7 @@ const reads = vi.hoisted(() => ({
   findUserMembership: vi.fn(),
   getMembership: vi.fn(),
   listUserBranchAssignments: vi.fn(),
-  getUserInviter: vi.fn(),
+  readMakerCheckerSwitch: vi.fn(),
   countUserRoleAssignments: vi.fn(),
   listRoleAssignments: vi.fn(),
   listBranches: vi.fn(),
@@ -46,9 +46,11 @@ vi.mock('@/modules/administration/users/user-service', () => ({
   getMembership: (...args: unknown[]) => reads.getMembership(...args) as unknown,
   listUserBranchAssignments: (...args: unknown[]) =>
     reads.listUserBranchAssignments(...args) as unknown,
-  getUserInviter: (...args: unknown[]) => reads.getUserInviter(...args) as unknown,
   countUserRoleAssignments: (...args: unknown[]) =>
     reads.countUserRoleAssignments(...args) as unknown,
+}));
+vi.mock('@/modules/administration/settings/settings-service', () => ({
+  readMakerCheckerSwitch: (...args: unknown[]) => reads.readMakerCheckerSwitch(...args) as unknown,
 }));
 vi.mock('@/modules/administration/roles/role-service', () => ({
   listRoleAssignments: (...args: unknown[]) => reads.listRoleAssignments(...args) as unknown,

@@ -1508,6 +1508,8 @@ function approvalsScenario(): RunState {
     ...branch(id, IDS.greenfield, code, name, 'OPERATIONS'),
     status,
     draftedBy,
+    // A submitted branch names its submitter, as on the platform: here, its drafter.
+    submittedBy: draftedBy,
     parentBranchId: IDS.headOffice,
     createdAt,
     updatedAt: createdAt,
@@ -2007,6 +2009,29 @@ const BUILDERS = {
       })),
     };
   },
+  // Entry 08 (BG-08, ADR 0032). `approvals-self-approval` stores both maker-checker switches as
+  // `false`, so Jane may approve Carol, whom she invited, and activate Naivasha, which she drafted
+  // (each audited HIGH). `approvals-no-settings` can't read a switch (decision Q4): Approve stays on
+  // offer, and the platform refuses her by name.
+  'approvals-self-approval': () => {
+    const state = approvalsScenario();
+    const off = (key: string): FakeTenantSetting => ({
+      organisationId: IDS.greenfield,
+      key,
+      value: 'false',
+      valueType: 'BOOLEAN',
+      sensitive: false,
+    });
+    return {
+      ...state,
+      tenantSettings: [
+        ...state.tenantSettings,
+        off('require_maker_checker_for_user_invites'),
+        off('require_maker_checker_for_branch_creation'),
+      ],
+    };
+  },
+  'approvals-no-settings': () => withoutPermission(approvalsScenario(), 'settings.view'),
   'approvals-empty': () => {
     const state = approvalsScenario();
     return {

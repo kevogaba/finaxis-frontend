@@ -3,7 +3,6 @@ import { cache } from 'react';
 import { toQueryString } from '@/lib/api/query-string';
 import { apiGet } from '@/lib/api/tenant-api';
 import { uuidSchema } from '@/lib/api/wire';
-import { listAuditEvents } from '@/modules/administration/audit/audit-service';
 import {
   branchAssignmentPageSchema,
   type BranchAssignment,
@@ -86,25 +85,6 @@ export const listUserBranchAssignments = cache(async (userId: string): Promise<U
   }
   return { items: [...rows.values()], truncated: true };
 });
-
-/** BG-08: the inviter is only in the audit log (`user.invite`, contract §G maker lookups); null
- * when the log holds no such event for them (or it names no actor). A malformed id is null too,
- * with no read. Every read failure
- * REJECTS (like `countUserRoleAssignments`), so the caller settles it with `load()`, which redirects
- * on a lost session or a stale context; it decides what any other failure means (never a quiet
- * null here). */
-export async function getUserInviter(userId: string): Promise<string | null> {
-  const id = uuidSchema.safeParse(userId);
-  if (!id.success) return null;
-  const events = await listAuditEvents({
-    entityType: 'USER',
-    entityId: id.data,
-    action: 'user.invite',
-    page: 0,
-    size: 1,
-  });
-  return events.items[0]?.actorUserId ?? null;
-}
 
 /** BG-15: one `size=1` read. Rejects when it fails, so the caller settles it with `load()` and can
  * say it failed instead of treating a failure as "not permitted" (never a quiet null). */

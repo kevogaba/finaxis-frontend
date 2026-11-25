@@ -10,12 +10,11 @@ const reads = vi.hoisted(() => ({
   findUserMembership: vi.fn(),
   listUserBranchAssignments: vi.fn(),
   getBranch: vi.fn(),
-  getMakerEvent: vi.fn(),
   listRequestedRoles: vi.fn(),
   getBranchIndex: vi.fn(),
   getRoleIndex: vi.fn(),
   getOrganisationTimeZone: vi.fn(),
-  getTenantUser: vi.fn(),
+  readMakerCheckerSwitch: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
@@ -39,7 +38,6 @@ vi.mock('@/modules/administration/branches/branch-service', () => ({
   getBranch: (...args: unknown[]) => reads.getBranch(...args) as unknown,
 }));
 vi.mock('@/modules/administration/approvals/approval-service', () => ({
-  getMakerEvent: (...args: unknown[]) => reads.getMakerEvent(...args) as unknown,
   listRequestedRoles: (...args: unknown[]) => reads.listRequestedRoles(...args) as unknown,
 }));
 vi.mock('@/lib/api/lookups', () => ({
@@ -47,7 +45,9 @@ vi.mock('@/lib/api/lookups', () => ({
   getRoleIndex: (...args: unknown[]) => reads.getRoleIndex(...args) as unknown,
   getOrganisationTimeZone: (...args: unknown[]) =>
     reads.getOrganisationTimeZone(...args) as unknown,
-  getTenantUser: (...args: unknown[]) => reads.getTenantUser(...args) as unknown,
+}));
+vi.mock('@/modules/administration/settings/settings-service', () => ({
+  readMakerCheckerSwitch: (...args: unknown[]) => reads.readMakerCheckerSwitch(...args) as unknown,
 }));
 vi.mock('@/modules/administration/approvals/approval-actions', () => ({
   approveUser: vi.fn(),

@@ -1,15 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BackendApiError } from '@/auth/backend-api';
 
-const { apiGet, listAuditEvents } = vi.hoisted(() => ({
-  apiGet: vi.fn(),
-  listAuditEvents: vi.fn(),
-}));
+const { apiGet } = vi.hoisted(() => ({ apiGet: vi.fn() }));
 vi.mock('@/lib/api/tenant-api', () => ({
   apiGet: (...args: unknown[]) => apiGet(...args) as unknown,
-}));
-vi.mock('@/modules/administration/audit/audit-service', () => ({
-  listAuditEvents: (...args: unknown[]) => listAuditEvents(...args) as unknown,
 }));
 
 const service = await import('./branch-service');
@@ -39,30 +32,5 @@ describe('branch service', () => {
     );
     apiGet.mockRejectedValueOnce(new Error('service unavailable'));
     await expect(service.countActiveAssignments(ID)).rejects.toThrow('service unavailable');
-  });
-
-  it('reads the drafter from the branch.create_draft audit event, or null (BG-08)', async () => {
-    listAuditEvents.mockResolvedValueOnce({ items: [{ actorUserId: 'u-9' }], page: {} });
-    await expect(service.getBranchMaker(ID)).resolves.toBe('u-9');
-    expect(listAuditEvents).toHaveBeenCalledWith({
-      entityType: 'BRANCH',
-      entityId: ID,
-      action: 'branch.create_draft',
-      page: 0,
-      size: 1,
-    });
-    listAuditEvents.mockResolvedValueOnce({ items: [], page: {} });
-    await expect(service.getBranchMaker(ID)).resolves.toBeNull();
-  });
-
-  // Never a quiet null: a 401 or a stale-context failure must reach the caller's `load()`, which
-  // redirects on it; the caller decides what any other failure means.
-  it.each([
-    ['a 401', new BackendApiError(401, { code: 'unauthorized' })],
-    ['a stale context', new BackendApiError(403, { code: 'invalid_active_tenant_context' })],
-    ['a 5xx', new BackendApiError(500, { requestId: 'req-1' })],
-  ])("rejects with the audit read's own error on %s", async (_name, failure) => {
-    listAuditEvents.mockRejectedValueOnce(failure);
-    await expect(service.getBranchMaker(ID)).rejects.toBe(failure);
   });
 });
