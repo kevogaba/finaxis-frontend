@@ -318,6 +318,7 @@ test.describe('fake API roles (contract §E.3)', () => {
     expect(disabled.status()).toBe(422);
     expect(await disabled.json()).toMatchObject({ code: 'invalid_operation' });
 
+    // BG-03: a tenant-wide grant assigns at another branch than the selected one.
     const atHeadOffice = await contextFor(request, 'roles', IDS.headOffice);
     expect(
       (
@@ -328,7 +329,7 @@ test.describe('fake API roles (contract §E.3)', () => {
           branch_id: IDS.westlands,
         })
       ).status(),
-    ).toBe(404);
+    ).toBe(201);
 
     const holders = await request.get(
       api(`/tenant/role-assignments?role_id=${ROLE_SCENARIO_IDS.teller}&status=ACTIVE`),
@@ -342,7 +343,7 @@ test.describe('fake API roles (contract §E.3)', () => {
     expect(await revoked.json()).toMatchObject({ status: 'REVOKED' });
   });
 
-  test('restricts only a BRANCH-scoped revoke at another branch (contract §E.4)', async ({
+  test('revokes on the assignment’s own scope, whichever branch is selected (BG-03)', async ({
     request,
   }) => {
     const atHeadOffice = await contextFor(request, 'roles', IDS.headOffice);
@@ -350,24 +351,59 @@ test.describe('fake API roles (contract §E.3)', () => {
       `/tenant/role-assignments?role_id=${ROLE_SCENARIO_IDS.teller}&status=ACTIVE`,
     );
 
-    // Listing is never branch-restricted: Grace's Westlands grant shows from Head Office.
+    // A tenant-wide view lists every row: Grace's Westlands grant shows from Head Office.
     expect(await (await request.get(holders, { headers: atHeadOffice })).json()).toMatchObject({
       page: { total_items: 2 },
     });
+    // An unknown id is a 404 to a tenant-wide holder.
+    expect(
+      (
+        await request.delete(api(`/tenant/role-assignments/${randomUUID()}`), {
+          headers: atHeadOffice,
+        })
+      ).status(),
+    ).toBe(404);
     const elsewhere = await request.delete(
       api(`/tenant/role-assignments/${ROLE_SCENARIO_IDS.graceTellerAtWestlands}`),
       { headers: atHeadOffice },
     );
-    expect(elsewhere.status()).toBe(404);
-    // The 404 changed nothing, and a TENANT-scoped assignment is revocable from any branch.
-    expect(await (await request.get(holders, { headers: atHeadOffice })).json()).toMatchObject({
-      page: { total_items: 2 },
-    });
+    expect(await elsewhere.json()).toMatchObject({ status: 'REVOKED' });
     const tenantScoped = await request.delete(
       api(`/tenant/role-assignments/${ROLE_SCENARIO_IDS.tomTeller}`),
       { headers: atHeadOffice },
     );
     expect(await tenantScoped.json()).toMatchObject({ status: 'REVOKED' });
+  });
+
+  // BG-03 (`IamQueryService.searchRoleAssignments`): a branch-scoped role_assignment.view lists
+  // only BRANCH-scope rows at its branches, whichever branch is selected.
+  test('lists a branch-scoped view only its branches’ BRANCH-scope rows', async ({ request }) => {
+    const refused = { code: 'forbidden', detail: 'You are not permitted to perform this action.' };
+    for (const branchId of [IDS.headOffice, null]) {
+      const headers = await contextFor(request, 'roles-branch-scoped-view', branchId);
+      const search = (query: string) =>
+        request.get(api(`/tenant/role-assignments?${query}`), { headers });
+      const teller = (await (
+        await search(`role_id=${ROLE_SCENARIO_IDS.teller}&status=ACTIVE`)
+      ).json()) as { items: { id: string }[]; page: { total_items: number } };
+      // Tom's TENANT-scope teller row is left out, so the total counts Westlands alone.
+      expect(teller.items.map((row) => row.id)).toEqual([ROLE_SCENARIO_IDS.graceTellerAtWestlands]);
+      expect(teller.page.total_items).toBe(1);
+      const tenantRows = (await (await search('scope_type=TENANT')).json()) as {
+        items: unknown[];
+      };
+      expect(tenantRows.items).toEqual([]);
+      const elsewhere = await search(`branch_id=${IDS.headOffice}`);
+      expect(elsewhere.status()).toBe(403);
+      expect(await elsewhere.json()).toMatchObject(refused);
+      expect((await search(`branch_id=${IDS.westlands}`)).status()).toBe(200);
+    }
+    // Held nowhere: a 403 that names nothing (`requireListRestriction`).
+    const none = await request.get(api('/tenant/role-assignments'), {
+      headers: await contextFor(request, 'roles-limited', null),
+    });
+    expect(none.status()).toBe(403);
+    expect(await none.json()).toMatchObject(refused);
   });
 
   // Platform #342 (ADR 0044): below the tenant administrator, nobody adds to their own access.

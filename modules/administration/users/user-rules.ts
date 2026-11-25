@@ -3,6 +3,7 @@ import {
   canAll,
   canAllTenantWide,
   canAny,
+  canTenantWide,
   ownAccessBlocked,
   type PermissionHolder,
 } from '@/auth/permissions';
@@ -300,9 +301,10 @@ export function canAssignUserBranch(
   );
 }
 
-/** The most branch assignments (or memberships) a scan reads: the backend can't filter either by user
- * (BG-09), so a scan pages through at most this many rows. Client-safe, so the copy that names the
- * ceiling and the service that enforces it (`SCAN_PAGES` in user-service.ts) can't drift apart. */
+/** The most rows a scan reads: memberships can't be filtered by user (BG-09), and a user's branch
+ * assignments, searched by `user_id` (BG-03), come a page at a time, so a scan pages through at
+ * most this many. Client-safe, so the copy that names the ceiling and the service that enforces it
+ * (`SCAN_PAGES` in user-service.ts) can't drift apart. */
 export const SCAN_CEILING = 500;
 
 export const ACCESS_DESCRIPTION =
@@ -323,14 +325,16 @@ export function rolesCappedHint(ceiling: number): string {
 export function rolesCappedNoneActive(ceiling: number): string {
   return `None of the first ${ceiling} roles by name is active, and roles after that can't be assigned from this page.`;
 }
-export const PARTIAL_SCAN_NOTE = `This list may be incomplete: the platform can't filter branch assignments by user, so only the first ${SCAN_CEILING} branch assignments were checked.`;
+export const PARTIAL_SCAN_NOTE = `This list may be incomplete: only the first ${SCAN_CEILING} of this user's branch assignments were read.`;
 
-/** `canSwitch`: the signed-in user has more than one ACTIVE branch, so All branches is open. */
-export function branchContextNote(branchName: string, canSwitch: boolean): string {
-  return canSwitch
-    ? `Only ${branchName} is visible with a branch selected. Switch to All branches to see this user's other branch assignments.`
-    : `Only ${branchName} is visible: your account is assigned to this branch only, so this user's other branch assignments can't be shown.`;
+/** BG-03: a branch assignment search by user lists every branch to a tenant-wide
+ * `branch_assignment.view`, and only the ACTIVE branches a branch-scoped grant covers otherwise,
+ * whichever branch is selected. */
+export function scopedAssignmentView(holder: PermissionHolder): boolean {
+  return !canTenantWide(holder, 'branch_assignment.view');
 }
+
+export const SCOPED_ASSIGNMENTS_NOTE = 'Only assignments at branches you can view are shown.';
 
 /** A select's option (structurally 09's `BranchOption`). */
 export interface SelectOption {
@@ -338,15 +342,15 @@ export interface SelectOption {
   label: string;
 }
 
-/** BRANCH scope needs an existing ACTIVE assignment at that branch (else 409), and in a branch
- * context only the selected branch is reachable (§E.4). A branch held twice is offered once. */
+/** BRANCH scope needs an existing ACTIVE assignment at that branch (else 409), and the holder's
+ * grant there (`reachable`: `canAssignRoleAt`, BG-03). A branch held twice is offered once. */
 export function roleScopeBranches(
   rows: readonly { branchId: string }[],
-  selectedBranchId: string | null,
+  reachable: (branchId: string) => boolean,
   label: (branchId: string) => string,
 ): SelectOption[] {
   return [...new Set(rows.map((row) => row.branchId))]
-    .filter((id) => selectedBranchId === null || id === selectedBranchId)
+    .filter(reachable)
     .map((id) => ({ id, label: label(id) }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
@@ -358,53 +362,46 @@ export function roleScopeHint(input: {
   readable: boolean;
   offered: number;
   truncated: boolean;
-  selectedBranchName: string | null;
+  /** The holder assigns roles at some branches only (not tenant-wide). */
+  someBranches: boolean;
 }): string | undefined {
   if (input.offered > 0) return undefined;
   if (!input.readable) {
-    return "Their branch assignments can't be read here, so only institution scope is available.";
+    return input.someBranches
+      ? "Their branch assignments can't be read here, so no branch can be offered."
+      : "Their branch assignments can't be read here, so only institution scope is available.";
   }
   if (input.truncated) {
-    return `Only the first ${SCAN_CEILING} branch assignments were checked and none of theirs was among them, so only institution scope is offered here.`;
+    return input.someBranches
+      ? `Only the first ${SCAN_CEILING} of their branch assignments were checked, and none was at a branch where you can assign roles.`
+      : `Only the first ${SCAN_CEILING} of their branch assignments were checked, so only institution scope is offered here.`;
   }
-  if (input.selectedBranchName) {
-    return `They aren't assigned to ${input.selectedBranchName}. Assign them there first to give a branch-scoped role.`;
+  if (input.someBranches) {
+    return "They aren't assigned to a branch where you can assign roles. Assign them to one first to give a branch-scoped role.";
   }
   return 'Assign them to a branch first to give a branch-scoped role.';
 }
 
-export function branchAssignmentCount(
-  count: number,
-  truncated: boolean,
-  selectedBranchName: string | null,
-): string {
-  // A capped scan is partial in a branch context too: the backend forces the search to the selected
-  // branch (§E.4), and a branch with more than 500 ACTIVE assignments can hide the user's row.
-  if (selectedBranchName) {
-    if (!truncated) return `${count} at ${selectedBranchName}`;
-    return count === 0
-      ? `None found at ${selectedBranchName} (partial)`
-      : `At least ${count} at ${selectedBranchName} (partial)`;
-  }
-  if (!truncated) return String(count);
-  return count === 0 ? 'None found (partial)' : `At least ${count} (partial)`;
+/** `scoped`: the caller views only some branches' assignments (`scopedAssignmentView`). */
+export function branchAssignmentCount(count: number, truncated: boolean, scoped: boolean): string {
+  const where = scoped ? ' at branches you can view' : '';
+  if (!truncated) return `${count}${where}`;
+  return count === 0 ? `None found${where} (partial)` : `At least ${count}${where} (partial)`;
 }
 
 /** The Branch assignments tab's empty state. "No branch assignments" is a fact only when everything
- * could be seen: with a branch selected only that branch is visible (§E.4), and a capped scan hides
- * the rows past its ceiling (Ruling 8). A capped scan wins the title even in a branch context, since
- * "No assignment at <branch>" would be a guess there too. */
+ * could be seen: a branch-scoped view sees only its branches (BG-03), and a capped scan hides the
+ * rows past its ceiling (Ruling 8). A capped scan wins the title, since "No assignment at" would be
+ * a guess there too. */
 export function branchAssignmentsEmptyState(input: {
-  selectedBranchName: string | null;
+  scoped: boolean;
   truncated: boolean;
-  /** The signed-in user has more than one ACTIVE branch, so All branches is open to them. */
-  canSwitch: boolean;
   /** An Assign branch button is on the tab. */
   assignOffered: boolean;
 }): { title: string; description: string } {
-  const { selectedBranchName, truncated, canSwitch, assignOffered } = input;
+  const { scoped, truncated, assignOffered } = input;
   const offer = 'Assign a branch so they can work there.';
-  if (!selectedBranchName && !truncated) {
+  if (!scoped && !truncated) {
     return {
       title: 'No branch assignments',
       description: assignOffered ? offer : 'This user has no branch assignments.',
@@ -416,15 +413,12 @@ export function branchAssignmentsEmptyState(input: {
       `Only the first ${SCAN_CEILING} branch assignments were checked, so they may be assigned beyond them.`,
     );
   }
-  if (selectedBranchName) {
-    description.push('They may be assigned to other branches.');
-    if (canSwitch) description.push('Switch to All branches to see them.');
-  }
+  if (scoped) description.push("They may be assigned to branches you can't view.");
   if (assignOffered) description.push(offer);
   return {
     title:
-      selectedBranchName && !truncated
-        ? `No assignment at ${selectedBranchName}`
+      scoped && !truncated
+        ? 'No assignment at branches you can view'
         : 'No branch assignments found',
     description: description.join(' '),
   };

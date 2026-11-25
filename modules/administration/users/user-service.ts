@@ -31,8 +31,8 @@ export const getUser = cache(async (userId: string) => {
 
 const SCAN_PAGE_SIZE = 100;
 // ponytail: at most SCAN_CEILING rows (5 pages of 100) per scan, like the lookup indexes (spec §6.3).
-// The backend has no user_id filter on memberships or branch assignments (BG-09). The ceiling is
-// shared with user-rules.ts, whose copy names it.
+// Memberships have no user_id filter (BG-09); a user's branch assignments do (BG-03), but still come
+// a page at a time. The ceiling is shared with user-rules.ts, whose copy names it.
 const SCAN_PAGES = SCAN_CEILING / SCAN_PAGE_SIZE;
 
 /** BG-09: memberships can't be filtered by user. `q` is a case-insensitive substring over username,
@@ -67,8 +67,9 @@ export interface UserBranchScan {
   truncated: boolean;
 }
 
-/** BG-09: branch assignments have no user_id filter. With a branch selected the backend forces the
- * search to that branch (§E.4), so the result is that branch's rows only. 12 reuses it. */
+/** The user's ACTIVE branch assignments, searched by `user_id`, which ignores the selected branch and
+ * lists every branch the caller may view (BG-03). Still a bounded scan that keeps only their rows
+ * (BG-09; entry 16 replaces it). 12 reuses it. */
 export const listUserBranchAssignments = cache(async (userId: string): Promise<UserBranchScan> => {
   const id = uuidSchema.parse(userId).toLowerCase();
   // By id: the order is unspecified (`sort_*` is ignored), so with LIMIT/OFFSET paging and no order a
@@ -77,7 +78,7 @@ export const listUserBranchAssignments = cache(async (userId: string): Promise<U
   const rows = new Map<string, BranchAssignment>();
   for (let page = 0; page < SCAN_PAGES; page += 1) {
     const result = await apiGet(
-      `/api/v1/tenant/branch-assignments${toQueryString({ status: 'ACTIVE', page, size: SCAN_PAGE_SIZE })}`,
+      `/api/v1/tenant/branch-assignments${toQueryString({ user_id: id, status: 'ACTIVE', page, size: SCAN_PAGE_SIZE })}`,
       branchAssignmentPageSchema,
     );
     for (const row of result.items) if (row.userId.toLowerCase() === id) rows.set(row.id, row);

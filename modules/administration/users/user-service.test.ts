@@ -182,9 +182,11 @@ describe('user service', () => {
     const A1 = '30000000-0000-4000-8000-000000000001';
     const A2 = '30000000-0000-4000-8000-000000000002';
     const A3 = '30000000-0000-4000-8000-000000000003';
-    const PATH = '/api/v1/tenant/branch-assignments?status=ACTIVE&page=0&size=100';
+    const PATH = `/api/v1/tenant/branch-assignments?user_id=${ANN}&status=ACTIVE&page=0&size=100`;
 
-    it("keeps only the user's rows across pages, never filtering by branch", async () => {
+    // BG-03: a `user_id` search ignores the selected branch, so the scan names the user and never a
+    // branch.
+    it("searches by user, keeping only the user's rows across pages, never filtering by branch", async () => {
       apiGet
         .mockImplementationOnce(page([assignmentWire(A1, ANN), assignmentWire(A2, JOANN)], true))
         .mockImplementationOnce(page([assignmentWire(A3, ANN)], false));
@@ -194,7 +196,7 @@ describe('user service', () => {
       expect(apiGet).toHaveBeenNthCalledWith(1, PATH, branchAssignmentPageSchema);
       expect(apiGet.mock.calls.map(([path]) => path)).toEqual([
         PATH,
-        '/api/v1/tenant/branch-assignments?status=ACTIVE&page=1&size=100',
+        `/api/v1/tenant/branch-assignments?user_id=${ANN}&status=ACTIVE&page=1&size=100`,
       ]);
       for (const [path] of apiGet.mock.calls) expect(path).not.toContain('branch_id');
     });

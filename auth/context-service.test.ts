@@ -250,6 +250,26 @@ describe('context service', () => {
     );
   });
 
+  it('clears the branch with an explicit null and parses the null branch it answers (BG-03)', async () => {
+    readContextToken.mockResolvedValueOnce('signed-context-token');
+    backendApi.post.mockResolvedValueOnce({
+      organisation_id: tenantOrganisationId,
+      membership_id: 'membership-1',
+      branch_id: null,
+      context_token: 'institution-context-token',
+      context_header: 'X-Active-Organisation-Context',
+    });
+
+    await expect(selectBranch(requestHeaders, null)).resolves.toMatchObject({ branch_id: null });
+
+    expect(backendApi.post).toHaveBeenCalledWith(
+      '/api/v1/auth/select-branch',
+      { branch_id: null },
+      requestHeaders,
+      'signed-context-token',
+    );
+  });
+
   it('resolves the platform administration module for the reserved organisation', async () => {
     readContextToken.mockResolvedValueOnce('signed-context-token');
     backendApi.get.mockResolvedValueOnce(profile);

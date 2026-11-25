@@ -45,6 +45,46 @@ test.describe('working context', () => {
     await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible();
   });
 
+  // BG-03 (platform #154): sign-in still picks the one branch, and the context dialog then offers
+  // All branches, which clears it, and the branch again.
+  test('lets a single-branch member switch to All branches and back', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'duplicate-assignments');
+    await goToAdminAsGreenfield(page);
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible();
+
+    const contextButton = page.getByRole('button', { name: /switch organisation or branch/i });
+    const switchTo = async (branch: RegExp) => {
+      await expectHydrated(contextButton);
+      await contextButton.click();
+      const dialog = page.getByRole('dialog', { name: /switch working context/i });
+      await dialog.getByRole('combobox', { name: 'Organisation' }).click();
+      await clickMuiOption(page.getByRole('option', { name: /Greenfield/ }));
+      await dialog.getByRole('combobox', { name: 'Branch' }).click();
+      await expect(page.getByRole('option')).toHaveText([
+        'All branches (institution level)',
+        'Head Office (HEAD_OFFICE)',
+      ]);
+      await clickMuiOption(page.getByRole('option', { name: branch }));
+      await expect(dialog).toBeHidden();
+    };
+
+    await switchTo(/All branches/);
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Switched to Greenfield SACCO · All branches' }),
+    ).toBeVisible();
+    await expect(page.getByRole('banner').getByText('All branches')).toBeVisible();
+
+    await switchTo(/Head Office/);
+    await expect(
+      page.getByRole('alert').filter({ hasText: /^Switched to Greenfield SACCO$/ }),
+    ).toBeVisible();
+    await expect(page.getByRole('banner').getByText('Head Office')).toBeVisible();
+  });
+
   test('uses institution level for members without branches', async ({
     context,
     page,

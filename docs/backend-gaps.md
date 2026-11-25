@@ -147,13 +147,13 @@ miscount things today.
 
 ## Summary
 
-12 backend fixed · 8 partly fixed · 0 open · 1 adopted · 14 closed.
+11 backend fixed · 8 partly fixed · 0 open · 1 adopted · 15 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
 | BG-01 | P0       | Partly fixed  | No approval-request / pending-change model (no return-for-changes, resubmission, branch rejection) |
 | BG-02 | P0       | Backend fixed | A tenant created through the API cannot onboard a second person through the API                    |
-| BG-03 | P0       | Backend fixed | Branch pinning: a selected branch hides every other branch; draft branches are unreachable         |
+| BG-03 | P0       | Closed        | Branch pinning: a selected branch hides every other branch; draft branches are unreachable         |
 | BG-04 | P0       | Closed        | Tenant settings `PUT` fails with 500 and rolls back (per source reading)                           |
 | BG-05 | P0       | Closed        | Published OpenAPI casing is wrong and list-item schemas are missing                                |
 | BG-06 | P0       | Backend fixed | No platform audit endpoint; tenant audit is 403 in the platform context                            |
@@ -278,7 +278,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-03 — Branch pinning · P0
 
-- **Status:** Backend fixed. Platform #154, #242.
+- **Status:** Closed (frontend #116). Platform #154, #242.
 - **Gap:** With a branch selected, `verifyBranchContext` returns 404 for any other branch on
   `GET /branches/{id}`, every branch transition, branch-assignment get/assign/revoke, and BRANCH-scope
   role assignment; branch-assignment search is forced to the selected branch
@@ -305,10 +305,26 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Verified 2026-11-24:** `select-branch` clears on `{}` or `{"branch_id": null}` but rejects
   `""` (strict UUID). A branch-scoped caller's 403 on another branch's record renders the generic
   `ErrorState` today; it should be the Forbidden state.
-- **To adopt:** drop the client-side "switch to All branches" refusals (activation, branch pages,
-  the approval queue); let single-branch users clear their branch; pass `branch_id` explicitly in
-  assignment searches. The guided state keyed on `resource_not_found` stops firing: tenant-wide
-  holders now get the branch, branch-scoped ones a 403.
+- **To adopt:** done in frontend #116.
+  - The guided "switch to All branches" states (branch record, approval page, queue note, bell
+    hint, overview card), the activation's branch-context refusal and the re-select-organisation
+    button are gone. A branch record answering 403 shows the Forbidden state.
+  - The context dialog offers All branches to a single-branch member holding `auth.select_branch`
+    tenant-wide, and choosing All branches sends `select-branch` `{"branch_id": null}`.
+  - Branch actions gate on `canActOnBranch`, the platform's two checks: the route's code in the
+    selected context (`/auth/me`'s `permissions`), and the code and its views tenant-wide or at
+    the target branch while it is ACTIVE (`/auth/me`'s BRANCH `branch_ids`), whichever branch is
+    selected. Activating a pending branch, and the queue, the bell and the overview card for it,
+    are tenant-wide only. Role and branch assignment options and revokes follow the same rule;
+    institution-scope role assignment needs the grant tenant-wide.
+  - `GET /branches` and role-assignment search are target-aware: the directory and branch pickers
+    say when a branch-scoped `branch.view` lists only its branches, the role lists and counts say
+    the same of a branch-scoped `role_assignment.view`, and the overview reads branch counts only
+    with `branch.view` tenant-wide.
+  - The branch record's Users tab searches by `branch_id`, and the user record's scan by
+    `user_id`. A branch-scoped `branch_assignment.view` says it shows only its branches.
+  - The fake API checks the target branch (403 for a branch-scoped caller, 404 for an unknown id
+    only to a tenant-wide one) and honours `branch_id`/`user_id`.
 
 ### BG-04 — Tenant settings `PUT` fails with 500 · P0
 

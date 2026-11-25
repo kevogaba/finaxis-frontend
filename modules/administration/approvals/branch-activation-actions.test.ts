@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendApiError } from '@/auth/backend-api';
 import { ACTIVATE_FORBIDDEN } from '@/modules/administration/branches/branch-rules';
-import { BRANCH_CHANGED, BRANCH_CONTEXT_REFUSAL } from './approval-copy';
+import { BRANCH_CHANGED } from './approval-copy';
 
 const { apiPost, getAuthenticatedUser, getBranch, getCurrentContextProfile, refresh } = vi.hoisted(
   () => ({
@@ -99,15 +99,11 @@ describe('activatePendingBranch', () => {
     );
   });
 
-  it('refuses in a branch context before any read (BG-03)', async () => {
+  // BG-03: the platform checks the target branch, so a selected branch refuses nothing here.
+  it('activates with another branch selected', async () => {
     getCurrentContextProfile.mockResolvedValue(resolved({ id: WESTLANDS, name: 'Westlands' }));
-    await expect(activatePendingBranch(null, branchForm())).resolves.toMatchObject({
-      ok: false,
-      code: 'branch_context',
-      formError: BRANCH_CONTEXT_REFUSAL,
-    });
-    expect(getBranch).not.toHaveBeenCalled();
-    expect(apiPost).not.toHaveBeenCalled();
+    await expect(activatePendingBranch(null, branchForm())).resolves.toEqual({ ok: true });
+    expect(apiPost).toHaveBeenCalledExactlyOnceWith(`/api/v1/branches/${BRANCH}/activate`, {}, KEY);
   });
 
   it.each(['DRAFT', 'SUSPENDED'])('refuses a %s branch before any write', async (status) => {

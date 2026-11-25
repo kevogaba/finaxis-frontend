@@ -1,4 +1,4 @@
-import { canAll, canAny, canTenantWide, type PermissionHolder } from '@/auth/permissions';
+import { canAny, canTenantWide, type PermissionHolder } from '@/auth/permissions';
 import type { NotificationEntry } from '@/components/shell/notifications-menu';
 import { formatInstant, shortId } from '@/lib/format';
 import type { Page } from '@/lib/api/wire';
@@ -7,9 +7,9 @@ import {
   type UserApprovalCounts,
 } from '@/modules/administration/approvals/approval-notifications';
 import {
-  BRANCH_ACTIVATION_CODES,
   BRANCH_QUEUE_LABEL,
   branchApprovalHref,
+  canSeeBranchActivations,
   canSeeUserApprovals,
   USER_QUEUE_LABEL,
   userApprovalHref,
@@ -60,9 +60,9 @@ export interface OverviewCards {
  * Readiness shows while at least one of its items can be checked. */
 export function overviewCards(holder: PermissionHolder): OverviewCards {
   const users = canSeeUserApprovals(holder);
-  const branches = canAll(holder, BRANCH_ACTIVATION_CODES);
+  const branches = canSeeBranchActivations(holder);
   return {
-    // Every read here but the branch counts is checked tenant-wide (BG-33).
+    // Every read here is checked tenant-wide (BG-33); see `canCheckReadiness` for the branch counts.
     businessDate: canTenantWide(holder, 'business_date.view'),
     approvals: users || branches ? { users, branches } : null,
     readiness: canAny(holder, Object.values(READINESS_CODES)),
@@ -141,9 +141,6 @@ export interface PendingApprovalsReads {
   userCounts: Settled<UserApprovalCounts>;
   /** The first page of branches pending activation, newest first; its total is the count. */
   branches: Settled<Page<BranchSummary>>;
-  branchSelected: boolean;
-  /** The account can select All branches (more than one ACTIVE branch), as the bell is told. */
-  canSwitch: boolean;
 }
 
 const reference = (requestId: string | null) => (requestId ? ` Reference: ${requestId}` : '');
@@ -205,8 +202,6 @@ export function pendingApprovalsView(reads: PendingApprovalsReads): PendingAppro
               : reads.branches.ok
                 ? { ok: true, value: reads.branches.value.page.totalItems }
                 : { ok: false },
-          branchSelected: reads.branchSelected,
-          canSwitch: reads.canSwitch,
         }).entries;
   const provisioning =
     reads.userCounts?.ok && reads.userCounts.value.provisioning > 0

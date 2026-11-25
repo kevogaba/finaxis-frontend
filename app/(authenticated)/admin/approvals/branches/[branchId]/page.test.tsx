@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BackendApiError } from '@/auth/backend-api';
-import { ALL_BRANCHES_UNAVAILABLE } from '@/components/context/all-branches-copy';
 import { VERIFIED_ON_APPROVAL } from '@/modules/administration/approvals/approval-checks';
 import {
   BRANCH_ACTIVATION_FORBIDDEN,
@@ -60,10 +59,6 @@ vi.mock('@/modules/administration/approvals/approval-actions', () => ({
 vi.mock('@/modules/administration/approvals/branch-activation-actions', () => ({
   activatePendingBranch: (...args: unknown[]) => activatePendingBranch(...args) as unknown,
 }));
-// The switch reads the shell's application context; its own test covers it.
-vi.mock('@/components/context/switch-to-all-branches-button', () => ({
-  SwitchToAllBranchesButton: () => <button type="button">Switch to All branches</button>,
-}));
 
 const { default: BranchApprovalPage } = await import('./page');
 
@@ -80,25 +75,26 @@ type Actor = { id: string; displayName: string | null } | null;
 
 interface Setup {
   permissions?: string[];
+  /** Of `permissions`, the ones held only at one branch (BG-33). */
+  branchOnly?: string[];
   status?: string;
   /** The record's `created_by` and `submitted_by` (BG-08). */
   maker?: Actor;
   submitter?: Actor;
   switchState?: SwitchState;
   selectedBranch?: { id: string; name: string } | null;
-  activeBranches?: number;
   parentBranchId?: string | null;
   me?: string;
 }
 
 function setup({
   permissions = ALL_CODES,
+  branchOnly = [],
   status = 'PENDING_APPROVAL',
   maker = { id: VICTOR, displayName: 'Victor Kamau' },
   submitter = { id: MARY, displayName: 'Mary Wanjiku' },
   switchState = 'on',
   selectedBranch = null,
-  activeBranches = 2,
   parentBranchId = HEAD_OFFICE,
   me = ME,
 }: Setup = {}) {
@@ -107,10 +103,10 @@ function setup({
     profile: {
       user_id: me,
       permissions,
-      permission_scopes: permissionScopes(permissions),
+      permission_scopes: permissionScopes(permissions, branchOnly),
       branches: [
         { id: WESTLANDS, status: 'ACTIVE' },
-        { id: HEAD_OFFICE, status: activeBranches > 1 ? 'ACTIVE' : 'SUSPENDED' },
+        { id: HEAD_OFFICE, status: 'ACTIVE' },
       ],
     },
     context: {
@@ -256,32 +252,34 @@ describe('BranchApprovalPage', () => {
     expect(screen.queryByRole('region', { name: 'Control checks' })).toBeNull();
   });
 
-  it('never offers Activate with a branch selected (BG-03)', async () => {
+  it('offers Activate to a tenant-wide approver with another branch selected (BG-03)', async () => {
     setup({ selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' } });
     await show();
 
-    expect(activate()).toBeNull();
+    expect(activate()).toBeEnabled();
   });
 
-  it.each([
-    [2, 'Switch to All branches to manage this branch'],
-    [1, ALL_BRANCHES_UNAVAILABLE],
-  ])(
-    'guides a branch context the backend hides it from (%i active branches)',
-    async (activeBranches, text) => {
-      setup({ selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' }, activeBranches });
-      getBranch.mockRejectedValue(new BackendApiError(404, { code: 'resource_not_found' }));
+  // A pending branch grants no branch-scoped permission (platform #242), so only a tenant-wide
+  // `branch.approve` activates it, whichever branch is selected.
+  it.each(['branch.approve', 'branch.view'])(
+    'reads nothing past the profile when %s is held only at a branch, and says why',
+    async (scoped) => {
+      setup({
+        branchOnly: [scoped],
+        selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' },
+      });
       await show();
 
-      expect(
-        screen.getByRole('heading', { level: 1, name: 'Branch not available here' }),
-      ).toBeInTheDocument();
-      expect(screen.getByText(text)).toBeInTheDocument();
+      expect(screen.getByText(BRANCH_ACTIVATION_FORBIDDEN)).toBeInTheDocument();
+      expect(getBranch).not.toHaveBeenCalled();
     },
   );
 
-  it('answers a branch the backend can’t find at All branches with not-found', async () => {
-    setup();
+  it.each([
+    ['at All branches', null],
+    ['with a branch selected', { id: WESTLANDS, name: 'Westlands Branch' }],
+  ])('answers a branch the backend can’t find %s with not-found', async (_case, selected) => {
+    setup({ selectedBranch: selected });
     getBranch.mockRejectedValue(new BackendApiError(404, { code: 'resource_not_found' }));
     await expect(show()).rejects.toThrow('NEXT_NOT_FOUND');
   });
@@ -339,7 +337,7 @@ describe('BranchApprovalPage: a failed read is never absence (rule 9)', () => {
     ['a 403', new BackendApiError(403, { code: 'forbidden' }), "You don't have permission"],
     ['a 5xx', new BackendApiError(500, { requestId: 'req-4' }), 'Reference: req-4'],
   ])(
-    'never takes %s for a branch hidden by the selected branch (BG-03)',
+    'tells %s apart with a branch selected, under the page h1 (BG-03)',
     async (_case, error, text) => {
       setup({ selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' } });
       getBranch.mockRejectedValue(error);
@@ -349,8 +347,6 @@ describe('BranchApprovalPage: a failed read is never absence (rule 9)', () => {
         screen.getByRole('heading', { level: 1, name: 'Branch approval' }),
       ).toBeInTheDocument();
       expect(screen.getByText(text)).toBeInTheDocument();
-      expect(screen.queryByText('Switch to All branches to manage this branch')).toBeNull();
-      expect(screen.queryByRole('heading', { name: 'Branch not available here' })).toBeNull();
     },
   );
 

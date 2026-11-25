@@ -1,7 +1,12 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
 import { expect, test } from '@playwright/test';
-import { requireContext, requirePermission } from './fake-api/access.mts';
+import {
+  requireAuthority,
+  requireBranchPermission,
+  requireContext,
+  requirePermission,
+} from './fake-api/access.mts';
 import { encodeContext } from './fake-api/context-token.mts';
 import type { RouteContext } from './fake-api/router.mts';
 import { IDS, seedScenario } from './fake-api/scenarios.mts';
@@ -60,47 +65,64 @@ function contextAt(state: RunState, branchId: string | null): RouteContext {
 }
 
 test.describe('fake API permission scopes (contract §E.4)', () => {
-  test('a BRANCH grant counts only for branch-scoped checks at its own branch', () => {
+  // A route's own `@PreAuthorize` reads the selected context's authorities: a BRANCH grant counts
+  // only while its branch is selected, and never at institution level.
+  test('a BRANCH grant passes a route gate only while its branch is selected', () => {
     const state = withBranchGrantAtHeadOffice();
     const headOffice = requireContext(contextAt(state, IDS.headOffice));
     const westlands = requireContext(contextAt(state, IDS.westlands));
     const institution = requireContext(contextAt(state, null));
+    const refused = 'You are not permitted to perform this action.';
 
     expect(() => {
-      requirePermission(headOffice, BRANCH_ONLY, 'branch');
+      requireAuthority(headOffice, [BRANCH_ONLY]);
     }).not.toThrow();
     expect(() => {
       requirePermission(headOffice, BRANCH_ONLY);
     }).toThrow(`Missing permission: ${BRANCH_ONLY}.`);
     expect(() => {
-      requirePermission(westlands, BRANCH_ONLY, 'branch');
-    }).toThrow(`Missing permission: ${BRANCH_ONLY}.`);
+      requireAuthority(westlands, [BRANCH_ONLY]);
+    }).toThrow(refused);
     expect(() => {
-      requirePermission(institution, BRANCH_ONLY, 'branch');
-    }).toThrow(`Missing permission: ${BRANCH_ONLY}.`);
+      requireAuthority(institution, [BRANCH_ONLY]);
+    }).toThrow(refused);
+    // Any one of the route's codes passes (`hasAnyAuthority`).
+    expect(() => {
+      requireAuthority(westlands, [BRANCH_ONLY, 'audit.view']);
+    }).not.toThrow();
     // /auth/me reports the context's effective codes, BRANCH grants at the selected branch included.
     expect(headOffice.permissions.has(BRANCH_ONLY)).toBe(true);
     expect(institution.permissions.has(BRANCH_ONLY)).toBe(false);
   });
 
-  // ADR 0030: a mutation also needs each view it implies, at the same scope, and the refusal names
-  // the first missing code.
-  test('pairs a mutation with its views at the same scope', () => {
+  // BG-03: the target check counts a BRANCH grant at the target whichever branch is selected, and
+  // pairs a mutation with its views there (ADR 0030); the route gate checks the code alone.
+  test('pairs a mutation with its views at the target, whichever branch is selected', () => {
     const state = withBranchGrantAtHeadOffice();
     const role = state.roles.find((candidate) => candidate.id === BRANCH_ROLE);
     role?.permissions.push('gl_account.create');
-    const headOffice = requireContext(contextAt(state, IDS.headOffice));
+    const westlands = requireContext(contextAt(state, IDS.westlands));
     expect(() => {
-      requirePermission(headOffice, 'gl_account.create', 'branch');
+      requireBranchPermission(westlands, 'gl_account.create', IDS.headOffice);
     }).toThrow('Missing permission: gl_account.view.');
+    expect(() => {
+      requireAuthority(requireContext(contextAt(state, IDS.headOffice)), ['gl_account.create']);
+    }).not.toThrow();
     role?.permissions.push('gl_account.view');
     expect(() => {
-      requirePermission(
-        requireContext(contextAt(state, IDS.headOffice)),
+      requireBranchPermission(
+        requireContext(contextAt(state, IDS.westlands)),
         'gl_account.create',
-        'branch',
+        IDS.headOffice,
       );
     }).not.toThrow();
+    expect(() => {
+      requireBranchPermission(
+        requireContext(contextAt(state, IDS.westlands)),
+        'gl_account.create',
+        IDS.westlands,
+      );
+    }).toThrow('Missing permission: gl_account.create.');
   });
 
   test('refuses a tenant-scope mutation whose view is held only at branch scope', () => {
@@ -116,11 +138,11 @@ test.describe('fake API permission scopes (contract §E.4)', () => {
       requirePermission(headOffice, 'gl_account.create');
     }).toThrow('Missing permission: gl_account.view.');
     expect(() => {
-      requirePermission(headOffice, 'gl_account.create', 'branch');
+      requireBranchPermission(headOffice, 'gl_account.create', IDS.headOffice);
     }).not.toThrow();
   });
 
-  test('a TENANT grant satisfies both scopes, at a branch and at institution level', () => {
+  test('a TENANT grant satisfies every check, at a branch and at institution level', () => {
     const state = seedScenario('default');
     for (const branchId of [IDS.headOffice, null]) {
       const access = requireContext(contextAt(state, branchId));
@@ -128,7 +150,10 @@ test.describe('fake API permission scopes (contract §E.4)', () => {
         requirePermission(access, 'audit.view');
       }).not.toThrow();
       expect(() => {
-        requirePermission(access, 'audit.view', 'branch');
+        requireAuthority(access, ['audit.view']);
+      }).not.toThrow();
+      expect(() => {
+        requireBranchPermission(access, 'audit.view', IDS.westlands);
       }).not.toThrow();
     }
   });

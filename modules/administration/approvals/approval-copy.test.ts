@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   APPROVED_TOAST,
   approvalOutcome,
-  branchQueueContextNote,
   decisionCopy,
   REQUESTED_ROLES_CEILING,
   ROLES_CAPPED,
@@ -47,15 +46,6 @@ describe('the decisions', () => {
 describe('the pages’ copy', () => {
   it('words a 200, a 202 and an unreadable echo differently', () => {
     expect(new Set(Object.values(APPROVED_TOAST)).size).toBe(3);
-  });
-
-  it('tells a branch context how to activate, or whom to ask', () => {
-    expect(branchQueueContextNote('Westlands Branch', true)).toBe(
-      'With Westlands Branch selected, these branches can be listed but not activated. Switch to All branches to review them.',
-    );
-    expect(branchQueueContextNote('Westlands Branch', false)).toBe(
-      'With Westlands Branch selected, these branches can be listed but not activated, and your account works at this branch only. Ask an administrator who works at institution level to review them.',
-    );
   });
 
   it('names the roles ceiling in its note', () => {

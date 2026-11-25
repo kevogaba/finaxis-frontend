@@ -74,7 +74,7 @@ export const selectOrganisationResponseSchema: z.ZodType<SelectOrganisationRespo
 export const selectBranchResponseSchema: z.ZodType<SelectBranchResponse> = z.object({
   organisation_id: z.string(),
   membership_id: z.string(),
-  branch_id: z.string(),
+  branch_id: z.string().nullable(),
   context_token: z.string(),
   context_header: z.string(),
 });

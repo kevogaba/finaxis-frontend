@@ -55,9 +55,13 @@ export function nextStepAfterOrganisation(selection: OrganisationSelectionRespon
 interface UseContextSelectionOptions {
   initialOrganisations: BrowserPage<BrowserOrganisation>;
   hasOrganisationLoadError?: boolean;
+  /** Show the branch step even when the organisation pinned its only branch, so a single-branch
+   * member can choose All branches (BG-03). Sign-in leaves it off: it still picks the one branch. */
+  offerAllBranches?: boolean;
   onComplete: (outcome: SelectionOutcome) => void;
-  /** Called once the organisation is committed and a branch choice is still pending. */
-  onOrganisationCommitted?: (organisationId: string) => void;
+  /** Called once the organisation is committed and a branch choice is still pending, with where
+   * the context already stands: All branches, or the branch the organisation pinned. */
+  onOrganisationCommitted?: (outcome: SelectionOutcome) => void;
   onSessionExpired: () => void;
   /** The backend cleared the context cookie server-side (a 403/409 from the branch endpoints), so
    * any organisation committed earlier is gone. */
@@ -67,6 +71,7 @@ interface UseContextSelectionOptions {
 export function useContextSelection({
   initialOrganisations,
   hasOrganisationLoadError = false,
+  offerAllBranches = false,
   onComplete,
   onOrganisationCommitted,
   onSessionExpired,
@@ -86,6 +91,9 @@ export function useContextSelection({
   const [organisationError, setOrganisationError] = useState(hasOrganisationLoadError);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [branchError, setBranchError] = useState<string | null>(null);
+  // The organisation POST left the token at All branches (`branch_id: null`), so choosing All
+  // branches has nothing to change server-side.
+  const [atInstitution, setAtInstitution] = useState(false);
 
   const isMutating = isSavingOrganisation || isSavingBranch;
   const isDiscoveryLoading = isLoadingOrganisations || isLoadingBranches;
@@ -135,18 +143,31 @@ export function useContextSelection({
     }
   };
 
+  /** `null` is All branches: it clears the branch the organisation pinned (BG-03). Where the
+   * organisation POST already left the token at All branches it sends nothing: clearing needs
+   * `auth.select_branch` tenant-wide, and a 403 there would clear the context.
+   * ponytail: checked at that POST, not at this click: another tab switching in between still moves
+   * the shared cookie, though the caller's refresh re-reads the real context. */
   const selectBranch = async (
-    branchId: string,
+    branchId: string | null,
     forOrganisationId = organisationId,
   ): Promise<boolean> => {
-    if (!branchId || !forOrganisationId || isSavingBranch) {
+    if (branchId === '' || !forOrganisationId || isSavingBranch) {
       return false;
+    }
+    if (branchId === null && atInstitution) {
+      onComplete({ kind: 'institution', organisationId: forOrganisationId });
+      return true;
     }
     setUpdateError(null);
     setIsSavingBranch(true);
     try {
       await selectBranchRequest(branchId);
-      onComplete({ kind: 'branch', organisationId: forOrganisationId, branchId });
+      onComplete(
+        branchId === null
+          ? { kind: 'institution', organisationId: forOrganisationId }
+          : { kind: 'branch', organisationId: forOrganisationId, branchId },
+      );
       return true;
     } catch (error) {
       if (isSessionExpired(error)) {
@@ -175,9 +196,9 @@ export function useContextSelection({
     setBranchPage(null);
     setUpdateError(null);
     setBranchError(null);
+    setAtInstitution(false);
     // Always POST, even for the organisation the caller believes is current: the context cookie is
-    // shared across tabs, so only a fresh select-organisation guarantees the token matches the pick
-    // (and clears any pinned branch — there is no unpin endpoint).
+    // shared across tabs, so only a fresh select-organisation guarantees the token matches the pick.
     // ponytail: costs one auth-selection call (20/min limit) per re-pick; verify the token's
     // organisation/branch server-side first if that limit ever bites.
     setIsSavingOrganisation(true);
@@ -185,12 +206,19 @@ export function useContextSelection({
       const selection = await selectOrganisationRequest(nextOrganisationId);
       const step = nextStepAfterOrganisation(selection);
       setIsSavingOrganisation(false);
+      setAtInstitution(selection.branchId === null);
       if (step === 'done-branch' && selection.branchId) {
-        onComplete({
+        const pinned: SelectionOutcome = {
           kind: 'branch',
           organisationId: nextOrganisationId,
           branchId: selection.branchId,
-        });
+        };
+        if (!offerAllBranches) {
+          onComplete(pinned);
+          return;
+        }
+        onOrganisationCommitted?.(pinned);
+        await loadBranches(0);
         return;
       }
       if (step === 'done-institution') {
@@ -201,7 +229,7 @@ export function useContextSelection({
       // pending must commit it now: if the auto-pin below fails, or the user closes the dialog
       // before choosing a branch, they must land at All branches with the current organisation,
       // not a stale one (spec §6.5).
-      onOrganisationCommitted?.(nextOrganisationId);
+      onOrganisationCommitted?.({ kind: 'institution', organisationId: nextOrganisationId });
       if (typeof step === 'object') {
         // A failed auto-pin leaves no branch list, and MUI Select ignores re-picking its current
         // value, so clear the organisation choice: choosing it again retries the whole step.
@@ -227,17 +255,6 @@ export function useContextSelection({
     }
   };
 
-  const selectAllBranches = () => {
-    // The branch step is only reached after this form's own select-organisation POST succeeded,
-    // which already left the token at institution level: nothing more to change server-side.
-    // ponytail: checked at that POST, not at this click — another tab switching while this form
-    // sits at the branch step still gets a stale toast here (and a branch pick runs under the moved
-    // cookie), though the caller's refresh re-reads the real context. Re-POST here if that matters.
-    if (organisationId) {
-      onComplete({ kind: 'institution', organisationId });
-    }
-  };
-
   return {
     organisationPage,
     organisationId,
@@ -257,6 +274,5 @@ export function useContextSelection({
     loadBranches,
     selectOrganisation,
     selectBranch,
-    selectAllBranches,
   };
 }

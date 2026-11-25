@@ -143,13 +143,9 @@ async function readUserPreview() {
 export async function PendingApprovalsSection({
   users,
   branches,
-  branchSelected,
-  canSwitch,
 }: {
   users: boolean;
   branches: boolean;
-  branchSelected: boolean;
-  canSwitch: boolean;
 }) {
   const [userReads, branchPage] = await Promise.all([
     users ? readUserPreview() : null,
@@ -169,8 +165,6 @@ export async function PendingApprovalsSection({
         users: userReads?.page ?? null,
         userCounts: userReads?.counts ?? null,
         branches: branchPage,
-        branchSelected,
-        canSwitch,
       })}
     />
   );

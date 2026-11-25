@@ -7,11 +7,11 @@ import Link from '@mui/material/Link';
 import Paper from '@mui/material/Paper';
 import AccountTreeOutlined from '@mui/icons-material/AccountTreeOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can, canAll, permissionHolder } from '@/auth/permissions';
+import { can, permissionHolder } from '@/auth/permissions';
 import { CopyIdButton } from '@/components/data-display/copy-id-button';
 import { DescriptionList } from '@/components/data-display/description-list';
 import { ErrorState } from '@/components/data-display/error-state';
-import { BranchContextState, ForbiddenState } from '@/components/data-display/forbidden-state';
+import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { RecordHero } from '@/components/data-display/record-hero';
 import { SectionCard } from '@/components/data-display/section-card';
 import { StatusChip } from '@/components/data-display/status-chip';
@@ -31,9 +31,9 @@ import {
 import {
   availableBranchDecisions,
   blockedBranchDecisions,
-  BRANCH_ACTIVATION_CODES,
   BRANCH_QUEUE_HREF,
   branchOutcomeNote,
+  canSeeBranchActivations,
 } from '@/modules/administration/approvals/approval-rules';
 import { ControlChecks } from '@/modules/administration/approvals/components/control-checks';
 import { DecisionBar } from '@/modules/administration/approvals/components/decision-bar';
@@ -55,7 +55,7 @@ interface BranchApprovalPageProps {
 }
 
 /** A branch activation request (spec §10.6): the request, the branch, the control checks and the
- * decision bar (Activate). A branch context can't reach a pending branch (BG-03, Ruling 11). */
+ * decision bar (Activate), for a tenant-wide approver whichever branch is selected (BG-03). */
 export default async function BranchApprovalPage({ params }: BranchApprovalPageProps) {
   // Rule 7: the id is checked, and canonicalised, before any read (17's parser, client-safe).
   const branchId = parseBranchId((await params).branchId);
@@ -70,26 +70,13 @@ export default async function BranchApprovalPage({ params }: BranchApprovalPageP
       <Paper>{content}</Paper>
     </>
   );
-  if (!resolved || !canAll(holder, BRANCH_ACTIVATION_CODES)) {
+  if (!resolved || !canSeeBranchActivations(holder)) {
     return failure('Branch approval', <ForbiddenState description={BRANCH_ACTIVATION_FORBIDDEN} />);
   }
 
   const branch = await load(getBranch(branchId));
   if (!branch.ok) {
-    const missing = branch.problem.code === 'resource_not_found';
-    // Spec §6.5 / BG-03: with a branch selected every other branch is a 404, so guide instead.
-    if (missing && resolved.context.branch) {
-      return failure(
-        'Branch not available here',
-        <BranchContextState
-          // PF1 (08): /auth/me branches[] can include SUSPENDED ones; All branches needs two ACTIVE.
-          allBranchesAvailable={
-            resolved.profile.branches.filter((entry) => entry.status === 'ACTIVE').length > 1
-          }
-        />,
-      );
-    }
-    if (missing) notFound();
+    if (branch.problem.code === 'resource_not_found') notFound();
     return failure(
       'Branch approval',
       branch.problem.code === 'forbidden' ? (
@@ -111,9 +98,7 @@ export default async function BranchApprovalPage({ params }: BranchApprovalPageP
     getOrganisationTimeZone(),
     isMaker(makers, me) ? readMakerCheckerSwitch('branch_creation', holder) : ('unknown' as const),
   ]);
-  // A selected branch can only be the record itself here, and it is never pending (§E.4).
-  const decisions =
-    resolved.context.branch === null ? availableBranchDecisions(record.status, holder) : [];
+  const decisions = availableBranchDecisions(record, holder);
   const gate = makerGate({ makerIds: makers, callerId: me, switchState });
   const blocked = blockedBranchDecisions(decisions, { makerGate: gate });
   const warning =

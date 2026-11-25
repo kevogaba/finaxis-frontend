@@ -289,14 +289,14 @@ components/
 ├── branding/                  # FinaxisLogo, ProductFeature
 ├── context/                    # Shared organisation/branch selection: ContextSelectionPage,
 │                                # ContextSelectionForm, useContextSelection, context-api,
-│                                # PaginationControls, SwitchToAllBranchesButton
+│                                # PaginationControls
 ├── data-display/               # Reusable list and record building blocks: ListToolbar
 │                                # (search/select/datetime, plus extra controls as children, e.g.
 │                                # the audit trail's actor picker), TablePaginationBar,
 │                                # StatusChip, DescriptionList, TruncatedText, EmptyState,
 │                                # ErrorState, useListNavigation; the record kit (layer 07b)
 │                                # RecordHero, RecordTabs (link tabs as nested routes),
-│                                # CopyIdButton, ForbiddenState/BranchContextState,
+│                                # CopyIdButton, ForbiddenState,
 │                                # ConfirmDialog; SectionCard and ReasonDialog (07);
 │                                # AssignmentDrawer (08); focusRecordTitle (09); WizardForm and
 │                                # its Stepper theme (16); KpiTile (17)
@@ -361,6 +361,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   before the authenticated shell renders. The selected backend context token is persisted only in
   an HttpOnly cookie; browser route responses contain status-safe data and never expose the token.
 - A multi-branch member can choose "All branches (institution level)" instead of a single branch;
+  sign-in still picks a single-branch member's one branch, and the context dialog then offers them
+  All branches too (it clears the branch with `select-branch` `{"branch_id": null}`, BG-03);
   the header and app shell footer render `branch?.name ?? 'All branches'` for that nullable-branch
   context (AGENTS.md), and the profile page renders the same nullable selected branch as "All
   branches (institution level)".
@@ -370,8 +372,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   organisation change also navigates to that organisation's workspace (`/admin` or
   `/platform-admin`). Picking an organisation, the current one included, always re-POSTs
   select-organisation, because the context cookie is shared across tabs and may no longer match
-  what this tab shows; that POST drops any pinned branch, so closing the dialog at the branch step
-  lands at All branches.
+  what this tab shows; that POST resets the branch, so closing the dialog at the branch step lands
+  at All branches, or at the one branch it pinned. Choosing All branches always clears the branch.
 - The two-tile app switcher (`components/shell/app-switcher.tsx`) moves a platform member between
   the Administration and Platform Administration workspaces. Multi-branch platform members land at
   All branches from the switcher; they pin a specific branch afterwards with the context button. A
@@ -443,8 +445,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     response was lost, and refuses anyone else's, which reads as 'changed' for Approve and
     Activate and as Reject & revoke's own failure ('It may already be revoked') for Reject &
     revoke. Approve also refuses a
-    blocked account (suspended, locked, deactivating, deactivated or archived); Activate also
-    refuses while a branch is selected. Neither refuses its maker before the write: the platform
+    blocked account (suspended, locked, deactivating, deactivated or archived). Neither refuses its
+    maker before the write: the platform
     decides that. Reject & revoke has no maker check and doesn't refuse a blocked account, so a
     blocked account can still be rejected, and so can your own invitation.
   - An institution with a single administrator can't approve its own invitees or activate the
@@ -454,11 +456,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - A user whose identity is still provisioning was already approved: the queue marks them and
     offers no decision (BG-11). Missing prerequisites (a role, a branch) are explained after the
     platform refuses (BG-07).
-  - Activation needs All branches; with a branch selected the queue says so, though the platform
-    no longer requires it (BG-03). The queue gates on `branch.approve`, which replaced the
-    deprecated `branch.activate` (V21). The queue doesn't use `/auth/me`'s permission scopes for
-    branch activation, so a holder at branch scope only is told to switch to All branches, where
-    they don't hold the code (contract §E.4).
+  - A tenant-wide `branch.approve` activates whichever branch is selected (BG-03). A pending
+    branch grants no branch-scoped permission (platform #242), so the queue, the bell and the
+    approval page are for tenant-wide holders only. The queue gates on `branch.approve`, which
+    replaced the deprecated `branch.activate` (V21).
   - The requested roles show one page of 100 and say so when there are more; branch assignments
     come from the bounded scan (BG-09). The bell has no push updates (BG-22).
 - Business date (`/admin/business-date`, `modules/administration/business-date/`) reads
@@ -512,9 +513,12 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - Activate is disabled for the branch's creator (`created_by`) only while maker-checker for
     branch creation is known to be on (`docs/backend-gaps.md` BG-08); the tenant route doesn't
     refuse its submitter, and an editor's refusal is explained after it comes.
-  - A branch the selected branch context couldn't reach showed a guided "Switch to All branches"
-    state instead of a raw 404 (`docs/backend-gaps.md` BG-03). The platform no longer pins
-    branches, so tenant-wide holders now get the branch and branch-scoped ones a 403.
+  - A selected branch pins nothing (`docs/backend-gaps.md` BG-03): a tenant-wide holder reads and
+    acts on any branch, and a branch-scoped one gets the Forbidden state for a branch its grant
+    doesn't cover. An action passes the route's own gate in the selected context and the target
+    check at the branch: a role held at two ACTIVE branches acts on either while one of them is
+    selected, and on neither at All branches. The directory lists only the branches a
+    branch-scoped `branch.view` covers, and says so.
   - No draft discard or return: the platform has both now, but the UI doesn't offer them yet, so
     a draft created here can't be removed from the UI (`docs/backend-gaps.md` BG-01).
   - The directory's Type filter offers only the two platform types (`HEAD_OFFICE`, `OPERATIONS`);

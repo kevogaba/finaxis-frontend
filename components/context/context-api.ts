@@ -140,7 +140,8 @@ export async function selectOrganisationRequest(
   };
 }
 
-export async function selectBranchRequest(branchId: string): Promise<void> {
+/** `null` clears the branch: All branches (BG-03). */
+export async function selectBranchRequest(branchId: string | null): Promise<void> {
   await readSuccessfulJson(
     await fetch('/api/context/branch', {
       body: JSON.stringify({ branch_id: branchId }),

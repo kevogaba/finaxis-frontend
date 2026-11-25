@@ -22,8 +22,6 @@ describe('the bell (Ruling 9)', () => {
       approvalNotifications({
         users: { ok: true, value: { pending: 9, provisioning: 1 } },
         branches: { ok: true, value: 3 },
-        branchSelected: false,
-        canSwitch: true,
       }),
     ).toEqual({
       label: 'Notifications: 11 approvals waiting',
@@ -51,44 +49,16 @@ describe('the bell (Ruling 9)', () => {
     const users = approvalNotifications({
       users: { ok: true, value: { pending: 1, provisioning: 0 } },
       branches: null,
-      branchSelected: false,
-      canSwitch: true,
     });
     expect(users.label).toBe('Notifications: 1 approval waiting');
     expect(users.entries.map((entry) => entry.text)).toEqual(['1 user is waiting for approval.']);
     const branches = approvalNotifications({
       users: null,
       branches: { ok: true, value: 1 },
-      branchSelected: false,
-      canSwitch: true,
     });
     expect(branches.entries.map((entry) => entry.text)).toEqual([
       '1 branch is waiting for activation.',
     ]);
-  });
-
-  it('tells a branch context that activation needs All branches (BG-03)', () => {
-    const props = approvalNotifications({
-      users: null,
-      branches: { ok: true, value: 2 },
-      branchSelected: true,
-      canSwitch: true,
-    });
-    expect(props.entries[0]?.text).toBe(
-      '2 branches are waiting for activation. Switch to All branches to activate them.',
-    );
-  });
-
-  it('tells an account that works at one branch who activates, never to switch', () => {
-    const props = approvalNotifications({
-      users: null,
-      branches: { ok: true, value: 2 },
-      branchSelected: true,
-      canSwitch: false,
-    });
-    expect(props.entries[0]?.text).toBe(
-      '2 branches are waiting for activation. Ask an administrator who works at institution level to activate them.',
-    );
   });
 
   it('reads none at zero, with no entries', () => {
@@ -96,8 +66,6 @@ describe('the bell (Ruling 9)', () => {
       approvalNotifications({
         users: { ok: true, value: { pending: 1, provisioning: 1 } },
         branches: { ok: true, value: 0 },
-        branchSelected: false,
-        canSwitch: true,
       }),
     ).toMatchObject({ label: 'Notifications: nothing waiting', total: 0, entries: [] });
   });
@@ -110,9 +78,7 @@ describe('the bell (Ruling 9)', () => {
       { ok: false } as const,
     ],
   ])('never reads as none when %s failed: the whole count is unknown', (_part, users, branches) => {
-    expect(
-      approvalNotifications({ users, branches, branchSelected: false, canSwitch: true }),
-    ).toMatchObject({
+    expect(approvalNotifications({ users, branches })).toMatchObject({
       label: "Notifications (couldn't be loaded)",
       total: null,
       entries: [],

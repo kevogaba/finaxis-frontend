@@ -145,6 +145,8 @@ interface InviteUserWizardProps {
   branches: readonly SelectOption[];
   rolesCapped: boolean;
   branchesCapped: boolean;
+  /** See `InviteAccessFields`. */
+  branchesScoped?: boolean;
   /** I2: the organisation the page rendered for, appended to the submit. */
   contextOrganisationId?: string;
 }
@@ -160,6 +162,7 @@ export function InviteUserWizard({
   branches,
   rolesCapped,
   branchesCapped,
+  branchesScoped = false,
   contextOrganisationId,
 }: InviteUserWizardProps) {
   const [idempotencyKey] = useState(() => crypto.randomUUID());
@@ -368,6 +371,7 @@ export function InviteUserWizard({
           branches={branches}
           rolesCapped={rolesCapped}
           branchesCapped={branchesCapped}
+          branchesScoped={branchesScoped}
           branchListError={errors.branchAssignments}
           roleListError={errors.roleAssignments}
         />

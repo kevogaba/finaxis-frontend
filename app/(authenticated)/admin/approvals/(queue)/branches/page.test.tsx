@@ -4,10 +4,10 @@ import { BackendApiError } from '@/auth/backend-api';
 import {
   BRANCH_ACTIVATION_FORBIDDEN,
   BRANCH_QUEUE_DESCRIPTION,
-  branchQueueContextNote,
   NO_BRANCHES_WAITING,
 } from '@/modules/administration/approvals/approval-copy';
 import { BRANCH_QUEUE_LABEL } from '@/modules/administration/approvals/approval-rules';
+import { permissionScopes } from '@/test/permission-scopes';
 import { renderWithProviders } from '@/test/test-utils';
 
 const { getCurrentContextProfile, listBranchActivations, redirect } = vi.hoisted(() => ({
@@ -32,17 +32,12 @@ vi.mock('@/lib/api/lookups', () => ({
 vi.mock('@/modules/administration/approvals/approval-service', () => ({
   listBranchActivations: (...args: unknown[]) => listBranchActivations(...args) as unknown,
 }));
-// The switch reads the shell's application context; its own test covers it.
-vi.mock('@/components/context/switch-to-all-branches-button', () => ({
-  SwitchToAllBranchesButton: () => <button type="button">Switch to All branches</button>,
-}));
 
 const { default: BranchActivationPage } = await import('./page');
 
 // Distinct first blocks, so a short id names its id; lettered, so upper case differs.
 const KERICHO = 'c1000000-0000-4000-8000-0000000000c1';
 const WESTLANDS = 'd2000000-0000-4000-8000-0000000000d2';
-const HEAD_OFFICE = 'e3000000-0000-4000-8000-0000000000e3';
 const CODES = ['branch.approve', 'branch.view'];
 
 function branches(totalItems: number, number = 0) {
@@ -73,21 +68,15 @@ function branches(totalItems: number, number = 0) {
 
 interface Setup {
   permissions?: string[];
+  /** Of `permissions`, the ones held only at one branch (BG-33). */
+  branchOnly?: string[];
   selectedBranch?: { id: string; name: string } | null;
-  /** How many ACTIVE branches `/auth/me` lists: All branches needs two. */
-  activeBranches?: number;
 }
 
-function setup({ permissions = CODES, selectedBranch = null, activeBranches = 2 }: Setup = {}) {
+function setup({ permissions = CODES, branchOnly = [], selectedBranch = null }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: {
-      permissions,
-      branches: [
-        { id: WESTLANDS, status: 'ACTIVE' },
-        { id: HEAD_OFFICE, status: activeBranches > 1 ? 'ACTIVE' : 'SUSPENDED' },
-      ],
-    },
+    profile: { permissions, permission_scopes: permissionScopes(permissions, branchOnly) },
     context: { organization: { id: 'org-1', name: 'Greenfield' }, branch: selectedBranch },
   });
 }
@@ -158,36 +147,27 @@ describe('BranchActivationPage', () => {
     });
   });
 
-  it('shows no branch note, and no switch, at All branches', async () => {
-    setup();
-    listBranchActivations.mockResolvedValue(branches(1));
-    await show();
-
-    expect(screen.queryByRole('note')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Switch to All branches' })).toBeNull();
-  });
-
-  it('names the selected branch and offers All branches when the holder can switch', async () => {
+  // BG-03: a tenant-wide approver activates any branch, whichever branch is selected.
+  it('lists pending branches with a branch selected, with no note about it', async () => {
     setup({ selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' } });
     listBranchActivations.mockResolvedValue(branches(1));
     await show();
 
-    expect(screen.getByRole('note')).toHaveTextContent(
-      branchQueueContextNote('Westlands Branch', true),
-    );
-    expect(screen.getByRole('button', { name: 'Switch to All branches' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Kericho Branch' })).toBeInTheDocument();
+    expect(screen.queryByRole('note')).toBeNull();
   });
 
-  it('says to ask an institution-level administrator when the holder can’t switch', async () => {
-    setup({ selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' }, activeBranches: 1 });
-    listBranchActivations.mockResolvedValue(branches(1));
-    await show();
+  // A pending branch grants no branch-scoped permission (platform #242).
+  it.each(['branch.approve', 'branch.view'])(
+    'reads nothing when %s is held only at a branch, and says why',
+    async (scoped) => {
+      setup({ branchOnly: [scoped], selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' } });
+      await show();
 
-    expect(screen.getByRole('note')).toHaveTextContent(
-      branchQueueContextNote('Westlands Branch', false),
-    );
-    expect(screen.queryByRole('button', { name: 'Switch to All branches' })).toBeNull();
-  });
+      expect(screen.getByText(BRANCH_ACTIVATION_FORBIDDEN)).toBeInTheDocument();
+      expect(listBranchActivations).not.toHaveBeenCalled();
+    },
+  );
 
   it('says nothing is waiting, never an empty table', async () => {
     setup();

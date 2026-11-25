@@ -64,10 +64,8 @@ function waiting() {
   reads.listBranchActivations.mockResolvedValue(page([NYERI], 3));
 }
 
-async function show(users = true, branches = true, branchSelected = false) {
-  return renderWithProviders(
-    <>{await PendingApprovalsSection({ users, branches, branchSelected, canSwitch: true })}</>,
-  );
+async function show(users = true, branches = true) {
+  return renderWithProviders(<>{await PendingApprovalsSection({ users, branches })}</>);
 }
 
 const card = () => screen.getByRole('region', { name: 'Pending approvals' });
@@ -229,8 +227,6 @@ describe('PendingApprovalsSection', () => {
       PendingApprovalsSection({
         users: true,
         branches: true,
-        branchSelected: false,
-        canSwitch: true,
       }),
     ).rejects.toMatchObject({ digest: expect.stringContaining(digest) as unknown });
   });

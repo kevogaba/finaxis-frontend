@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
+import { permissionScopes } from '@/test/permission-scopes';
 import { renderWithProviders } from '@/test/test-utils';
 
 const {
@@ -57,6 +58,8 @@ const without = (...codes: string[]) => ALL_CODES.filter((code) => !codes.includ
 
 interface Setup {
   permissions?: string[];
+  /** Of `permissions`, the ones held only at one branch (BG-33). */
+  branchOnly?: string[];
   selectedBranch?: { id: string; name: string } | null;
   membershipStatus?: string;
   userStatus?: string;
@@ -85,6 +88,7 @@ const DETAIL = {
 /** Programs every service the Overview reads. A test names only what it varies. */
 function setup({
   permissions = ALL_CODES,
+  branchOnly = [],
   selectedBranch = null,
   membershipStatus = 'ACTIVE',
   userStatus = 'ACTIVE',
@@ -97,7 +101,7 @@ function setup({
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions },
+    profile: { permissions, permission_scopes: permissionScopes(permissions, branchOnly) },
     context: { organization: { id: 'org-1', name: 'Greenfield' }, branch: selectedBranch },
   });
   getUser.mockResolvedValue({
@@ -252,27 +256,32 @@ describe('UserOverviewPage: the branch assignment count', () => {
     );
   });
 
-  it('names the selected branch when one is selected', async () => {
+  // BG-03: a search by user ignores the selected branch.
+  it('counts every branch for a tenant-wide view, whichever branch is selected', async () => {
     setup({ scanRows: 2, selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' } });
 
     await show();
 
-    expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(
-      /^2 at Westlands Branch$/,
-    );
+    expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(/^2$/);
   });
 
-  it('says none were found, and that it is partial, in a branch context too (never "0 at" or "At least 0")', async () => {
-    setup({
-      scanRows: 0,
-      truncated: true,
-      selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' },
-    });
+  it('says a branch-scoped view counts only the branches it covers', async () => {
+    setup({ scanRows: 2, branchOnly: ['branch_assignment.view'] });
 
     await show();
 
     expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(
-      /^None found at Westlands Branch \(partial\)$/,
+      /^2 at branches you can view$/,
+    );
+  });
+
+  it('says none were found, and that it is partial, for a branch-scoped view too (never "0 at" or "At least 0")', async () => {
+    setup({ scanRows: 0, truncated: true, branchOnly: ['branch_assignment.view'] });
+
+    await show();
+
+    expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(
+      /^None found at branches you can view \(partial\)$/,
     );
     expect(screen.queryByText(/^0 at/)).not.toBeInTheDocument();
     expect(screen.queryByText(/at least 0/i)).not.toBeInTheDocument();

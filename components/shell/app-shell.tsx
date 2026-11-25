@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import type { FinaxisUser } from '@/auth/auth.types';
+import { canTenantWide } from '@/auth/permissions';
 import type { ApplicationContext } from '@/config/application-context';
 import { administrationNavigationItems } from '@/modules/administration/administration-navigation';
 import { platformAdministrationNavigationItems } from '@/modules/platform-administration/platform-administration-navigation';
@@ -31,6 +32,9 @@ interface AppShellProps {
   businessDate?: ReactNode;
   /** Workspace notifications, keyed like `NAVIGATION` — each workspace shows only its own slot. */
   notifications?: Partial<Record<ApplicationContext['module']['id'], ReactNode>>;
+  /** `branch.view` held anywhere, a BRANCH grant at any branch included (BG-03), worked out on the
+   * server: `user` leaves out where branch grants are held. Shows Branches at All branches. */
+  viewsBranches?: boolean;
 }
 
 /**
@@ -45,6 +49,7 @@ export function AppShell({
   children,
   businessDate,
   notifications,
+  viewsBranches = false,
 }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(initialNavCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -59,7 +64,11 @@ export function AppShell({
   if (isDesktop && mobileOpen) {
     setMobileOpen(false);
   }
-  const items = visibleNavigationItems(NAVIGATION[context.module.id], user);
+  const items = visibleNavigationItems(
+    NAVIGATION[context.module.id],
+    user,
+    viewsBranches ? ['branch.view'] : [],
+  );
 
   return (
     <ApplicationContextProvider value={context}>
@@ -105,6 +114,7 @@ export function AppShell({
           setContextOpen(false);
         }}
         platformOrganisationId={platformOrganisationId}
+        canSelectBranch={canTenantWide(user, 'auth.select_branch')}
       />
     </ApplicationContextProvider>
   );

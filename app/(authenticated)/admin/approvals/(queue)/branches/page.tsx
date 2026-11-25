@@ -1,11 +1,8 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
-import Alert from '@mui/material/Alert';
-import Box from '@mui/material/Box';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { canAll } from '@/auth/permissions';
-import { SwitchToAllBranchesButton } from '@/components/context/switch-to-all-branches-button';
+import { permissionHolder } from '@/auth/permissions';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -19,13 +16,12 @@ import { hrefWith, toSearchParams } from '@/lib/api/query-string';
 import {
   BRANCH_ACTIVATION_FORBIDDEN,
   BRANCH_QUEUE_DESCRIPTION,
-  branchQueueContextNote,
   NO_BRANCHES_WAITING,
 } from '@/modules/administration/approvals/approval-copy';
 import {
-  BRANCH_ACTIVATION_CODES,
   BRANCH_QUEUE_HREF,
   BRANCH_QUEUE_LABEL,
+  canSeeBranchActivations,
 } from '@/modules/administration/approvals/approval-rules';
 import { listBranchActivations } from '@/modules/administration/approvals/approval-service';
 import { BRANCH_SORT_FIELDS } from '@/modules/administration/branches/branch-contract';
@@ -44,20 +40,20 @@ interface BranchActivationPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-/** The Branch activation tab (spec §10.6): branches PENDING_APPROVAL, sortable, paged in the URL.
- * The list isn't branch-restricted, but activating needs All branches (BG-03, Ruling 11). */
+/** The Branch activation tab (spec §10.6): branches PENDING_APPROVAL, sortable, paged in the URL,
+ * for a tenant-wide approver whichever branch is selected (BG-03). */
 export default async function BranchActivationPage({ searchParams }: BranchActivationPageProps) {
   const params = toSearchParams(await searchParams);
   const selected = await getCurrentContextProfile();
   const resolved = selected.kind === 'resolved' ? selected : null;
-  const holder = { permissions: resolved?.profile.permissions ?? [] };
+  const holder = permissionHolder(resolved?.profile);
   // The description names a list and its count, so a card that can't show them leaves it out.
   const card = (content: ReactNode, description?: string) => (
     <SectionCard title={BRANCH_QUEUE_LABEL} description={description}>
       {content}
     </SectionCard>
   );
-  if (!canAll(holder, BRANCH_ACTIVATION_CODES)) {
+  if (!canSeeBranchActivations(holder)) {
     return card(<ForbiddenState description={BRANCH_ACTIVATION_FORBIDDEN} />);
   }
 
@@ -82,26 +78,8 @@ export default async function BranchActivationPage({ searchParams }: BranchActiv
     );
   }
 
-  const selectedBranch = resolved?.context.branch ?? null;
-  // PF1 (08): /auth/me branches[] can include SUSPENDED ones; All branches needs two ACTIVE.
-  const canSwitch =
-    (resolved?.profile.branches.filter((entry) => entry.status === 'ACTIVE').length ?? 0) > 1;
-
   return card(
     <>
-      {selectedBranch && (
-        <Box sx={{ px: 4, py: 3 }}>
-          {/* role="note": a static notice, not an alert announced on every visit. */}
-          <Alert severity="info" role="note">
-            {branchQueueContextNote(selectedBranch.name, canSwitch)}
-            {canSwitch && (
-              <Box sx={{ mt: 2, width: 'fit-content' }}>
-                <SwitchToAllBranchesButton />
-              </Box>
-            )}
-          </Alert>
-        </Box>
-      )}
       {branches.value.items.length === 0 ? (
         <EmptyState title={NO_BRANCHES_WAITING} />
       ) : (

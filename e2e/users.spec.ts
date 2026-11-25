@@ -12,7 +12,7 @@ import {
   type A11yCase,
 } from './support/admin';
 import { authenticate, clickMuiOption, expectHydrated, selectMuiOption } from './support/auth';
-import { IDS, USER_SCENARIO_IDS as USERS } from './fake-api/scenarios.mts';
+import { BRANCH_SCENARIO_IDS, IDS, USER_SCENARIO_IDS as USERS } from './fake-api/scenarios.mts';
 
 const ALL_BRANCHES = /All branches \(institution level\)/;
 
@@ -34,11 +34,9 @@ const USER_MAKER_CHECKER_BLOCKED =
 const MEMBERSHIP_CHANGED =
   'This membership changed since the page loaded. Refresh to see its status.';
 const PARTIAL_SCAN_NOTE =
-  "This list may be incomplete: the platform can't filter branch assignments by user, so only the first 500 branch assignments were checked.";
+  "This list may be incomplete: only the first 500 of this user's branch assignments were read.";
 const NO_MEMBERSHIP_DETAILS = "You can't view membership details in your current role.";
 const BRANCH_HINT = 'Assign them to a branch first to give a branch-scoped role.';
-const PARTIAL_BRANCH_HINT =
-  'Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here.';
 const FORBIDDEN_TITLE = "You don't have permission";
 
 /** The seeded home assignment of Felix at Westlands (`homeAt(7, …)` in scenarios.mts). */
@@ -720,7 +718,9 @@ test.describe('users: access and audit', () => {
     await expect(page.getByRole('button', { name: 'Assign branch' })).toHaveCount(0);
   });
 
-  test('hides Revoke for a branch role assignment at another branch, but not a tenant-wide one', async ({
+  // BG-03: the platform checks a revoke on the assignment's own scope, so a tenant-wide holder
+  // revokes at any branch, whichever branch is selected.
+  test('offers every Revoke to a tenant-wide holder with another branch selected', async ({
     context,
     page,
   }, testInfo) => {
@@ -730,14 +730,11 @@ test.describe('users: access and audit', () => {
     await openTab(page, 'Roles & access');
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(4);
 
-    // Contract §E.4: Felix holds Teller at Westlands, so a Head Office context would get a 404
-    // revoking it. His institution-wide Teller and Loans officer rows can be revoked from anywhere.
-    const westlands = rowsOf(page, 'Role assignments').filter({ hasText: 'Westlands Branch' });
-    await expect(westlands).toHaveCount(1);
-    await expect(westlands.getByRole('button')).toHaveCount(0);
     await expect(
-      page.getByRole('button', { name: /^Revoke Felix Omondi's .*\(Westlands Branch\)/ }),
-    ).toHaveCount(0);
+      page.getByRole('button', {
+        name: "Revoke Felix Omondi's Teller assignment (Westlands Branch)",
+      }),
+    ).toBeVisible();
     await expect(
       page.getByRole('button', {
         name: "Revoke Felix Omondi's Teller assignment (institution-wide)",
@@ -867,115 +864,43 @@ test.describe('users: access and audit', () => {
     await expect(revoke).toBeHidden();
   });
 
-  test('narrows a branch context to its branch', async ({ context, page }, testInfo) => {
+  // BG-03: a search by user ignores the selected branch, and a tenant-wide grant assigns anywhere.
+  test("lists every branch of a user's, and assigns at any, whichever branch is selected", async ({
+    context,
+    page,
+  }, testInfo) => {
     await authenticate(context, testInfo, 'users');
     await openDirectory(page, /Westlands/);
-    await openRecord(page, 'Users', 'Felix Omondi');
+    await openRecord(page, 'Users', 'Esther Njoki');
 
+    // Esther holds Head Office only: listed from a Westlands context, with no note about it.
     await openTab(page, 'Branch assignments');
-    // The scan is forced to Westlands (§E.4), and Jane can switch: the note offers it, inside it.
-    const note = mainText(page, /^Only Westlands Branch is visible with a branch selected\./);
-    await expect(note).toBeVisible();
-    await expect(note.getByRole('button', { name: 'Switch to All branches' })).toBeVisible();
-    await expect(mainText(page, PARTIAL_SCAN_NOTE)).toHaveCount(0);
     await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2);
+    await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Head Office');
+    await expect(page.getByRole('main').getByRole('note')).toHaveCount(0);
+    await press(page.getByRole('button', { name: 'Assign branch' }));
+    const branches = page.getByRole('dialog', { name: 'Assign to a branch' });
+    await branches.getByRole('combobox', { name: 'Branch' }).click();
+    await expect(page.getByRole('option')).toHaveText([
+      'Head Office (HEAD_OFFICE)',
+      'Westlands Branch (WESTLANDS)',
+    ]);
+    await page.keyboard.press('Escape');
+    await branches.getByRole('button', { name: 'Cancel' }).click();
+    await expect(branches).toBeHidden();
 
-    // His Westlands role assignment can be revoked from here.
-    await openTab(page, 'Roles & access');
-    await expect(
-      page.getByRole('button', {
-        name: "Revoke Felix Omondi's Teller assignment (Westlands Branch)",
-      }),
-    ).toBeVisible();
-
-    // Esther holds Head Office only, so no branch is on offer for a branch-scoped role here.
-    await openUser(page, USERS.esther, 'Esther Njoki');
+    // A branch-scoped role at her Head Office, from Westlands.
     await openTab(page, 'Roles & access');
     await press(page.getByRole('button', { name: 'Assign role' }));
-    const drawer = page.getByRole('dialog', { name: 'Assign a role' });
-    await expect(drawer.getByRole('combobox', { name: 'Scope' })).toHaveAccessibleDescription(
-      containing(
-        "They aren't assigned to Westlands Branch. Assign them there first to give a branch-scoped role.",
-      ),
+    const roles = page.getByRole('dialog', { name: 'Assign a role' });
+    await expect(roles.getByRole('combobox', { name: 'Scope' })).not.toHaveAccessibleDescription(
+      containing("They aren't assigned to"),
     );
-  });
-
-  test('moves focus to the record title when Switch to All branches replaces the note', async ({
-    context,
-    page,
-  }, testInfo) => {
-    await authenticate(context, testInfo, 'users');
-    await openDirectory(page, /Head Office/);
-    await openRecord(page, 'Users', 'Felix Omondi');
-    await openTab(page, 'Branch assignments');
-
-    const note = mainText(page, /^Only Head Office is visible with a branch selected\./);
-    await expect(note).toBeVisible();
-    await press(note.getByRole('button', { name: 'Switch to All branches' }));
-
-    // The switch lands and the note, with its button, goes: focus is on the title, never <body>.
-    await expect(note).toHaveCount(0);
-    await expect(page.getByRole('heading', { level: 1, name: 'Felix Omondi' })).toBeFocused();
-  });
-
-  test('offers only the selected branch, and says nothing is partial when the scan was complete', async ({
-    context,
-    page,
-  }, testInfo) => {
-    await authenticate(context, testInfo, 'users');
-    await openDirectory(page, /Head Office/);
-    await openRecord(page, 'Users', 'Felix Omondi');
-    await openTab(page, 'Branch assignments');
-
-    // Felix holds Westlands only, so Head Office shows none of his rows, and the whole scan was
-    // read: the context note stands alone.
-    await expect(
-      mainText(page, /^Only Head Office is visible with a branch selected\./),
-    ).toBeVisible();
-    await expect(mainText(page, PARTIAL_SCAN_NOTE)).toHaveCount(0);
-    // "No branch assignments" would be a false fact under that note: only this branch was visible.
-    await expect(mainText(page, 'No assignment at Head Office', { exact: true })).toBeVisible();
-    await expect(
-      mainText(
-        page,
-        'They may be assigned to other branches. Switch to All branches to see them. Assign a branch so they can work there.',
-        { exact: true },
-      ),
-    ).toBeVisible();
-    await expect(mainText(page, 'No branch assignments', { exact: true })).toHaveCount(0);
-
-    await press(page.getByRole('button', { name: 'Assign branch' }));
-    const drawer = page.getByRole('dialog', { name: 'Assign to a branch' });
-    // Only the selected branch is reachable, already chosen, and labelled with its code.
-    await expect(drawer.getByRole('combobox', { name: 'Branch' })).toHaveText(
-      'Head Office (HEAD_OFFICE)',
+    await roles.getByRole('combobox', { name: 'Scope' }).click();
+    await expect(page.getByRole('option', { name: 'One branch' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
     );
-    await drawer.getByRole('combobox', { name: 'Branch' }).click();
-    await expect(page.getByRole('option')).toHaveCount(1);
-    await expect(page.getByRole('option')).toHaveText('Head Office (HEAD_OFFICE)');
-  });
-
-  test("says the branch is the only one visible when the signed-in user can't switch", async ({
-    context,
-    page,
-  }, testInfo) => {
-    // Westlands is suspended here, so Jane has one active branch: selection pins Head Office and
-    // All branches isn't available to her.
-    await authenticate(context, testInfo, 'suspended-branch');
-    await enterAdmin(page, `/admin/users/${IDS.jane}/branches`, {
-      heading: 'Backend Jane Manager',
-      branch: null,
-    });
-
-    await expect(
-      mainText(
-        page,
-        "Only Head Office is visible: your account is assigned to this branch only, so this user's other branch assignments can't be shown.",
-      ),
-    ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Switch to All branches' })).toHaveCount(0);
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2); // header + one row
-    await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Head Office');
   });
 
   test('shows a user history in four audit views', async ({ context, page }, testInfo) => {
@@ -1229,84 +1154,31 @@ test.describe('users: gating and ids', () => {
     await authenticate(context, testInfo, 'users-many-assignments');
     await enterUser(page, USERS.felix, 'Felix Omondi');
 
-    // 511 active assignments, 500 of them read: Felix's row is in the window, but the list is
-    // flagged, never presented as the whole.
-    await expect(fact(page, 'Branch assignments')).toHaveText('At least 1 (partial)');
+    // 501 active assignments of Felix's, 500 of them read: flagged, never presented as the whole.
+    await expect(fact(page, 'Branch assignments')).toHaveText('At least 500 (partial)');
     await openTab(page, 'Branch assignments');
     await expect(mainText(page, PARTIAL_SCAN_NOTE)).toBeVisible();
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2); // Westlands
-    await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Westlands Branch');
-    // No branch is selected, so there is no context note and nothing to switch.
-    await expect(mainText(page, /is visible with a branch selected/)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Switch to All branches' })).toHaveCount(0);
-
-    // Ann holds nothing of her own in the window: partial, not "no assignments", and the role
-    // drawer's hint says the scan was partial instead of claiming she has no branch.
-    await openUser(page, USERS.ann, 'Ann Mwangi');
-    await openTab(page, 'Branch assignments');
-    await expect(mainText(page, PARTIAL_SCAN_NOTE)).toBeVisible();
-    await expect(mainText(page, 'No branch assignments found', { exact: true })).toBeVisible();
-    await expect(
-      mainText(
-        page,
-        'Only the first 500 branch assignments were checked, so they may be assigned beyond them. Assign a branch so they can work there.',
-        { exact: true },
-      ),
-    ).toBeVisible();
-    await expect(mainText(page, 'No branch assignments', { exact: true })).toHaveCount(0);
-    await openTab(page, 'Roles & access');
-    await press(page.getByRole('button', { name: 'Assign role' }));
-    const drawer = page.getByRole('dialog', { name: 'Assign a role' });
-    await expect(drawer.getByRole('combobox', { name: 'Scope' })).toHaveAccessibleDescription(
-      containing(PARTIAL_BRANCH_HINT),
-    );
-    await drawer.getByRole('combobox', { name: 'Scope' }).click();
-    await expect(page.getByRole('option', { name: 'One branch' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(11); // a page of 10
   });
 
-  test('says both notes, the branch first, when a branch context hit the ceiling', async ({
+  // BG-03: a branch-scoped view lists only the branches it covers, and says so.
+  test("says a branch-scoped view shows only its branches' assignments", async ({
     context,
     page,
   }, testInfo) => {
-    await authenticate(context, testInfo, 'users-many-assignments');
-    // Head Office holds 506 of the 511 active assignments (500 fillers and six people): the scan
-    // forced to it reads 500 and stops.
-    await openDirectory(page, /Head Office/);
-    await openRecord(page, 'Users', 'Joann Mwangi');
+    await authenticate(context, testInfo, 'branches-branch-scoped');
+    await enterAdmin(page, `/admin/users/${BRANCH_SCENARIO_IDS.peter}/branches`, {
+      heading: 'Peter Otieno',
+      branch: /Head Office/,
+    });
 
-    // Joann's own Head Office row is in the window: a floor, not a count.
-    await expect(fact(page, 'Branch assignments')).toHaveText(
-      'At least 1 at Head Office (partial)',
-    );
-    await openTab(page, 'Branch assignments');
-    const notes = mainText(
-      page,
-      /^(Only Head Office is visible with a branch selected\.|This list may be incomplete)/,
-    );
-    await expect(notes).toHaveText([
-      /^Only Head Office is visible with a branch selected\. Switch to All branches to see this user's other branch assignments\./,
-      PARTIAL_SCAN_NOTE,
-    ]);
     await expect(
-      mainText(page, /^Only Head Office is visible/).getByRole('button', {
-        name: 'Switch to All branches',
-      }),
+      mainText(page, 'Only assignments at branches you can view are shown.'),
     ).toBeVisible();
-    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2); // Joann's Head Office row
+    // Peter holds Head Office and Westlands; the grant covers Head Office alone. The branch index is
+    // target-aware too, so it names Head Office.
+    await expect(rowsOf(page, 'Branch assignments')).toHaveCount(2);
     await expect(rowsOf(page, 'Branch assignments').nth(1)).toContainText('Head Office');
-
-    // Felix holds none at Head Office: never a bare "0 at Head Office", and not "At least 0" either.
-    await openUser(page, USERS.felix, 'Felix Omondi');
-    await expect(fact(page, 'Branch assignments')).toHaveText(
-      'None found at Head Office (partial)',
-    );
-    // The tab doesn't claim "No assignment at Head Office" for a branch whose list was capped.
-    await openTab(page, 'Branch assignments');
-    await expect(mainText(page, 'No branch assignments found', { exact: true })).toBeVisible();
-    await expect(mainText(page, /^No assignment at /)).toHaveCount(0);
   });
 });
 

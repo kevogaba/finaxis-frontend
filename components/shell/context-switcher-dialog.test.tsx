@@ -41,6 +41,7 @@ function json(body: unknown) {
 function renderDialog(
   onClose = vi.fn(),
   branch: { id: string; name: string } | null = { id: 'b-1', name: 'Head Office' },
+  canSelectBranch = false,
 ) {
   renderWithProviders(
     <ApplicationContextProvider
@@ -50,7 +51,12 @@ function renderDialog(
         branch,
       }}
     >
-      <ContextSwitcherDialog open onClose={onClose} platformOrganisationId="platform" />
+      <ContextSwitcherDialog
+        open
+        onClose={onClose}
+        platformOrganisationId="platform"
+        canSelectBranch={canSelectBranch}
+      />
     </ApplicationContextProvider>,
   );
   return onClose;
@@ -84,6 +90,60 @@ describe('ContextSwitcherDialog', () => {
     // switching organisation) is a same-URL no-op for the Next router; only `refresh()` forces the
     // shared authenticated layout to re-read the new context cookie.
     expect(router.refresh).toHaveBeenCalled();
+  });
+
+  const PINNED = { branchId: 'b-9', requiresBranchSelection: false, assignedBranchIds: ['b-9'] };
+  const ONE_BRANCH_PAGE = {
+    items: [{ branchId: 'b-9', branchCode: 'KSM', branchName: 'Kisumu', branchStatus: 'ACTIVE' }],
+    page: PAGE,
+  };
+
+  it('offers All branches to a single-branch member who may select branches, and clears the pin (BG-03)', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [ORG], page: PAGE }))
+      .mockImplementationOnce(() => json(PINNED))
+      .mockImplementationOnce(() => json(ONE_BRANCH_PAGE))
+      .mockImplementationOnce(() =>
+        json({ organisationId: 'org-2', membershipId: 'm-2', branchId: null }),
+      );
+    const onClose = renderDialog(vi.fn(), null, true);
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Imara SACCO/ }));
+    await user.click(await screen.findByRole('combobox', { name: 'Branch' }));
+    expect(screen.getByRole('option', { name: /Kisumu/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: /All branches/ }));
+
+    expect(await screen.findByText('Switched to Imara SACCO · All branches')).toBeInTheDocument();
+    expect(onClose).toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledWith('/admin');
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      '/api/context/branch',
+      expect.objectContaining({ body: JSON.stringify({ branch_id: null }) }),
+    );
+  });
+
+  it('keeps the pinned branch when closed at the offered branch step', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => json({ items: [ORG], page: PAGE }))
+      .mockImplementationOnce(() => json(PINNED))
+      .mockImplementationOnce(() => json(ONE_BRANCH_PAGE));
+    const onClose = renderDialog(vi.fn(), null, true);
+
+    await user.click(await screen.findByRole('combobox', { name: 'Organisation' }));
+    await user.click(screen.getByRole('option', { name: /Imara SACCO/ }));
+    await screen.findByRole('combobox', { name: 'Branch' });
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledWith('/admin');
+    expect(router.refresh).toHaveBeenCalled();
+    // The organisation's one branch is still selected: no "All branches" in the toast.
+    expect(await screen.findByText(/^Switched to Imara SACCO$/)).toBeInTheDocument();
   });
 
   it('lands at All branches when closed after the organisation was committed', async () => {
@@ -326,7 +386,9 @@ describe('ContextSwitcherDialog', () => {
     expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();
   });
 
-  it('switches the current organisation to All branches with no second POST once its re-POST succeeded', async () => {
+  // The re-POST already left the token at All branches (`branch_id: null`), so choosing it sends no
+  // select-branch, which needs `auth.select_branch` tenant-wide (a 403 would clear the context).
+  it('switches the current organisation to All branches through its re-POST alone', async () => {
     const user = userEvent.setup();
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
@@ -364,12 +426,14 @@ describe('ContextSwitcherDialog', () => {
     await user.click(await screen.findByRole('combobox', { name: 'Branch' }));
     await user.click(screen.getByRole('option', { name: /All branches/ }));
 
+    await vi.waitFor(() => {
+      expect(onClose).toHaveBeenCalled();
+    });
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       '/api/context/organisation',
       expect.objectContaining({ body: JSON.stringify({ organisation_id: 'org-1' }) }),
     );
-    expect(onClose).toHaveBeenCalled();
     expect(router.refresh).toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
     expect(screen.queryByText(/Switched to/)).not.toBeInTheDocument();

@@ -277,9 +277,14 @@ test.describe('fake API: the approvals scenarios (layer 12)', () => {
       expect(await read(response)).toMatchObject({ code: 'lifecycle.approver_is_branch_maker' });
     });
 
-    test('a branch context can’t reach a pending branch: 404 (BG-03)', async ({ request }) => {
-      const { get } = await signIn(request, 'approvals', IDS.headOffice);
-      expect((await get(`/branches/${APPROVALS.kericho}`)).status()).toBe(404);
+    test('a tenant-wide approver activates it from a branch context (BG-03)', async ({
+      request,
+    }) => {
+      const { get, post } = await signIn(request, 'approvals', IDS.headOffice);
+      expect((await get(`/branches/${APPROVALS.kericho}`)).status()).toBe(200);
+      const response = await post(`/branches/${APPROVALS.kericho}/activate`);
+      expect(response.status()).toBe(200);
+      expect(await read<{ status: string }>(response)).toMatchObject({ status: 'ACTIVE' });
     });
   });
 

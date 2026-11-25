@@ -4,7 +4,7 @@ import { Suspense, type ReactNode } from 'react';
 import { getAuthenticatedUser } from '@/auth/get-authenticated-user';
 import { getCurrentContextProfile, profileToFinaxisUser } from '@/auth/context-service';
 import { contextSelectionRedirectPath } from '@/auth/context-selection-redirect';
-import { canTenantWide } from '@/auth/permissions';
+import { canAnywhere, canTenantWide, permissionHolder } from '@/auth/permissions';
 import { serverEnv } from '@/config/env.server';
 import { AppShell } from '@/components/shell/app-shell';
 import { PlatformNotifications } from '@/components/shell/platform-notifications';
@@ -37,6 +37,9 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
   const showBusinessDate =
     selectedContext.context.module.id !== platformAdministrationModule.id &&
     canTenantWide(user, 'business_date.view');
+  // BG-03: the branch list answers a branch-scoped `branch.view` at All branches too. Only this
+  // boolean reaches the shell, never where the branch grants are held.
+  const viewsBranches = canAnywhere(permissionHolder(selectedContext.profile), 'branch.view');
 
   return (
     <AppShell
@@ -44,6 +47,7 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
       context={selectedContext.context}
       initialNavCollapsed={navCollapsed}
       platformOrganisationId={serverEnv.PLATFORM_ORGANISATION_ID}
+      viewsBranches={viewsBranches}
       businessDate={
         showBusinessDate ? (
           <Suspense fallback={null}>

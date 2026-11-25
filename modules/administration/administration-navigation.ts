@@ -13,7 +13,7 @@ import type { WorkspaceNavigationItem } from '@/components/shell/workspace-navig
  * Branches, Roles & permissions, Settings, Business date, Audit trail. Each stack layer inserts its
  * page at its place when it ships, with `requiresAny` set to the page's read permission, and
  * `tenantWide` when the platform checks that read tenant-wide (BG-33): every page here except the
- * target-aware Branches.
+ * target-aware Branches, which `anyBranch` also shows for a `branch.view` held at any branch (BG-03).
  */
 export const administrationNavigationItems: readonly WorkspaceNavigationItem[] = [
   { href: '/admin', label: 'Overview', icon: HomeOutlined },
@@ -36,6 +36,9 @@ export const administrationNavigationItems: readonly WorkspaceNavigationItem[] =
     label: 'Branches',
     icon: AccountTreeOutlined,
     requiresAny: ['branch.view'],
+    // BG-03: `GET /branches` answers a branch-scoped `branch.view` with its branches, at All
+    // branches too.
+    anyBranch: true,
   },
   {
     href: '/admin/roles',

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
+import { INSTITUTION_SCOPE_UNAVAILABLE } from '@/modules/administration/roles/components/role-assignment-actions';
 import {
   ACCESS_DESCRIPTION,
   NO_ACTIVE_ROLES,
@@ -86,14 +87,16 @@ const TENANT_HELP = 'Applies at every branch and at institution level.';
 const UNREADABLE_HINT =
   "Their branch assignments can't be read here, so only institution scope is available.";
 const PARTIAL_HINT =
-  'Only the first 500 branch assignments were checked and none of theirs was among them, so only institution scope is offered here.';
+  'Only the first 500 of their branch assignments were checked, so only institution scope is offered here.';
 const ROLES_CAPPED_HINT =
   "Only the first 500 roles by name are offered here; roles after that can't be assigned from this page.";
 const NONE_ACTIVE_CAPPED =
   "None of the first 500 roles by name is active, and roles after that can't be assigned from this page.";
 const NO_BRANCH_HINT = 'Assign them to a branch first to give a branch-scoped role.';
-const notAssignedHint = (branch: string) =>
-  `They aren't assigned to ${branch}. Assign them there first to give a branch-scoped role.`;
+const NOT_WHERE_YOU_ASSIGN =
+  "They aren't assigned to a branch where you can assign roles. Assign them to one first to give a branch-scoped role.";
+const BRANCH_HELP =
+  'Applies at that branch only, while it is active. The user must already be assigned to it.';
 
 type RoleIndex = [string, { name: string; code: string; status: string; systemRole: boolean }][];
 const TELLER_ROLE: RoleIndex = [
@@ -134,6 +137,8 @@ interface Setup {
   permissions?: string[];
   /** The codes held tenant-wide (`/auth/me` scopes); defaults to every code in `permissions`. */
   tenantWide?: string[];
+  /** Where the others are held (BRANCH scopes' `branch_ids`); defaults to the selected branch. */
+  heldAt?: string[];
   /** The role index the page reads: empty on any failure (lib/api/lookups.ts). */
   index?: RoleIndex;
   /** The scan stopped at its ceiling with more roles unread. */
@@ -159,6 +164,7 @@ interface Setup {
 function setup({
   permissions = ALL_CODES,
   tenantWide = permissions,
+  heldAt,
   index = TELLER_ROLE,
   rolesTruncated = false,
   branchIndex = BRANCH_INDEX,
@@ -177,7 +183,15 @@ function setup({
     kind: 'resolved',
     profile: {
       permissions,
-      permission_scopes: tenantWide.map((code) => ({ code, scope: 'TENANT' })),
+      permission_scopes: permissions.map((code) =>
+        tenantWide.includes(code)
+          ? { code, scope: 'TENANT' }
+          : {
+              code,
+              scope: 'BRANCH',
+              branch_ids: heldAt ?? (selectedBranch ? [selectedBranch.id] : []),
+            },
+      ),
       user_id: profileUserId,
       branches: [],
     },
@@ -613,54 +627,85 @@ describe('UserAccessPage: the branch scope on offer', () => {
     expect(await oneBranchOption(user, scope)).toHaveAttribute('aria-disabled', 'true');
   });
 
-  it('names the selected branch when a complete scan found none of their rows there', async () => {
-    setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' }, scanned: [] });
+  // BG-03: a branch-scoped grant assigns at the branches it is held at, whichever is selected (the
+  // route's gate reads the selected context), and never at institution scope.
+  const ASSIGN_AT_BRANCHES = {
+    tenantWide: ALL_CODES.filter((code) => code !== 'user.assign_role'),
+    selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
+    heldAt: [HEAD_OFFICE, KISUMU],
+  };
+
+  it('shows Assign disabled, with why, when none of their branches is one the grant reaches', async () => {
+    setup({ ...ASSIGN_AT_BRANCHES, scanned: [{ branchId: WESTLANDS }] });
     await show();
 
-    const { scope } = await openDrawer();
-
-    expect(scope).toHaveAccessibleDescription(`${TENANT_HELP} ${notAssignedHint('Head Office')}`);
+    const button = screen.getByRole('button', { name: 'Assign role' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription(NOT_WHERE_YOU_ASSIGN);
   });
 
-  it('says so too when they are assigned only at another branch than the selected one', async () => {
+  it('offers a branch-scoped grant each of their branches it reaches, and no institution scope', async () => {
     setup({
-      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
-      scanned: [{ branchId: WESTLANDS }],
-    });
-    await show();
-
-    const { user, scope } = await openDrawer();
-
-    expect(scope).toHaveAccessibleDescription(`${TENANT_HELP} ${notAssignedHint('Head Office')}`);
-    expect(await oneBranchOption(user, scope)).toHaveAttribute('aria-disabled', 'true');
-  });
-
-  it('offers exactly the branches they hold, once each, in label order, and no hint (the control for the cases above)', async () => {
-    setup({
-      scanned: [{ branchId: WESTLANDS }, { branchId: HEAD_OFFICE }, { branchId: WESTLANDS }],
-    });
-    await show();
-
-    const { user, scope } = await openDrawer();
-
-    expect(scope).toHaveAccessibleDescription(TENANT_HELP);
-    expect(await branchOptions(user, scope)).toEqual([
-      'Head Office (HEAD_OFFICE)',
-      'Westlands Branch (WESTLANDS)',
-    ]);
-  });
-
-  it('offers only the selected branch in a branch context, even when they hold others', async () => {
-    setup({
-      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
+      ...ASSIGN_AT_BRANCHES,
       scanned: [{ branchId: WESTLANDS }, { branchId: HEAD_OFFICE }, { branchId: KISUMU }],
     });
     await show();
 
     const { user, scope } = await openDrawer();
 
-    expect(scope).toHaveAccessibleDescription(TENANT_HELP);
-    expect(await branchOptions(user, scope)).toEqual(['Head Office (HEAD_OFFICE)']);
+    expect(scope).toHaveTextContent('One branch');
+    expect(scope).toHaveAccessibleDescription(`${BRANCH_HELP} ${INSTITUTION_SCOPE_UNAVAILABLE}`);
+    await user.click(scope);
+    expect(
+      await screen.findByRole('option', { name: 'Institution (all branches)' }),
+    ).toHaveAttribute('aria-disabled', 'true');
+    await user.click(screen.getByRole('option', { name: 'One branch' }));
+    await user.click(await screen.findByRole('combobox', { name: /^Branch/ }));
+    expect(
+      within(await screen.findByRole('listbox'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Head Office (HEAD_OFFICE)', 'Kisumu (KISUMU)']);
+  });
+
+  it('offers a branch-scoped grant nothing at All branches', async () => {
+    setup({
+      ...ASSIGN_AT_BRANCHES,
+      permissions: ALL_CODES.filter((code) => code !== 'user.assign_role'),
+      selectedBranch: null,
+      scanned: [{ branchId: HEAD_OFFICE }],
+    });
+    await show();
+
+    expect(screen.queryByRole('button', { name: 'Assign role' })).toBeNull();
+  });
+
+  it('offers no institution scope when user.assign_role’s view is held only at branches', async () => {
+    setup({
+      tenantWide: ALL_CODES.filter((code) => code !== 'role_assignment.view'),
+      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
+      scanned: [{ branchId: HEAD_OFFICE }],
+    });
+    await show();
+
+    const { scope } = await openDrawer();
+
+    expect(scope).toHaveTextContent('One branch');
+  });
+
+  it('offers a tenant-wide grant every branch they hold, whichever branch is selected', async () => {
+    setup({
+      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
+      scanned: [{ branchId: WESTLANDS }, { branchId: HEAD_OFFICE }],
+    });
+    await show();
+
+    const { user, scope } = await openDrawer();
+
+    expect(await branchOptions(user, scope)).toEqual([
+      'Head Office (HEAD_OFFICE)',
+      'Westlands Branch (WESTLANDS)',
+    ]);
   });
 
   it("names a branch the index doesn't know by its short id", async () => {
@@ -800,8 +845,10 @@ describe('UserAccessPage: the rows', () => {
     expect(revokeButtons()).toHaveLength(1);
   });
 
-  it('hides the revoke of a branch assignment at another branch in a branch context, not the rest', async () => {
+  // BG-03: a revoke held only at the selected branch reaches that branch's BRANCH rows alone.
+  it('offers a branch-scoped revoke only on the selected branch’s branch assignments', async () => {
     setup({
+      tenantWide: ALL_CODES.filter((code) => code !== 'user.revoke_role'),
       selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
       rows: [
         assignment(1, TELLER, 'TENANT'),
@@ -818,13 +865,13 @@ describe('UserAccessPage: the rows', () => {
       'Westlands Branch',
     ]);
     expect(revokeButtons().map((button) => button.getAttribute('aria-label'))).toEqual([
-      "Revoke Felix Omondi's Teller assignment (institution-wide)",
       "Revoke Felix Omondi's Teller assignment (Head Office)",
     ]);
   });
 
-  it('offers every revoke at institution level (the control for the case above)', async () => {
+  it('offers every revoke to a tenant-wide grant, whichever branch is selected (the control for the case above)', async () => {
     setup({
+      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
       rows: [
         assignment(1, TELLER, 'TENANT'),
         assignment(2, TELLER, 'BRANCH', HEAD_OFFICE),

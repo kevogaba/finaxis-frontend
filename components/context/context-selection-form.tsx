@@ -23,8 +23,10 @@ const ALL_BRANCHES_VALUE = '__all__';
 interface ContextSelectionFormProps {
   initialOrganisations: BrowserPage<BrowserOrganisation>;
   hasOrganisationLoadError?: boolean;
+  /** See `useContextSelection`: the branch step for single-branch members too. */
+  offerAllBranches?: boolean;
   onComplete: (outcome: SelectionOutcome) => void;
-  onOrganisationCommitted?: (organisationId: string) => void;
+  onOrganisationCommitted?: (outcome: SelectionOutcome) => void;
   onSessionExpired: () => void;
   onOrganisationLost?: () => void;
 }
@@ -211,11 +213,8 @@ export function ContextSelectionForm(props: ContextSelectionFormProps) {
             labelId="branch-label"
             inputRef={branchSelectRef}
             onChange={(event) => {
-              if (event.target.value === ALL_BRANCHES_VALUE) {
-                selection.selectAllBranches();
-                return;
-              }
-              void selection.selectBranch(event.target.value);
+              const value = event.target.value;
+              void selection.selectBranch(value === ALL_BRANCHES_VALUE ? null : value);
             }}
             value=""
           >

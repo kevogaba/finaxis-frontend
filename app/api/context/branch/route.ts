@@ -9,27 +9,30 @@ import {
 } from '@/auth/require-authenticated-user';
 
 const uuidSyntax = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// `null` clears the branch (All branches, BG-03); the key is required, so a client never clears
+// by omission, and `""` is refused as the platform refuses it.
 const requestSchema = z.object({
-  branch_id: z.string().regex(uuidSyntax),
+  branch_id: z.string().regex(uuidSyntax).nullable(),
 });
 const STALE_CONTEXT_MESSAGE =
   'Your saved context is no longer valid. Select an organisation again.';
 const SESSION_EXPIRED_MESSAGE = 'Your session has expired. Please sign in again.';
 const CONTEXT_ACCESS_DENIED_MESSAGE = 'You do not have access to this context.';
 
-async function readBranchId(request: Request): Promise<string | null> {
+/** The branch to select, `null` to clear it, or `undefined` for a malformed body. */
+async function readBranchId(request: Request): Promise<string | null | undefined> {
   try {
     const body: unknown = await request.json();
     const parsed = requestSchema.safeParse(body);
-    return parsed.success ? parsed.data.branch_id : null;
+    return parsed.success ? parsed.data.branch_id : undefined;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
 export async function POST(request: Request): Promise<Response> {
   const branchId = await readBranchId(request);
-  if (!branchId) {
+  if (branchId === undefined) {
     return Response.json({ message: 'A valid branch_id is required.' }, { status: 400 });
   }
 

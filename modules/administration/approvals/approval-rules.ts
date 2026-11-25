@@ -1,14 +1,11 @@
-import {
-  can,
-  canAll,
-  canAllTenantWide,
-  canTenantWide,
-  type PermissionHolder,
-} from '@/auth/permissions';
+import { can, canAllTenantWide, canTenantWide, type PermissionHolder } from '@/auth/permissions';
 import { withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import type { BranchStatus } from '@/modules/administration/branches/branch-contract';
-import { MAKER_CHECKER_BLOCKED } from '@/modules/administration/branches/branch-rules';
+import {
+  canActOnBranch,
+  MAKER_CHECKER_BLOCKED,
+} from '@/modules/administration/branches/branch-rules';
 import type { MembershipStatus, UserStatus } from '@/modules/administration/users/user-contract';
 import {
   accountBlockedNote,
@@ -38,6 +35,12 @@ export function canSeeUserApprovals(holder: PermissionHolder): boolean {
 }
 /** The Branch activation tab and the bell's branch count: activate reads the branch back (BG-31). */
 export const BRANCH_ACTIVATION_CODES = ['branch.approve', 'branch.view'] as const;
+
+/** A pending branch grants no branch-scoped permission (platform #242), so only a tenant-wide
+ * holder activates one, whichever branch is selected (BG-03). */
+export function canSeeBranchActivations(holder: PermissionHolder): boolean {
+  return canAllTenantWide(holder, BRANCH_ACTIVATION_CODES);
+}
 
 export const APPROVALS_HREF = '/admin/approvals';
 export const USER_QUEUE_HREF = `${APPROVALS_HREF}/users`;
@@ -80,7 +83,7 @@ export function approvalQueueTabs(
   if (canSeeUserApprovals(holder)) {
     tabs.push({ href: USER_QUEUE_HREF, label: label(USER_QUEUE_LABEL, counts.users) });
   }
-  if (canAll(holder, BRANCH_ACTIVATION_CODES)) {
+  if (canSeeBranchActivations(holder)) {
     tabs.push({ href: BRANCH_QUEUE_HREF, label: label(BRANCH_QUEUE_LABEL, counts.branches) });
   }
   return tabs;
@@ -153,13 +156,13 @@ export function userOutcomeNote(
   }
 }
 
-/** Activate reads the branch back (BG-31) and needs the All branches context (BG-03), which the
- * page checks before it offers the bar. */
+/** Activate is checked on the target branch and reads it back (BG-03, BG-31): a pending branch
+ * grants no branch-scope permission (#242), so `branch.approve` and its view tenant-wide. */
 export function availableBranchDecisions(
-  status: BranchStatus,
+  branch: { id: string; status: BranchStatus },
   holder: PermissionHolder,
 ): ApprovalDecision[] {
-  return status === 'PENDING_APPROVAL' && canAll(holder, BRANCH_ACTIVATION_CODES)
+  return branch.status === 'PENDING_APPROVAL' && canActOnBranch(holder, 'branch.approve', branch)
     ? ['activate']
     : [];
 }

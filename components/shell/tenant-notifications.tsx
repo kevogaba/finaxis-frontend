@@ -1,11 +1,11 @@
 import { Suspense } from 'react';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { canAll, permissionHolder } from '@/auth/permissions';
+import { permissionHolder } from '@/auth/permissions';
 import { load } from '@/lib/api/load';
 import { administrationModule } from '@/modules/administration/administration-module';
 import { approvalNotifications } from '@/modules/administration/approvals/approval-notifications';
 import {
-  BRANCH_ACTIVATION_CODES,
+  canSeeBranchActivations,
   canSeeUserApprovals,
 } from '@/modules/administration/approvals/approval-rules';
 import {
@@ -23,7 +23,7 @@ export async function PendingApprovalNotifications() {
   if (selected.context.module.id !== administrationModule.id) return null;
   const holder = permissionHolder(selected.profile);
   const users = canSeeUserApprovals(holder);
-  const branches = canAll(holder, BRANCH_ACTIVATION_CODES);
+  const branches = canSeeBranchActivations(holder);
   if (!users && !branches) return null;
   // BG-22: no feed; three `size=1` reads, each settled by load() as the platform bell's is (rule
   // 21): a lost session or a stale context redirects; any other failure reads as unknown, never
@@ -33,16 +33,7 @@ export async function PendingApprovalNotifications() {
     branches ? load(countBranchActivations()) : null,
   ]);
   return (
-    <NotificationsMenu
-      {...approvalNotifications({
-        users: userCounts,
-        branches: branchCount,
-        branchSelected: selected.context.branch !== null,
-        // PF1: /auth/me branches[] can include SUSPENDED ones; All branches needs two ACTIVE.
-        canSwitch:
-          selected.profile.branches.filter((entry) => entry.status === 'ACTIVE').length > 1,
-      })}
-    />
+    <NotificationsMenu {...approvalNotifications({ users: userCounts, branches: branchCount })} />
   );
 }
 

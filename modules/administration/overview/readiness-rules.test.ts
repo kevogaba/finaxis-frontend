@@ -276,17 +276,21 @@ describe('the whole card', () => {
     expect(canCheckReadiness(EVERY_CODE, 'onboarding')).toBe(true);
   });
 
-  it('checks every read but the branch counts, and links every page but Branches, tenant-wide', () => {
+  // BG-03: the branch list is target-aware, but a branch-scoped `branch.view` counts only its own
+  // branches, never the institution's totals; its directory still opens.
+  it('checks every read tenant-wide, and links every page but Branches tenant-wide', () => {
     const holder = { permissions: CODES, tenantPermissions: [] };
     expect(
       operationalReadiness(READY, holder).items.flatMap((entry) =>
         entry.link ? [entry.label] : [],
       ),
     ).toEqual(['Branches']);
-    expect(canCheckReadiness(holder, 'branches')).toBe(true);
-    for (const id of ['institution', 'people', 'onboarding', 'businessDate'] as const) {
+    for (const id of ['institution', 'branches', 'people', 'onboarding', 'businessDate'] as const) {
       expect(canCheckReadiness(holder, id), id).toBe(false);
     }
+    expect(canCheckReadiness({ ...holder, tenantPermissions: ['branch.view'] }, 'branches')).toBe(
+      true,
+    );
   });
 
   it.each([

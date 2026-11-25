@@ -1,7 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  branchVisibility,
+  canSee,
   holdsRole,
+  mutationVisibility,
   requireAssignSelf,
+  requireAuthority,
+  requireBranchPermission,
   requireContext,
   requirePermission,
   requireTenantContext,
@@ -451,13 +456,26 @@ export const roleRoutes: Route[] = [
     sendJson(context.res, 200, pageOf(ordered.map(permissionWire), query));
   }),
 
+  // BG-03 (`IamQueryService.searchRoleAssignments`): target-aware. A tenant-wide
+  // `role_assignment.view` sees every row; a branch-scoped one only BRANCH-scope rows at the ACTIVE
+  // branches it covers, whichever branch is selected. Held nowhere, or an explicit `branch_id`
+  // outside them, is a 403 that names nothing.
   route('GET', '/api/v1/tenant/role-assignments', (context) => {
     const access = tenantAccess(context);
-    requirePermission(access, 'role_assignment.view');
+    const visibility = branchVisibility(access, 'role_assignment.view');
+    const requested = context.query.get('branch_id');
+    if (
+      (visibility !== 'all' && visibility.size === 0) ||
+      (requested !== null && !canSee(visibility, requested))
+    ) {
+      throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
+    }
     const { query } = context;
     const rows = context.state.roleAssignments.filter(
       (row) =>
         row.organisationId === access.organisation.id &&
+        (visibility === 'all' ||
+          (row.scopeType === 'BRANCH' && canSee(visibility, row.branchId ?? ''))) &&
         Object.entries(ASSIGNMENT_FILTERS).every(([name, value]) => {
           const wanted = query.get(name);
           return wanted === null || value(row) === wanted;
@@ -493,12 +511,13 @@ export const roleRoutes: Route[] = [
           },
         ]);
       }
-      // Contract §E.4: another branch while a branch is selected is a 404.
-      if (access.claims.branchId !== null && access.claims.branchId !== branchId) {
-        throw assignmentNotFound();
-      }
     }
-    requirePermission(access, 'user.assign_role', scope === 'BRANCH' ? 'branch' : 'tenant');
+    // The route's own gate reads the selected context's authorities, the code alone; the service
+    // checks TENANT scope tenant-wide and BRANCH scope on its target branch, each with the code's
+    // views (`requireRoleAssignmentPermission`, BG-03).
+    requireAuthority(access, ['user.assign_role']);
+    if (scope === 'BRANCH') requireBranchPermission(access, 'user.assign_role', branchId ?? '');
+    else requirePermission(access, 'user.assign_role');
     // #342: before any lookup, so even a repeat of an existing self-assignment is refused.
     requireAssignSelf(access, userId === access.claims.userId);
     sendIdempotent(
@@ -573,22 +592,24 @@ export const roleRoutes: Route[] = [
 
   route('DELETE', '/api/v1/tenant/role-assignments/:assignment_id', (context) => {
     const access = tenantAccess(context);
+    // BG-03 (`RoleManagementService.revokeRoleAssignment`): an authorised combined lookup. A 404 for
+    // an unknown id only to a tenant-wide holder; anyone else gets one 403 for an unknown id, a
+    // TENANT row and a row on a branch it may not act on.
+    requireAuthority(access, ['user.revoke_role']);
+    const visibility = mutationVisibility(access, 'user.revoke_role');
     const row = context.state.roleAssignments.find(
       (candidate) =>
         candidate.id === context.params.assignment_id &&
         candidate.organisationId === access.organisation.id,
     );
-    if (!row) throw assignmentNotFound();
-    const branchScoped = row.scopeType === 'BRANCH';
-    if (
-      branchScoped &&
-      access.claims.branchId !== null &&
-      access.claims.branchId !== row.branchId
-    ) {
-      throw assignmentNotFound();
+    if (!row && visibility === 'all') throw assignmentNotFound();
+    const reachable =
+      row?.scopeType === 'TENANT'
+        ? visibility === 'all'
+        : row !== undefined && canSee(visibility, row.branchId ?? '');
+    if (!row || !reachable) {
+      throw problem(403, 'forbidden', 'Missing permission: user.revoke_role.');
     }
-    requirePermission(access, 'user.revoke_role', branchScoped ? 'branch' : 'tenant');
-    requirePermission(access, 'role_assignment.view'); // read-back (BG-31)
     sendIdempotent(context, {}, () => {
       // Source f74e44b: revoking a REVOKED assignment is a no-op that still returns it.
       if (row.status === 'ACTIVE') {

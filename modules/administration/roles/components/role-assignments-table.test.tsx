@@ -78,7 +78,7 @@ describe('RoleAssignmentsTable', () => {
     expect(formData.get('contextOrganisationId')).toBe(ORG);
   });
 
-  it("offers no Revoke for a row the context can't reach (§E.4: a 404)", () => {
+  it("offers no Revoke for a row the holder can't reach (BG-03: a 403)", () => {
     renderWithProviders(
       <RoleAssignmentsTable
         rows={[tenantRow, { ...branchRow, revocable: false }]}

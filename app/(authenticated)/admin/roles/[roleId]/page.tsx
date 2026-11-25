@@ -1,5 +1,5 @@
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can } from '@/auth/permissions';
+import { can, permissionHolder } from '@/auth/permissions';
 import { CopyIdButton } from '@/components/data-display/copy-id-button';
 import { DescriptionList, type DescriptionItem } from '@/components/data-display/description-list';
 import { SectionCard } from '@/components/data-display/section-card';
@@ -7,7 +7,12 @@ import { StatusChip } from '@/components/data-display/status-chip';
 import { load } from '@/lib/api/load';
 import { getOrganisationTimeZone } from '@/lib/api/lookups';
 import { formatInstant } from '@/lib/format';
-import { SYSTEM_ROLE_NOTE, roleTypeLabel } from '@/modules/administration/roles/role-rules';
+import {
+  roleAssignmentCount,
+  roleTypeLabel,
+  scopedRoleAssignmentView,
+  SYSTEM_ROLE_NOTE,
+} from '@/modules/administration/roles/role-rules';
 import {
   countActiveRoleAssignments,
   countRolePermissions,
@@ -28,7 +33,7 @@ export default async function RoleOverviewPage({ params }: RoleOverviewPageProps
   if (!role.ok) return null; // the layout renders the failure
 
   const record = role.value;
-  const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
+  const holder = permissionHolder(selected.kind === 'resolved' ? selected.profile : undefined);
   const [permissions, assignments] = await Promise.all([
     countRolePermissions(roleId),
     can(holder, 'role_assignment.view')
@@ -48,7 +53,15 @@ export default async function RoleOverviewPage({ params }: RoleOverviewPageProps
     { label: 'Status', value: <StatusChip value={record.status} /> },
     ...(permissions === null ? [] : [{ label: 'Permissions', value: String(permissions) }]),
     // Assignments, not distinct users: one user can hold the role at several scopes (Ruling 11).
-    ...(assignments === null ? [] : [{ label: 'Active assignments', value: String(assignments) }]),
+    ...(assignments === null
+      ? []
+      : [
+          {
+            label: 'Active assignments',
+            // BG-03: a branch-scoped view counts only its branches' rows.
+            value: roleAssignmentCount(assignments, scopedRoleAssignmentView(holder)),
+          },
+        ]),
     { label: `Created (${timeZone})`, value: at(record.createdAt) },
     { label: `Updated (${timeZone})`, value: at(record.updatedAt) },
     { label: 'Role ID', value: <CopyIdButton value={record.id} label="Role ID" /> },

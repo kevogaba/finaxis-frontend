@@ -538,7 +538,9 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       read<Paged<AssignmentRow>>(
         await (
           await signIn(request, scenario)
-        ).get(`/tenant/branch-assignments?status=ACTIVE&page=${String(number)}&size=100`),
+        ).get(
+          `/tenant/branch-assignments?user_id=${USERS.felix}&status=ACTIVE&page=${String(number)}&size=100`,
+        ),
       );
 
     // The scan reads five pages of 100: the fifth still has more, so it is truncated.
@@ -557,7 +559,9 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
     expect(plain.items).toEqual([]);
   });
 
-  test('reads memberships in a branch context too (contract §E.4)', async ({ request }) => {
+  test('reads memberships in a branch context too, and searches assignments by user (BG-03)', async ({
+    request,
+  }) => {
     const headers = await contextFor(request, 'users', IDS.westlands);
     const get = (path: string) => request.get(api(path), { headers });
 
@@ -568,7 +572,8 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       total_items: 13,
     });
     expect((await get(membershipPath(USERS.estherMembership))).status()).toBe(200);
-    // Branch assignments are: the search is forced to Westlands (Jane's, and four seeded people's).
+    // With neither branch_id nor user_id, assignments default to the selected branch (Jane's, and
+    // four seeded people's).
     const rows = (
       await read<Paged<AssignmentRow>>(await get('/tenant/branch-assignments?status=ACTIVE'))
     ).items;
@@ -576,6 +581,13 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       [IDS.jane, USERS.amina, USERS.carol, USERS.daniel, USERS.felix].sort(),
     );
     expect(new Set(rows.map((row) => row.branch_id))).toEqual(new Set([IDS.westlands]));
+    // A user_id search spans every branch: Esther's Head Office row, from Westlands.
+    const esther = (
+      await read<Paged<AssignmentRow>>(
+        await get(`/tenant/branch-assignments?user_id=${USERS.esther}&status=ACTIVE`),
+      )
+    ).items;
+    expect(esther.map((row) => row.branch_id)).toEqual([IDS.headOffice]);
   });
 
   test('seeds fresh objects for every call, so one run never leaks into another', () => {

@@ -105,7 +105,7 @@ function institutionCheck(organisationName: string): ControlCheck {
   );
 }
 
-function roleCheck(roles: CheckRead<number>): ControlCheck {
+function roleCheck(roles: CheckRead<number>, complete: boolean): ControlCheck {
   const check = (state: CheckState, detail: string) =>
     checkOf('role', 'Has an active role', state, detail);
   if (roles === null) return check('platform', ROLES_NOT_PERMITTED);
@@ -115,12 +115,14 @@ function roleCheck(roles: CheckRead<number>): ControlCheck {
       `Their roles couldn't be loaded.${reference(roles.problem.requestId)}`,
     );
   }
-  return roles.value > 0
-    ? check('passed', 'They hold an active role.')
-    : check(
+  if (roles.value > 0) return check('passed', 'They hold an active role.');
+  // A branch-scoped view lists only its branches' rows (BG-03), so it can't prove "none" (rule 9).
+  return complete
+    ? check(
         'failed',
         'They hold no active role. The platform refuses approval until they hold one.',
-      );
+      )
+    : check('platform', 'None was found among the role assignments this page could check.');
 }
 
 function branchCheck(
@@ -147,7 +149,7 @@ function branchCheck(
     );
   }
   if (branches.value.count > 0) return check('passed', 'They hold an active branch assignment.');
-  // A capped scan, or one a selected branch narrowed (§E.4), can't prove "none" (rule 9).
+  // A capped scan, or one a branch-scoped view narrowed (BG-03), can't prove "none" (rule 9).
   return branches.value.complete
     ? check(
         'failed',
@@ -165,6 +167,8 @@ export function userControlChecks(input: {
   switchState: SwitchState;
   /** ACTIVE role assignments found (one page). */
   roles: CheckRead<number>;
+  /** False when a branch-scoped `role_assignment.view` narrowed that read (BG-03). */
+  rolesComplete?: boolean;
   /** ACTIVE branch assignments found; `complete`: the scan wasn't capped and no branch narrowed it. */
   branches: CheckRead<{ count: number; complete: boolean }>;
   /** null: the membership couldn't be read (no `membership.view`, not found, or failed). */
@@ -173,7 +177,7 @@ export function userControlChecks(input: {
 }): ControlCheck[] {
   return [
     makerCheck('user', input.maker, input.me, input.switchState),
-    roleCheck(input.roles),
+    roleCheck(input.roles, input.rolesComplete ?? true),
     branchCheck(input.branches, input.membershipType),
     institutionCheck(input.organisationName),
   ];

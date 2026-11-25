@@ -73,14 +73,11 @@ export type ApproveResult =
  * `own_account`, 16's `tenant_code_taken`). */
 export const APPROVAL_CHANGED_CODE = 'approval_changed';
 export const ACCOUNT_BLOCKED_CODE = 'account_blocked';
-export const BRANCH_CONTEXT_CODE = 'branch_context';
 
 export const APPROVAL_CHANGED =
   'This approval changed since the page loaded. Refresh to see where it stands.';
 export const BRANCH_CHANGED =
   'This branch changed since the page loaded. Refresh to see where it stands.';
-export const BRANCH_CONTEXT_REFUSAL =
-  'Branches are activated with All branches selected. Switch to All branches and try again.';
 
 // ── Page copy ────────────────────────────────────────────────────────────────────────────────────
 
@@ -97,14 +94,6 @@ export const USER_APPROVAL_FORBIDDEN =
   "Your role can't approve users. Ask an administrator if you need access.";
 export const BRANCH_ACTIVATION_FORBIDDEN =
   "Your role can't activate branches. Ask an administrator if you need access.";
-
-/** The Branch activation tab with a branch selected (Ruling 11): the list isn't branch-restricted,
- * but activation needs All branches (BG-03). */
-export function branchQueueContextNote(branchName: string, canSwitch: boolean): string {
-  return canSwitch
-    ? `With ${branchName} selected, these branches can be listed but not activated. Switch to All branches to review them.`
-    : `With ${branchName} selected, these branches can be listed but not activated, and your account works at this branch only. Ask an administrator who works at institution level to review them.`;
-}
 
 export const USER_APPROVAL_EYEBROW = 'Approval queue · User onboarding';
 export const BRANCH_APPROVAL_EYEBROW = 'Approval queue · Branch activation';
@@ -126,8 +115,11 @@ export const ROLES_NOT_PERMITTED = "Your role can't view role assignments.";
 export const BRANCHES_NOT_PERMITTED = "Your role can't view branch assignments.";
 export const MEMBERSHIP_NOT_PERMITTED = "Your role can't view memberships.";
 export const NO_ACTIVE_ROLE = 'They hold no active role.';
+// A branch-scoped role-assignment view sees only its branches' rows: it can't say "none" (rule 9).
+export const NO_ACTIVE_ROLE_SEEN =
+  'No active role was found among the role assignments this page could check.';
 export const NO_ACTIVE_BRANCH = 'They hold no active branch assignment.';
-// A selected branch narrows the scan and a capped scan hides rows: neither can say "none" (rule 9).
+// A branch-scoped view narrows the scan and a capped scan hides rows: neither can say "none" (rule 9).
 export const NO_ACTIVE_BRANCH_SEEN =
   'No active branch assignment was found among those this page could check.';
 export const ROLES_CAPPED = `Only the first ${REQUESTED_ROLES_CEILING} role assignments are shown. Their record lists them all.`;

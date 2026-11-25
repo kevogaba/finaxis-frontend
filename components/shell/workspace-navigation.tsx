@@ -18,23 +18,30 @@ export interface WorkspaceNavigationItem {
   requiresAny?: readonly string[];
   /** The page's read is checked tenant-wide, so only a tenant-wide grant counts (BG-33). */
   tenantWide?: boolean;
+  /** The page's read is target-aware (BG-03): a BRANCH grant of a code at any branch counts too,
+   * whichever branch is selected, which `heldAtAnyBranch` reports. */
+  anyBranch?: boolean;
 }
 
 /**
  * An item with no `requiresAny` is always visible; one with `requiresAny: []` is always hidden
  * (`canAny` treats zero required codes as unsatisfied) — a defensive default for a misconfigured
- * registry entry, not a way to intentionally show or hide an item.
+ * registry entry, not a way to intentionally show or hide an item. `heldAtAnyBranch` lists the
+ * `anyBranch` items' codes held through a BRANCH grant at some branch: the server works it out,
+ * since the client-safe holder leaves out where branch grants are held.
  */
 export function visibleNavigationItems(
   items: readonly WorkspaceNavigationItem[],
   holder: PermissionHolder,
+  heldAtAnyBranch: readonly string[] = [],
 ): WorkspaceNavigationItem[] {
   return items.filter(
-    ({ requiresAny, tenantWide }) =>
+    ({ requiresAny, tenantWide, anyBranch }) =>
       !requiresAny ||
       (tenantWide
         ? requiresAny.some((code) => canTenantWide(holder, code))
-        : canAny(holder, requiresAny)),
+        : canAny(holder, requiresAny)) ||
+      (anyBranch === true && requiresAny.some((code) => heldAtAnyBranch.includes(code))),
   );
 }
 

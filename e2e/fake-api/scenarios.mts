@@ -664,6 +664,83 @@ function branchesScenario(): RunState {
   };
 }
 
+/** bg-adopt 09 seed IDs (lane rules §5). */
+export const BRANCH_SCOPED_IDS = {
+  role: 'a9000000-0000-4000-8000-000000000001',
+  grant: 'a9000000-0000-4000-8000-000000000002',
+  westlandsGrant: 'a9000000-0000-4000-8000-000000000003',
+  viewerRole: 'a9000000-0000-4000-8000-000000000004',
+  viewerGrant: 'a9000000-0000-4000-8000-000000000005',
+} as const;
+
+/** The codes `branches-branch-scoped` holds only at Head Office. */
+const HEAD_OFFICE_ONLY = [
+  'branch.view',
+  'branch_assignment.view',
+  'user.assign_branch',
+  'user.revoke_branch',
+  ...BRANCH_ADMIN_CODES,
+];
+
+/**
+ * bg-adopt 09 (BG-03): `branches`, with Jane's branch codes on a BRANCH grant at Head Office
+ * instead of her tenant role. The platform checks the target branch, so she reads and acts on Head
+ * Office (with it selected, for a mutation's own gate) and is refused every other branch with 403.
+ */
+function branchesBranchScopedScenario(): RunState {
+  const state = withoutPermission(branchesScenario(), ...HEAD_OFFICE_ONLY);
+  return {
+    ...state,
+    roles: [
+      ...state.roles,
+      {
+        ...role(BRANCH_SCOPED_IDS.role, IDS.greenfield, 'HEAD_OFFICE_ADMIN', 'Head office admin', [
+          ...new Set(HEAD_OFFICE_ONLY),
+        ]),
+        systemRole: false,
+      },
+    ],
+    roleAssignments: [
+      ...state.roleAssignments,
+      {
+        ...tenantRoleAssignment(
+          BRANCH_SCOPED_IDS.grant,
+          IDS.greenfield,
+          IDS.jane,
+          BRANCH_SCOPED_IDS.role,
+        ),
+        scopeType: 'BRANCH',
+        branchId: IDS.headOffice,
+      },
+    ],
+  };
+}
+
+/**
+ * BG-03: `branches-branch-scoped`, with the same role granted at Westlands too. A mutation's own gate
+ * reads the selected context and the service the target, so with either branch selected Jane acts
+ * on both, and at All branches on neither.
+ */
+function branchesTwoBranchScopedScenario(): RunState {
+  const state = branchesBranchScopedScenario();
+  return {
+    ...state,
+    roleAssignments: [
+      ...state.roleAssignments,
+      {
+        ...tenantRoleAssignment(
+          BRANCH_SCOPED_IDS.westlandsGrant,
+          IDS.greenfield,
+          IDS.jane,
+          BRANCH_SCOPED_IDS.role,
+        ),
+        scopeType: 'BRANCH',
+        branchId: IDS.westlands,
+      },
+    ],
+  };
+}
+
 /** Layer 09 seed IDs (lane rules §5). The fake permission catalogue (routes/roles.mts) numbers
  * its own ids from …0100 in the same prefix. */
 export const ROLE_SCENARIO_IDS = {
@@ -1814,8 +1891,10 @@ function overviewAttentionScenario(): RunState {
 /**
  * Layer 14, `overview-branch-scoped` (BG-33): the attention data, with Jane's branch codes on a
  * BRANCH grant at Head Office instead of her tenant role. With Head Office selected, `/auth/me`
- * lists `branch.view` and `branch.approve`, but the branch reads need them at tenant scope, so
- * each answers 403: the Branches item and the approvals card's branch read fail on their own.
+ * lists `branch.view` and `branch.approve`. The branch list is target-aware (BG-03) and would answer
+ * Head Office alone, so the Branches item reads nothing rather than pass that off as the
+ * institution's count. A branch-scoped `branch.approve` activates no pending branch (#242), so the
+ * approvals card and the bell read no branch requests.
  */
 function overviewBranchScopedScenario(): RunState {
   const state = withoutPermission(overviewAttentionScenario(), 'branch.view', 'branch.approve');
@@ -1884,6 +1963,8 @@ const BUILDERS = {
     };
   },
   'no-audit-permission': () => withoutPermission(greenfieldTenant(), 'audit.view'),
+  // BG-03: `branch.view` held nowhere, so the target-aware branch list answers 403.
+  'no-branch-view': () => withoutPermission(greenfieldTenant(), 'branch.view'),
   'business-date-read-only': () =>
     withoutPermission(
       greenfieldTenant(),
@@ -1923,6 +2004,32 @@ const BUILDERS = {
       'role_assignment.view',
       'audit.view',
     ),
+  // BG-03: `roles`, with Jane's role_assignment.view only at Westlands: the assignment search lists
+  // Westlands' BRANCH-scope rows alone, whichever branch is selected.
+  'roles-branch-scoped-view': () => {
+    const state = withoutPermission(rolesScenario(), 'role_assignment.view');
+    state.roles.push({
+      ...role(
+        BRANCH_SCOPED_IDS.viewerRole,
+        IDS.greenfield,
+        'WESTLANDS_VIEWER',
+        'Westlands viewer',
+        ['role_assignment.view'],
+      ),
+      systemRole: false,
+    });
+    state.roleAssignments.push({
+      ...tenantRoleAssignment(
+        BRANCH_SCOPED_IDS.viewerGrant,
+        IDS.greenfield,
+        IDS.jane,
+        BRANCH_SCOPED_IDS.viewerRole,
+      ),
+      scopeType: 'BRANCH',
+      branchId: IDS.westlands,
+    });
+    return state;
+  },
   // #342: Jane as an IAM_ADMIN-shaped member, the role codes without user.assign_self, who also
   // holds the DISABLED Loans officer: she can't add to her own access.
   'roles-self': () => {
@@ -1946,17 +2053,17 @@ const BUILDERS = {
   'users-read-only': () => withoutPermission(usersScenario(), ...USER_ADMIN_CODES),
   // #342: the same, with Jane IAM_ADMIN-shaped (no user.assign_self) on her own record.
   'users-self': () => withoutPermission(usersScenario(), 'user.assign_self'),
-  // 500 ACTIVE filler rows appended after the seeds (the fake pages in insertion order): Felix's row
-  // is on page 0 and page 4 still has more, so the scan is truncated (Ruling 8's partial marker).
+  // 500 more ACTIVE rows of Felix's appended after the seeds (the fake pages in insertion order):
+  // the scan searches by user (BG-03), his seeded row is on page 0 and page 4 still has more, so the
+  // scan is truncated (Ruling 8's partial marker).
   'users-many-assignments': () => {
     const state = usersScenario();
-    const filler = '10000000-0000-4000-8000-000000000099'; // no user row needed
     state.branchAssignments.push(
       ...Array.from({ length: 500 }, (_, n) =>
         assignment(
           `10000000-0000-4000-8000-${String(100000 + n).padStart(12, '0')}`,
           IDS.greenfield,
-          filler,
+          USER_SCENARIO_IDS.felix,
           IDS.headOffice,
           'OPERATE',
         ),
@@ -2060,6 +2167,8 @@ const BUILDERS = {
       'user.approve',
     ),
   'overview-branch-scoped': overviewBranchScopedScenario,
+  'branches-branch-scoped': branchesBranchScopedScenario,
+  'branches-two-branch-scoped': branchesTwoBranchScopedScenario,
 } satisfies Record<string, () => RunState>;
 
 /** Single source of truth for scenario names — `e2e/support/auth.ts` imports this as a type. */

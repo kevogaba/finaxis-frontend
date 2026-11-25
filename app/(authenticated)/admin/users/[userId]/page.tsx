@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can } from '@/auth/permissions';
+import { can, permissionHolder } from '@/auth/permissions';
 import { CopyIdButton } from '@/components/data-display/copy-id-button';
 import { DescriptionList, type DescriptionItem } from '@/components/data-display/description-list';
 import { ErrorState } from '@/components/data-display/error-state';
@@ -13,6 +13,10 @@ import { load, type Loaded } from '@/lib/api/load';
 import { getBranchIndex, getOrganisationTimeZone } from '@/lib/api/lookups';
 import type { ProblemView } from '@/lib/api/problem';
 import { formatInstant, shortId } from '@/lib/format';
+import {
+  roleAssignmentCount,
+  scopedRoleAssignmentView,
+} from '@/modules/administration/roles/role-rules';
 import { OnboardingTimeline } from '@/modules/administration/users/components/onboarding-timeline';
 import type {
   MembershipDetail,
@@ -22,6 +26,7 @@ import {
   branchAssignmentCount,
   onboardingProgress,
   parseUserId,
+  scopedAssignmentView,
   userStatusLabel,
 } from '@/modules/administration/users/user-rules';
 import {
@@ -48,8 +53,7 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
   if (!user.ok) return null; // the layout renders the failure
 
   const record = user.value;
-  const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
-  const selectedBranch = selected.kind === 'resolved' ? selected.context.branch : null;
+  const holder = permissionHolder(selected.kind === 'resolved' ? selected.profile : undefined);
   const [membership, roleCount, scan] = await Promise.all([
     can(holder, 'membership.view') ? load(findUserMembership(record.id, record.email)) : null,
     // null: not permitted (the row is left out). A Loaded failure: permitted, but the read failed.
@@ -75,7 +79,9 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
       ? [
           {
             label: 'Role assignments',
-            value: roleCount.ok ? String(roleCount.value) : readFailed(roleCount.problem),
+            value: roleCount.ok
+              ? roleAssignmentCount(roleCount.value, scopedRoleAssignmentView(holder))
+              : readFailed(roleCount.problem),
           },
         ]
       : []),
@@ -87,7 +93,7 @@ export default async function UserOverviewPage({ params }: UserOverviewPageProps
               ? branchAssignmentCount(
                   scan.value.items.length,
                   scan.value.truncated,
-                  selectedBranch?.name ?? null,
+                  scopedAssignmentView(holder),
                 )
               : readFailed(scan.problem),
           },

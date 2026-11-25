@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { notFound, redirect } from 'next/navigation';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
 import { can, permissionHolder } from '@/auth/permissions';
@@ -16,8 +18,11 @@ import { lastPageIfPastEnd, parsePaging } from '@/lib/api/paging';
 import { hrefWith, toSearchParams } from '@/lib/api/query-string';
 import { shortId } from '@/lib/format';
 import {
-  canRevokeRoleAssignments,
+  canAssignRoleAt,
+  canAssignRoleInstitutionWide,
   isAssignmentRevocable,
+  SCOPED_ROLE_ASSIGNMENTS_NOTE,
+  scopedRoleAssignmentView,
 } from '@/modules/administration/roles/role-rules';
 import { listRoleAssignments } from '@/modules/administration/roles/role-service';
 import { AssignUserRoleButton } from '@/modules/administration/users/components/user-role-actions';
@@ -60,11 +65,10 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
   const { index: roles, truncated: rolesTruncated } = roleScan;
   const record = user.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
-  const holder = resolved ? permissionHolder(resolved.profile) : { permissions: [] };
+  const holder = permissionHolder(resolved?.profile);
   const self = record.id === resolved?.profile.user_id;
   // I2: the organisation this page rendered with, carried by every mutation surface below.
   const contextOrganisationId = resolved?.context.organization.id;
-  const selectedBranch = resolved?.context.branch ?? null;
   const branchLabel = (id: string) => {
     const branch = branches.get(id);
     return branch ? `${branch.name} (${branch.code})` : shortId(id);
@@ -83,16 +87,22 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
     canAssign && can(holder, 'branch_assignment.view')
       ? await load(listUserBranchAssignments(userId))
       : null;
+  // BG-03: each of their branches where the holder may assign, whichever branch is selected;
+  // institution scope only with a tenant-wide grant.
+  const institution = canAssignRoleInstitutionWide(holder);
   const scopeBranches = scan?.ok
-    ? roleScopeBranches(scan.value.items, selectedBranch?.id ?? null, branchLabel)
+    ? roleScopeBranches(scan.value.items, (id) => canAssignRoleAt(holder, id), branchLabel)
     : [];
   const branchHint = roleScopeHint({
     readable: scan?.ok ?? false,
     offered: scopeBranches.length,
     truncated: scan?.ok === true && scan.value.truncated,
-    selectedBranchName: selectedBranch?.name ?? null,
+    someBranches: !institution,
   });
-  const assignOffered = canAssign && roleOptions.length > 0;
+  // Without institution scope, no branch of theirs leaves nothing to assign: shown disabled, with
+  // why.
+  const noScope = !institution && scopeBranches.length === 0;
+  const assignOffered = canAssign && roleOptions.length > 0 && !noScope;
   // The index holds the first ROLE_INDEX_CEILING roles by name: a capped scan is never presented as
   // the whole catalogue (AGENTS.md, the fifth paging exception), so the picker says so.
   const roleHint =
@@ -120,10 +130,13 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
             roleHint={roleHint}
             branches={scopeBranches}
             branchHint={branchHint}
+            institution={institution}
             contextOrganisationId={contextOrganisationId}
           />
         ) : ownBlocked ? (
           <BlockedButton label="Assign role" reason={OWN_ACCESS} startIcon={<AddOutlined />} />
+        ) : canAssign && roleOptions.length > 0 && noScope && branchHint ? (
+          <BlockedButton label="Assign role" reason={branchHint} startIcon={<AddOutlined />} />
         ) : undefined
       }
     >
@@ -149,38 +162,55 @@ export default async function UserAccessPage({ params, searchParams }: UserAcces
     );
   }
 
+  const rows = assignments.value.items.map((row) => {
+    const role = roles.get(row.roleId);
+    return {
+      assignmentId: row.id,
+      roleName: role?.name ?? shortId(row.roleId),
+      roleCode: role?.code ?? null,
+      roleStatus: role?.status ?? null,
+      scopeType: row.scopeType,
+      branchLabel: row.branchId
+        ? (branches.get(row.branchId)?.name ?? shortId(row.branchId))
+        : 'All branches',
+      revocable: isAssignmentRevocable(row, holder),
+    };
+  });
+  // BG-03: a branch-scoped view lists only its branches' BRANCH-scope rows, so it says so, and "no
+  // roles" would be a guess.
+  const scoped = scopedRoleAssignmentView(holder);
   return card(
-    assignments.value.items.length === 0 ? (
-      <EmptyState
-        title="No roles assigned"
-        description={
-          assignOffered ? 'Assign a role to give them permissions.' : 'This user holds no roles.'
-        }
-      />
-    ) : (
-      <>
-        <UserRoleAssignmentsTable
-          userName={record.displayName}
-          self={self}
-          canRevoke={canRevokeRoleAssignments(holder)}
-          contextOrganisationId={contextOrganisationId}
-          rows={assignments.value.items.map((row) => {
-            const role = roles.get(row.roleId);
-            return {
-              assignmentId: row.id,
-              roleName: role?.name ?? shortId(row.roleId),
-              roleCode: role?.code ?? null,
-              roleStatus: role?.status ?? null,
-              scopeType: row.scopeType,
-              branchLabel: row.branchId
-                ? (branches.get(row.branchId)?.name ?? shortId(row.branchId))
-                : 'All branches',
-              revocable: isAssignmentRevocable(row, selectedBranch?.id ?? null),
-            };
-          })}
+    <>
+      {scoped && (
+        <Box sx={{ px: 4, py: 3 }}>
+          <Alert severity="info" role="note">
+            {SCOPED_ROLE_ASSIGNMENTS_NOTE}
+          </Alert>
+        </Box>
+      )}
+      {rows.length === 0 ? (
+        <EmptyState
+          title={scoped ? 'No role you can view' : 'No roles assigned'}
+          description={
+            assignOffered
+              ? 'Assign a role to give them permissions.'
+              : scoped
+                ? 'They may hold roles at institution level or at branches you can’t view.'
+                : 'This user holds no roles.'
+          }
         />
-        <TablePaginationBar page={assignments.value.page} />
-      </>
-    ),
+      ) : (
+        <>
+          <UserRoleAssignmentsTable
+            userName={record.displayName}
+            self={self}
+            canRevoke={rows.some((row) => row.revocable)}
+            contextOrganisationId={contextOrganisationId}
+            rows={rows}
+          />
+          <TablePaginationBar page={assignments.value.page} />
+        </>
+      )}
+    </>,
   );
 }

@@ -125,13 +125,14 @@ export async function discoverBranches(
   return branchPageSchema.parse(raw);
 }
 
+/** `null` clears the branch: All branches, for any holder of `auth.select_branch` (BG-03). */
 export async function selectBranch(
   requestHeaders: Headers,
-  branchId: string,
+  branchId: string | null,
 ): Promise<SelectBranchResponse> {
   const raw = await backendApi.post<unknown>(
     '/api/v1/auth/select-branch',
-    { branch_id: validateBranchId(branchId) },
+    { branch_id: branchId === null ? null : validateBranchId(branchId) },
     requestHeaders,
     await requireContextToken(requestHeaders),
   );
@@ -152,6 +153,8 @@ export function profileToFinaxisUser(
     name = fullName;
   }
 
+  // The shell gates on these two alone; where each branch grant is held stays server-side.
+  const { permissions, tenantPermissions } = permissionHolder(profile);
   return {
     branches: profile.branches.map((branch) => ({ id: branch.id, name: branch.name })),
     email,
@@ -161,7 +164,8 @@ export function profileToFinaxisUser(
     organization: profile.organisation
       ? { id: profile.organisation.id, name: profile.organisation.name }
       : undefined,
-    ...permissionHolder(profile),
+    permissions,
+    tenantPermissions,
     roles: profile.roles.map((role) => role.code),
     selectedBranch: profile.selected_branch
       ? { id: profile.selected_branch.id, name: profile.selected_branch.name }

@@ -109,11 +109,6 @@ export default async function AdminOverviewPage() {
             <PendingApprovalsSection
               users={cards.approvals.users}
               branches={cards.approvals.branches}
-              branchSelected={selected.context.branch !== null}
-              // PF1: /auth/me branches[] can include SUSPENDED ones; All branches needs two ACTIVE.
-              canSwitch={
-                selected.profile.branches.filter((entry) => entry.status === 'ACTIVE').length > 1
-              }
             />,
           )}
         {cards.readiness &&

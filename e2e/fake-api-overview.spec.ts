@@ -119,19 +119,25 @@ test.describe('fake API: the overview scenarios (layer 14)', () => {
     expect((await get('/tenant/memberships?membership_status=ACTIVE&size=1')).status()).toBe(403);
   });
 
-  test('overview-branch-scoped: branch codes held at Head Office only, so the branch reads are refused', async ({
+  // BG-03: the branch list is target-aware, so a branch-scoped `branch.view` counts Head Office
+  // alone, which is why the overview reads branch counts only tenant-wide.
+  test('overview-branch-scoped: branch codes held at Head Office only, so the branch reads see it alone', async ({
     request,
   }) => {
     const headers = await contextFor(request, 'overview-branch-scoped', IDS.headOffice);
     const get = (path: string) => request.get(api(path), { headers });
     const me = await read<{ permissions: string[] }>(await get('/auth/me'));
     expect(me.permissions).toEqual(expect.arrayContaining(['branch.view', 'branch.approve']));
-    expect((await get('/branches?status=ACTIVE&size=1')).status()).toBe(403);
-    expect(
-      (
-        await get('/branches?status=PENDING_APPROVAL&sort_by=createdAt&sort_dir=DESC&page=0&size=5')
-      ).status(),
-    ).toBe(403);
+    const active = await read<{ items: { id: string }[]; page: { total_items: number } }>(
+      await get('/branches?status=ACTIVE&size=1'),
+    );
+    expect(active.items.map((branch) => branch.id)).toEqual([IDS.headOffice]);
+    expect(active.page.total_items).toBe(1);
+    // A pending branch grants no branch-scope permission (#242), so none is listed.
+    const pending = await read<{ page: { total_items: number } }>(
+      await get('/branches?status=PENDING_APPROVAL&sort_by=createdAt&sort_dir=DESC&page=0&size=5'),
+    );
+    expect(pending.page.total_items).toBe(0);
     expect(
       (await get('/tenant/users?membership_status=PENDING_APPROVAL&page=0&size=5')).status(),
     ).toBe(200);

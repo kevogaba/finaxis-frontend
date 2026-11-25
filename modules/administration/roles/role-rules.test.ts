@@ -8,15 +8,19 @@ import {
   canEditRole,
   canGrantPermissions,
   canRemovePermissions,
-  canRevokeRoleAssignments,
+  canAssignRoleAt,
+  canAssignRoleInstitutionWide,
   grantableOptions,
   groupByModule,
   HELD_ROLE,
   isAssignmentRevocable,
   moduleLabel,
   neededByNames,
+  roleAssignmentBranchIds,
+  roleAssignmentCount,
   roleDraftSchema,
   roleStatusAction,
+  scopedRoleAssignmentView,
   scopeLabel,
 } from './role-rules';
 
@@ -170,11 +174,6 @@ describe('role rules', () => {
     const holder = { permissions: codes, tenantPermissions: codes };
     expect(canAssignRole(CUSTOM, holder)).toBe(true);
     expect(canAssignRole({ status: 'DISABLED' }, holder)).toBe(false);
-    expect(canRevokeRoleAssignments({ permissions: ['user.revoke_role'] })).toBe(false);
-    // Revoking is checked on the assignment's target, so a branch-scoped grant counts.
-    expect(
-      canRevokeRoleAssignments({ permissions: ['user.revoke_role', 'role_assignment.view'] }),
-    ).toBe(true);
     expect([scopeLabel('TENANT'), scopeLabel('BRANCH')]).toEqual(['Institution', 'Branch']);
   });
 
@@ -203,17 +202,59 @@ describe('role rules', () => {
     expect(canAssignRole(CUSTOM, { permissions, tenantPermissions })).toBe(expected);
   });
 
-  it('offers no revoke for a branch assignment elsewhere in a branch context (§E.4: 404)', () => {
-    const here = { scopeType: 'BRANCH', branchId: 'branch-a' } as const;
-    const elsewhere = { scopeType: 'BRANCH', branchId: 'branch-b' } as const;
+  it('offers a revoke where both platform checks pass (BG-03)', () => {
+    const atA = { scopeType: 'BRANCH', branchId: 'branch-a' } as const;
+    const atB = { scopeType: 'BRANCH', branchId: 'branch-b' } as const;
+    const atC = { scopeType: 'BRANCH', branchId: 'branch-c' } as const;
     const everywhere = { scopeType: 'TENANT', branchId: null } as const;
-    // Institution level reaches every assignment.
-    expect(isAssignmentRevocable(here, null)).toBe(true);
-    expect(isAssignmentRevocable(elsewhere, null)).toBe(true);
-    // A branch context reaches its own branch and the institution-wide rows, nothing else.
-    expect(isAssignmentRevocable(here, 'branch-a')).toBe(true);
-    expect(isAssignmentRevocable(everywhere, 'branch-a')).toBe(true);
-    expect(isAssignmentRevocable(elsewhere, 'branch-a')).toBe(false);
+    const codes = ['user.revoke_role', 'role_assignment.view'];
+    // A tenant-wide grant reaches every assignment, whichever branch is selected.
+    const revoker = wide(codes);
+    for (const row of [atA, atB, everywhere])
+      expect(isAssignmentRevocable(row, revoker)).toBe(true);
+    // One role at A and B with A selected: the route gate passes, and the target check at either.
+    const scoped = {
+      permissions: codes,
+      tenantPermissions: [],
+      branchPermissions: Object.fromEntries(codes.map((code) => [code, ['branch-a', 'branch-b']])),
+    };
+    expect(isAssignmentRevocable(atA, scoped)).toBe(true);
+    expect(isAssignmentRevocable(atB, scoped)).toBe(true);
+    // A TENANT row needs a tenant-wide grant; a branch its grants don't name is out of reach.
+    expect(isAssignmentRevocable(everywhere, scoped)).toBe(false);
+    expect(isAssignmentRevocable(atC, scoped)).toBe(false);
+    // At All branches the same grants pass no route gate.
+    expect(isAssignmentRevocable(atB, { ...scoped, permissions: [] })).toBe(false);
+  });
+
+  it('offers institution scope only tenant-wide, and each branch where the holder may assign', () => {
+    const codes = ['user.assign_role', 'role_assignment.view'];
+    expect(canAssignRoleInstitutionWide(wide(codes))).toBe(true);
+    const scoped = {
+      permissions: codes,
+      tenantPermissions: ['role_assignment.view'],
+      branchPermissions: { 'user.assign_role': ['branch-a', 'branch-b'] },
+    };
+    expect(canAssignRoleInstitutionWide(scoped)).toBe(false);
+    expect(canAssignRoleAt(scoped, 'branch-b')).toBe(true);
+    expect(canAssignRoleAt(scoped, 'branch-c')).toBe(false);
+    // From the index for a tenant-wide grant, from the holder's own grants otherwise.
+    expect(roleAssignmentBranchIds(wide(codes), ['branch-a', 'branch-c'])).toEqual([
+      'branch-a',
+      'branch-c',
+    ]);
+    expect(roleAssignmentBranchIds(scoped, ['branch-a', 'branch-c'])).toEqual([
+      'branch-a',
+      'branch-b',
+    ]);
+    expect(roleAssignmentBranchIds({ ...scoped, permissions: [] }, ['branch-a'])).toEqual([]);
+  });
+
+  it('says a branch-scoped role_assignment.view counts only its branches', () => {
+    expect(scopedRoleAssignmentView(wide(['role_assignment.view']))).toBe(false);
+    expect(scopedRoleAssignmentView({ permissions: ['role_assignment.view'] })).toBe(true);
+    expect(roleAssignmentCount(3, false)).toBe('3');
+    expect(roleAssignmentCount(3, true)).toBe('3 at branches you can view');
   });
 
   it('tells an assigner to activate an inactive role, and nobody else', () => {

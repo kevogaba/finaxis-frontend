@@ -20,16 +20,22 @@ export interface BranchOption {
 
 const TENANT_HELP = 'Applies at every branch and at institution level.';
 const BRANCH_HELP =
-  'Applies only while that branch is selected. The user must already be assigned to it.';
+  'Applies at that branch only, while it is active. The user must already be assigned to it.';
+/** Why Institution is disabled: the holder assigns roles at some branches only (BG-03). */
+export const INSTITUTION_SCOPE_UNAVAILABLE =
+  'You can assign roles at some branches only, so institution scope isn’t available.';
 
 interface RoleScopeFieldsProps {
-  /** Branches a BRANCH-scope assignment may name: every branch at institution level, only the
-   * selected one in a branch context (contract §E.4: another branch is a 404). Empty disables
-   * branch scope (Ruling 10). */
+  /** Branches a BRANCH-scope assignment may name: where the holder may assign at that branch,
+   * whichever branch is selected (`canAssignRoleAt`, BG-03). Empty disables branch scope
+   * (Ruling 10). */
   branches: readonly BranchOption[];
   fieldErrors: Partial<Record<string, string>>;
   /** Why "One branch" is disabled, shown under the Scope field while `branches` is empty. */
   branchHint?: string;
+  /** Institution scope needs the grant tenant-wide (`canAssignRoleInstitutionWide`): false disables
+   * it, says why, and starts at branch scope. */
+  institution?: boolean;
 }
 
 /**
@@ -40,11 +46,17 @@ interface RoleScopeFieldsProps {
  * Uncontrolled, with fixed field names (`scopeType`, `branchId`): it fits a FormData drawer; a
  * React Hook Form wizard (layer 11) needs added props.
  */
-export function RoleScopeFields({ branches, fieldErrors, branchHint }: RoleScopeFieldsProps) {
-  const [scope, setScope] = useState<RoleScopeType>('TENANT');
+export function RoleScopeFields({
+  branches,
+  fieldErrors,
+  branchHint,
+  institution = true,
+}: RoleScopeFieldsProps) {
+  const [scope, setScope] = useState<RoleScopeType>(institution ? 'TENANT' : 'BRANCH');
   const tenantHelp =
     branches.length === 0 && branchHint ? `${TENANT_HELP} ${branchHint}` : TENANT_HELP;
-  const helperText = fieldErrors.scopeType ?? (scope === 'TENANT' ? tenantHelp : BRANCH_HELP);
+  const branchHelp = institution ? BRANCH_HELP : `${BRANCH_HELP} ${INSTITUTION_SCOPE_UNAVAILABLE}`;
+  const helperText = fieldErrors.scopeType ?? (scope === 'TENANT' ? tenantHelp : branchHelp);
   return (
     <>
       <TextField
@@ -59,7 +71,9 @@ export function RoleScopeFields({ branches, fieldErrors, branchHint }: RoleScope
         error={Boolean(fieldErrors.scopeType)}
         helperText={helperText}
       >
-        <MenuItem value="TENANT">Institution (all branches)</MenuItem>
+        <MenuItem value="TENANT" disabled={!institution}>
+          Institution (all branches)
+        </MenuItem>
         <MenuItem value="BRANCH" disabled={branches.length === 0}>
           One branch
         </MenuItem>
@@ -89,6 +103,8 @@ interface AssignRoleButtonProps {
   roleId: string;
   roleName: string;
   branches: readonly BranchOption[];
+  /** See `RoleScopeFields`. */
+  institution?: boolean;
   /** Left out of the user search: the signed-in user, where they can't add to their own access
    * (#342). */
   excludeUserId?: string;
@@ -100,6 +116,7 @@ export function AssignRoleButton({
   roleId,
   roleName,
   branches,
+  institution = true,
   excludeUserId,
   contextOrganisationId,
 }: AssignRoleButtonProps) {
@@ -141,7 +158,11 @@ export function AssignRoleButton({
               error={fieldErrors.userId}
               excludeUserId={excludeUserId}
             />
-            <RoleScopeFields branches={branches} fieldErrors={fieldErrors} />
+            <RoleScopeFields
+              branches={branches}
+              fieldErrors={fieldErrors}
+              institution={institution}
+            />
           </>
         )}
       </AssignmentDrawer>

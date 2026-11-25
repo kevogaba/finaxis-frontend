@@ -10,6 +10,7 @@ import { humanizeEnum } from '@/components/data-display/status-chip';
 import { useToast } from '@/components/providers/toast-provider';
 import { assignBranchUser } from '@/modules/administration/branches/branch-actions';
 import { BRANCH_ASSIGNMENT_TYPES } from '@/modules/administration/branches/branch-contract';
+import { SCOPED_BRANCHES_NOTE } from '@/modules/administration/branches/branch-rules';
 import type { SelectOption } from '../user-rules';
 
 interface AssignUserBranchButtonProps {
@@ -19,6 +20,8 @@ interface AssignUserBranchButtonProps {
   branches: readonly SelectOption[];
   /** The page read one bounded page of branches and more exist: say so under the select. */
   truncated?: boolean;
+  /** The branches listed are only those the caller's `branch.view` covers (BG-03): say so. */
+  scoped?: boolean;
   /** I2: the organisation the page rendered for; forwarded to the drawer as a hidden field. */
   contextOrganisationId?: string;
 }
@@ -30,10 +33,17 @@ export function AssignUserBranchButton({
   userName,
   branches,
   truncated = false,
+  scoped = false,
   contextOrganisationId,
 }: AssignUserBranchButtonProps) {
   const notify = useToast();
   const [open, setOpen] = useState(false);
+  const branchNote = [
+    truncated ? 'Only the first 100 active branches are listed.' : '',
+    scoped ? SCOPED_BRANCHES_NOTE : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <>
       <Button
@@ -70,10 +80,7 @@ export function AssignUserBranchButton({
               required
               defaultValue={branches.length === 1 ? (branches[0]?.id ?? '') : ''}
               error={Boolean(fieldErrors.branchId)}
-              helperText={
-                fieldErrors.branchId ??
-                (truncated ? 'Only the first 100 active branches are listed.' : undefined)
-              }
+              helperText={fieldErrors.branchId ?? (branchNote === '' ? undefined : branchNote)}
             >
               {branches.map((branch) => (
                 <MenuItem key={branch.id} value={branch.id}>
