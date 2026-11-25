@@ -10,13 +10,14 @@ import type { BootstrapStatus, TenantDetail, TenantStatus } from './tenant-contr
 export { currencyLabel };
 
 export type TenantLifecycleAction =
-  'amend' | 'submit' | 'approve' | 'reject' | 'suspend' | 'reactivate' | 'deprovision';
+  'amend' | 'submit' | 'approve' | 'return' | 'reject' | 'suspend' | 'reactivate' | 'deprovision';
 
 /** Hero order: the first action is the contained primary (tenant-lifecycle-actions.tsx), so the
- * forward action leads and an edit-like Amend follows, outlined. */
+ * forward action leads and an edit-like Amend follows, outlined. A pending request's recoverable
+ * Return comes before its final Reject, as a branch's Return follows its Activate. */
 const ACTIONS_BY_STATUS: Record<TenantStatus, readonly TenantLifecycleAction[]> = {
   DRAFT: ['submit', 'amend'],
-  PENDING_APPROVAL: ['approve', 'reject'],
+  PENDING_APPROVAL: ['approve', 'return', 'reject'],
   PROVISIONING: [],
   ACTIVE: ['suspend', 'deprovision'],
   SUSPENDED: ['reactivate', 'deprovision'],
@@ -30,6 +31,8 @@ const PERMISSION: Record<TenantLifecycleAction, string> = {
   amend: 'tenant.update_draft',
   submit: 'tenant.submit_for_approval',
   approve: 'tenant.approve',
+  // Platform #181 (BG-01): returning for changes is a checker's decision on `tenant.reject`.
+  return: 'tenant.reject',
   reject: 'tenant.reject',
   suspend: 'tenant.suspend',
   reactivate: 'tenant.reactivate',
@@ -38,7 +41,7 @@ const PERMISSION: Record<TenantLifecycleAction, string> = {
 
 /**
  * Spec §11.2's hero lifecycle. Every tenant mutation reads the record back, so it also needs
- * `tenant.view` (BG-31). The request's makers see Approve and Reject disabled
+ * `tenant.view` (BG-31). The request's makers see Approve, Return for changes and Reject disabled
  * (`blockedTenantActions`); an amender's refusal is explained when it comes (BG-08).
  */
 export function availableTenantActions(
@@ -52,8 +55,10 @@ export function availableTenantActions(
 export const TENANT_MAKER_BLOCKED =
   'You requested or submitted this institution, so another platform administrator must decide it.';
 
-/** BG-08 (TenantCheckerRule): its requester and its submitter never approve or reject it, and no
- * tenant switch relaxes the platform's own checker. `callerId` null (no profile): nothing blocks. */
+/** BG-08 (TenantCheckerRule): its requester and its submitter never approve, return or reject it,
+ * and no tenant switch relaxes the platform's own checker. An amender may still return it (the
+ * platform refuses them only an approval or a rejection, by name). `callerId` null (no profile):
+ * nothing blocks. */
 export function blockedTenantActions(
   actions: readonly TenantLifecycleAction[],
   tenant: Pick<TenantDetail, 'requestedBy' | 'submittedBy'>,
@@ -64,7 +69,7 @@ export function blockedTenantActions(
   if (!maker) return {};
   return Object.fromEntries(
     actions
-      .filter((action) => action === 'approve' || action === 'reject')
+      .filter((action) => action === 'approve' || action === 'return' || action === 'reject')
       .map((action) => [action, TENANT_MAKER_BLOCKED]),
   );
 }
@@ -255,9 +260,15 @@ export function tenantFormOptions(
 
 const TENANT_CODE = /^[a-z0-9-]{3,32}$/;
 
-/** CreateTenantDraft's institution and first administrator (contract §D), shared by the wizard
- * (React Hook Form) and the Server Actions. Amend sends exactly these: it replaces every field. */
-export const tenantAmendSchema = z.object({
+/** Empty means "not set": one string schema whose check allows `''`, never a union, so the
+ * message is the field's own. */
+const businessDate = z
+  .string()
+  .refine((value) => value === '' || isoToBusinessDate(value) !== null, 'Choose a valid date.');
+
+/** CreateTenantDraft's institution, first administrator and first business date (contract §D):
+ * the fields create and amend share. */
+const draftFieldsSchema = z.object({
   tenantCode: z
     .string()
     .trim()
@@ -272,6 +283,7 @@ export const tenantAmendSchema = z.object({
   countryCode: z.string().regex(/^[A-Z]{2}$/, 'Choose a country.'),
   baseCurrencyCode: z.string().regex(/^[A-Z]{3}$/, 'Choose a currency.'),
   timezone: z.string().refine(isTimeZone, 'Choose a timezone.'),
+  businessDate,
   adminEmail: z.email('Enter a valid email address.'),
   adminUsername: z
     .string()
@@ -290,15 +302,20 @@ export const tenantAmendSchema = z.object({
   adminSendApplicationInvite: z.enum(['true', 'false']),
 });
 
+/** The first administrator's fields: amend sends them together or not at all (BG-14). */
+const ADMIN_FIELDS = [
+  'adminEmail',
+  'adminUsername',
+  'adminDisplayName',
+  'adminPhone',
+  'adminSendApplicationInvite',
+] as const;
+
 /**
- * Create also seeds the first business date and catalogue settings (contract §D, §H); amend ignores
- * both. Empty means "not set". Each is one string schema whose check allows `''`, never a union, so
- * the message is the field's own.
+ * CreateTenantDraft (contract §D, §H), shared by the wizard (React Hook Form) and the create
+ * action: the draft's fields, plus the catalogue settings only create seeds.
  */
-export const tenantDraftSchema = tenantAmendSchema.extend({
-  businessDate: z
-    .string()
-    .refine((value) => value === '' || isoToBusinessDate(value) !== null, 'Choose a valid date.'),
+export const tenantDraftSchema = draftFieldsSchema.extend({
   defaultTimezoneSetting: z
     .string()
     .refine((value) => value === '' || isTimeZone(value), 'Choose a timezone.'),
@@ -313,8 +330,44 @@ export const tenantDraftSchema = tenantAmendSchema.extend({
     ),
 });
 
-export type TenantAmendValues = z.infer<typeof tenantAmendSchema>;
+/**
+ * The amend wizard for a draft the platform keeps no first administrator for (its detail's `admin`
+ * is `null`: no bootstrap record). The administrator fields stay empty and are never sent, since
+ * the platform would discard them (`amendDraft` updates no row), so they aren't validated.
+ */
+export const tenantDraftWithoutAdministratorSchema = tenantDraftSchema.extend({
+  adminEmail: z.string(),
+  adminUsername: z.string(),
+  adminDisplayName: z.string(),
+  adminPhone: z.string(),
+});
+
+/**
+ * AmendTenantDraft (BG-14), as `changedTenantFields` sends it: the five institution fields the
+ * PATCH still requires, always; the legal name and registration number only when changed (`''`
+ * clears one); the first administrator only when changed, and then whole; the business date only
+ * when entered. Never settings: a non-empty `initial_settings` is a 422 on amend.
+ */
+export const tenantAmendSchema = draftFieldsSchema
+  .partial({
+    legalName: true,
+    registrationNumber: true,
+    businessDate: true,
+    adminEmail: true,
+    adminUsername: true,
+    adminDisplayName: true,
+    adminPhone: true,
+    adminSendApplicationInvite: true,
+  })
+  .refine(
+    (input) =>
+      ADMIN_FIELDS.every((name) => input[name] === undefined) ||
+      ADMIN_FIELDS.every((name) => input[name] !== undefined),
+    { path: ['adminEmail'], error: 'Enter the first administrator in full.' },
+  );
+
 export type TenantDraftValues = z.infer<typeof tenantDraftSchema>;
+export type TenantAmendValues = z.infer<typeof tenantAmendSchema>;
 
 export const EMPTY_TENANT_DRAFT: TenantDraftValues = {
   tenantCode: '',
@@ -334,9 +387,73 @@ export const EMPTY_TENANT_DRAFT: TenantDraftValues = {
   auditRetentionDays: '',
 };
 
-/** CreateTenantDraft / AmendTenantDraft, built field by field (spec §6.2: never spread form
- * values). */
-export function tenantDraftBody(values: TenantAmendValues): Record<string, unknown> {
+/** The amend wizard's starting values: the draft as the platform returns it (BG-14). An absent
+ * administrator starts empty: the amend page needs `tenant.update_draft` and a draft, so it is a
+ * tenant without a bootstrap record, whose wizard asks for none
+ * (`tenantDraftWithoutAdministratorSchema`). */
+export function tenantAmendDefaults(
+  tenant: Pick<
+    TenantDetail,
+    | 'tenantCode'
+    | 'displayName'
+    | 'legalName'
+    | 'registrationNumber'
+    | 'countryCode'
+    | 'baseCurrencyCode'
+    | 'timezone'
+    | 'admin'
+  >,
+): TenantDraftValues {
+  const { admin } = tenant;
+  return {
+    ...EMPTY_TENANT_DRAFT,
+    tenantCode: tenant.tenantCode,
+    displayName: tenant.displayName,
+    legalName: tenant.legalName ?? '',
+    registrationNumber: tenant.registrationNumber ?? '',
+    countryCode: tenant.countryCode,
+    baseCurrencyCode: tenant.baseCurrencyCode,
+    timezone: tenant.timezone,
+    ...(admin && {
+      adminEmail: admin.email,
+      adminUsername: admin.username,
+      adminDisplayName: admin.displayName,
+      adminPhone: admin.phoneE164 ?? '',
+      adminSendApplicationInvite: admin.sendApplicationInvite ? 'true' : 'false',
+    }),
+  };
+}
+
+/**
+ * What the amend wizard sends (`tenantAmendSchema`), all strings: the five required institution
+ * fields; the legal name and registration number when they differ from the draft's; the five
+ * administrator fields together when any differs; and the business date when one was entered (the
+ * platform doesn't return it, so it can't be compared). Compared with the draft's values trimmed,
+ * as the form trims.
+ */
+export function changedTenantFields(
+  stored: TenantDraftValues,
+  values: TenantDraftValues,
+): Record<string, string> {
+  const changes: Record<string, string> = {
+    tenantCode: values.tenantCode,
+    displayName: values.displayName,
+    countryCode: values.countryCode,
+    baseCurrencyCode: values.baseCurrencyCode,
+    timezone: values.timezone,
+  };
+  const changed = (name: keyof TenantDraftValues) => values[name] !== stored[name].trim();
+  if (changed('legalName')) changes.legalName = values.legalName;
+  if (changed('registrationNumber')) changes.registrationNumber = values.registrationNumber;
+  if (ADMIN_FIELDS.some(changed)) {
+    for (const name of ADMIN_FIELDS) changes[name] = values[name];
+  }
+  if (values.businessDate) changes.businessDate = values.businessDate;
+  return changes;
+}
+
+/** CreateTenantDraft, built field by field (spec §6.2: never spread form values). */
+export function tenantDraftBody(values: TenantDraftValues): Record<string, unknown> {
   return {
     tenant_code: values.tenantCode,
     display_name: values.displayName,
@@ -353,6 +470,39 @@ export function tenantDraftBody(values: TenantAmendValues): Record<string, unkno
       send_application_invite: values.adminSendApplicationInvite === 'true',
     },
   };
+}
+
+/**
+ * AmendTenantDraft (BG-14), built field by field: an absent `legal_name`, `registration_number`
+ * or `admin` keeps the draft's, a `null` legal name or registration number clears it, and a sent
+ * `admin` replaces the administrator whole (`send_application_invite` stated). `business_date`
+ * only when entered; never `initial_settings`.
+ */
+export function tenantAmendBody(input: TenantAmendValues): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    tenant_code: input.tenantCode,
+    display_name: input.displayName,
+    country_code: input.countryCode,
+    base_currency_code: input.baseCurrencyCode,
+    timezone: input.timezone,
+  };
+  if (input.legalName !== undefined) body.legal_name = input.legalName || null;
+  if (input.registrationNumber !== undefined) {
+    body.registration_number = input.registrationNumber || null;
+  }
+  // The schema's refinement sends the five together or none, so the email stands for them all.
+  if (input.adminEmail !== undefined) {
+    body.admin = {
+      email: input.adminEmail,
+      username: input.adminUsername,
+      display_name: input.adminDisplayName,
+      phone_e164: input.adminPhone,
+      send_application_invite: input.adminSendApplicationInvite === 'true',
+    };
+  }
+  const date = input.businessDate ? isoToBusinessDate(input.businessDate) : null;
+  if (date) body.business_date = date;
+  return body;
 }
 
 /** Catalogue keys only (contract §H), and only those filled in. The map is never re-keyed. Never

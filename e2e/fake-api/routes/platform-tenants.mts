@@ -22,7 +22,7 @@ import type { Violation } from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
 import { route } from '../router.mts';
 import type { Route, RouteContext } from '../router.mts';
-import type { FakeOrganisation } from '../state.mts';
+import type { FakeOrganisation, FakeTenantAdmin } from '../state.mts';
 
 const SORTS: Record<string, (tenant: FakeOrganisation) => string> = {
   tenantCode: (tenant) => tenant.code,
@@ -88,14 +88,38 @@ function summary(access: AccessContext, tenant: FakeOrganisation) {
   };
 }
 
+/** FoundationQueryService.mayAmendDrafts: `tenant.update_draft` (and its view), without throwing. */
+function mayAmendDrafts(access: AccessContext): boolean {
+  try {
+    requirePermission(access, 'tenant.update_draft');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function detail(access: AccessContext, tenant: FakeOrganisation) {
+  // BG-14: personal data, so only for a caller who may amend the draft, and only while it is one.
+  const admin = tenant.status === 'DRAFT' && mayAmendDrafts(access) ? tenant.admin : undefined;
   return {
     ...summary(access, tenant),
+    legal_name: tenant.legalName ?? null,
+    registration_number: tenant.registrationNumber ?? null,
     base_currency_code: tenant.baseCurrencyCode,
     timezone: tenant.timezone,
+    status_reason: tenant.statusReason ?? null,
     bootstrap_status: tenant.bootstrapStatus,
     bootstrap_failure_code: tenant.bootstrapFailureCode,
     updated_at: tenant.updatedAt,
+    admin: admin
+      ? {
+          email: admin.email,
+          username: admin.username,
+          display_name: admin.displayName,
+          phone_e164: admin.phoneE164,
+          send_application_invite: admin.sendApplicationInvite,
+        }
+      : null,
   };
 }
 
@@ -159,31 +183,45 @@ interface DraftFields {
   countryCode: string;
   baseCurrencyCode: string;
   timezone: string;
+  /** `undefined`: not sent, which on amend keeps the draft's (BG-14); `null` clears it. */
+  legalName: string | null | undefined;
+  registrationNumber: string | null | undefined;
+  /** `undefined`: not sent (or `null`), which on amend keeps the draft's administrator. */
+  admin: FakeTenantAdmin | undefined;
+}
+
+/** A sent key's value: `undefined` when the key is absent (amend's "unchanged", BG-14). */
+function optionalString(body: Record<string, unknown>, key: string): string | null | undefined {
+  return key in body ? stringField(body, key, { required: false }) : undefined;
 }
 
 /**
- * Mirrors the draft DTOs' bean validation (contract §D): an absent non-null field is `invalid_json`;
- * a blank or malformed value, and the admin's phone (typed nullable but `@NotBlank`), is a
- * `validation_failed` violation. The service's 422s come next: an unsettleable currency, a zone
- * that isn't an IANA id and, on create only, a non-catalogue or mistyped initial setting (retention
- * outside 2555–36500 days, or a `base_currency` other than `base_currency_code`; amend refuses a
- * non-empty `initial_settings` with a 422 on the platform, which the UI never sends).
+ * Mirrors the draft DTOs' binding and bean validation (contract §D): an absent non-null field or a
+ * malformed `business_date` is `invalid_json`; a blank or malformed value, and the admin's phone
+ * (typed nullable but `@NotBlank`), is a `validation_failed` violation. Amend's `admin`
+ * (`AmendInitialAdminDto`) may be absent or `null` (kept), and when sent states
+ * `send_application_invite` (`@NotNull`); its legal name and registration number are `Optional`s,
+ * so the controller bounds them after the violations, as a `validation_failed` with no violations.
+ * Create's service checks follow here (`createDraftRules`); amend's run after its state check
+ * (`amendDraftRules`).
  */
 function draftFields(body: Record<string, unknown>, options: { amend: boolean }): DraftFields {
-  const admin = objectBody(body.admin, ADMIN_KEYS);
+  const adminSent = !options.amend || (body.admin !== undefined && body.admin !== null);
+  const admin = adminSent ? objectBody(body.admin, ADMIN_KEYS) : {};
   const code = stringField(body, 'tenant_code', { required: true }) ?? '';
   const displayName = stringField(body, 'display_name', { required: true }) ?? '';
-  const legalName = stringField(body, 'legal_name', { required: false }) ?? '';
-  const registration = stringField(body, 'registration_number', { required: false }) ?? '';
+  const legalName = optionalString(body, 'legal_name');
+  const registration = optionalString(body, 'registration_number');
   const countryCode = stringField(body, 'country_code', { required: true }) ?? '';
   const baseCurrencyCode = stringField(body, 'base_currency_code', { required: true }) ?? '';
   const timezone = stringField(body, 'timezone', { required: true }) ?? '';
-  const email = stringField(admin, 'email', { required: true }) ?? '';
-  const username = stringField(admin, 'username', { required: true }) ?? '';
-  const adminName = stringField(admin, 'display_name', { required: true }) ?? '';
+  const email = stringField(admin, 'email', { required: adminSent }) ?? '';
+  const username = stringField(admin, 'username', { required: adminSent }) ?? '';
+  const adminName = stringField(admin, 'display_name', { required: adminSent }) ?? '';
   const phone = stringField(admin, 'phone_e164', { required: false });
   const invite = admin.send_application_invite;
-  if (invite !== undefined && typeof invite !== 'boolean') throw invalidJson();
+  if (invite !== undefined && invite !== null && typeof invite !== 'boolean') throw invalidJson();
+  checkBusinessDate(body.business_date);
 
   const violations: Violation[] = [];
   const check = (valid: boolean, field: string, rule: string, message: string) => {
@@ -201,8 +239,15 @@ function draftFields(body: Record<string, unknown>, options: { amend: boolean })
     'Size',
     'size must be between 2 and 100',
   );
-  check(legalName.length <= 100, 'legal_name', 'Size', 'size must be between 0 and 100');
-  check(registration.length <= 50, 'registration_number', 'Size', 'size must be between 0 and 50');
+  if (!options.amend) {
+    check((legalName ?? '').length <= 100, 'legal_name', 'Size', 'size must be between 0 and 100');
+    check(
+      (registration ?? '').length <= 50,
+      'registration_number',
+      'Size',
+      'size must be between 0 and 50',
+    );
+  }
   check(
     /^[A-Z]{2}$/.test(countryCode),
     'country_code',
@@ -216,38 +261,96 @@ function draftFields(body: Record<string, unknown>, options: { amend: boolean })
     'Currency code must be 3 uppercase ISO letters.',
   );
   check(timezone.trim().length > 0, 'timezone', 'NotBlank', 'must not be blank');
-  check(EMAIL.test(email), 'admin.email', 'Email', 'must be a well-formed email address');
-  check(
-    USERNAME.test(username),
-    'admin.username',
-    'Pattern',
-    'must match "^[a-zA-Z0-9._-]{3,50}$"',
-  );
-  check(
-    adminName.trim().length >= 2 && adminName.length <= 100,
-    'admin.display_name',
-    'Size',
-    'size must be between 2 and 100',
-  );
-  check(
-    phone !== null && E164.test(phone),
-    'admin.phone_e164',
-    phone === null ? 'NotBlank' : 'Pattern',
-    phone === null ? 'must not be blank' : 'Phone must be in E.164 format.',
-  );
+  if (adminSent) {
+    check(EMAIL.test(email), 'admin.email', 'Email', 'must be a well-formed email address');
+    check(
+      USERNAME.test(username),
+      'admin.username',
+      'Pattern',
+      'must match "^[a-zA-Z0-9._-]{3,50}$"',
+    );
+    check(
+      adminName.trim().length >= 2 && adminName.length <= 100,
+      'admin.display_name',
+      'Size',
+      'size must be between 2 and 100',
+    );
+    check(
+      phone !== null && E164.test(phone),
+      'admin.phone_e164',
+      phone === null ? 'NotBlank' : 'Pattern',
+      phone === null ? 'must not be blank' : 'Phone must be in E.164 format.',
+    );
+    if (options.amend) {
+      check(
+        typeof invite === 'boolean',
+        'admin.send_application_invite',
+        'NotNull',
+        'must not be null',
+      );
+    }
+  }
   if (violations.length > 0) {
     throw problem(400, 'validation_failed', 'Validation failed.', violations);
   }
-  if (!isCurrency(baseCurrencyCode)) {
+  // PlatformTenantController.requireAtMost: Bean Validation can't see inside an Optional.
+  if (options.amend && (legalName ?? '').length > 100) {
+    throw problem(400, 'validation_failed', 'legal_name must be at most 100 characters.');
+  }
+  if (options.amend && (registration ?? '').length > 50) {
+    throw problem(400, 'validation_failed', 'registration_number must be at most 50 characters.');
+  }
+  return {
+    code,
+    displayName,
+    countryCode,
+    baseCurrencyCode,
+    timezone,
+    legalName,
+    registrationNumber: registration,
+    admin: adminSent
+      ? {
+          email,
+          username,
+          displayName: adminName,
+          phoneE164: phone,
+          sendApplicationInvite: invite === true,
+        }
+      : undefined,
+  };
+}
+
+/** The service's 422s both share: an unsettleable currency, then a zone that isn't an IANA id
+ * (TimeZoneRule, #276). */
+function localeRules(draft: DraftFields): void {
+  if (!isCurrency(draft.baseCurrencyCode)) {
     throw problem(422, 'accounting.currency_invalid', 'The currency is not valid.');
   }
-  // TimeZoneRule (#276): an IANA id; a raw offset is a 422.
-  if (!isIanaZone(timezone)) throw invalidOperation();
-  if (!options.amend) {
-    checkInitialSettings(body.initial_settings, baseCurrencyCode);
-    checkBusinessDate(body.business_date);
+  if (!isIanaZone(draft.timezone)) throw invalidOperation();
+}
+
+/** createDraft's checks: then each initial setting against the catalogue (retention outside
+ * 2555–36500 days, or a `base_currency` other than `base_currency_code`, is a 422). */
+function createDraftRules(draft: DraftFields, body: Record<string, unknown>): void {
+  localeRules(draft);
+  checkInitialSettings(body.initial_settings, draft.baseCurrencyCode);
+}
+
+/** validateAmend, after the state check: then a non-empty `initial_settings`, which an amend can't
+ * change (BG-14), is a 422. A non-object still fails to bind first. */
+function amendDraftRules(draft: DraftFields, body: Record<string, unknown>): void {
+  const settings = body.initial_settings;
+  if (
+    settings !== undefined &&
+    settings !== null &&
+    (typeof settings !== 'object' || Array.isArray(settings))
+  ) {
+    throw invalidJson();
   }
-  return { code, displayName, countryCode, baseCurrencyCode, timezone };
+  localeRules(draft);
+  if (settings && Object.keys(settings).length > 0) {
+    throw problem(422, 'invalid_operation', 'initial_settings cannot be changed by an amend.');
+  }
 }
 
 interface TransitionOptions {
@@ -258,6 +361,16 @@ interface TransitionOptions {
   /** A checker decision (BG-08, TenantCheckerRule): its requester or submitter is refused by name,
    * before the state check. The fake keeps no amenders or first administrator to refuse. */
   checker?: boolean;
+  /** `false` for the one route that is no lifecycle transition (bootstrap retry), so it leaves
+   * `status_reason` alone. Every transition overwrites it (BG-01). */
+  transition?: boolean;
+}
+
+/** `adminBootstrapStore.reject`, which reject and return both run: the bootstrap record becomes a
+ * draft again and forgets its submission, so `submitted_by` reads null until the next submit. */
+function resetBootstrap(tenant: FakeOrganisation): void {
+  tenant.bootstrapStatus = 'DRAFT';
+  delete tenant.submittedBy;
 }
 
 function transition(
@@ -307,6 +420,10 @@ function transition(
           throw problem(409, 'conflict', `This transition isn't allowed from ${tenant.status}.`);
         }
         apply(tenant, access);
+        // JooqFoundationLifecyclePersistence.saveOrganisation: every transition writes its own
+        // reason (trimmed, `Reason`/`DecisionRemark`) as `status_reason`, or null when it has none
+        // (a blank remark is none), so submitting a returned draft clears its reason.
+        if (options.transition !== false) tenant.statusReason = (reason ?? '').trim() || null;
         tenant.updatedAt = new Date().toISOString();
         // ponytail: no audit row — platform actions land in the tenant's log, which nothing in the
         // platform workspace reads (BG-06). Add one when a platform audit view exists.
@@ -361,6 +478,7 @@ export const platformTenantRoutes: Route[] = [
     requirePermission(access, 'tenant.create');
     const body = objectBody(await readBody(context.req), DRAFT_KEYS);
     const draft = draftFields(body, { amend: false });
+    createDraftRules(draft, body);
     sendIdempotent(
       context,
       body,
@@ -381,6 +499,11 @@ export const platformTenantRoutes: Route[] = [
           createdAt: now,
           updatedAt: now,
           createdBy: access.claims.userId,
+          // Stored as sent (BG-14). ponytail: the business date and settings are kept nowhere,
+          // since no fake read returns them.
+          legalName: draft.legalName ?? null,
+          registrationNumber: draft.registrationNumber ?? null,
+          ...(draft.admin && { admin: draft.admin }),
         };
         organisations.push(created);
         return { organisation_id: created.id, status: 'DRAFT' };
@@ -396,9 +519,11 @@ export const platformTenantRoutes: Route[] = [
     const body = objectBody(await readBody(context.req), DRAFT_KEYS);
     const draft = draftFields(body, { amend: true });
     sendIdempotent(context, body, () => {
+      // OrganisationProvisioningService.amendDraft: the state, then validateAmend, then the code.
       if (tenant.status !== 'DRAFT') {
         throw problem(409, 'conflict', 'Only a draft can be amended.');
       }
+      amendDraftRules(draft, body);
       const { organisations } = context.state;
       if (
         draft.code !== tenant.code &&
@@ -406,12 +531,24 @@ export const platformTenantRoutes: Route[] = [
       ) {
         throw codeTaken();
       }
-      // Replaces every field (contract §D); the legal name, registration and admin stay write-only.
+      // BG-14: the five required fields always; an absent legal name, registration number or
+      // admin keeps the draft's, a null legal name or registration number clears it, and a sent
+      // admin replaces the administrator whole. `status_reason` stays: an amend is no transition.
       tenant.code = draft.code;
       tenant.displayName = draft.displayName;
       tenant.countryCode = draft.countryCode;
       tenant.baseCurrencyCode = draft.baseCurrencyCode;
       tenant.timezone = draft.timezone;
+      if (draft.legalName !== undefined) tenant.legalName = draft.legalName;
+      if (draft.registrationNumber !== undefined) {
+        tenant.registrationNumber = draft.registrationNumber;
+      }
+      // JooqInitialAdministratorBootstrapStore.amendDraft updates the bootstrap row: a tenant with
+      // none (no `admin`, a SQL-seeded draft) keeps none, so a sent admin is validated, then
+      // discarded (0 rows).
+      if (draft.admin && tenant.admin) tenant.admin = draft.admin;
+      // ponytail: `business_date` is applied by the platform but kept nowhere here, since no fake
+      // read returns a draft's business date.
       tenant.updatedAt = new Date().toISOString();
       return detail(access, tenant);
     });
@@ -437,8 +574,8 @@ export const platformTenantRoutes: Route[] = [
       tenant.status = 'ACTIVE';
       tenant.bootstrapStatus = 'QUEUED';
     },
-    // A decision remark (platform #179, BG-01), which the platform keeps as the tenant's
-    // `status_reason`. ponytail: not kept, since the fake's detail returns no `status_reason` yet.
+    // A decision remark (platform #179, BG-01), which becomes the tenant's `status_reason` (null
+    // when it is blank or absent), as every transition's reason does.
     { reason: 'optional', status: 202, checker: true },
   ),
   transition(
@@ -447,7 +584,19 @@ export const platformTenantRoutes: Route[] = [
     (tenant) => tenant.status === 'PENDING_APPROVAL',
     (tenant) => {
       tenant.status = 'REJECTED';
-      tenant.bootstrapStatus = 'DRAFT';
+      resetBootstrap(tenant);
+    },
+    { reason: 'required', checker: true },
+  ),
+  // Platform #181 (BG-01): a checker's recoverable decision on `tenant.reject`. Its requester or
+  // submitter is refused by name; an amender may return it (`refuseAmender = false`).
+  transition(
+    'return',
+    'tenant.reject',
+    (tenant) => tenant.status === 'PENDING_APPROVAL',
+    (tenant) => {
+      tenant.status = 'DRAFT';
+      resetBootstrap(tenant);
     },
     { reason: 'required', checker: true },
   ),
@@ -487,6 +636,6 @@ export const platformTenantRoutes: Route[] = [
       tenant.bootstrapStatus = 'PROVISIONING_IDENTITY';
       tenant.bootstrapFailureCode = null;
     },
-    { reason: 'none', status: 202 },
+    { reason: 'none', status: 202, transition: false },
   ),
 ];

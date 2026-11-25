@@ -17,6 +17,7 @@ import {
   deprovisionTenant,
   reactivateTenant,
   rejectTenant,
+  returnTenant,
   submitTenant,
   suspendTenant,
 } from '../tenant-actions';
@@ -30,7 +31,8 @@ interface ActionCopy {
   description: string;
   /** `null`: the endpoint reads no body (contract §E.2), so a ConfirmDialog without a reason. */
   reason: 'optional' | 'required' | null;
-  /** The reason field's label and helper text, when not "Reason" (Approve's remark). */
+  /** The reason field's label and helper text, when not "Reason" (Approve's remark, Return's
+   * "What needs to change"). */
   reasonLabel?: string;
   reasonHelperText?: string;
   /** Irreversible: an error-toned trigger and dialog. */
@@ -63,6 +65,19 @@ function copyFor(id: DialogAction, name: string): ActionCopy {
         destructive: false,
         success: 'Approved. Provisioning is queued.',
         action: approveTenant,
+      };
+    case 'return':
+      // Platform #181 (BG-01): the recoverable decision, so outlined and never error-toned.
+      return {
+        label: 'Return for changes',
+        title: `Return ${name} for changes?`,
+        description:
+          'It goes back to draft. The requester sees your reason and can amend and resubmit it.',
+        reason: 'required',
+        reasonLabel: 'What needs to change',
+        destructive: false,
+        success: 'Returned for changes',
+        action: returnTenant,
       };
     case 'reject':
       return {

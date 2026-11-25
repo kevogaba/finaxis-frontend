@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { IDS, TENANT_SCENARIO_IDS } from './fake-api/scenarios.mts';
+import { IDS, LONG_RETURN_REASON, TENANT_SCENARIO_IDS } from './fake-api/scenarios.mts';
 
 const FAKE_API_URL = `http://127.0.0.1:${process.env.FAKE_API_PORT ?? '3199'}`;
 const api = (path: string) => `${FAKE_API_URL}/api/v1${path}`;
@@ -35,6 +35,22 @@ const DRAFT = {
   initial_settings: { audit_retention_days: '3650' },
   business_date: null,
 };
+/** AmendTenantDraft with only the five fields the PATCH requires (BG-14): Umoja's own. */
+const UMOJA_REQUIRED = {
+  tenant_code: 'umoja-teachers',
+  display_name: 'Umoja Teachers SACCO',
+  country_code: 'KE',
+  base_currency_code: 'KES',
+  timezone: 'Africa/Nairobi',
+};
+/** Umoja's seeded first administrator, as the detail returns it. */
+const UMOJA_ADMIN = {
+  email: 'wanjiku@umoja.example',
+  username: 'wanjiku.kamau',
+  display_name: 'Wanjiku Kamau',
+  phone_e164: '+254712000201',
+  send_application_invite: true,
+};
 
 test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
   test('creates a draft from a snake_case body, and refuses camelCase, a missing phone and a taken code', async ({
@@ -48,13 +64,17 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
     const detail = (await (
       await request.get(api(`/platform/tenants/${id}`), { headers })
     ).json()) as Record<string, unknown>;
+    // BG-14: the legal identity and, to a holder of tenant.update_draft while it is a draft, the
+    // first administrator come back; no transition has recorded a reason yet.
     expect(detail).toMatchObject({
       tenant_code: 'tujenge-traders',
       status: 'DRAFT',
       bootstrap_status: 'DRAFT',
+      legal_name: 'Tujenge Traders Co-operative Society Ltd',
+      registration_number: null,
+      status_reason: null,
+      admin: ADMIN,
     });
-    // Write-only (BG-14): never returned.
-    expect(Object.keys(detail)).not.toContain('legal_name');
 
     // A valid body plus one property the wire format doesn't know. Were unknown properties ignored,
     // this would answer 201: a body that also lacked a required field would hide that.
@@ -192,12 +212,232 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
       data: { reason: 'x'.repeat(500) },
     });
     expect(approved.status()).toBe(202);
-    expect(await approved.json()).toMatchObject({ status: 'ACTIVE' });
+    // The remark becomes the status reason, as every transition's reason does.
+    expect(await approved.json()).toMatchObject({
+      status: 'ACTIVE',
+      status_reason: 'x'.repeat(500),
+    });
 
     const fresh = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
-    // `@RequestBody(required = false)`: no body is `{}`.
+    // `@RequestBody(required = false)`: no body is `{}`, and no remark is a null reason.
     const bare = await request.post(harambee, { headers: fresh });
     expect(bare.status()).toBe(202);
+    expect(await bare.json()).toMatchObject({ status_reason: null });
+  });
+
+  test('returns a pending request to draft with its reason, refusing its makers, and clears the reason on the next submission (BG-01)', async ({
+    request,
+  }) => {
+    const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
+    const harambee = `/platform/tenants/${TENANT_SCENARIO_IDS.harambee}`;
+
+    // ReturnTenantRequest: a required reason of 3–500 characters, and no other property.
+    for (const data of [{}, { reason: 'ab' }, { reason: 'x'.repeat(501) }]) {
+      const refused = await request.post(api(`${harambee}/return`), { headers, data });
+      expect(refused.status(), JSON.stringify(data)).toBe(400);
+    }
+    const extra = await request.post(api(`${harambee}/return`), {
+      headers,
+      data: { reason: 'Fix the name', note: 'x' },
+    });
+    expect(await extra.json()).toMatchObject({ code: 'invalid_json' });
+
+    // Jane submitted Mwangaza: its maker can't return it, by name (TenantCheckerRule).
+    const own = await request.post(
+      api(`/platform/tenants/${TENANT_SCENARIO_IDS.mwangaza}/return`),
+      {
+        headers,
+        data: { reason: 'Changed my mind' },
+      },
+    );
+    expect(own.status()).toBe(403);
+    expect(await own.json()).toMatchObject({ code: 'lifecycle.approver_is_tenant_maker' });
+
+    const once = { ...headers, 'Idempotency-Key': randomUUID() };
+    const returned = await request.post(api(`${harambee}/return`), {
+      headers: once,
+      data: { reason: '  Attach the registration certificate  ' },
+    });
+    expect(returned.status()).toBe(200);
+    // Back to a draft: the reason trimmed, the bootstrap record a draft again with its submission
+    // forgotten, and the drafted administrator shown to Jane, who may amend it.
+    expect(await returned.json()).toMatchObject({
+      status: 'DRAFT',
+      status_reason: 'Attach the registration certificate',
+      bootstrap_status: 'DRAFT',
+      requested_by: null,
+      submitted_by: null,
+      admin: { email: 'okello@harambee.example', send_application_invite: false },
+    });
+    const replay = await request.post(api(`${harambee}/return`), {
+      headers: once,
+      data: { reason: '  Attach the registration certificate  ' },
+    });
+    expect(replay.headers()['idempotency-replayed']).toBe('true');
+    // Not pending any more: the state's 409.
+    const again = await request.post(api(`${harambee}/return`), {
+      headers,
+      data: { reason: 'Attach the registration certificate' },
+    });
+    expect(again.status()).toBe(409);
+    expect(await again.json()).toMatchObject({ code: 'conflict' });
+
+    // An amend is no transition, so the reason stays; the next submission clears it.
+    const amended = await request.patch(api(harambee), {
+      headers,
+      data: {
+        tenant_code: 'harambee-farmers',
+        display_name: 'Harambee Farmers SACCO',
+        country_code: 'UG',
+        base_currency_code: 'UGX',
+        timezone: 'Africa/Kampala',
+      },
+    });
+    expect(await amended.json()).toMatchObject({
+      status_reason: 'Attach the registration certificate',
+    });
+    const resubmitted = await request.post(api(`${harambee}/submit`), { headers, data: {} });
+    expect(await resubmitted.json()).toMatchObject({
+      status: 'PENDING_APPROVAL',
+      status_reason: null,
+      bootstrap_status: 'PENDING_ACTIVATION',
+    });
+
+    // tenant.reject is the gate: the read-only operator gets the plain 403.
+    const readOnly = await signIn(request, 'platform-operator', IDS.platformOrganisation);
+    const forbidden = await request.post(api(`${harambee}/return`), {
+      headers: readOnly,
+      data: { reason: 'Attach the registration certificate' },
+    });
+    expect(forbidden.status()).toBe(403);
+    expect(await forbidden.json()).toMatchObject({ code: 'forbidden' });
+  });
+
+  test('amends keeping what it leaves out, clearing a null, and replacing the administrator whole (BG-14)', async ({
+    request,
+  }) => {
+    const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
+    const umoja = api(`/platform/tenants/${TENANT_SCENARIO_IDS.umoja}`);
+    const amend = (data: Record<string, unknown>) => request.patch(umoja, { headers, data });
+
+    // Seeded as returned: its reason, legal identity and administrator all come back.
+    expect(await (await request.get(umoja, { headers })).json()).toMatchObject({
+      legal_name: 'Umoja Teachers Co-operative Society Ltd',
+      registration_number: null,
+      status_reason: LONG_RETURN_REASON,
+      admin: UMOJA_ADMIN,
+    });
+
+    // Absent keeps (and an amend leaves the status reason alone).
+    const kept = await amend({ ...UMOJA_REQUIRED, display_name: 'Umoja Teachers Co-op SACCO' });
+    expect(kept.status()).toBe(200);
+    expect(await kept.json()).toMatchObject({
+      display_name: 'Umoja Teachers Co-op SACCO',
+      legal_name: 'Umoja Teachers Co-operative Society Ltd',
+      status_reason: LONG_RETURN_REASON,
+      admin: UMOJA_ADMIN,
+    });
+    // `null` clears; a string sets; `admin: null` keeps, like an absent one.
+    const cleared = await amend({
+      ...UMOJA_REQUIRED,
+      legal_name: null,
+      registration_number: 'CS/2019/0042',
+      admin: null,
+    });
+    expect(await cleared.json()).toMatchObject({
+      legal_name: null,
+      registration_number: 'CS/2019/0042',
+      admin: UMOJA_ADMIN,
+    });
+
+    // A sent admin states send_application_invite (AmendInitialAdminDto's @NotNull)...
+    const { send_application_invite: _invite, ...withoutInvite } = UMOJA_ADMIN;
+    const noInvite = await amend({ ...UMOJA_REQUIRED, admin: withoutInvite });
+    expect(noInvite.status()).toBe(400);
+    expect(await noInvite.json()).toMatchObject({
+      code: 'validation_failed',
+      violations: [{ field: 'admin.send_application_invite', code: 'NotNull' }],
+    });
+    // ...and replaces the administrator whole.
+    const replaced = await amend({
+      ...UMOJA_REQUIRED,
+      admin: { ...UMOJA_ADMIN, phone_e164: '+254712000299', send_application_invite: false },
+    });
+    expect(await replaced.json()).toMatchObject({
+      admin: { ...UMOJA_ADMIN, phone_e164: '+254712000299', send_application_invite: false },
+    });
+
+    // The Optional fields are bounded by the controller: a 400 with no violations.
+    const long = await amend({ ...UMOJA_REQUIRED, legal_name: 'x'.repeat(101) });
+    expect(long.status()).toBe(400);
+    expect(await long.json()).toMatchObject({ code: 'validation_failed', violations: null });
+
+    // A business date is applied (dd-MM-yyyy, or it fails to bind); settings can't be amended.
+    expect((await amend({ ...UMOJA_REQUIRED, business_date: '05-10-2026' })).status()).toBe(200);
+    const isoDate = await amend({ ...UMOJA_REQUIRED, business_date: '2026-10-05' });
+    expect(await isoDate.json()).toMatchObject({ code: 'invalid_json' });
+    const settings = await amend({
+      ...UMOJA_REQUIRED,
+      initial_settings: { audit_retention_days: '3650' },
+    });
+    expect(settings.status()).toBe(422);
+    expect(await settings.json()).toMatchObject({ code: 'invalid_operation' });
+    expect((await amend({ ...UMOJA_REQUIRED, initial_settings: {} })).status()).toBe(200);
+  });
+
+  test('shows the drafted administrator only to an amender, and only while it is a draft (BG-14)', async ({
+    request,
+  }) => {
+    const umoja = api(`/platform/tenants/${TENANT_SCENARIO_IDS.umoja}`);
+    const noAmend = await signIn(request, 'platform-tenants-no-amend', IDS.platformOrganisation);
+    expect(await (await request.get(umoja, { headers: noAmend })).json()).toMatchObject({
+      status: 'DRAFT',
+      legal_name: 'Umoja Teachers Co-operative Society Ltd',
+      admin: null,
+    });
+    // Harambee holds one, but is no draft.
+    const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
+    const harambee = api(`/platform/tenants/${TENANT_SCENARIO_IDS.harambee}`);
+    expect(await (await request.get(harambee, { headers })).json()).toMatchObject({
+      status: 'PENDING_APPROVAL',
+      registration_number: 'CS/2018/0117',
+      admin: null,
+    });
+  });
+
+  // JooqInitialAdministratorBootstrapStore.amendDraft updates the bootstrap row, so a draft with
+  // none (a SQL-seeded tenant) keeps none: a sent administrator is validated, then discarded.
+  test('discards an administrator sent for a draft with no bootstrap record (BG-14)', async ({
+    request,
+  }) => {
+    const headers = await signIn(
+      request,
+      'platform-tenants-no-administrator',
+      IDS.platformOrganisation,
+    );
+    const umoja = api(`/platform/tenants/${TENANT_SCENARIO_IDS.umoja}`);
+    expect(await (await request.get(umoja, { headers })).json()).toMatchObject({
+      status: 'DRAFT',
+      admin: null,
+    });
+
+    const { send_application_invite: _invite, ...withoutInvite } = UMOJA_ADMIN;
+    const invalid = await request.patch(umoja, {
+      headers,
+      data: { ...UMOJA_REQUIRED, admin: withoutInvite },
+    });
+    expect(invalid.status()).toBe(400);
+    expect(await invalid.json()).toMatchObject({ code: 'validation_failed' });
+
+    const amended = await request.patch(umoja, {
+      headers,
+      data: { ...UMOJA_REQUIRED, display_name: 'Umoja Teachers Co-op SACCO', admin: UMOJA_ADMIN },
+    });
+    expect(amended.status()).toBe(200);
+    expect(await amended.json()).toMatchObject({
+      display_name: 'Umoja Teachers Co-op SACCO',
+      admin: null,
+    });
   });
 
   // ReactivateTenantRequest bounds its optional reason at 500 too (6a8ea28).
@@ -244,15 +484,17 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
     expect(unknown.status()).toBe(404);
     expect(await unknown.json()).toMatchObject({ code: 'resource_not_found' });
 
+    // The state before validateAmend: settings an amend can't take don't hide the 409.
     const notDraft = await request.patch(api(acme), {
       headers,
       data: { ...DRAFT, tenant_code: 'acme' },
     });
     expect(notDraft.status()).toBe(409);
+    const { initial_settings: _settings, ...amendable } = DRAFT;
     const amended = await request.patch(api(`/platform/tenants/${TENANT_SCENARIO_IDS.umoja}`), {
       headers,
       data: {
-        ...DRAFT,
+        ...amendable,
         tenant_code: 'umoja-teachers',
         display_name: 'Umoja Teachers Co-operative SACCO',
       },
@@ -265,7 +507,7 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
     // BG-07: another institution's code is the generic 409 on amend too.
     const takenOnAmend = await request.patch(
       api(`/platform/tenants/${TENANT_SCENARIO_IDS.umoja}`),
-      { headers, data: { ...DRAFT, tenant_code: 'acme' } },
+      { headers, data: { ...amendable, tenant_code: 'acme' } },
     );
     expect(takenOnAmend.status()).toBe(409);
     expect(await takenOnAmend.json()).toMatchObject({ code: 'conflict' });

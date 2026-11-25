@@ -12,7 +12,7 @@ import { load } from '@/lib/api/load';
 import { TenantDraftWizard } from '@/modules/platform-administration/tenants/components/tenant-draft-wizard';
 import { isInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
 import {
-  EMPTY_TENANT_DRAFT,
+  tenantAmendDefaults,
   tenantFormOptions,
 } from '@/modules/platform-administration/tenants/tenant-rules';
 import { getTenant } from '@/modules/platform-administration/tenants/tenant-service';
@@ -51,10 +51,7 @@ export default async function AmendTenantPage({ params }: AmendTenantPageProps) 
 
   const record = tenant.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
-  // Only the form asks for the details again; the states that replace it have no form to explain.
-  const header = (description?: string) => (
-    <PageHeader eyebrow={EYEBROW} title={`Amend ${record.displayName}`} description={description} />
-  );
+  const header = <PageHeader eyebrow={EYEBROW} title={`Amend ${record.displayName}`} />;
   const backToRecord = (
     <Button component={NextLink} href={`/platform-admin/tenants/${tenantId}`} variant="outlined">
       Back to the record
@@ -69,7 +66,7 @@ export default async function AmendTenantPage({ params }: AmendTenantPageProps) 
   ) {
     return (
       <>
-        {header()}
+        {header}
         <Paper>
           <ForbiddenState action={backToRecord} />
         </Paper>
@@ -80,7 +77,7 @@ export default async function AmendTenantPage({ params }: AmendTenantPageProps) 
   if (record.status !== 'DRAFT') {
     return (
       <>
-        {header()}
+        {header}
         <Paper>
           <ForbiddenState
             title="Only a draft can be amended"
@@ -94,19 +91,14 @@ export default async function AmendTenantPage({ params }: AmendTenantPageProps) 
 
   return (
     <>
-      {header(
-        "Amending replaces the whole draft. The platform doesn't return the legal name, registration number or first administrator, so enter them again.",
-      )}
+      {header}
+      {/* BG-14: pre-filled from the draft, its first administrator included (the detail returns
+          it to a holder of tenant.update_draft while it is a draft). Past both checks above, a
+          null one is a draft with no bootstrap record, whose amend would discard one. */}
       <TenantDraftWizard
         tenantId={tenantId}
-        defaults={{
-          ...EMPTY_TENANT_DRAFT,
-          tenantCode: record.tenantCode,
-          displayName: record.displayName,
-          countryCode: record.countryCode,
-          baseCurrencyCode: record.baseCurrencyCode,
-          timezone: record.timezone,
-        }}
+        withoutAdministrator={record.admin === null}
+        defaults={tenantAmendDefaults(record)}
         options={tenantFormOptions(record)}
         contextOrganisationId={resolved?.context.organization.id}
       />
