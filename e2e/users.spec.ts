@@ -356,7 +356,8 @@ test.describe('users: directory and lifecycle', () => {
     await authenticate(context, testInfo, 'users');
     await enterUser(page, USERS.carol, 'Carol Wambui');
 
-    // Jane invited Carol (the `user.invite` audit event), so the platform would refuse her approval.
+    // Jane invited Carol (her record's `created_by`) and maker-checker is on, so the platform would
+    // refuse her approval.
     const approve = page.getByRole('button', { name: 'Approve', exact: true });
     await expect(approve).toBeDisabled();
     await expect(approve).toHaveAccessibleDescription(USER_MAKER_CHECKER_BLOCKED);

@@ -60,6 +60,8 @@ const tenant = (
   countryCode: 'KE',
   status,
   createdAt,
+  requestedBy: null,
+  submittedBy: null,
 });
 
 const HARAMBEE = tenant(

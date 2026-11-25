@@ -16,6 +16,7 @@ import {
   PROVISIONING_NOTE,
   USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
+import type { MakerGate } from './maker-checker';
 
 /**
  * Layer 12's rules, client-safe: who sees which queue, and where a request stands and what it
@@ -85,12 +86,6 @@ export function approvalQueueTabs(
   return tabs;
 }
 
-/** The backend's and `/auth/me`'s ids are canonical lower case (contract §A); compared without case
- * anyway, so the maker-checker gate never rests on letter case (Ruling 5). */
-export function isSameUser(a: string | null, b: string | null): boolean {
-  return a !== null && b !== null && a.toLowerCase() === b.toLowerCase();
-}
-
 // ── Where a request stands, and what it offers (Rulings 5–7) ─────────────────────────────────────
 
 /** `awaiting` takes Approve and Reject & revoke; `blocked` (a pending membership whose account is
@@ -130,14 +125,14 @@ export function availableUserDecisions(
 }
 
 /** The offered decisions shown disabled, each with its caption (spec §6.6): a blocked account
- * first, then maker-checker (the inviter is known only with `audit.view`, BG-08). */
+ * first, then the inviter while maker-checker is known to be on (`makerGate`, BG-08). */
 export function blockedUserDecisions(
   decisions: readonly ApprovalDecision[],
-  subject: { state: UserApprovalState; userStatus: UserStatus; invitedByMe: boolean },
+  subject: { state: UserApprovalState; userStatus: UserStatus; makerGate: MakerGate },
 ): Partial<Record<ApprovalDecision, string>> {
   if (!decisions.includes('approve')) return {};
   if (subject.state === 'blocked') return { approve: accountBlockedNote(subject.userStatus) };
-  if (subject.invitedByMe) return { approve: USER_MAKER_CHECKER_BLOCKED };
+  if (subject.makerGate === 'blocked') return { approve: USER_MAKER_CHECKER_BLOCKED };
   return {};
 }
 
@@ -169,11 +164,12 @@ export function availableBranchDecisions(
     : [];
 }
 
+/** Activate disabled for its drafter while maker-checker is known to be on (`makerGate`, BG-08). */
 export function blockedBranchDecisions(
   decisions: readonly ApprovalDecision[],
-  subject: { draftedByMe: boolean },
+  subject: { makerGate: MakerGate },
 ): Partial<Record<ApprovalDecision, string>> {
-  return decisions.includes('activate') && subject.draftedByMe
+  return decisions.includes('activate') && subject.makerGate === 'blocked'
     ? { activate: MAKER_CHECKER_BLOCKED }
     : {};
 }

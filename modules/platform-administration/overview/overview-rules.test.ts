@@ -21,6 +21,8 @@ const tenant = (
   countryCode: 'KE',
   status,
   createdAt: '2026-09-03T08:00:00Z',
+  requestedBy: null,
+  submittedBy: null,
 });
 const page = (items: TenantSummary[], totalItems = items.length): AttentionRead => ({
   ok: true,

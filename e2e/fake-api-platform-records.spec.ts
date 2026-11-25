@@ -98,7 +98,8 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
 
     const all = await list('');
     expect(all.page.total_items).toBe(5);
-    // Newest first, and the summary's seven fields only (no timezone, no parent).
+    // Newest first, and the summary's fields this layer reads (no timezone, no parent), with its
+    // makers (BG-08).
     expect(all.items[0]?.id).toBe(R.acmeLikoni);
     expect(Object.keys(all.items[0] ?? {})).toEqual([
       'id',
@@ -108,6 +109,8 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
       'branch_type',
       'status',
       'created_at',
+      'created_by',
+      'submitted_by',
     ]);
 
     expect((await list('?status=SUSPENDED')).items.map((item) => item.id)).toEqual([R.acmeNakuru]);

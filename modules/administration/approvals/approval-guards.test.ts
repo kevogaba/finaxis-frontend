@@ -3,7 +3,6 @@ import { BackendApiError } from '@/auth/backend-api';
 import { APPROVAL_CHANGED_CODE } from './approval-copy';
 
 vi.mock('@/auth/context-service', () => ({ getCurrentContextProfile: vi.fn() }));
-vi.mock('./approval-service', () => ({ getMakerEvent: vi.fn() }));
 
 const { isSessionLost, postFromEndState } = await import('./approval-guards');
 

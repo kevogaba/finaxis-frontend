@@ -16,6 +16,7 @@ import { TenantLifecycleActions } from '@/modules/platform-administration/tenant
 import { isInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
 import {
   availableTenantActions,
+  blockedTenantActions,
   countryLabel,
 } from '@/modules/platform-administration/tenants/tenant-rules';
 import { getTenant } from '@/modules/platform-administration/tenants/tenant-service';
@@ -79,6 +80,7 @@ export default async function TenantRecordLayout({ children, params }: TenantRec
               tenantName={record.displayName}
               tenantCode={record.tenantCode}
               actions={actions}
+              blocked={blockedTenantActions(actions, record, resolved?.profile.user_id ?? null)}
               contextOrganisationId={resolved?.context.organization.id}
             />
           ) : undefined

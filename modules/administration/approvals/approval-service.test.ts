@@ -2,14 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendApiError } from '@/auth/backend-api';
 import { REQUESTED_ROLES_CEILING } from './approval-copy';
 
-const { listAuditEvents, listBranches, listRoleAssignments, listUsers } = vi.hoisted(() => ({
-  listAuditEvents: vi.fn(),
+const { listBranches, listRoleAssignments, listUsers } = vi.hoisted(() => ({
   listBranches: vi.fn(),
   listRoleAssignments: vi.fn(),
   listUsers: vi.fn(),
-}));
-vi.mock('@/modules/administration/audit/audit-service', () => ({
-  listAuditEvents: (...args: unknown[]) => listAuditEvents(...args) as unknown,
 }));
 vi.mock('@/modules/administration/branches/branch-service', () => ({
   listBranches: (...args: unknown[]) => listBranches(...args) as unknown,
@@ -25,8 +21,6 @@ const service = await import('./approval-service');
 
 // Distinct first blocks, so a short id names its id; lettered, so upper case differs.
 const USER = 'f6000000-0000-4000-8000-0000000000ab';
-const BRANCH = 'a7000000-0000-4000-8000-0000000000cd';
-const VICTOR = 'b8000000-0000-4000-8000-0000000000ef';
 
 const total = (totalItems: number) => ({
   items: [],
@@ -114,44 +108,6 @@ describe('approval service', () => {
     ).rejects.toBe(error);
     listRoleAssignments.mockRejectedValueOnce(error);
     await expect(service.listRequestedRoles(USER)).rejects.toBe(error);
-  });
-
-  it.each([
-    ['user', 'USER', 'user.invite'],
-    ['branch', 'BRANCH', 'branch.create_draft'],
-  ] as const)(
-    'reads a %s request’s maker event by its lower-cased id (contract §G)',
-    async (kind, entityType, action) => {
-      listAuditEvents.mockResolvedValue({
-        items: [{ actorUserId: VICTOR, occurredAt: '2026-09-20T08:00:00Z' }],
-        page: total(1).page,
-      });
-      const id = kind === 'user' ? USER : BRANCH;
-      await expect(service.getMakerEvent(kind, id.toUpperCase())).resolves.toEqual({
-        actorUserId: VICTOR,
-        occurredAt: '2026-09-20T08:00:00Z',
-      });
-      expect(listAuditEvents).toHaveBeenCalledExactlyOnceWith({
-        entityType,
-        action,
-        entityId: id,
-        page: 0,
-        size: 1,
-      });
-    },
-  );
-
-  it('answers null when the log holds no maker event, and rejects a malformed id before any read', async () => {
-    listAuditEvents.mockResolvedValue({ items: [], page: total(0).page });
-    await expect(service.getMakerEvent('user', USER)).resolves.toBeNull();
-    await expect(service.getMakerEvent('user', '../x')).rejects.toThrow();
-    expect(listAuditEvents).toHaveBeenCalledTimes(1);
-  });
-
-  it('rejects the maker read with its own error (the page decides what it means)', async () => {
-    const error = new BackendApiError(403, { code: 'forbidden' });
-    listAuditEvents.mockRejectedValue(error);
-    await expect(service.getMakerEvent('branch', BRANCH)).rejects.toBe(error);
   });
 
   it('reads one bounded page of the user’s ACTIVE role assignments', async () => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -16,6 +17,9 @@ import {
   suspendBranch,
 } from '../branch-actions';
 import { MAKER_CHECKER_BLOCKED, type BranchLifecycleAction } from '../branch-rules';
+
+/** The self-approval note, which describes the decision it relaxes. */
+const WARNING_ID = 'branch-lifecycle-warning';
 
 interface ActionCopy {
   label: string;
@@ -86,8 +90,11 @@ interface BranchLifecycleActionsProps {
   branchId: string;
   branchName: string;
   actions: readonly BranchLifecycleAction[];
-  /** The current user drafted this branch (BG-08 lookup); Activate stays visible but disabled. */
+  /** The current user drafted this branch and maker-checker is on (BG-08); Activate stays visible
+   * but disabled. */
   activateBlocked: boolean;
+  /** Said above the actions: the drafter activating while maker-checker is off (BG-08). */
+  warning?: string | null;
   /** This branch is the user's selected working context. */
   selectedHere: boolean;
   /** I2: the organisation the page rendered for; forwarded to `ReasonDialog` as a hidden field. */
@@ -100,6 +107,7 @@ export function BranchLifecycleActions({
   branchName,
   actions,
   activateBlocked,
+  warning = null,
   selectedHere,
   contextOrganisationId,
 }: BranchLifecycleActionsProps) {
@@ -175,6 +183,18 @@ export function BranchLifecycleActions({
           '& > *': { flexGrow: { xs: 1, md: 0 } },
         }}
       >
+        {warning && actions.length > 0 && (
+          // Capped from md, as the users' hero box is: uncapped, its one-line width would size
+          // this box and squeeze the title column.
+          <Alert
+            id={WARNING_ID}
+            severity="warning"
+            role="note"
+            sx={{ flexBasis: '100%', maxWidth: { md: 320 } }}
+          >
+            {warning}
+          </Alert>
+        )}
         {actions.map((id, index) => (
           <Button
             key={id}
@@ -184,7 +204,15 @@ export function BranchLifecycleActions({
             variant={index === 0 ? 'contained' : 'outlined'}
             color={id === 'close' ? 'error' : 'primary'}
             disabled={id === 'activate' && blocked}
-            aria-describedby={id === 'activate' && blocked ? BLOCKED_ID : undefined}
+            aria-describedby={
+              id !== 'activate'
+                ? undefined
+                : blocked
+                  ? BLOCKED_ID
+                  : warning
+                    ? WARNING_ID
+                    : undefined
+            }
             onClick={() => {
               setOpen(id);
             }}

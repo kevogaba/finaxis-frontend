@@ -61,6 +61,7 @@ const PROPS: Props = {
       status: 'PENDING_APPROVAL',
       type: 'STAFF',
       primaryBranchId: WESTLANDS,
+      createdBy: null,
     },
   },
   roles: {

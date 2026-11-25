@@ -119,7 +119,7 @@ export const platformRecordRoutes: Route[] = [
   route('GET', '/api/v1/platform/tenants/:tenant_id/branches', (context) => {
     const access = platformAccess(context);
     requirePermission(access, 'branch.view');
-    sendJson(context.res, 200, branchPage(context.state, findTenant(context).id, context.query));
+    sendJson(context.res, 200, branchPage(access, findTenant(context).id, context.query));
   }),
 
   route('GET', '/api/v1/platform/tenants/:tenant_id/branches/:branch_id', (context) => {
@@ -131,7 +131,7 @@ export const platformRecordRoutes: Route[] = [
         candidate.id === context.params.branch_id && candidate.organisationId === tenant.id,
     );
     if (!found) throw problem(404, 'resource_not_found', 'Branch not found.');
-    sendJson(context.res, 200, branchDetailWire(found));
+    sendJson(context.res, 200, branchDetailWire(access, found));
   }),
 
   route('POST', '/api/v1/platform/tenants/:tenant_id/branches', async (context) => {
@@ -194,11 +194,7 @@ export const platformRecordRoutes: Route[] = [
   route('GET', '/api/v1/platform/tenants/:tenant_id/users', (context) => {
     const access = platformAccess(context);
     requirePermission(access, 'user.view');
-    sendJson(
-      context.res,
-      200,
-      institutionUserPage(context.state, findTenant(context).id, context.query),
-    );
+    sendJson(context.res, 200, institutionUserPage(access, findTenant(context).id, context.query));
   }),
 
   route('GET', '/api/v1/platform/tenants/:tenant_id/users/:user_id', (context) => {
@@ -210,7 +206,7 @@ export const platformRecordRoutes: Route[] = [
     );
     const user = context.state.users.find((row) => row.id === context.params.user_id);
     if (!membership || !user) throw problem(404, 'resource_not_found', 'User not found.');
-    sendJson(context.res, 200, userSummaryWire(user, membership));
+    sendJson(context.res, 200, userSummaryWire(access, user, membership));
   }),
 
   accountTransition('suspend', 'user.suspend', 'ACTIVE', 'SUSPENDED', true),

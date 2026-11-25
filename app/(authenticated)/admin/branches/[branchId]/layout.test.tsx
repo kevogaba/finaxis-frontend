@@ -1,19 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
-import { BackendApiError } from '@/auth/backend-api';
+import {
+  SELF_APPROVAL_NOTE_BRANCHES,
+  type SwitchState,
+} from '@/modules/administration/approvals/maker-checker';
 import { MAKER_CHECKER_BLOCKED } from '@/modules/administration/branches/branch-rules';
+import { permissionScopes } from '@/test/permission-scopes';
 import { renderWithProviders } from '@/test/test-utils';
 
-const { getBranch, getBranchMaker, getCurrentContextProfile, redirect, router } = vi.hoisted(
-  () => ({
+const { getBranch, getCurrentContextProfile, readMakerCheckerSwitch, redirect, router } =
+  vi.hoisted(() => ({
     getBranch: vi.fn(),
-    getBranchMaker: vi.fn(),
     getCurrentContextProfile: vi.fn(),
+    readMakerCheckerSwitch: vi.fn(),
     redirect: vi.fn(),
     // One stable router object, as in table-pagination-bar.test.tsx.
     router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
-  }),
-);
+  }));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('next/navigation', async (importOriginal) => ({
@@ -30,7 +33,9 @@ vi.mock('@/auth/context-service', () => ({
 }));
 vi.mock('@/modules/administration/branches/branch-service', () => ({
   getBranch: (...args: unknown[]) => getBranch(...args) as unknown,
-  getBranchMaker: (...args: unknown[]) => getBranchMaker(...args) as unknown,
+}));
+vi.mock('@/modules/administration/settings/settings-service', () => ({
+  readMakerCheckerSwitch: (...args: unknown[]) => readMakerCheckerSwitch(...args) as unknown,
 }));
 // The hero's dialogs import the Server Actions; nothing here submits one.
 vi.mock('@/modules/administration/branches/branch-actions', () => ({
@@ -46,13 +51,28 @@ const { default: BranchRecordLayout } = await import('./layout');
 const BRANCH = '08000000-0000-4000-8000-000000000006';
 const ME = '10000000-0000-4000-8000-0000000000aa'; // the signed-in administrator
 const ORG = '55555555-5555-4555-8555-555555555555';
-const ALL_CODES = ['branch.view', 'branch.approve', 'audit.view'];
+const VICTOR = '10000000-0000-4000-8000-000000000001';
+const ALL_CODES = ['branch.view', 'branch.approve', 'settings.view'];
 
-/** Programs every service the layout reads: a branch awaiting approval, which Activate is on offer for. */
-function setup(maker: string | null | Error = null) {
+/** Programs every service the layout reads: a branch awaiting approval, which Activate is on offer
+ * for, drafted by `maker` (`created_by`, BG-08) and submitted by `submitter`. */
+function setup({
+  maker = null,
+  submitter = null,
+  switchState = 'on',
+}: {
+  maker?: string | null;
+  submitter?: string | null;
+  switchState?: SwitchState;
+} = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions: ALL_CODES, user_id: ME, branches: [] },
+    profile: {
+      permissions: ALL_CODES,
+      permission_scopes: permissionScopes(ALL_CODES),
+      user_id: ME,
+      branches: [],
+    },
     context: { organization: { id: ORG, name: 'Greenfield' }, branch: null },
   });
   getBranch.mockResolvedValue({
@@ -61,13 +81,16 @@ function setup(maker: string | null | Error = null) {
     branchName: 'Likoni',
     branchType: 'BRANCH',
     status: 'PENDING_APPROVAL',
+    createdBy: maker === null ? null : { id: maker, displayName: null },
+    submittedBy: submitter === null ? null : { id: submitter, displayName: null },
   });
-  if (maker instanceof Error) getBranchMaker.mockRejectedValue(maker);
-  else getBranchMaker.mockResolvedValue(maker);
+  readMakerCheckerSwitch.mockResolvedValue(switchState);
 }
 
 const params = () => Promise.resolve({ branchId: BRANCH });
 const activate = () => screen.queryByRole('button', { name: 'Activate' });
+const show = async () =>
+  renderWithProviders(await BranchRecordLayout({ children: <p>Tab body</p>, params: params() }));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -76,60 +99,47 @@ beforeEach(() => {
   });
 });
 
-describe('BranchRecordLayout: the drafter lookup', () => {
-  it("disables Activate for the branch's drafter, with the reason, after asking who drafted it", async () => {
-    setup(ME);
+describe('BranchRecordLayout: maker-checker (BG-08, decision Q4)', () => {
+  it("disables Activate for the branch's drafter while maker-checker is on, with the reason", async () => {
+    setup({ maker: ME });
+    await show();
 
-    renderWithProviders(await BranchRecordLayout({ children: <p>Tab body</p>, params: params() }));
-
-    expect(getBranchMaker).toHaveBeenCalledWith(BRANCH);
+    expect(readMakerCheckerSwitch).toHaveBeenCalledExactlyOnceWith(
+      'branch_creation',
+      expect.objectContaining({ tenantPermissions: ALL_CODES }),
+    );
     expect(activate()).toBeDisabled();
     expect(activate()).toHaveAccessibleDescription(MAKER_CHECKER_BLOCKED);
   });
 
-  // AGENTS.md: a page settles a read with load(), which redirects on a lost session or a stale
-  // context. A quiet null here would render a stale page with Activate enabled.
+  it('lets the drafter activate while maker-checker is off, saying so above the actions', async () => {
+    setup({ maker: ME, switchState: 'off' });
+    await show();
+
+    expect(activate()).toBeEnabled();
+    expect(screen.getByRole('note')).toHaveTextContent(SELF_APPROVAL_NOTE_BRANCHES);
+  });
+
+  it('leaves Activate enabled for the drafter when the switch can’t be read', async () => {
+    setup({ maker: ME, switchState: 'unknown' });
+    await show();
+
+    expect(activate()).toBeEnabled();
+    expect(screen.queryByText(MAKER_CHECKER_BLOCKED)).not.toBeInTheDocument();
+    expect(screen.queryByText(SELF_APPROVAL_NOTE_BRANCHES)).not.toBeInTheDocument();
+  });
+
   it.each([
-    ['a 401', new BackendApiError(401), '/login?reason=session_expired'],
-    [
-      'a stale context',
-      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
-      '/select-context',
-    ],
-  ])(
-    'redirects, rendering nothing, when the drafter read fails with %s',
-    async (_n, failure, to) => {
-      setup(failure);
+    ['someone else drafted it', { maker: VICTOR }],
+    // The tenant route refuses its creator, never its submitter.
+    ['the caller only submitted it', { maker: VICTOR, submitter: ME }],
+    ['the record names no drafter', {}],
+  ])('leaves Activate enabled, reading no switch, when %s', async (_case, makers) => {
+    setup(makers);
+    await show();
 
-      await expect(
-        BranchRecordLayout({ children: <p>Tab body</p>, params: params() }),
-      ).rejects.toThrow(`NEXT_REDIRECT:${to}`);
-
-      expect(getBranchMaker).toHaveBeenCalledWith(BRANCH);
-      expect(redirect).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  // The backend's maker-checker 403 (BG-08) is the guard when the drafter can't be read, so an
-  // ordinary failure (a permission that changed, a 5xx) leaves Activate on offer rather than blocking it.
-  it.each([
-    ['a 403', new BackendApiError(403, { code: 'forbidden' })],
-    ['a 5xx', new BackendApiError(500, { requestId: 'req-3' })],
-  ])(
-    'renders the record, with Activate on offer, when the drafter read fails with %s',
-    async (_n, failure) => {
-      setup(failure);
-
-      renderWithProviders(
-        await BranchRecordLayout({ children: <p>Tab body</p>, params: params() }),
-      );
-
-      expect(getBranchMaker).toHaveBeenCalledWith(BRANCH);
-      expect(redirect).not.toHaveBeenCalled();
-      expect(screen.getByRole('heading', { level: 1, name: 'Likoni' })).toBeInTheDocument();
-      expect(activate()).toBeEnabled();
-      expect(screen.queryByText(MAKER_CHECKER_BLOCKED)).not.toBeInTheDocument();
-      expect(screen.getByText('Tab body')).toBeInTheDocument();
-    },
-  );
+    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
+    expect(activate()).toBeEnabled();
+    expect(screen.getByText('Tab body')).toBeInTheDocument();
+  });
 });

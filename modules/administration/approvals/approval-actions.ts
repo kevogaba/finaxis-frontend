@@ -12,7 +12,6 @@ import {
   APPROVE_FORBIDDEN,
   APPROVE_NOT_FOUND,
   REVOKE_CONFLICT,
-  USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
 import { getMembership, getUser } from '@/modules/administration/users/user-service';
 import { membershipDecisionSchema } from './approval-contract';
@@ -21,12 +20,11 @@ import {
   APPROVAL_CHANGED,
   APPROVAL_CHANGED_CODE,
   approvalOutcome,
-  MAKER_CHECKER_CODE,
   type ApprovalOutcome,
   type ApproveResult,
 } from './approval-copy';
-import { decider, knownMaker, postFromEndState, refuse } from './approval-guards';
-import { isSameUser, userApprovalState } from './approval-rules';
+import { decider, postFromEndState, refuse } from './approval-guards';
+import { userApprovalState } from './approval-rules';
 
 const membershipDecisionInput = z.object({ idempotencyKey: z.uuid(), membershipId: uuidSchema });
 const requiredReason = z
@@ -51,17 +49,17 @@ async function membershipState(membershipId: string) {
 function explainApproval(result: ActionResult, blocked: UserStatus | null): ActionResult {
   let explained = explain(result, APPROVAL_CHANGED_CODE, APPROVAL_CHANGED);
   if (blocked) explained = explain(explained, ACCOUNT_BLOCKED_CODE, accountBlockedNote(blocked));
-  explained = explain(explained, MAKER_CHECKER_CODE, USER_MAKER_CHECKER_BLOCKED);
   explained = explain(explained, 'forbidden', APPROVE_FORBIDDEN);
   explained = explain(explained, 'resource_not_found', APPROVE_NOT_FOUND);
   return explain(explained, 'conflict', APPROVE_CONFLICT);
 }
 
 /** Ruling 5: Approve is refused before any write wherever the page wouldn't offer it: a blocked
- * account, a membership that is neither pending nor in one of the approval's own end states, or
- * the signed-in user's own invitation. Those end states (an active membership, a provisioning one)
- * reach the endpoint with the form's key, so a same-key retry replays the stored answer
- * (`postFromEndState`). 200 or 202 is read from the echo (Ruling 10). */
+ * account, or a membership that is neither pending nor in one of the approval's own end states.
+ * The inviter is the platform's to refuse (a switch may let them approve, BG-08), and its named
+ * refusal explains itself (`describeProblem`). Those end states (an active membership, a
+ * provisioning one) reach the endpoint with the form's key, so a same-key retry replays the stored
+ * answer (`postFromEndState`). 200 or 202 is read from the echo (Ruling 10). */
 export async function approveUser(
   _previous: ApproveResult | null,
   formData: FormData,
@@ -71,7 +69,7 @@ export async function approveUser(
     blocked: null,
   };
   const result = await runServerAction(membershipDecisionInput, formData, async (input) => {
-    const selected = await decider();
+    await decider();
     const { membership, userStatus, state } = await membershipState(input.membershipId);
     if (state === 'blocked') {
       seen.blocked = userStatus;
@@ -86,10 +84,6 @@ export async function approveUser(
     const endState =
       state === 'provisioning' || (state === 'decided' && membership.status === 'ACTIVE');
     if (state !== 'awaiting' && !endState) throw refuse(409, APPROVAL_CHANGED_CODE);
-    const holder = { permissions: selected.profile.permissions };
-    if (isSameUser(await knownMaker('user', membership.userId, holder), selected.profile.user_id)) {
-      throw refuse(403, MAKER_CHECKER_CODE);
-    }
     const echo = membershipDecisionSchema.safeParse(
       await postFromEndState(endState, () =>
         apiPost(

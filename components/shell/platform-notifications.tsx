@@ -17,9 +17,9 @@ export async function PendingInstitutionsNotifications() {
   if (selected.kind !== 'resolved') return null;
   if (selected.context.module.id !== platformAdministrationModule.id) return null;
   if (!canAll({ permissions: selected.profile.permissions }, BADGE_CODES)) return null;
-  // BG-22: no feed; one `size=1` read, settled as 10's user record settles getUserInviter (rule 21):
-  // load() keeps a redirect propagating and sends a lost session to sign-in and a stale context to
-  // context selection; any other failure reads as unknown, never as none (rule 9).
+  // BG-22: no feed; one `size=1` read, settled with load() (rule 21): it keeps a redirect
+  // propagating and sends a lost session to sign-in and a stale context to context selection; any
+  // other failure reads as unknown, never as none (rule 9).
   const read = await load(countTenantsInStatus('PENDING_APPROVAL'));
   return <NotificationsMenu {...pendingApprovalNotifications(read.ok ? read.value : null)} />;
 }

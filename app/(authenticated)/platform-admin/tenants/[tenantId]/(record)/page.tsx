@@ -1,10 +1,12 @@
 import { notFound } from 'next/navigation';
+import { getCurrentContextProfile } from '@/auth/context-service';
 import { CopyIdButton } from '@/components/data-display/copy-id-button';
 import { DescriptionList, type DescriptionItem } from '@/components/data-display/description-list';
 import { SectionCard } from '@/components/data-display/section-card';
 import { StatusChip } from '@/components/data-display/status-chip';
 import { load } from '@/lib/api/load';
 import { formatInstant } from '@/lib/format';
+import { makerLabel } from '@/modules/administration/approvals/components/request-facts';
 import { isInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
 import {
   bootstrapStatusLabel,
@@ -27,10 +29,14 @@ export default async function TenantOverviewPage({ params }: TenantOverviewPageP
   const { tenantId } = await params;
   // The layout answers not-found too, but it renders in parallel: refuse before any fetch.
   if (!isInstitutionId(tenantId)) notFound();
-  const tenant = await load(getTenant(tenantId)); // cached: the layout's read
+  const [tenant, selected] = await Promise.all([
+    load(getTenant(tenantId)), // cached: the layout's read
+    getCurrentContextProfile(), // cached: the layout's
+  ]);
   if (!tenant.ok) return null; // the layout renders the failure
 
   const record = tenant.value;
+  const me = selected.kind === 'resolved' ? selected.profile.user_id : '';
   const items: DescriptionItem[] = [
     { label: 'Display name', value: record.displayName },
     { label: 'Tenant code', value: record.tenantCode },
@@ -49,6 +55,9 @@ export default async function TenantOverviewPage({ params }: TenantOverviewPageP
         'Not tracked'
       ),
     },
+    // BG-08: who asked, as the platform's checker rule reads it.
+    { label: 'Requested by', value: makerLabel(record.requestedBy, me) },
+    { label: 'Submitted by', value: makerLabel(record.submittedBy, me) },
     { label: 'Created (UTC)', value: utc(record.createdAt) },
     { label: 'Updated (UTC)', value: utc(record.updatedAt) },
     { label: 'Institution ID', value: <CopyIdButton value={record.id} label="Institution ID" /> },

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -17,6 +18,9 @@ import {
 } from '../membership-actions';
 import type { UserStatus } from '../user-contract';
 import type { MembershipAction } from '../user-rules';
+
+/** The self-approval note, which describes the decision it relaxes. */
+const WARNING_ID = 'user-lifecycle-warning';
 
 interface ActionCopy {
   label: string;
@@ -97,6 +101,8 @@ interface UserLifecycleActionsProps {
   blocked: Partial<Record<MembershipAction, string>>;
   /** Why the hero has no actions the holder's codes suggest (Ruling 7). */
   note: string | null;
+  /** Said above the actions: the inviter approving while maker-checker is off (BG-08). */
+  warning?: string | null;
   /** The user's account status as the page rendered it. Reject & revoke sends it back so the action
    * can tell a 202 approval (user now provisioning, membership still pending) from a stale tab. */
   userStatus?: UserStatus;
@@ -112,6 +118,7 @@ export function UserLifecycleActions({
   actions,
   blocked,
   note,
+  warning = null,
   userStatus,
   contextOrganisationId,
 }: UserLifecycleActionsProps) {
@@ -186,6 +193,11 @@ export function UserLifecycleActions({
           '& > *': { flexGrow: { xs: 1, md: 0 } },
         }}
       >
+        {warning && offered.length > 0 && (
+          <Alert id={WARNING_ID} severity="warning" role="note" sx={{ flexBasis: '100%' }}>
+            {warning}
+          </Alert>
+        )}
         {offered.map((id, index) => {
           const reason = blocked[id];
           return (
@@ -197,7 +209,14 @@ export function UserLifecycleActions({
               variant={index === 0 ? 'contained' : 'outlined'}
               color={copyFor(id, userName).destructive ? 'error' : 'primary'}
               disabled={reason !== undefined}
-              aria-describedby={reason === undefined ? undefined : captionId(reason)}
+              aria-describedby={
+                reason !== undefined
+                  ? captionId(reason)
+                  : // The self-approval note describes the decision it relaxes.
+                    warning && id === 'approve'
+                    ? WARNING_ID
+                    : undefined
+              }
               onClick={() => {
                 setOpen(id);
               }}

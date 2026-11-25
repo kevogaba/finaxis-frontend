@@ -48,7 +48,11 @@ const APPROVAL_CHANGED =
 const MEMBERSHIP_CHANGED =
   'This membership changed since the page loaded. Refresh to see its status.';
 const VERIFIED_ON_APPROVAL = 'Verified by the platform on approval.';
-const MAKER_NOT_PERMITTED = "Your role can't view the audit trail";
+const SELF_APPROVAL_NOTE_USERS =
+  'Maker-checker is off for user invitations. You invited this person. Approving is allowed and recorded as a high-severity event.';
+const SELF_APPROVAL_NOTE_BRANCHES =
+  'Maker-checker is off for branch creation. You drafted this branch. Activating is allowed and recorded as a high-severity event.';
+const MEMBERSHIP_MAKER_REFUSAL = 'You invited this person, so someone else must approve them.';
 const ROLES_NOT_PERMITTED = "Your role can't view role assignments.";
 const BRANCHES_NOT_PERMITTED = "Your role can't view branch assignments.";
 
@@ -386,7 +390,7 @@ test.describe('approvals: user onboarding decisions', () => {
     await expect(hero(page).getByText(USER_MAKER_CHECKER_BLOCKED, { exact: true })).toBeVisible();
     await expect(decision(page, 'Reject & revoke')).toBeEnabled();
     await expect(fact(region(page, 'Request'), 'Invited by')).toHaveText(
-      'Backend Jane Manager (you)',
+      'You (Backend Jane Manager)',
     );
     // A full holder sees the audit link inside the Request card (positive anchor for the gate).
     await expect(
@@ -501,7 +505,8 @@ test.describe('approvals: user onboarding decisions', () => {
     await expect(decision(page, 'Reject & revoke')).toBeEnabled();
   });
 
-  test('leaves the checks to the platform when the audit trail and assignments can’t be read', async ({
+  // BG-08: the maker is on the record, so naming them needs no audit.view.
+  test('names the maker without audit access, leaving unreadable assignments to the platform', async ({
     context,
     page,
   }, testInfo) => {
@@ -509,23 +514,57 @@ test.describe('approvals: user onboarding decisions', () => {
     await enterQueue(page);
     await openRequest(page, userPath(APPROVALS.zawadi), TEXT.longName);
 
-    await expect(fact(region(page, 'Request'), 'Invited by')).toHaveText(MAKER_NOT_PERMITTED);
+    await expect(fact(region(page, 'Request'), 'Invited by')).toHaveText('Victor Otieno');
     // Scoped and exact: the same words also open two control checks' details.
     const access = region(page, 'Requested access');
     await expect(access.getByText(ROLES_NOT_PERMITTED, { exact: true })).toBeVisible();
     await expect(access.getByText(BRANCHES_NOT_PERMITTED, { exact: true })).toBeVisible();
     const checks = region(page, 'Control checks');
-    for (const label of [
-      'Invited by someone else',
-      'Has an active role',
-      'Has an active branch assignment',
-    ]) {
+    await expect(fact(checks, 'Invited by someone else')).toContainText('Passed');
+    await expect(fact(checks, 'Invited by someone else')).toContainText(
+      'Invited by Victor Otieno.',
+    );
+    for (const label of ['Has an active role', 'Has an active branch assignment']) {
       await expect(fact(checks, label)).toContainText('Checked on approval');
       await expect(fact(checks, label)).toContainText(VERIFIED_ON_APPROVAL);
     }
     await expect(decision(page, 'Approve')).toBeEnabled();
     await expect(decision(page, 'Reject & revoke')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Open the audit trail' })).toHaveCount(0);
+  });
+
+  test('lets the inviter approve while maker-checker is off, after saying so (ADR 0032)', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'approvals-self-approval');
+    await enterQueue(page);
+    await openRequest(page, userPath(USERS.carol), 'Carol Wambui');
+
+    await expect(hero(page).getByRole('note')).toHaveText(SELF_APPROVAL_NOTE_USERS);
+    await expect(fact(region(page, 'Control checks'), 'Invited by someone else')).toContainText(
+      'Not required',
+    );
+    await decide(page, 'Approve');
+    await expect(toast(page, APPROVED_PROVISIONING)).toBeVisible();
+    await expect(mainText(page, PROVISIONING_NOTE)).toBeVisible();
+  });
+
+  // Decision Q4: without settings.view the switch can't be read, so Approve stays enabled and the
+  // platform's named refusal explains itself, keeping the dialog open.
+  test('leaves Approve to the platform when the switch can’t be read, naming its refusal', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'approvals-no-settings');
+    await enterQueue(page);
+    await openRequest(page, userPath(USERS.carol), 'Carol Wambui');
+
+    await expect(decision(page, 'Approve')).toBeEnabled();
+    await expect(hero(page).getByRole('note')).toHaveCount(0);
+    const dialog = await decide(page, 'Approve');
+    await expect(dialog.getByRole('alert')).toContainText(MEMBERSHIP_MAKER_REFUSAL);
+    await expect(dialog.getByRole('button', { name: 'Approve', exact: true })).toBeFocused();
   });
 });
 
@@ -556,6 +595,20 @@ test.describe('approvals: branch activation decisions', () => {
     await expect(decision(page, 'Activate')).toBeDisabled();
     await expect(decision(page, 'Activate')).toHaveAccessibleDescription(MAKER_CHECKER_BLOCKED);
     await expect(hero(page).getByText(MAKER_CHECKER_BLOCKED, { exact: true })).toBeVisible();
+  });
+
+  test('lets its drafter activate while maker-checker is off, after saying so (ADR 0032)', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'approvals-self-approval');
+    await enterQueue(page);
+    await openRequest(page, branchPath(APPROVALS.naivasha), 'Naivasha Branch');
+
+    await expect(hero(page).getByRole('note')).toHaveText(SELF_APPROVAL_NOTE_BRANCHES);
+    await decide(page, 'Activate');
+    await expect(toast(page, BRANCH_ACTIVATED)).toBeVisible();
+    await expect(mainText(page, ACTIVATED_NOTE)).toBeVisible();
   });
 });
 
@@ -596,6 +649,16 @@ const SURFACES = [
     open: async (page: Page) => {
       await expect(decision(page, 'Approve')).toBeDisabled();
       await expect(hero(page).getByText(USER_MAKER_CHECKER_BLOCKED, { exact: true })).toBeVisible();
+    },
+  },
+  {
+    // BG-08: the warning above the decisions, with maker-checker off.
+    label: 'user approval, self-approval warning',
+    path: userPath(USERS.carol),
+    heading: 'Carol Wambui',
+    scenario: 'approvals-self-approval',
+    open: async (page: Page) => {
+      await expect(hero(page).getByRole('note')).toHaveText(SELF_APPROVAL_NOTE_USERS);
     },
   },
   {
@@ -671,7 +734,11 @@ test.describe('approvals: accessibility', () => {
         page,
       }, testInfo) => {
         await applyA11yCase(page, a11yCase);
-        await authenticate(context, testInfo, 'approvals');
+        await authenticate(
+          context,
+          testInfo,
+          'scenario' in surface ? surface.scenario : 'approvals',
+        );
         await enterAdmin(page, surface.path, { heading: surface.heading, branch: ALL_BRANCHES });
         // The bell streams behind its own Suspense boundary: every scan and the 375 px page-width
         // check include the finished header.

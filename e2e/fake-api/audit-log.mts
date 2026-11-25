@@ -22,6 +22,8 @@ export function recordAuditEvent(
     severity?: string;
     beforeJson?: string;
     afterJson?: string;
+    /** `metadata_json`'s keys, e.g. `selfApproved` on a relaxed maker-checker approval. */
+    metadata?: Record<string, string>;
   },
 ): void {
   state.auditEvents.push({
@@ -39,6 +41,6 @@ export function recordAuditEvent(
     reason: event.reason,
     beforeJson: event.beforeJson ?? null,
     afterJson: event.afterJson ?? null,
-    metadataJson: '{}',
+    metadataJson: JSON.stringify(event.metadata ?? {}),
   });
 }

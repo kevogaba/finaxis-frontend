@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { tenantDetailSchema, tenantDraftResultSchema, tenantPageSchema } from './tenant-contract';
 
 const ACME = '99999999-9999-4999-8999-999999999999';
+const JANE = '55555555-5555-4555-8555-555555555555';
+const OTHER = '16000000-0000-4000-8000-000000000007';
 const PAGE = {
   number: 0,
   size: 10,
@@ -22,6 +24,8 @@ const DETAIL = {
   bootstrap_failure_code: 'KEYCLOAK_UNAVAILABLE',
   created_at: '2026-07-01T08:00:00Z',
   updated_at: '2026-07-24T08:00:00Z',
+  requested_by: { id: OTHER, display_name: null },
+  submitted_by: { id: JANE, display_name: 'Backend Jane Manager' },
 };
 
 describe('tenant contract', () => {
@@ -37,6 +41,8 @@ describe('tenant contract', () => {
             status: 'ACTIVE',
             created_at: '2026-07-01T08:00:00Z',
             legal_name: 'never read',
+            requested_by: { id: JANE, display_name: 'Backend Jane Manager' },
+            submitted_by: null,
           },
         ],
         page: PAGE,
@@ -50,6 +56,8 @@ describe('tenant contract', () => {
           countryCode: 'KE',
           status: 'ACTIVE',
           createdAt: '2026-07-01T08:00:00Z',
+          requestedBy: { id: JANE, displayName: 'Backend Jane Manager' },
+          submittedBy: null,
         },
       ],
       page: {
@@ -76,10 +84,21 @@ describe('tenant contract', () => {
       bootstrapFailureCode: 'KEYCLOAK_UNAVAILABLE',
       createdAt: '2026-07-01T08:00:00Z',
       updatedAt: '2026-07-24T08:00:00Z',
+      requestedBy: { id: OTHER, displayName: null },
+      submittedBy: { id: JANE, displayName: 'Backend Jane Manager' },
     });
     expect(
       tenantDetailSchema.parse({ ...DETAIL, bootstrap_status: null, bootstrap_failure_code: null }),
     ).toMatchObject({ bootstrapStatus: null, bootstrapFailureCode: null });
+  });
+
+  it('keeps null makers: never submitted, or a tenant caller (BG-08)', () => {
+    expect(
+      tenantDetailSchema.parse({ ...DETAIL, requested_by: null, submitted_by: null }),
+    ).toMatchObject({ requestedBy: null, submittedBy: null });
+    expect(tenantDetailSchema.safeParse({ ...DETAIL, requested_by: undefined }).success).toBe(
+      false,
+    );
   });
 
   it('rejects an unknown state, a missing field or a date-only instant (drift → the error state)', () => {

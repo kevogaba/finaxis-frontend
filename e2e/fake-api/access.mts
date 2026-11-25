@@ -215,6 +215,24 @@ export function holdsRole(access: AccessContext, roleId: string): boolean {
   );
 }
 
+/** `ActorRefResponse` (BG-08): who made a record in `organisationId`. `null` for the system or an id
+ * with no account, and for a tenant caller when that user isn't a member of the organisation
+ * (`ActorRef.shownTo`); a platform caller sees every maker. */
+export function actorRef(
+  access: AccessContext,
+  organisationId: string,
+  userId: string | undefined,
+): { id: string; display_name: string } | null {
+  const user = access.state.users.find((candidate) => candidate.id === userId);
+  if (!user) return null;
+  const member = access.state.memberships.some(
+    (row) => row.userId === user.id && row.organisationId === organisationId,
+  );
+  return member || access.organisation.id === PLATFORM_ORGANISATION_ID
+    ? { id: user.id, display_name: user.displayName }
+    : null;
+}
+
 /** Mirrors `WrongContext` (BG-30): a stable code, with the sentence in the detail. */
 export function requirePlatformContext(access: AccessContext): void {
   if (access.organisation.id !== PLATFORM_ORGANISATION_ID) {

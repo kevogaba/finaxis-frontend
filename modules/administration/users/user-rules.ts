@@ -9,6 +9,7 @@ import {
 import { withViews } from '@/auth/permission-views';
 import { humanizeEnum, type StatusTone } from '@/components/data-display/status-chip';
 import { UUID_PATTERN, type Page } from '@/lib/api/wire';
+import type { MakerGate } from '@/modules/administration/approvals/maker-checker';
 import type { MembershipStatus, UserStatus } from './user-contract';
 
 export type OnboardingKey =
@@ -180,8 +181,8 @@ export interface MembershipSubject {
   userStatus: UserStatus;
   /** The signed-in user's own record (the backend's id, Ruling 6). */
   self: boolean;
-  /** The signed-in user is the `user.invite` actor; false when unknown (BG-08). */
-  invitedByMe: boolean;
+  /** Approve's maker-checker gate for the signed-in user (BG-08, `maker-checker.ts`). */
+  makerGate: MakerGate;
 }
 
 /** The hero's actions, in display order. Every transition reads the membership back, so the
@@ -243,7 +244,7 @@ export function blockedMembershipActions(
   for (const action of actions) {
     if (action === 'approve' && BLOCKED.includes(subject.userStatus)) {
       blocked.approve = accountBlockedNote(subject.userStatus); // contract §F, else a 409 (BG-07)
-    } else if (action === 'approve' && subject.invitedByMe) {
+    } else if (action === 'approve' && subject.makerGate === 'blocked') {
       blocked.approve = USER_MAKER_CHECKER_BLOCKED; // maker-checker (BG-08)
     } else if ((action === 'suspend' || action === 'revoke') && subject.self) {
       blocked[action] = OWN_MEMBERSHIP; // Ruling 6, BG-35

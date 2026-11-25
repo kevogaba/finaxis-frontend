@@ -95,6 +95,12 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
       display_name: 'Neema Wanjiku',
       user_status: 'DRAFT',
       membership_status: 'PENDING_APPROVAL',
+      membership_id: invitation.membership_id,
+      membership_type: 'STAFF',
+      created_at: expect.any(String),
+      membership_created_at: expect.any(String),
+      // BG-08: the maker is on the record.
+      created_by: { id: IDS.jane, display_name: 'Backend Jane Manager' },
     });
     const membership = await read<{ membership_type: string; primary_branch_id: string }>(
       await get(`/tenant/memberships/${invitation.membership_id}`),
@@ -115,7 +121,7 @@ test.describe('fake API invitations (contract §E.3, layer 11)', () => {
     expect(branches.items.filter((row) => row.user_id === invitation.user_id)).toMatchObject([
       { assignment_type: 'HOME' },
     ]);
-    // The maker lookup's source (contract §G): Jane invited her.
+    // The invite is audited too (contract §G).
     const audit = await read<Paged<{ actor_id: string }>>(
       await get(
         `/tenant/audit-events?entity_type=USER&entity_id=${invitation.user_id}&action=user.invite`,

@@ -16,6 +16,11 @@ const USERS: UserSummary[] = [
     displayName: 'Felix Omondi',
     userStatus: 'DRAFT',
     membershipStatus: 'PENDING_APPROVAL',
+    membershipId: '20000000-0000-4000-8000-000000000001',
+    membershipType: 'STAFF',
+    createdAt: '2026-07-01T08:00:00Z',
+    membershipCreatedAt: '2026-07-01T08:00:00Z',
+    createdBy: null,
   },
   {
     id: GRACE,
@@ -24,6 +29,11 @@ const USERS: UserSummary[] = [
     displayName: 'Grace Wanjiru',
     userStatus: 'PROVISIONING_IDP',
     membershipStatus: 'PENDING_APPROVAL',
+    membershipId: '20000000-0000-4000-8000-000000000001',
+    membershipType: 'STAFF',
+    createdAt: '2026-07-01T08:00:00Z',
+    membershipCreatedAt: '2026-07-01T08:00:00Z',
+    createdBy: null,
   },
   {
     id: HASSAN,
@@ -32,6 +42,11 @@ const USERS: UserSummary[] = [
     displayName: 'Hassan Ali',
     userStatus: 'INVITED',
     membershipStatus: 'ACTIVE',
+    membershipId: '20000000-0000-4000-8000-000000000001',
+    membershipType: 'STAFF',
+    createdAt: '2026-07-01T08:00:00Z',
+    membershipCreatedAt: '2026-07-01T08:00:00Z',
+    createdBy: null,
   },
 ];
 

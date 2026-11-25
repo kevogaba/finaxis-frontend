@@ -3,6 +3,7 @@ import { can, type PermissionHolder } from '@/auth/permissions';
 import type { StatusTone } from '@/components/data-display/status-chip';
 import { isoToBusinessDate } from '@/lib/business-date';
 import { isTimeZone, timeZones } from '@/modules/administration/branches/branch-rules';
+import { isMaker } from '@/modules/administration/approvals/maker-checker';
 import { currencyLabel } from '@/modules/administration/settings/settings-rules';
 import type { BootstrapStatus, TenantDetail, TenantStatus } from './tenant-contract';
 
@@ -37,8 +38,8 @@ const PERMISSION: Record<TenantLifecycleAction, string> = {
 
 /**
  * Spec §11.2's hero lifecycle. Every tenant mutation reads the record back, so it also needs
- * `tenant.view` (BG-31). Approve stays on offer for its maker: the platform context can't read who
- * created or submitted a request (BG-08), so a refusal is explained when it comes.
+ * `tenant.view` (BG-31). The request's makers see Approve and Reject disabled
+ * (`blockedTenantActions`); an amender's refusal is explained when it comes (BG-08).
  */
 export function availableTenantActions(
   status: TenantStatus,
@@ -46,6 +47,26 @@ export function availableTenantActions(
 ): TenantLifecycleAction[] {
   if (!can(holder, 'tenant.view')) return [];
   return ACTIONS_BY_STATUS[status].filter((action) => can(holder, PERMISSION[action]));
+}
+
+export const TENANT_MAKER_BLOCKED =
+  'You requested or submitted this institution, so another platform administrator must decide it.';
+
+/** BG-08 (TenantCheckerRule): its requester and its submitter never approve or reject it, and no
+ * tenant switch relaxes the platform's own checker. `callerId` null (no profile): nothing blocks. */
+export function blockedTenantActions(
+  actions: readonly TenantLifecycleAction[],
+  tenant: Pick<TenantDetail, 'requestedBy' | 'submittedBy'>,
+  callerId: string | null,
+): Partial<Record<TenantLifecycleAction, string>> {
+  const maker =
+    callerId !== null && isMaker([tenant.requestedBy?.id, tenant.submittedBy?.id], callerId);
+  if (!maker) return {};
+  return Object.fromEntries(
+    actions
+      .filter((action) => action === 'approve' || action === 'reject')
+      .map((action) => [action, TENANT_MAKER_BLOCKED]),
+  );
 }
 
 /** Contract §E.2: a retry needs a FAILED bootstrap (else 409), and it reads the tenant back. */

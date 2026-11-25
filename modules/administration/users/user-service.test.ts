@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ZodType } from 'zod';
-import { BackendApiError } from '@/auth/backend-api';
 import { branchAssignmentPageSchema } from '@/modules/administration/branches/branch-contract';
 import {
   membershipDetailSchema,
@@ -11,16 +10,12 @@ import {
 import { userListApiPath, type UserListQuery } from './user-query';
 import { SCAN_CEILING } from './user-rules';
 
-const { apiGet, listAuditEvents, listRoleAssignments } = vi.hoisted(() => ({
+const { apiGet, listRoleAssignments } = vi.hoisted(() => ({
   apiGet: vi.fn<(path: string, schema: ZodType) => Promise<unknown>>(),
-  listAuditEvents: vi.fn(),
   listRoleAssignments: vi.fn(),
 }));
 vi.mock('@/lib/api/tenant-api', () => ({
   apiGet: (path: string, schema: ZodType) => apiGet(path, schema),
-}));
-vi.mock('@/modules/administration/audit/audit-service', () => ({
-  listAuditEvents: (...args: unknown[]) => listAuditEvents(...args) as unknown,
 }));
 vi.mock('@/modules/administration/roles/role-service', () => ({
   listRoleAssignments: (...args: unknown[]) => listRoleAssignments(...args) as unknown,
@@ -41,6 +36,7 @@ const membershipWire = (userId: string, id = MEMBERSHIP_ID) => ({
   membership_status: 'ACTIVE',
   membership_type: 'STAFF',
   primary_branch_id: BRANCH,
+  created_by: null,
 });
 
 const assignmentWire = (id: string, userId: string) => ({
@@ -248,43 +244,6 @@ describe('user service', () => {
       expect(apiGet).not.toHaveBeenCalled();
       apiGet.mockRejectedValueOnce(new Error('forbidden'));
       await expect(service.listUserBranchAssignments(ANN)).rejects.toThrow('forbidden');
-    });
-  });
-
-  describe('getUserInviter', () => {
-    it("reads the user.invite event's actor", async () => {
-      listAuditEvents.mockResolvedValueOnce({ items: [{ actorUserId: OTHER }], page: {} });
-      await expect(service.getUserInviter(ANN)).resolves.toBe(OTHER);
-      expect(listAuditEvents).toHaveBeenCalledWith({
-        entityType: 'USER',
-        entityId: ANN,
-        action: 'user.invite',
-        page: 0,
-        size: 1,
-      });
-    });
-
-    it('is null when there is no event, or the event has no actor', async () => {
-      listAuditEvents.mockResolvedValueOnce({ items: [], page: {} });
-      await expect(service.getUserInviter(ANN)).resolves.toBeNull();
-      listAuditEvents.mockResolvedValueOnce({ items: [{ actorUserId: null }], page: {} });
-      await expect(service.getUserInviter(ANN)).resolves.toBeNull();
-    });
-
-    // Never a quiet null: a 401 or a stale-context failure must reach the caller's `load()`, which
-    // redirects on it; the caller decides what any other failure means.
-    it.each([
-      ['a 401', new BackendApiError(401, { code: 'unauthorized' })],
-      ['a stale context', new BackendApiError(403, { code: 'invalid_active_tenant_context' })],
-      ['a 5xx', new BackendApiError(500, { requestId: 'req-1' })],
-    ])("rejects with the audit read's own error on %s", async (_name, failure) => {
-      listAuditEvents.mockRejectedValueOnce(failure);
-      await expect(service.getUserInviter(ANN)).rejects.toBe(failure);
-    });
-
-    it('is null for a malformed id, without reading the audit log', async () => {
-      await expect(service.getUserInviter('../x')).resolves.toBeNull();
-      expect(listAuditEvents).not.toHaveBeenCalled();
     });
   });
 

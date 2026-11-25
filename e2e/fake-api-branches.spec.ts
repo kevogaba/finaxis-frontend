@@ -50,6 +50,11 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
     expect(
       (await request.post(api(`/branches/${branchId}/submit`), { headers, data: {} })).status(),
     ).toBe(200);
+    // BG-08: the record names its creator and its latest submitter.
+    const jane = { id: IDS.jane, display_name: 'Backend Jane Manager' };
+    expect(
+      await (await request.get(api(`/branches/${branchId}`), { headers })).json(),
+    ).toMatchObject({ created_by: jane, submitted_by: jane });
     const own = await request.post(api(`/branches/${branchId}/activate`), { headers, data: {} });
     expect(own.status()).toBe(403);
     // BG-08: its own code, never the `forbidden` of a missing permission.

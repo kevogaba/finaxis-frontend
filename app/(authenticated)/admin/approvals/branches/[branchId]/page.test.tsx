@@ -7,21 +7,28 @@ import { VERIFIED_ON_APPROVAL } from '@/modules/administration/approvals/approva
 import {
   BRANCH_ACTIVATION_FORBIDDEN,
   BRANCH_REQUEST,
-  MAKER_NOT_PERMITTED,
-  MAKER_NOT_RECORDED,
-  READ_FAILED,
 } from '@/modules/administration/approvals/approval-copy';
+import {
+  SELF_APPROVAL_NOTE_BRANCHES,
+  type SwitchState,
+} from '@/modules/administration/approvals/maker-checker';
 import { MAKER_CHECKER_BLOCKED } from '@/modules/administration/branches/branch-rules';
+import { permissionScopes } from '@/test/permission-scopes';
 import { renderWithProviders } from '@/test/test-utils';
 
-const { activatePendingBranch, getBranch, getCurrentContextProfile, getMakerEvent, redirect } =
-  vi.hoisted(() => ({
-    activatePendingBranch: vi.fn(),
-    getBranch: vi.fn(),
-    getCurrentContextProfile: vi.fn(),
-    getMakerEvent: vi.fn(),
-    redirect: vi.fn(),
-  }));
+const {
+  activatePendingBranch,
+  getBranch,
+  getCurrentContextProfile,
+  readMakerCheckerSwitch,
+  redirect,
+} = vi.hoisted(() => ({
+  activatePendingBranch: vi.fn(),
+  getBranch: vi.fn(),
+  getCurrentContextProfile: vi.fn(),
+  readMakerCheckerSwitch: vi.fn(),
+  redirect: vi.fn(),
+}));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('next/navigation', async (importOriginal) => ({
@@ -39,15 +46,9 @@ vi.mock('@/lib/api/lookups', () => ({
   getOrganisationTimeZone: () => Promise.resolve('Asia/Kolkata'),
   getBranchIndex: () =>
     Promise.resolve(new Map([[HEAD_OFFICE, { name: 'Head Office', code: 'HQ' }]])),
-  getTenantUser: (id: string) =>
-    Promise.resolve(
-      id.toLowerCase() === ME
-        ? { id: ME, displayName: 'Ann Admin', email: 'ann@x.example' }
-        : { id: VICTOR, displayName: 'Victor Kamau', email: 'victor@x.example' },
-    ),
 }));
-vi.mock('@/modules/administration/approvals/approval-service', () => ({
-  getMakerEvent: (...args: unknown[]) => getMakerEvent(...args) as unknown,
+vi.mock('@/modules/administration/settings/settings-service', () => ({
+  readMakerCheckerSwitch: (...args: unknown[]) => readMakerCheckerSwitch(...args) as unknown,
 }));
 vi.mock('@/modules/administration/branches/branch-service', () => ({
   getBranch: (...args: unknown[]) => getBranch(...args) as unknown,
@@ -72,12 +73,18 @@ const KERICHO = 'b2000000-0000-4000-8000-0000000000bb';
 const VICTOR = 'c3000000-0000-4000-8000-0000000000cc';
 const HEAD_OFFICE = 'd4000000-0000-4000-8000-0000000000dd';
 const WESTLANDS = 'e5000000-0000-4000-8000-0000000000ee';
-const ALL_CODES = ['branch.approve', 'branch.view', 'audit.view'];
+const MARY = 'f6000000-0000-4000-8000-0000000000ff';
+const ALL_CODES = ['branch.approve', 'branch.view', 'audit.view', 'settings.view'];
+
+type Actor = { id: string; displayName: string | null } | null;
 
 interface Setup {
   permissions?: string[];
   status?: string;
-  maker?: string | null | Error;
+  /** The record's `created_by` and `submitted_by` (BG-08). */
+  maker?: Actor;
+  submitter?: Actor;
+  switchState?: SwitchState;
   selectedBranch?: { id: string; name: string } | null;
   activeBranches?: number;
   parentBranchId?: string | null;
@@ -87,7 +94,9 @@ interface Setup {
 function setup({
   permissions = ALL_CODES,
   status = 'PENDING_APPROVAL',
-  maker = VICTOR,
+  maker = { id: VICTOR, displayName: 'Victor Kamau' },
+  submitter = { id: MARY, displayName: 'Mary Wanjiku' },
+  switchState = 'on',
   selectedBranch = null,
   activeBranches = 2,
   parentBranchId = HEAD_OFFICE,
@@ -98,6 +107,7 @@ function setup({
     profile: {
       user_id: me,
       permissions,
+      permission_scopes: permissionScopes(permissions),
       branches: [
         { id: WESTLANDS, status: 'ACTIVE' },
         { id: HEAD_OFFICE, status: activeBranches > 1 ? 'ACTIVE' : 'SUSPENDED' },
@@ -119,16 +129,12 @@ function setup({
     openedOn: null,
     closedOn: null,
     statusReason: null,
-    // Not the maker event's instant (08:00Z on the 10th), so each time row can only come from its own read.
     createdAt: '2026-09-09T07:00:00Z',
     updatedAt: '2026-09-11T09:00:00Z',
+    createdBy: maker,
+    submittedBy: submitter,
   });
-  if (maker instanceof Error) getMakerEvent.mockRejectedValue(maker);
-  else {
-    getMakerEvent.mockResolvedValue(
-      maker === null ? null : { actorUserId: maker, occurredAt: '2026-09-10T08:00:00Z' },
-    );
-  }
+  readMakerCheckerSwitch.mockResolvedValue(switchState);
 }
 
 async function show(branchId = KERICHO) {
@@ -156,14 +162,13 @@ describe('BranchApprovalPage', () => {
     await show(KERICHO.toUpperCase());
 
     expect(getBranch).toHaveBeenCalledExactlyOnceWith(KERICHO);
-    expect(getMakerEvent).toHaveBeenCalledExactlyOnceWith('branch', KERICHO);
+    // Someone else's draft: no switch to read.
+    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1, name: 'Kericho Branch' })).toBeInTheDocument();
     expect(screen.getAllByRole('region')).toHaveLength(3);
     expect(fact(card('Request'), 'Drafted by')).toHaveTextContent('Victor Kamau');
-    expect(fact(card('Request'), 'Drafted (Asia/Kolkata)')).toHaveTextContent(
-      '10 Sep 2026 · 13:30',
-    );
+    expect(fact(card('Request'), 'Submitted by')).toHaveTextContent('Mary Wanjiku');
     expect(fact(card('Branch'), 'Parent branch')).toHaveTextContent('Head Office');
     expect(activate()).toBeEnabled();
     expect(fact(card('Control checks'), 'Drafted by someone else')).toHaveTextContent('Passed');
@@ -176,63 +181,65 @@ describe('BranchApprovalPage', () => {
     ['an upper-case drafter', ME.toUpperCase(), ME],
     ['an upper-case profile id', ME, ME.toUpperCase()],
   ])(
-    'disables Activate for its drafter, matched case-insensitively (%s)',
+    'disables Activate for its drafter while maker-checker is on (%s)',
     async (_case, maker, me) => {
-      setup({ maker, me });
+      setup({ maker: { id: maker, displayName: 'Ann Admin' }, me });
       await show();
 
+      expect(readMakerCheckerSwitch).toHaveBeenCalledExactlyOnceWith(
+        'branch_creation',
+        expect.objectContaining({ tenantPermissions: expect.arrayContaining(['settings.view']) }),
+      );
       expect(activate()).toBeDisabled();
       expect(activate()).toHaveAccessibleDescription(MAKER_CHECKER_BLOCKED);
-      expect(fact(card('Request'), 'Drafted by')).toHaveTextContent('Ann Admin (you)');
+      expect(fact(card('Request'), 'Drafted by')).toHaveTextContent('You (Ann Admin)');
       const check = fact(card('Control checks'), 'Drafted by someone else');
       expect(check).toHaveTextContent('Not met');
       expect(check).toHaveTextContent(MAKER_CHECKER_BLOCKED);
     },
   );
 
-  it.each([
-    ['a 401', new BackendApiError(401), '/login?reason=session_expired'],
-    [
-      'a stale context',
-      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
-      '/select-context',
-    ],
-  ])('redirects, rendering nothing, when the maker read finds %s', async (_case, error, to) => {
-    setup({ maker: error });
-    await expect(show()).rejects.toThrow(`NEXT_REDIRECT:${to}`);
+  it('lets its drafter activate while maker-checker is off, saying so first (BG-08)', async () => {
+    setup({ maker: { id: ME, displayName: 'Ann Admin' }, switchState: 'off' });
+    await show();
+
+    expect(activate()).toBeEnabled();
+    expect(screen.getByRole('note')).toHaveTextContent(SELF_APPROVAL_NOTE_BRANCHES);
+    expect(screen.getByRole('button', { name: 'Activate' })).toHaveAccessibleDescription(
+      SELF_APPROVAL_NOTE_BRANCHES,
+    );
+    expect(fact(card('Control checks'), 'Drafted by someone else')).toHaveTextContent(
+      'Not required',
+    );
   });
 
-  it.each([
-    ['a 403', new BackendApiError(403, { code: 'forbidden', requestId: 'req-2' })],
-    ['a 5xx', new BackendApiError(502, { requestId: 'req-2' })],
-  ])(
-    'leaves Activate on offer, verified by the platform, when the maker read fails with %s',
-    async (_case, error) => {
-      setup({ maker: error });
-      await show();
+  it('leaves Activate enabled for its drafter when the switch can’t be read (decision Q4)', async () => {
+    setup({ maker: { id: ME, displayName: 'Ann Admin' }, switchState: 'unknown' });
+    await show();
 
-      expect(activate()).toBeEnabled();
-      // R-7A: the time row mirrors the failed maker read, never a dash (rule 9).
-      expect(fact(card('Request'), 'Drafted (Asia/Kolkata)')).toHaveTextContent(READ_FAILED);
-      expect(fact(card('Request'), 'Drafted by')).toHaveTextContent(READ_FAILED);
-      expect(fact(card('Request'), 'Drafted by')).toHaveTextContent('Reference: req-2');
-      const check = fact(card('Control checks'), 'Drafted by someone else');
-      expect(check).toHaveTextContent(VERIFIED_ON_APPROVAL);
-      expect(check).toHaveTextContent('Reference: req-2');
-    },
-  );
+    expect(activate()).toBeEnabled();
+    expect(screen.queryByText(SELF_APPROVAL_NOTE_BRANCHES)).toBeNull();
+    const check = fact(card('Control checks'), 'Drafted by someone else');
+    expect(check).toHaveTextContent('Checked on approval');
+    expect(check).toHaveTextContent(VERIFIED_ON_APPROVAL);
+  });
 
-  it('reads no maker without audit.view', async () => {
+  // The tenant route refuses the creator and editors, not the submitter (BG-08, verified 6a8ea28).
+  it('leaves Activate enabled for its submitter, who the tenant route doesn’t refuse', async () => {
+    setup({ submitter: { id: ME, displayName: 'Ann Admin' } });
+    await show();
+
+    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
+    expect(activate()).toBeEnabled();
+    expect(fact(card('Request'), 'Submitted by')).toHaveTextContent('You (Ann Admin)');
+  });
+
+  it('names the drafter from the record without audit.view', async () => {
     setup({ permissions: ['branch.approve', 'branch.view'] });
     await show();
 
-    expect(getMakerEvent).not.toHaveBeenCalled();
-    expect(fact(card('Request'), 'Drafted by')).toHaveTextContent(MAKER_NOT_PERMITTED);
-    // R-7A: the time row says it wasn't permitted too, never a dash (rule 9).
-    expect(fact(card('Request'), 'Drafted (Asia/Kolkata)')).toHaveTextContent(MAKER_NOT_PERMITTED);
-    expect(fact(card('Control checks'), 'Drafted by someone else')).toHaveTextContent(
-      MAKER_NOT_PERMITTED,
-    );
+    expect(fact(card('Request'), 'Drafted by')).toHaveTextContent('Victor Kamau');
+    expect(fact(card('Control checks'), 'Drafted by someone else')).toHaveTextContent('Passed');
     expect(activate()).toBeEnabled();
   });
 
@@ -347,17 +354,15 @@ describe('BranchApprovalPage: a failed read is never absence (rule 9)', () => {
     },
   );
 
-  it('says an audit trail with no draft event has none, rather than showing a dash', async () => {
-    setup({ maker: null });
+  it('shows a dash for a maker the record doesn’t name (the system, or hidden)', async () => {
+    setup({ maker: null, submitter: null });
     await show();
 
-    expect(fact(card('Request'), 'Drafted by')).toHaveTextContent(MAKER_NOT_RECORDED);
-    expect(fact(card('Request'), 'Drafted (Asia/Kolkata)')).toHaveTextContent(MAKER_NOT_RECORDED);
-    // An unrecorded maker leaves the decision on offer and the check to the platform (Ruling 5).
+    expect(fact(card('Request'), 'Drafted by')).toHaveTextContent('—');
+    expect(fact(card('Request'), 'Submitted by')).toHaveTextContent('—');
+    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
     expect(activate()).toBeEnabled();
-    const check = fact(card('Control checks'), 'Drafted by someone else');
-    expect(check).toHaveTextContent('Checked on approval');
-    expect(check).toHaveTextContent(VERIFIED_ON_APPROVAL);
+    expect(fact(card('Control checks'), 'Drafted by someone else')).toHaveTextContent('Passed');
   });
 });
 

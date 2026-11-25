@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { instantSchema, pageSchema, uuidSchema } from '@/lib/api/wire';
+import { actorRefSchema, instantSchema, pageSchema, uuidSchema } from '@/lib/api/wire';
 
 /** Contract §F. Seen at rest: DRAFT, PROVISIONING_IDP, INVITED, ACTIVE, SUSPENDED, DEACTIVATED. */
 export const USER_STATUSES = [
@@ -23,8 +23,9 @@ export type MembershipStatus = (typeof MEMBERSHIP_STATUSES)[number];
 export const MEMBERSHIP_TYPES = ['STAFF', 'ADMIN', 'AUDITOR', 'SYSTEM'] as const;
 export type MembershipType = (typeof MEMBERSHIP_TYPES)[number];
 
-/** UserInTenantSummary (contract §C): the list item and `GET /tenant/users/{id}` share it. No
- * membership id, type or dates (BG-09). Spec §6.1: the platform module reuses it (layer 17). */
+/** UserInTenantSummary (contract §C): the list item and `GET /tenant/users/{id}` share it. Spec
+ * §6.1: the platform module reuses it (layer 17). `createdAt` is the account's, `createdBy` the
+ * membership's inviter (the re-inviter after a re-invite, BG-08). */
 export const userSummarySchema = z
   .object({
     id: uuidSchema,
@@ -33,6 +34,11 @@ export const userSummarySchema = z
     display_name: z.string(),
     user_status: z.enum(USER_STATUSES),
     membership_status: z.enum(MEMBERSHIP_STATUSES),
+    membership_id: uuidSchema,
+    membership_type: z.enum(MEMBERSHIP_TYPES),
+    created_at: instantSchema,
+    membership_created_at: instantSchema,
+    created_by: actorRefSchema,
   })
   .transform((user) => ({
     id: user.id,
@@ -41,6 +47,11 @@ export const userSummarySchema = z
     displayName: user.display_name,
     userStatus: user.user_status,
     membershipStatus: user.membership_status,
+    membershipId: user.membership_id,
+    membershipType: user.membership_type,
+    createdAt: user.created_at,
+    membershipCreatedAt: user.membership_created_at,
+    createdBy: user.created_by,
   }));
 
 export type UserSummary = z.output<typeof userSummarySchema>;
@@ -55,6 +66,7 @@ const membershipSummarySchema = z
     membership_status: z.enum(MEMBERSHIP_STATUSES),
     membership_type: z.enum(MEMBERSHIP_TYPES),
     primary_branch_id: uuidSchema.nullable(),
+    created_by: actorRefSchema,
   })
   .transform((membership) => ({
     id: membership.id,
@@ -62,6 +74,7 @@ const membershipSummarySchema = z
     status: membership.membership_status,
     type: membership.membership_type,
     primaryBranchId: membership.primary_branch_id,
+    createdBy: membership.created_by,
   }));
 
 export type MembershipSummary = z.output<typeof membershipSummarySchema>;
@@ -83,6 +96,7 @@ export const membershipDetailSchema = z
     primary_branch_id: uuidSchema.nullable(),
     created_at: instantSchema,
     updated_at: instantSchema,
+    created_by: actorRefSchema,
   })
   .transform((membership) => ({
     id: membership.id,
@@ -92,6 +106,7 @@ export const membershipDetailSchema = z
     primaryBranchId: membership.primary_branch_id,
     createdAt: membership.created_at,
     updatedAt: membership.updated_at,
+    createdBy: membership.created_by,
   }));
 
 export type MembershipDetail = z.output<typeof membershipDetailSchema>;

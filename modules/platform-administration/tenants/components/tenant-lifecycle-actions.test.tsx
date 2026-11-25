@@ -34,7 +34,10 @@ const ID = '16000000-0000-4000-8000-000000000001';
 const ORG_ID = '00000000-0000-0000-0000-000000000000';
 const NAME = 'Umoja Teachers SACCO';
 
-const record = (actions: readonly TenantLifecycleAction[]) => (
+const record = (
+  actions: readonly TenantLifecycleAction[],
+  blocked: Partial<Record<TenantLifecycleAction, string>> = {},
+) => (
   <main>
     <h1>{NAME}</h1>
     <TenantLifecycleActions
@@ -42,6 +45,7 @@ const record = (actions: readonly TenantLifecycleAction[]) => (
       tenantName={NAME}
       tenantCode="umoja-teachers"
       actions={actions}
+      blocked={blocked}
       contextOrganisationId={ORG_ID}
     />
   </main>
@@ -55,6 +59,29 @@ function expectScoped(formData: FormData) {
 }
 
 describe('TenantLifecycleActions', () => {
+  it('disables a blocked decision, tied to its caption (BG-08)', () => {
+    const caption =
+      'You requested or submitted this institution, so another platform administrator must decide it.';
+    renderWithProviders(
+      <TenantLifecycleActions
+        tenantId={ID}
+        tenantName={NAME}
+        tenantCode="umoja-teachers"
+        actions={['approve', 'reject']}
+        blocked={{ approve: caption, reject: caption }}
+        contextOrganisationId={ORG_ID}
+      />,
+    );
+
+    for (const name of ['Approve', 'Reject']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAccessibleDescription(caption);
+    }
+    // One caption for the shared reason: visible text, not a tooltip.
+    expect(screen.getAllByText(caption)).toHaveLength(1);
+  });
+
   it('links Amend, submits through a confirmation with no reason, then focuses Approve', async () => {
     const user = userEvent.setup();
     submitTenant.mockResolvedValueOnce({ ok: true });
@@ -87,6 +114,21 @@ describe('TenantLifecycleActions', () => {
     rerender(record(['approve', 'reject']));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Approve' })).toHaveFocus();
+    });
+  });
+
+  it('focuses the title when its own submitter is left with only disabled decisions (BG-08)', async () => {
+    const user = userEvent.setup();
+    submitTenant.mockResolvedValueOnce({ ok: true });
+    const { rerender } = renderWithProviders(record(['submit', 'amend']));
+    await user.click(screen.getByRole('button', { name: 'Submit for approval' }));
+    const dialog = screen.getByRole('dialog', { name: `Submit ${NAME} for approval?` });
+    await user.click(within(dialog).getByRole('button', { name: 'Submit for approval' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Submitted for approval');
+
+    rerender(record(['approve', 'reject'], { approve: 'Not you.', reject: 'Not you.' }));
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: NAME })).toHaveFocus();
     });
   });
 

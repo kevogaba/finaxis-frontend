@@ -1,8 +1,10 @@
-import { requireContext, requirePermission, requireTenantContext } from '../access.mts';
+import { actorRef, requireContext, requirePermission, requireTenantContext } from '../access.mts';
+import type { AccessContext } from '../access.mts';
 import { pageOf, problem, sendJson, sortKey } from '../http.mts';
 import { route } from '../router.mts';
 import type { Route } from '../router.mts';
-import type { FakeBranch, FakeMembership, FakeUser, RunState } from '../state.mts';
+import type { FakeBranch, FakeMembership, FakeUser } from '../state.mts';
+import { branchMakersWire } from './branches.mts';
 
 const BRANCH_SORTS: Record<string, (branch: FakeBranch) => string> = {
   branchCode: (branch) => branch.code,
@@ -19,7 +21,7 @@ const branchSort = (query: URLSearchParams) =>
 /** `/branches` and its platform twin (contract §E.2 "sort as /branches"): filter, sort, page. A
  * caller that validates the sort earlier passes it in. */
 export function branchPage(
-  state: RunState,
+  access: AccessContext,
   organisationId: string,
   query: URLSearchParams,
   { key, descending } = branchSort(query),
@@ -27,7 +29,7 @@ export function branchPage(
   const q = query.get('q')?.toLowerCase();
   const status = query.get('status');
   const type = query.get('type');
-  const branches = state.branches
+  const branches = access.state.branches
     .filter(
       (branch) =>
         branch.organisationId === organisationId &&
@@ -46,12 +48,13 @@ export function branchPage(
       branch_type: branch.type,
       status: branch.status,
       created_at: branch.createdAt,
+      ...branchMakersWire(access, branch),
     })),
     query,
   );
 }
 
-export function userSummaryWire(user: FakeUser, membership: FakeMembership) {
+export function userSummaryWire(access: AccessContext, user: FakeUser, membership: FakeMembership) {
   return {
     id: user.id,
     username: user.username,
@@ -59,15 +62,22 @@ export function userSummaryWire(user: FakeUser, membership: FakeMembership) {
     display_name: user.displayName,
     user_status: user.status,
     membership_status: membership.status,
+    membership_id: membership.id,
+    membership_type: membership.type,
+    // ponytail: the fake keeps no account creation time, so the membership's stands in.
+    created_at: membership.createdAt,
+    membership_created_at: membership.createdAt,
+    created_by: actorRef(access, membership.organisationId, membership.invitedBy),
   };
 }
 
 /** `/tenant/users` and `/platform/tenants/{id}/users`: newest first (reverse seed order). */
 export function institutionUserPage(
-  state: RunState,
+  access: AccessContext,
   organisationId: string,
   query: URLSearchParams,
 ) {
+  const { state } = access;
   const q = query.get('q')?.toLowerCase();
   const userStatus = query.get('user_status');
   const membershipStatus = query.get('membership_status');
@@ -89,7 +99,7 @@ export function institutionUserPage(
     // ponytail: "newest user first" = reverse seed order; the fake keeps no user creation time.
     .reverse();
   return pageOf(
-    rows.map(({ user, membership }) => userSummaryWire(user, membership)),
+    rows.map(({ user, membership }) => userSummaryWire(access, user, membership)),
     query,
   );
 }
@@ -112,6 +122,9 @@ export const tenantReadRoutes: Route[] = [
       bootstrap_failure_code: tenant.bootstrapFailureCode,
       created_at: tenant.createdAt,
       updated_at: tenant.updatedAt,
+      // Shown to platform callers only (BG-08).
+      requested_by: null,
+      submitted_by: null,
     });
   }),
 
@@ -128,7 +141,7 @@ export const tenantReadRoutes: Route[] = [
     if (!membership || !user) {
       throw problem(404, 'resource_not_found', 'User not found.');
     }
-    sendJson(context.res, 200, userSummaryWire(user, membership));
+    sendJson(context.res, 200, userSummaryWire(access, user, membership));
   }),
 
   route('GET', '/api/v1/branches', (context) => {
@@ -138,21 +151,13 @@ export const tenantReadRoutes: Route[] = [
     // the sort before branch.view, so a bad sort is a 400 even for a caller who can't list.
     const sort = branchSort(context.query);
     requirePermission(access, 'branch.view');
-    sendJson(
-      context.res,
-      200,
-      branchPage(context.state, access.organisation.id, context.query, sort),
-    );
+    sendJson(context.res, 200, branchPage(access, access.organisation.id, context.query, sort));
   }),
 
   route('GET', '/api/v1/tenant/users', (context) => {
     const access = requireContext(context);
     requireTenantContext(access);
     requirePermission(access, 'user.view');
-    sendJson(
-      context.res,
-      200,
-      institutionUserPage(context.state, access.organisation.id, context.query),
-    );
+    sendJson(context.res, 200, institutionUserPage(access, access.organisation.id, context.query));
   }),
 ];

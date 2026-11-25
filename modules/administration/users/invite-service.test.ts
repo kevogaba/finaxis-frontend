@@ -27,6 +27,11 @@ const userWire = (
   display_name: 'Someone',
   user_status: 'ACTIVE',
   membership_status: membershipStatus,
+  membership_id: '20000000-0000-4000-8000-000000000001',
+  membership_type: 'STAFF',
+  created_at: '2026-07-01T08:00:00Z',
+  membership_created_at: '2026-07-01T08:00:00Z',
+  created_by: null,
 });
 
 /** One backend page, run through the schema the service handed `apiGet` (so a wire drift fails). */

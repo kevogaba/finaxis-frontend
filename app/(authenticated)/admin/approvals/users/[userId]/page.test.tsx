@@ -3,12 +3,13 @@ import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
 import { VERIFIED_ON_APPROVAL } from '@/modules/administration/approvals/approval-checks';
 import {
-  MAKER_NOT_PERMITTED,
-  MAKER_NOT_RECORDED,
-  READ_FAILED,
   ROLES_CAPPED,
   USER_APPROVAL_FORBIDDEN,
 } from '@/modules/administration/approvals/approval-copy';
+import {
+  SELF_APPROVAL_NOTE_USERS,
+  type SwitchState,
+} from '@/modules/administration/approvals/maker-checker';
 import {
   accountBlockedNote,
   MEMBERSHIP_MISSING,
@@ -23,20 +24,18 @@ import { permissionScopes } from '@/test/permission-scopes';
 const {
   findUserMembership,
   getCurrentContextProfile,
-  getMakerEvent,
-  getTenantUser,
   getUser,
   listRequestedRoles,
   listUserBranchAssignments,
+  readMakerCheckerSwitch,
   redirect,
 } = vi.hoisted(() => ({
   findUserMembership: vi.fn(),
   getCurrentContextProfile: vi.fn(),
-  getMakerEvent: vi.fn(),
-  getTenantUser: vi.fn(),
   getUser: vi.fn(),
   listRequestedRoles: vi.fn(),
   listUserBranchAssignments: vi.fn(),
+  readMakerCheckerSwitch: vi.fn(),
   redirect: vi.fn(),
 }));
 
@@ -59,11 +58,12 @@ vi.mock('@/lib/api/lookups', () => ({
     Promise.resolve(new Map([[WESTLANDS, { name: 'Westlands Branch', code: 'WESTLANDS' }]])),
   getRoleIndex: () =>
     Promise.resolve(new Map([[TELLER, { name: 'Teller', code: 'TELLER', status: 'ACTIVE' }]])),
-  getTenantUser: (...args: unknown[]) => getTenantUser(...args) as unknown,
 }));
 vi.mock('@/modules/administration/approvals/approval-service', () => ({
-  getMakerEvent: (...args: unknown[]) => getMakerEvent(...args) as unknown,
   listRequestedRoles: (...args: unknown[]) => listRequestedRoles(...args) as unknown,
+}));
+vi.mock('@/modules/administration/settings/settings-service', () => ({
+  readMakerCheckerSwitch: (...args: unknown[]) => readMakerCheckerSwitch(...args) as unknown,
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
   findUserMembership: (...args: unknown[]) => findUserMembership(...args) as unknown,
@@ -112,8 +112,10 @@ interface Setup {
   userStatus?: string;
   /** The membership lookup: found, null (missed), or an Error that rejects it. */
   membership?: Record<string, unknown> | null | Error;
-  /** The maker read: its actor, null (no event), or an Error that rejects it. */
-  maker?: string | null | Error;
+  /** The record's inviter (`created_by`, BG-08): null for the system, or someone hidden. */
+  maker?: { id: string; displayName: string | null } | null;
+  /** `require_maker_checker_for_user_invites`, as the reader answers it. */
+  switchState?: SwitchState;
   roles?: number | Error;
   rolesHasNext?: boolean;
   branches?: number | Error;
@@ -132,7 +134,8 @@ function setup({
     type: 'STAFF',
     primaryBranchId: WESTLANDS,
   },
-  maker = VICTOR,
+  maker = { id: VICTOR, displayName: 'Victor Kamau' },
+  switchState = 'on',
   roles = 1,
   rolesHasNext = false,
   branches = 1,
@@ -159,22 +162,15 @@ function setup({
     displayName: 'Rose Atieno',
     membershipStatus,
     userStatus,
+    membershipId: MEMBERSHIP,
+    membershipType: 'STAFF',
+    createdAt: '2026-07-01T08:00:00Z',
+    membershipCreatedAt: '2026-09-24T08:00:00Z',
+    createdBy: maker,
   });
   if (membership instanceof Error) findUserMembership.mockRejectedValue(membership);
   else findUserMembership.mockResolvedValue(membership);
-  if (maker instanceof Error) getMakerEvent.mockRejectedValue(maker);
-  else {
-    getMakerEvent.mockResolvedValue(
-      maker === null ? null : { actorUserId: maker, occurredAt: '2026-09-24T08:00:00Z' },
-    );
-  }
-  getTenantUser.mockImplementation((id: string) =>
-    Promise.resolve(
-      id.toLowerCase() === ME
-        ? { id: ME, displayName: 'Ann Admin', email: 'ann@x.example' }
-        : { id: VICTOR, displayName: 'Victor Kamau', email: 'victor@x.example' },
-    ),
-  );
+  readMakerCheckerSwitch.mockResolvedValue(switchState);
   if (roles instanceof Error) listRequestedRoles.mockRejectedValue(roles);
   else {
     listRequestedRoles.mockResolvedValue({
@@ -233,7 +229,8 @@ describe('UserApprovalPage: the request', () => {
     await show(ROSE.toUpperCase());
 
     expect(getUser).toHaveBeenCalledExactlyOnceWith(ROSE);
-    expect(getMakerEvent).toHaveBeenCalledExactlyOnceWith('user', ROSE);
+    // Someone else's invitation: no switch to read.
+    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1, name: 'Rose Atieno' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Back to user onboarding' })).toHaveAttribute(
@@ -242,7 +239,8 @@ describe('UserApprovalPage: the request', () => {
     );
     const request = card('Request');
     expect(fact(request, 'Invited by')).toHaveTextContent('Victor Kamau');
-    expect(fact(request, 'Invited (Asia/Kolkata)')).toHaveTextContent('24 Sep 2026 · 13:30');
+    // The membership's own creation: a re-invite keeps it, so it is the first invitation.
+    expect(fact(request, 'First invited (Asia/Kolkata)')).toHaveTextContent('24 Sep 2026 · 13:30');
     expect(within(request).getByRole('link', { name: 'Open the audit trail' })).toHaveAttribute(
       'href',
       `/admin/users/${ROSE}/audit`,
@@ -321,71 +319,74 @@ describe('UserApprovalPage: the request', () => {
 
 const without = (...codes: string[]) => ALL_CODES.filter((code) => !codes.includes(code));
 
-describe('UserApprovalPage: maker-checker (Ruling 5)', () => {
-  it('disables Approve for its inviter, matched case-insensitively, and marks them as you', async () => {
-    setup({ maker: ME.toUpperCase() });
+describe('UserApprovalPage: maker-checker (BG-08, decision Q4)', () => {
+  it('disables Approve for its inviter while maker-checker is on, matched case-insensitively', async () => {
+    setup({ maker: { id: ME.toUpperCase(), displayName: 'Ann Admin' } });
     await show();
 
+    expect(readMakerCheckerSwitch).toHaveBeenCalledExactlyOnceWith(
+      'user_invites',
+      expect.objectContaining({ tenantPermissions: expect.arrayContaining(['user.approve']) }),
+    );
     expect(button('Approve')).toBeDisabled();
     expect(button('Approve')).toHaveAccessibleDescription(USER_MAKER_CHECKER_BLOCKED);
     expect(button('Reject & revoke')).toBeEnabled();
-    expect(fact(card('Request'), 'Invited by')).toHaveTextContent('Ann Admin (you)');
+    expect(fact(card('Request'), 'Invited by')).toHaveTextContent('You (Ann Admin)');
     expect(fact(card('Control checks'), 'Invited by someone else')).toHaveTextContent('Not met');
+    expect(screen.queryByText(SELF_APPROVAL_NOTE_USERS)).toBeNull();
   });
 
-  it.each([
-    ['a 401', new BackendApiError(401), '/login?reason=session_expired'],
-    [
-      'a stale context',
-      new BackendApiError(403, { code: 'invalid_active_tenant_context' }),
-      '/select-context',
-    ],
-  ])('redirects, rendering nothing, when the maker read finds %s', async (_case, error, to) => {
-    setup({ maker: error });
-    await expect(show()).rejects.toThrow(`NEXT_REDIRECT:${to}`);
-    expect(redirect).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([
-    ['a 403', new BackendApiError(403, { code: 'forbidden', requestId: 'req-4' })],
-    ['a 5xx', new BackendApiError(500, { requestId: 'req-4' })],
-  ])(
-    'leaves Approve on offer, verified by the platform, when the maker read fails with %s',
-    async (_case, error) => {
-      setup({ maker: error });
-      await show();
-
-      expect(button('Approve')).toBeEnabled();
-      expect(fact(card('Request'), 'Invited by')).toHaveTextContent(READ_FAILED);
-      expect(fact(card('Request'), 'Invited by')).toHaveTextContent('Reference: req-4');
-      expect(fact(card('Request'), 'Invited (Asia/Kolkata)')).toHaveTextContent(READ_FAILED);
-      const check = fact(card('Control checks'), 'Invited by someone else');
-      expect(check).toHaveTextContent('Checked on approval');
-      expect(check).toHaveTextContent(VERIFIED_ON_APPROVAL);
-      expect(check).toHaveTextContent('Reference: req-4');
-    },
-  );
-
-  it('reads no maker without audit.view, and says the platform verifies it', async () => {
-    setup({ permissions: without('audit.view') });
+  it('lets its inviter approve while maker-checker is off, saying so first', async () => {
+    setup({ maker: { id: ME, displayName: 'Ann Admin' }, switchState: 'off' });
     await show();
 
-    expect(getMakerEvent).not.toHaveBeenCalled();
     expect(button('Approve')).toBeEnabled();
-    expect(fact(card('Request'), 'Invited by')).toHaveTextContent(MAKER_NOT_PERMITTED);
-    expect(fact(card('Request'), 'Invited (Asia/Kolkata)')).toHaveTextContent(MAKER_NOT_PERMITTED);
-    expect(screen.queryByRole('link', { name: 'Open the audit trail' })).toBeNull();
+    expect(screen.getByRole('note')).toHaveTextContent(SELF_APPROVAL_NOTE_USERS);
+    expect(button('Approve')).toHaveAccessibleDescription(SELF_APPROVAL_NOTE_USERS);
     expect(fact(card('Control checks'), 'Invited by someone else')).toHaveTextContent(
-      VERIFIED_ON_APPROVAL,
+      'Not required',
     );
   });
 
-  it('says an audit trail with no invite event has none, rather than showing a dash', async () => {
+  it('leaves Approve enabled for its inviter when the switch can’t be read, for the platform to decide', async () => {
+    setup({ maker: { id: ME, displayName: 'Ann Admin' }, switchState: 'unknown' });
+    await show();
+
+    expect(button('Approve')).toBeEnabled();
+    expect(screen.queryByText(SELF_APPROVAL_NOTE_USERS)).toBeNull();
+    const check = fact(card('Control checks'), 'Invited by someone else');
+    expect(check).toHaveTextContent('Checked on approval');
+    expect(check).toHaveTextContent(VERIFIED_ON_APPROVAL);
+  });
+
+  it('names a blocked account before the switch, with no self-approval warning', async () => {
+    setup({
+      userStatus: 'SUSPENDED',
+      maker: { id: ME, displayName: 'Ann Admin' },
+      switchState: 'off',
+    });
+    await show();
+
+    expect(button('Approve')).toHaveAccessibleDescription(accountBlockedNote('SUSPENDED'));
+    expect(screen.queryByText(SELF_APPROVAL_NOTE_USERS)).toBeNull();
+  });
+
+  it('names the inviter from the record without audit.view', async () => {
+    setup({ permissions: without('audit.view') });
+    await show();
+
+    expect(fact(card('Request'), 'Invited by')).toHaveTextContent('Victor Kamau');
+    expect(screen.queryByRole('link', { name: 'Open the audit trail' })).toBeNull();
+    expect(fact(card('Control checks'), 'Invited by someone else')).toHaveTextContent('Passed');
+  });
+
+  it('shows a dash when the record names no inviter (the system, or hidden)', async () => {
     setup({ maker: null });
     await show();
 
-    expect(fact(card('Request'), 'Invited by')).toHaveTextContent(MAKER_NOT_RECORDED);
-    expect(fact(card('Request'), 'Invited (Asia/Kolkata)')).toHaveTextContent(MAKER_NOT_RECORDED);
+    expect(fact(card('Request'), 'Invited by')).toHaveTextContent('—');
+    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
+    expect(button('Approve')).toBeEnabled();
   });
 });
 

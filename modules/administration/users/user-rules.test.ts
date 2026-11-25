@@ -405,7 +405,7 @@ describe('blockedMembershipActions', () => {
     membershipStatus: 'ACTIVE',
     userStatus: 'ACTIVE',
     self: false,
-    invitedByMe: false,
+    makerGate: 'allowed',
   } as const;
 
   it('disables Suspend and Revoke on your own record, with the reason', () => {
@@ -428,8 +428,12 @@ describe('blockedMembershipActions', () => {
       userStatus: 'DRAFT',
     } as const;
     expect(
-      blockedMembershipActions(['approve', 'reject'], { ...pending, invitedByMe: true }),
+      blockedMembershipActions(['approve', 'reject'], { ...pending, makerGate: 'blocked' }),
     ).toEqual({ approve: USER_MAKER_CHECKER_BLOCKED });
+    // Maker-checker off, or unreadable: the inviter keeps Approve (decision Q4).
+    expect(
+      blockedMembershipActions(['approve'], { ...pending, makerGate: 'allowed-self-approval' }),
+    ).toEqual({});
     expect(
       blockedMembershipActions(['approve', 'reject'], { ...pending, userStatus: 'LOCKED' }),
     ).toEqual({
@@ -443,7 +447,7 @@ describe('blockedMembershipActions', () => {
         ...subject,
         membershipStatus: 'PENDING_APPROVAL',
         userStatus: 'SUSPENDED',
-        invitedByMe: true,
+        makerGate: 'blocked',
       }),
     ).toEqual({ approve: accountBlockedNote('SUSPENDED') });
   });
@@ -457,10 +461,10 @@ describe('blockedMembershipActions', () => {
     expect(blockedMembershipActions(['approve', 'reject'], pending)).toEqual({});
     // Own record and inviter flags only ever matter for the actions they name.
     expect(
-      blockedMembershipActions(['reject'], { ...pending, self: true, invitedByMe: true }),
+      blockedMembershipActions(['reject'], { ...pending, self: true, makerGate: 'blocked' }),
     ).toEqual({});
     expect(
-      blockedMembershipActions(['reactivate'], { ...subject, self: true, invitedByMe: true }),
+      blockedMembershipActions(['reactivate'], { ...subject, self: true, makerGate: 'blocked' }),
     ).toEqual({});
     expect(blockedMembershipActions([], { ...subject, self: true })).toEqual({});
   });
@@ -618,7 +622,7 @@ describe('plain data', () => {
         expect(roundTrip(state), label).toEqual(state);
         const progress = onboardingProgress(membershipStatus, userStatus);
         expect(roundTrip(progress), label).toEqual(progress);
-        const subject = { membershipStatus, userStatus, self: true, invitedByMe: true };
+        const subject = { membershipStatus, userStatus, self: true, makerGate: 'blocked' as const };
         const actions = availableMembershipActions(subject, wide(ALL));
         expect(roundTrip(actions), label).toEqual(actions);
         const blocked = blockedMembershipActions(actions, subject);

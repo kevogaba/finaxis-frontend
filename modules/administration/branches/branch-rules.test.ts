@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activateBlocked,
   availableBranchActions,
   branchDraftSchema,
   branchTypeLabel,
@@ -53,12 +52,6 @@ describe('branch rules', () => {
     expect(canCreateBranch({ permissions: ['branch.create'] })).toBe(false);
     expect(canCreateBranch({ permissions: ['branch.view'] })).toBe(false);
     expect(canCreateBranch({ permissions: ['branch.create', 'branch.view'] })).toBe(true);
-  });
-
-  it('blocks activation only for a known drafter (BG-08)', () => {
-    expect(activateBlocked('u1', 'u1')).toBe(true);
-    expect(activateBlocked('u2', 'u1')).toBe(false);
-    expect(activateBlocked(null, 'u1')).toBe(false);
   });
 
   it('assigns only to an ACTIVE branch, with all three codes', () => {

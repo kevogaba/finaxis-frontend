@@ -24,6 +24,11 @@ const USER: UserSummary = {
   displayName: 'Esi Mensah',
   userStatus: 'ACTIVE',
   membershipStatus: 'ACTIVE',
+  membershipId: '20000000-0000-4000-8000-000000000001',
+  membershipType: 'STAFF',
+  createdAt: '2026-07-01T08:00:00Z',
+  membershipCreatedAt: '2026-07-01T08:00:00Z',
+  createdBy: null,
 };
 
 interface Setup {

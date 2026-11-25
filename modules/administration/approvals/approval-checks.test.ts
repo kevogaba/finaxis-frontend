@@ -10,8 +10,9 @@ const VICTOR = 'b2000000-0000-4000-8000-0000000000bb';
 describe('the control checks', () => {
   const checks = (overrides: Partial<Parameters<typeof userControlChecks>[0]> = {}) =>
     userControlChecks({
-      maker: { ok: true, value: { actorUserId: VICTOR, name: 'Victor Otieno' } },
+      maker: { id: VICTOR, displayName: 'Victor Otieno' },
       me: ME,
+      switchState: 'on',
       roles: { ok: true, value: 1 },
       branches: { ok: true, value: { count: 1, complete: true } },
       membershipType: 'STAFF',
@@ -33,10 +34,9 @@ describe('the control checks', () => {
     );
   });
 
+  // BG-08: the maker comes from the record, so no audit.view is needed and nothing is left unread.
   it("fails the maker check for the signed-in user's own invitation, whatever the case", () => {
-    const own = checks({
-      maker: { ok: true, value: { actorUserId: ME.toUpperCase(), name: null } },
-    });
+    const own = checks({ maker: { id: ME.toUpperCase(), displayName: null } });
     expect(byId('maker', own)).toMatchObject({
       state: 'failed',
       detail: USER_MAKER_CHECKER_BLOCKED,
@@ -44,31 +44,41 @@ describe('the control checks', () => {
   });
 
   it('names an unnamed maker by short id', () => {
-    const unnamed = checks({ maker: { ok: true, value: { actorUserId: VICTOR, name: null } } });
+    const unnamed = checks({ maker: { id: VICTOR, displayName: null } });
     expect(byId('maker', unnamed)?.detail).toBe('Invited by b2000000.');
   });
 
-  it.each([
-    [
-      'not permitted',
-      null,
-      "Your role can't view the audit trail, so this page can't tell who invited them.",
-    ],
-    [
-      'a failed read',
-      { ok: false, problem: { requestId: 'req-7' } } as const,
-      "Who invited them couldn't be loaded. Reference: req-7",
-    ],
-    [
-      'no invitation event',
-      { ok: true, value: null } as const,
-      "The audit trail doesn't say who invited them.",
-    ],
-  ])('leaves the maker check to the platform when %s', (_case, maker, why) => {
-    expect(byId('maker', checks({ maker }))).toMatchObject({
-      state: 'platform',
-      detail: `${VERIFIED_ON_APPROVAL} ${why}`,
+  it('passes the maker check for a request the record names no maker for (the system, or hidden)', () => {
+    expect(byId('maker', checks({ maker: null }))).toMatchObject({
+      state: 'passed',
+      detail: "They weren't invited by you.",
     });
+  });
+
+  it('needs no other approver for your own invitation while maker-checker is off', () => {
+    const own = checks({
+      maker: { id: ME, displayName: 'Backend Jane Manager' },
+      switchState: 'off',
+    });
+    expect(byId('maker', own)).toMatchObject({
+      state: 'not-required',
+      detail: 'Maker-checker is off for user invitations, so you may approve your own invitation.',
+    });
+  });
+
+  // Decision Q4: without settings.view (or a failed read) the platform decides.
+  it('leaves your own invitation to the platform when the switch is unknown', () => {
+    const own = checks({ maker: { id: ME, displayName: null }, switchState: 'unknown' });
+    expect(byId('maker', own)).toMatchObject({
+      state: 'platform',
+      detail: `${VERIFIED_ON_APPROVAL} You invited them, and this page couldn't read whether maker-checker is on.`,
+    });
+  });
+
+  it("passes someone else's invitation whatever the switch", () => {
+    for (const switchState of ['on', 'off', 'unknown'] as const) {
+      expect(byId('maker', checks({ switchState }))?.state).toBe('passed');
+    }
   });
 
   it('fails the role check only on a read that found none', () => {
@@ -113,8 +123,9 @@ describe('the control checks', () => {
 
   it('checks a branch for its drafter and the institution only', () => {
     const list = branchControlChecks({
-      maker: { ok: true, value: { actorUserId: ME, name: 'Backend Jane Manager' } },
+      maker: { id: ME, displayName: 'Backend Jane Manager' },
       me: ME,
+      switchState: 'on',
       organisationName: 'Greenfield SACCO',
     });
     expect(list.map((check) => [check.label, check.state])).toEqual([
@@ -122,5 +133,23 @@ describe('the control checks', () => {
       ['Institution is active', 'passed'],
     ]);
     expect(list[0]?.detail).toBe(MAKER_CHECKER_BLOCKED);
+  });
+
+  it('names the switch for a branch drafter when maker-checker is off, and anyone else by name', () => {
+    const maker = (id: string, switchState: 'on' | 'off') =>
+      branchControlChecks({
+        maker: { id, displayName: 'Victor Otieno' },
+        me: ME,
+        switchState,
+        organisationName: 'Greenfield SACCO',
+      })[0];
+    expect(maker(ME, 'off')).toMatchObject({
+      state: 'not-required',
+      detail: 'Maker-checker is off for branch creation, so you may activate your own draft.',
+    });
+    expect(maker(VICTOR, 'on')).toMatchObject({
+      state: 'passed',
+      detail: 'Drafted by Victor Otieno.',
+    });
   });
 });

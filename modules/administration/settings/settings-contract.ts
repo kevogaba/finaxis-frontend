@@ -4,7 +4,8 @@ import { pageSchema } from '@/lib/api/wire';
 /** The backend's mask for sensitive and platform-only values (TenantSettingsService.MASK). */
 const REDACTED = '***REDACTED***';
 
-const settingSchema = z
+/** TenantSetting (contract §C): a list item, and `GET /tenant/settings/{key}`'s body. */
+export const settingSchema = z
   .object({
     key: z.string().min(1),
     value: z.string().nullable(),

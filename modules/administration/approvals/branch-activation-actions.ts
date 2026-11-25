@@ -5,20 +5,15 @@ import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiPost } from '@/lib/api/tenant-api';
 import { uuidSchema } from '@/lib/api/wire';
-import {
-  ACTIVATE_FORBIDDEN,
-  MAKER_CHECKER_BLOCKED,
-} from '@/modules/administration/branches/branch-rules';
+import { ACTIVATE_FORBIDDEN } from '@/modules/administration/branches/branch-rules';
 import { getBranch } from '@/modules/administration/branches/branch-service';
 import {
   APPROVAL_CHANGED_CODE,
   BRANCH_CHANGED,
   BRANCH_CONTEXT_CODE,
   BRANCH_CONTEXT_REFUSAL,
-  MAKER_CHECKER_CODE,
 } from './approval-copy';
-import { decider, knownMaker, postFromEndState, refuse } from './approval-guards';
-import { isSameUser } from './approval-rules';
+import { decider, postFromEndState, refuse } from './approval-guards';
 
 // No `|| null` transform: a trimmed '' is falsy, so a blank reason still sends `{}`.
 const activationInput = z.object({
@@ -27,9 +22,10 @@ const activationInput = z.object({
   reason: z.string().trim().max(500, 'Keep the reason under 500 characters.').optional(),
 });
 
-/** Branch activation (contract §E.3): All branches only (BG-03, refused before any read), still
- * pending (or ACTIVE, its own end state: see below), and never by its drafter when the audit log
- * names them (Ruling 5): each refused before any write. The reason is optional. */
+/** Branch activation (contract §E.3): All branches only (BG-03, refused before any read), and still
+ * pending (or ACTIVE, its own end state: see below), each refused before any write. The drafter is
+ * the platform's to refuse: a switch may let them activate (BG-08), and `describeProblem` names its
+ * refusal. The reason is optional. */
 export async function activatePendingBranch(
   _previous: ActionResult | null,
   formData: FormData,
@@ -45,10 +41,6 @@ export async function activatePendingBranch(
     if (branch.status !== 'PENDING_APPROVAL' && !endState) {
       throw refuse(409, APPROVAL_CHANGED_CODE);
     }
-    const holder = { permissions: selected.profile.permissions };
-    if (isSameUser(await knownMaker('branch', branch.id, holder), selected.profile.user_id)) {
-      throw refuse(403, MAKER_CHECKER_CODE);
-    }
     await postFromEndState(endState, () =>
       apiPost(
         `/api/v1/branches/${branch.id.toLowerCase()}/activate`,
@@ -59,6 +51,5 @@ export async function activatePendingBranch(
   });
   let explained = explain(result, BRANCH_CONTEXT_CODE, BRANCH_CONTEXT_REFUSAL);
   explained = explain(explained, APPROVAL_CHANGED_CODE, BRANCH_CHANGED);
-  explained = explain(explained, MAKER_CHECKER_CODE, MAKER_CHECKER_BLOCKED);
   return explain(explained, 'forbidden', ACTIVATE_FORBIDDEN);
 }

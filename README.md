@@ -429,11 +429,13 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     BG-01).
   - User onboarding's "Newest first" is the users endpoint's own order, by when each account was
     created (BG-09): an invitation that reused an existing account sorts by that account's age.
-  - The maker comes from the audit log, not yet from the platform's `created_by`, so without
-    `audit.view` (or when that read fails) Approve and Activate stay on offer and the check reads
-    "Verified by the platform on approval". A refusal is explained as permission or maker-checker
-    only for `forbidden`; the platform now gives maker-checker refusals their own codes, which
-    get the generic permission message (BG-08).
+  - The maker comes from the record (`created_by`, `submitted_by`), so naming it needs no
+    `audit.view` (BG-08). Approve or Activate is disabled for its maker only while the institution's
+    maker-checker switch is known to be on: with it off they stay enabled under a warning that the
+    approval is recorded as a high-severity event, and without `settings.view` (or when the read
+    fails) they stay enabled and the platform's named refusal explains a refusal (`makerGate`,
+    `readMakerCheckerSwitch`). Who edited a branch isn't exposed, so that refusal is explained only
+    after it comes.
   - Each decision re-reads its subject and refuses before any write when it is no longer waiting
     (decided, or approved into identity provisioning), except that each lets its own end state
     through (an active or provisioning membership for Approve, an active branch for Activate, a
@@ -441,14 +443,14 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     response was lost, and refuses anyone else's, which reads as 'changed' for Approve and
     Activate and as Reject & revoke's own failure ('It may already be revoked') for Reject &
     revoke. Approve also refuses a
-    blocked account (suspended, locked, deactivating, deactivated or archived) and an invitation you
-    made; Activate also refuses while a branch is selected and a branch you drafted. Reject &
-    revoke has no maker check and doesn't refuse a blocked account, so a blocked account can still
-    be rejected, and so can your own invitation.
+    blocked account (suspended, locked, deactivating, deactivated or archived); Activate also
+    refuses while a branch is selected. Neither refuses its maker before the write: the platform
+    decides that. Reject & revoke has no maker check and doesn't refuse a blocked account, so a
+    blocked account can still be rejected, and so can your own invitation.
   - An institution with a single administrator can't approve its own invitees or activate the
-    branches it drafted: another administrator must do both. The platform now also lets a
-    platform checker act during onboarding, or the institution switch maker-checker off, but the
-    UI offers neither yet and refuses the maker regardless (BG-02).
+    branches it drafted while maker-checker is on: another administrator must, or the institution
+    switches maker-checker off in Settings. The platform also lets a platform checker act during
+    onboarding, which the UI doesn't offer yet (BG-02).
   - A user whose identity is still provisioning was already approved: the queue marks them and
     offers no decision (BG-11). Missing prerequisites (a role, a branch) are explained after the
     platform refuses (BG-07).
@@ -507,9 +509,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   Audit tabs. Known limits:
   - No address, edit, or opened/closed-date fields, which the platform now provides
     (`docs/backend-gaps.md` BG-13).
-  - The maker-checker lookup (who drafted a pending branch) needs `audit.view`; the platform's
-    `created_by` isn't read yet (`docs/backend-gaps.md` BG-08). Activate is never disabled for an
-    unknown maker.
+  - Activate is disabled for the branch's creator (`created_by`) only while maker-checker for
+    branch creation is known to be on (`docs/backend-gaps.md` BG-08); the tenant route doesn't
+    refuse its submitter, and an editor's refusal is explained after it comes.
   - A branch the selected branch context couldn't reach showed a guided "Switch to All branches"
     state instead of a raw 404 (`docs/backend-gaps.md` BG-03). The platform no longer pins
     branches, so tenant-wide holders now get the branch and branch-scoped ones a 403.
@@ -588,11 +590,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     Assign branch offers the first 100 active branches (only the selected one while a branch is
     selected). Assign role offers the active roles among the first 500 by name (the role index's
     ceiling) and says so under the Role field when there are more (BG-09).
-  - Approve is disabled, with the reason, for the user's inviter (when `audit.view` can show
-    who that was) and for a blocked account, and withheld once approval ran. Other refusals are
-    explained by the contract's codes, which the platform has since changed: a maker-checker
-    refusal now has its own code and gets the generic permission message (BG-08), and a missing
-    prerequisite is a 409 rather than the 500 the UI explains by its likely causes (BG-07).
+  - Approve is disabled, with the reason, for the user's inviter (the record's `created_by`)
+    while maker-checker for user invitations is known to be on, and for a blocked account, and
+    withheld once approval ran; with the switch off it stays enabled under a warning (BG-08).
+    Other refusals are explained by their codes (BG-07, BG-08).
     "Provisioning identity" offers no retry or resend, which the platform now has (BG-11).
   - Reject & revoke and Revoke are presented as permanent, and the invite wizard refuses the
     email, though the platform now re-invites a revoked member (BG-28).
@@ -648,9 +649,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - The create is posted first, and only after a 500 does one lookup (one page of 100 matches)
     name a duplicate tenant code; the platform now answers a duplicate with 409 `conflict`, so the
     code isn't named (BG-07). A retry with the same idempotency key replays.
-  - Approve stays on offer for its maker: the UI doesn't read the platform's `requested_by` and
-    `submitted_by` yet, and a maker's refusal, which now has its own code, gets the generic
-    permission message (BG-08).
+  - Approve and Reject are disabled, with the reason, for the request's `requested_by` and
+    `submitted_by`, which the Overview names; no institution switch relaxes the platform's own
+    checker. Someone who amended the draft is refused by the platform, by name (BG-08).
   - Amend re-asks the legal name, registration number and first administrator, which the
     platform now returns but the UI doesn't read yet (BG-14). There are no Settings or Audit
     tabs, though the platform now has both routes (BG-12, BG-06).

@@ -1,8 +1,6 @@
 import 'server-only';
 import { cache } from 'react';
 import type { ListSort } from '@/lib/api/list-sort';
-import { uuidSchema } from '@/lib/api/wire';
-import { listAuditEvents } from '@/modules/administration/audit/audit-service';
 import type { BranchSortField } from '@/modules/administration/branches/branch-contract';
 import { DEFAULT_BRANCH_SORT } from '@/modules/administration/branches/branch-query';
 import { listBranches } from '@/modules/administration/branches/branch-service';
@@ -63,30 +61,6 @@ export const countBranchActivations = cache(async (): Promise<number> => {
   const page = await listBranchActivations({ sort: DEFAULT_BRANCH_SORT, page: 0, size: 1 });
   return page.page.totalItems;
 });
-
-export interface MakerEvent {
-  actorUserId: string | null;
-  occurredAt: string;
-}
-
-export type ApprovalSubjectKind = 'user' | 'branch';
-
-/** Contract §G's maker lookups: who asked, and when (BG-08). */
-const MAKER_LOOKUP = {
-  user: { entityType: 'USER', action: 'user.invite' },
-  branch: { entityType: 'BRANCH', action: 'branch.create_draft' },
-} as const;
-
-/** The request's own audit event; null when the log holds none. Needs `audit.view`. `async`, so a
- * malformed id rejects (a `load()` failure) instead of throwing past `load()`. */
-export const getMakerEvent = cache(
-  async (kind: ApprovalSubjectKind, subjectId: string): Promise<MakerEvent | null> => {
-    const id = uuidSchema.parse(subjectId).toLowerCase();
-    const events = await listAuditEvents({ ...MAKER_LOOKUP[kind], entityId: id, page: 0, size: 1 });
-    const event = events.items[0];
-    return event ? { actorUserId: event.actorUserId, occurredAt: event.occurredAt } : null;
-  },
-);
 
 /** Requested access (spec §10.6): the user's ACTIVE role assignments, one bounded page (Ruling 8;
  * `hasNext` says when there are more). */

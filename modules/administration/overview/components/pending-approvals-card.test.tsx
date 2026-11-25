@@ -38,6 +38,11 @@ const person = (tail: string, displayName: string, userStatus: UserSummary['user
   displayName,
   userStatus,
   membershipStatus: 'PENDING_APPROVAL' as const,
+  membershipId: '20000000-0000-4000-8000-000000000001',
+  membershipType: 'STAFF' as const,
+  createdAt: '2026-07-01T08:00:00Z',
+  membershipCreatedAt: '2026-07-01T08:00:00Z',
+  createdBy: null,
 });
 
 const WANJIKU = person('a4', 'Wanjiku Kariuki', 'DRAFT');
@@ -49,6 +54,8 @@ const NYERI: BranchSummary = {
   branchType: 'OPERATIONS',
   status: 'PENDING_APPROVAL',
   createdAt: '2026-09-15T08:00:00Z',
+  createdBy: null,
+  submittedBy: null,
 };
 
 function waiting() {

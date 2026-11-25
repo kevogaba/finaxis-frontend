@@ -38,6 +38,7 @@ interface Overrides {
   actions: readonly MembershipAction[];
   blocked?: Partial<Record<MembershipAction, string>>;
   note?: string | null;
+  warning?: string | null;
   /** The user's account status as the page rendered it; omitted, the prop is not passed at all. */
   userStatus?: UserStatus;
 }
@@ -48,6 +49,7 @@ const record = ({
   actions,
   blocked = {},
   note = null,
+  warning = null,
   userStatus,
 }: Overrides) => (
   <main>
@@ -58,6 +60,7 @@ const record = ({
       actions={actions}
       blocked={blocked}
       note={note}
+      warning={warning}
       userStatus={userStatus}
       contextOrganisationId={ORG}
     />
@@ -76,6 +79,18 @@ function expectScoped(sent: FormData | undefined) {
 describe('UserLifecycleActions', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+  });
+
+  // BG-08: maker-checker off lets the inviter approve, warned before the decision.
+  it('shows a self-approval warning above the actions, leaving Approve enabled', () => {
+    const warning = 'Maker-checker is off for user invitations. You invited this person.';
+    renderActions({ actions: ['approve', 'reject'], warning });
+
+    const note = screen.getByRole('note');
+    expect(note).toHaveTextContent(warning);
+    const approve = screen.getByRole('button', { name: 'Approve' });
+    expect(approve).toBeEnabled();
+    expect(note.compareDocumentPosition(approve) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('approves through a confirmation that carries the membership, key and organisation (I2)', async () => {
