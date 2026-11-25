@@ -93,7 +93,8 @@ describe('provisioningTimeline', () => {
     ['ACTIVE', 'QUEUED', ['Done', 'Done', 'Done', 'In progress']],
     ['ACTIVE', 'PROVISIONING_IDENTITY', ['Done', 'Done', 'Done', 'In progress']],
     ['ACTIVE', 'COMPLETED', ['Done', 'Done', 'Done', 'Done']],
-    // BG-24: a later invitee's failure can turn COMPLETED into FAILED; the timeline shows it as is.
+    // FAILED is the first administrator's own provisioning failure (BG-24 closed: an invitee's no
+    // longer overwrites COMPLETED), so the retry the timeline offers is trustworthy.
     ['ACTIVE', 'FAILED', ['Done', 'Done', 'Done', 'Failed']],
     ['REJECTED', 'DRAFT', ['Done', 'Done', 'Rejected', 'Not started']],
   ] as const)('%s with a %s bootstrap reads %j', (status, bootstrap, expected) => {

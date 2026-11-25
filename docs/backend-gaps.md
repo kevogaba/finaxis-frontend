@@ -11,7 +11,9 @@ platform repository.
   drifted) and read-only probes of `https://finaxis-dev.api.ogaba.dev`. Re-verified on 2026-11-16
   against `kevogaba/finaxis-platform` `main` @ `3b462c3`, and on 2026-11-24 @ `6a8ea28`, which adds
   platform #343, #344 and #346 (BG-34, BG-35 and the self-assignment guard), by reading its code,
-  migrations and tests (no live probes).
+  migrations and tests (no live probes). The adoption plan's second pass the same day
+  ([spec](superpowers/specs/2026-11-24-backend-gap-adoption-design.md) §6) corrected 22 details
+  against the code; each is marked **Verified 2026-11-24** in its entry.
 - **Platform references:** "platform #NNN" is an issue or pull request in
   `kevogaba/finaxis-platform`. Tracker platform #177 lists BG-01–BG-33; BG-34 and BG-35 are platform
   #340 and #341, and the self-assignment guard is platform #342.
@@ -20,14 +22,18 @@ platform repository.
 - **Status:** **Open**, the backend still has the gap · **Backend fixed**, the platform closed it
   but the UI still does what **Frontend handling** says until it adopts the fix (**To adopt**) ·
   **Partly fixed**, part shipped and the rest stays under **Still open**, which says when an owner
-  decision (an ADR) declined it · **Closed**, the frontend adopted the fix. Limits the platform kept
-  on purpose are listed under **Still open** even for a fixed gap.
+  decision (an ADR) declined it · **Adopted**, the frontend uses everything the platform shipped and
+  the platform's remaining work stays under **Still open** · **Closed**, the frontend adopted the fix
+  and nothing is left. Limits the platform kept on purpose are listed under **Still open** even for a
+  fixed gap.
 - **Frontend handling** describes what the UI does until the gap closes. Wire details are in
   [`docs/superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md`](superpowers/specs/2026-09-25-admin-prototype-parity-api-contract.md),
   which mirrors `7a7f4c3`: where a gap is fixed, **Backend resolution** and the platform's
   `docs/api/foundation-api.md` are the current wire reference until the contract is refreshed.
-- Keep this document current: when the frontend adopts a fix, mark the entry **Closed** with the
-  frontend PR, and update the contract and the e2e fake API (`e2e/fake-api/`) in the same change.
+- Keep this document current: when the frontend adopts a fix, mark the entry **Closed** (or
+  **Adopted**) with the frontend PR, and update the contract and the e2e fake API (`e2e/fake-api/`)
+  in the same change. The adoption order is the stack in
+  [`plans/2026-11-24-bg-adopt-00-index.md`](superpowers/plans/2026-11-24-bg-adopt-00-index.md).
 
 ## Backend changes that affect the current UI
 
@@ -61,9 +67,10 @@ miscount things today.
    set, which it now always is, so Reset is offered and fails; the key is also still in
    `EDITABLE_KEYS` (BG-04, BG-12).
 6. **The maker-checker switches are real** (platform #282, ADR 0032): on by default, and a stored
-   `false` lets the tenant's own maker approve (audited). Settings still says "Always on
-   (enforced)", and the approval actions refuse the maker before any write even when the switch is
-   off (BG-01, BG-12).
+   `false` lets the tenant's own maker approve (audited), and also the invited person and a branch's
+   amenders; reading a switch needs `settings.view`. Settings still says "Always on (enforced)", and
+   the approval actions refuse the maker before any write even when the switch is off (BG-01,
+   BG-12).
 7. **A mutation implies more views** (ADR 0030, V22): `user.invite` needs `membership.view` and
    `user.view`; `user.assign_role` needs `role_assignment.view`. `INVITE_CODES` and the assign-role
    gates don't include them, so the action shows and then gets a 403. Role composition refuses a
@@ -107,7 +114,7 @@ miscount things today.
 
 ## Summary
 
-26 backend fixed · 9 partly fixed · 0 open · 0 closed.
+23 backend fixed · 9 partly fixed · 0 open · 0 adopted · 3 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -115,7 +122,7 @@ miscount things today.
 | BG-02 | P0       | Backend fixed | A tenant created through the API cannot onboard a second person through the API                    |
 | BG-03 | P0       | Backend fixed | Branch pinning: a selected branch hides every other branch; draft branches are unreachable         |
 | BG-04 | P0       | Backend fixed | Tenant settings `PUT` fails with 500 and rolls back (per source reading)                           |
-| BG-05 | P0       | Backend fixed | Published OpenAPI casing is wrong and list-item schemas are missing                                |
+| BG-05 | P0       | Closed        | Published OpenAPI casing is wrong and list-item schemas are missing                                |
 | BG-06 | P0       | Backend fixed | No platform audit endpoint; tenant audit is 403 in the platform context                            |
 | BG-07 | P1       | Partly fixed  | Business-rule failures return 500 instead of 4xx                                                   |
 | BG-08 | P1       | Backend fixed | Maker identity not exposed; maker-checker 403 indistinguishable from missing permission            |
@@ -134,7 +141,7 @@ miscount things today.
 | BG-21 | P2       | Backend fixed | No close-of-business readiness checks exposed                                                      |
 | BG-22 | P2       | Partly fixed  | No notifications endpoint                                                                          |
 | BG-23 | P2       | Backend fixed | Context discovery inconsistencies (`total_items` overcount, duplicate branch IDs)                  |
-| BG-24 | P2       | Backend fixed | Bootstrap status can flip COMPLETED → FAILED from unrelated invitee failures                       |
+| BG-24 | P2       | Closed        | Bootstrap status can flip COMPLETED → FAILED from unrelated invitee failures                       |
 | BG-25 | P2       | Partly fixed  | Identity and email delivery defaults (Keycloak admin off, email off, no password step)             |
 | BG-26 | P2       | Backend fixed | Ignored or dangerous sort parameters                                                               |
 | BG-27 | P2       | Backend fixed | Role lifecycle gaps (no delete; DISABLED roles assignable; ARCHIVED unused)                        |
@@ -142,7 +149,7 @@ miscount things today.
 | BG-29 | P2       | Backend fixed | PLATFORM organisation included in tenant search results                                            |
 | BG-30 | P2       | Backend fixed | Wrong-context 403s put a sentence in `code`; invalid JWT 401 has no body                           |
 | BG-31 | P2       | Backend fixed | Mutations silently require the matching `.view` permission                                         |
-| BG-32 | P2       | Backend fixed | Documentation drift in the platform repository                                                     |
+| BG-32 | P2       | Closed        | Documentation drift in the platform repository                                                     |
 | BG-33 | P2       | Backend fixed | Permission codes in /auth/me carry no scope                                                        |
 | BG-34 | P2       | Backend fixed | Role update accepts a blank name; an empty description clears it                                   |
 | BG-35 | P2       | Backend fixed | No documented self-lockout guard: a user may suspend, revoke or deactivate themselves              |
@@ -195,6 +202,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
   - No return for changes on a membership (rejecting is still revoke), and the membership approval's
     `reason` is stored but not returned (membership detail has no `status_reason`).
   - No platform route to discard a draft branch.
+- **Verified 2026-11-24:** branch `activate` already takes an optional `reason` (at most 500), and
+  the UI sends it; only membership and tenant approval lacked a remark. Discard needs `branch.create`
+  **tenant-wide**, and a draft with an ACTIVE child branch or an active assignment is a plain 409
+  `conflict`. A discarded draft ends CLOSED with `closed_on` set and `opened_on` null.
 - **To adopt:** Return/Withdraw and Discard on branches, Return on pending institutions with their
   `status_reason`, an optional remark on Approve, and activation gated on `branch.approve`.
 
@@ -256,6 +267,9 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Still open:** by design, sign-in still auto-selects a single branch; a search with neither
   `branch_id` nor `user_id` defaults to the selected branch; DRAFT and PENDING_APPROVAL branches
   can't be selected, so only tenant-wide holders act on them.
+- **Verified 2026-11-24:** `select-branch` clears on `{}` or `{"branch_id": null}` but rejects
+  `""` (strict UUID). A branch-scoped caller's 403 on another branch's record renders the generic
+  `ErrorState` today; it should be the Forbidden state.
 - **To adopt:** drop the client-side "switch to All branches" refusals (activation, branch pages,
   the approval queue); let single-branch users clear their branch; pass `branch_id` explicitly in
   assignment searches. The guided state keyed on `resource_not_found` stops firing: tenant-wide
@@ -287,7 +301,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-05 — OpenAPI casing wrong; list-item schemas missing · P0
 
-- **Status:** Backend fixed. Platform #151.
+- **Status:** Closed (frontend #105): nothing to adopt. Platform #151.
 - **Gap:** The wire format is snake_case and rejects unknown properties
   (`common/web/api/ApiJsonCodec.kt:27-28`), but springdoc publishes camelCase for every DTO except the
   auth ones (which carry explicit `@Schema(name=…)`). `ApiPage.items` is untyped; the summary item
@@ -323,6 +337,12 @@ the same bullets): the first is the gap as found, the second what the UI still d
   `actor_subject` is a 400 there. No route reads one of a tenant's events from the platform (the
   detail route reads platform rows only), and there is no platform export (ADR 0039).
   `/tenant/audit-events` still refuses the platform context, by design.
+- **Verified 2026-11-24:** an unknown `tenant_id` on `/platform/tenants/{tenant_id}/audit-events`
+  answers an empty page, not 404; a tenant caller without `audit.view` gets plain `forbidden`, with it
+  `platform_context_required`. The audit page's tenant lookups (user and branch names, the
+  organisation's time zone) are 403 in the platform context, so the platform pages need their own.
+  The tenant summary schema parses platform items; only the detail schema (which requires
+  `metadata_json`) doesn't.
 - **To adopt:** restore `/platform-admin/audit` and add an Audit tab to institution records, gated on
   `audit.view` in the platform context. Parse the platform items with their own schema: the tenant
   detail schema requires `metadata_json`.
@@ -401,6 +421,11 @@ the same bullets): the first is the gap as found, the second what the UI still d
     a DENIED, HIGH audit row.
 - **Still open:** nothing. A tenant's stored `require_maker_checker_*` = `false` lets its maker
   approve (BG-12).
+- **Verified 2026-11-24:** the tenant activate route refuses the branch's creator and amenders but
+  **not its submitter**; the platform route refuses the submitter too. Nothing exposes amenders, so
+  `approver_is_branch_modifier` can only be explained after the refusal. Tenant **reject** also
+  answers the `approver_is_tenant_*` codes. `/tenant/users` items and detail also carry
+  `membership_id`, `membership_type`, `created_at` (the account's) and `membership_created_at`.
 - **To adopt:** read the maker from `created_by`, `submitted_by` and `requested_by` instead of the
   audit log (no `audit.view` needed, and it works from the platform context), and explain each code.
   A re-invited membership's maker is its `created_by`, not the `user.invite` actor (BG-28).
@@ -440,6 +465,11 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Still open:** no `ids` filter on roles; role items still lack `description` and dates;
   role-assignment items are still ids only and take no sort; `/platform/tenants/{id}/users` takes no
   sort; user items carry no `member_number`.
+- **Verified 2026-11-24:** `GET /tenant/users/{id}` already returns the `membership_id` and
+  `created_by`, so the user record needs no membership search at all. `/tenant/users?sort_by=createdAt`
+  sorts by the **account's** `created_at`, not `membership_created_at`, so User onboarding's order
+  stays undefined for reused and re-invited accounts. With `user_id`, branch-assignment search still
+  returns only the branches the caller may view (ACTIVE ones, for a branch-scoped holder).
 - **To adopt:** `user_id` replaces the email-search membership lookup and the 500-assignment scan,
   with their "partial" states; embedded names replace the per-page lookups; `membership_created_at`
   with `sort_by=createdAt` gives User onboarding a defined order. The role index's ceiling of 500
@@ -492,6 +522,11 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Still open:** no invitation entity, expiry or accepted time; `invitation` is on membership
   detail only (not list items, user detail or platform routes); a failed resend or application-invite
   email isn't visible; resend doesn't re-send the application invite.
+- **Verified 2026-11-24:** every membership mutation response (activate, suspend, reactivate,
+  revoke, PATCH, retry, resend, and the platform activate) answers the detail with `invitation`.
+  Retry has no maker-checker rule, needs a recorded dispatch that hasn't succeeded, and is a 200
+  no-op while a job runs; resend also needs a dispatch row. A REVOKED membership whose last dispatch
+  failed still reads `FAILED` (code `CANCELLED`), so Retry also checks the membership and user status.
 - **To adopt:** show `invitation.status` and its error code on the user record with Retry and
   Resend, and replace the "Provisioning identity" guidance and the overview's provisioning note.
 
@@ -531,6 +566,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
   default OFF); reading `audit_retention_days` on the tenant route still needs the platform
   permission; the bounds aren't published in the response; a stored key outside the catalogue still
   lists.
+- **Verified 2026-11-24:** `base_currency` always reads `is_default: false` and the response has no
+  read-only flag, so read-only is decided by key. The list is sorted by key, not group, and the API's
+  labels differ from the UI's ("Default time zone", "Require maker-checker for user invitations", …).
+  Reading a maker-checker switch needs `settings.view`. `settings.operational` is never listed.
 - **To adopt:** render labels, groups and `is_default` from the API instead of `SETTING_GROUPS`;
   offer Reset only when `is_default` is false; make `base_currency` read-only; make the maker-checker
   and auto-advance switches editable with true copy; add a platform Settings tab for retention.
@@ -597,6 +636,9 @@ the same bullets): the first is the gap as found, the second what the UI still d
   counted by their own routes (BG-22).
 - **Still open:** detail responses carry no counts, there is no counts endpoint, and lists can't sort
   by a count.
+- **Verified 2026-11-24:** `permission_count` counts every grant whatever the permission's status;
+  a platform tenant's `active_user_count` counts ACTIVE memberships; branch and role
+  `active_user_count` count distinct users.
 - **To adopt:** count columns in the role, branch and institution directories, treating `null` as
   not permitted. Record pages still need a `size=1` read. The roles Overview's "Active assignments"
   counts assignments; `active_user_count` counts people.
@@ -630,6 +672,9 @@ the same bullets): the first is the gap as found, the second what the UI still d
     remain as deprecated aliases of `entity_type`, `entity_id` and `actor_user_id`.
 - **Still open:** older rows aren't backfilled; `actor_id` still matches USER actors only; the roles
   an invitation grants write no audit row; a non-UUID `entity_id` is stored as null.
+- **Verified 2026-11-24:** `api.access_denied` rows use entity type `API_ROUTE`; `audit.export`
+  (entity `AUDIT_EVENT`) and `audit.retention_purge` rows also land in the tenant log, so Recent
+  activity shows them.
 - **To adopt:** the outcome, severity, branch and text filters, and a user's whole history from one
   `subject_user_id` query; label `branch_id` as the branch acted on; update the audit vocabulary
   (membership events on `MEMBERSHIP`, `user_account.*`, `api.access_denied`); move off the
@@ -658,6 +703,9 @@ the same bullets): the first is the gap as found, the second what the UI still d
   administrator can't see or edit a phone or display name; `joined_at` isn't returned; user items
   and the global directory carry no member number; an invitation that reuses an existing account
   ignores its profile fields (ADR 0033 decision 5).
+- **Verified 2026-11-24:** the membership PATCH is also 409 `conflict` when an ACTIVE membership
+  becomes STAFF or ADMIN while its user has no active branch assignment; the platform user PATCH is
+  also 422 for a DEACTIVATED or ARCHIVED account, and trims `display_name`.
 - **To adopt:** the member number on the user record and directory (through the membership), a
   membership edit form (type, primary branch), and phone, last sign-in and profile edit on the
   platform user record.
@@ -673,6 +721,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
   member there, and a 403 is explained in those words (layer 17).
 - **Backend resolution:** `POST /platform/tenants/{id}/branches` needs only `branch.create` (and
   `branch.view`) in the platform organisation, for an ACTIVE or PROVISIONING tenant.
+- **Verified 2026-11-24:** a platform-created draft can be platform-submitted only while the
+  platform-checker window is open (BG-02); after that the tenant submits it.
 - **Still open:** nothing.
 - **To adopt:** drop the membership warning and its 403 copy; consider offering it for PROVISIONING
   institutions.
@@ -742,6 +792,9 @@ the same bullets): the first is the gap as found, the second what the UI still d
   switch is off).
 - **Still open:** declined (ADR 0029, ADR 0038): no feed, inbox, read state or push. The membership
   count includes members whose identity is still provisioning.
+- **Verified 2026-11-24:** "less the caller's own" means rows the caller **created**: a
+  membership's beneficiary and a branch's submitter or amenders are still counted, so each count is
+  an upper bound (tenants exclude the requester and submitter).
 - **To adopt:** replace the bells' `size=1` reads with the count routes, keeping the provisioning
   read if the bell should still leave those out; gate the branch count on `branch.approve`.
 
@@ -765,7 +818,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-24 — Bootstrap status overwritten by unrelated failures · P2
 
-- **Status:** Backend fixed. Platform #163.
+- **Status:** Closed (frontend #105): nothing to adopt. Platform #163.
 - **Gap:** any Keycloak provisioning failure in a tenant marks its bootstrap FAILED, without checking
   the current status (`KeycloakUserProvisioningJobRequestHandler.kt:101`), so a later invitee's
   failure turns COMPLETED into FAILED and invites a bootstrap retry.
@@ -857,6 +910,9 @@ the same bullets): the first is the gap as found, the second what the UI still d
   assignments are created, and the audit action is `membership.reinvite`.
 - **Still open:** a rejected tenant stays terminal with its `tenant_code` taken (ADR 0037 decision
   13); return for changes (BG-01) is how a request goes back to its maker.
+- **Verified 2026-11-24:** the reset clears `joined_at`, `suspended_at`, `revoked_at` and
+  `status_reason` but **keeps `created_at`**; the account is matched by email, so the username, name
+  and phone in the request are ignored.
 - **To adopt:** let the invite wizard re-invite a revoked member, saying the re-inviter can't
   approve, and change the "can't be invited again" copy.
 
@@ -909,12 +965,17 @@ the same bullets): the first is the gap as found, the second what the UI still d
   needs `membership.view` and `user.view`; `user.assign_role` and `user.revoke_role` need
   `role_assignment.view`; `settings.update`, the `business_date.*` mutations, `branch.create` and
   `tenant.create` need their views.
+- **Verified 2026-11-24:** the catalogue route is tenant-only and needs `permission.view`, which the
+  branch roles lack, and the composition 400 carries no `violations`, so the gates need a checked-in
+  map of the pairs, tested against the catalogue. `INVITE_CODES` also includes `user.assign_branch`,
+  which `POST /tenant/users` no longer checks. Platform-scope codes (`grant_scope: PLATFORM`) can be
+  granted to tenant roles without refusal and grant nothing there.
 - **To adopt:** derive the gates from `required_view_permissions` instead of hand-kept pairs; grant a
   view before or with its mutation, and map the composition 400.
 
 ### BG-32 — Documentation drift (platform repository) · P2
 
-- **Status:** Backend fixed. Platform #176.
+- **Status:** Closed (frontend #105): nothing to adopt. Platform #176.
 - **Gap:**
   - `docs/api/foundation-api.md`: profile example (`organisation.tenant_code`/`display_name`,
     `membership.membership_type`) doesn't match `organisation {id, code, name, status}` /
@@ -963,6 +1024,9 @@ the same bullets): the first is the gap as found, the second what the UI still d
   so the change is additive. Since the gap was written, `GET /branches` became target-aware and
   assign-branch checks the target branch; `GET /tenant/users` still needs tenant-scope `user.view`.
 - **Still open:** nothing.
+- **Verified 2026-11-24:** `branch_ids` is absent (not null) on TENANT entries; a code held at
+  both scopes is reported once, as TENANT. `/auth/me` lists only ACTIVE roles, so it can't show that
+  the caller holds a DISABLED one (which matters for re-enabling a held role, platform #342).
 - **To adopt:** parse `permission_scopes` in `auth/context-contract.ts` and gate the tenant-scope
   routes (the users directory, the invite wizard's email check) on a TENANT entry.
 
