@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
 import {
+  CHECKER_SCENARIO_IDS as C,
   IDS,
   RECORD_SCENARIO_IDS as R,
   TENANT_SCENARIO_IDS as T,
@@ -150,12 +151,11 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     );
   });
 
-  test('creates a draft only where the operator is a member with branch.create (BG-18)', async ({
+  test("creates a draft with the platform's codes alone, in any institution it may take one (BG-18)", async ({
     request,
   }) => {
     const { get, post } = await signIn(request);
     const k1 = randomUUID();
-    const k2 = randomUUID();
 
     const address = { line_1: '3 Lake Road', city: 'Thika' };
     const created = await post(acme('/branches'), { ...DRAFT, address }, k1);
@@ -170,13 +170,29 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
       address,
     });
 
-    // Jane is no member of Pwani: the platform code isn't enough. The refusal stores nothing, so the
-    // same key is refused again rather than replayed.
-    const atPwani = `/platform/tenants/${T.pwani}/branches`;
-    await expectProblem(await post(atPwani, DRAFT, k2), 403, 'forbidden');
-    const retry = await post(atPwani, DRAFT, k2);
-    await expectProblem(retry, 403, 'forbidden');
-    expect(retry.headers()['idempotency-replayed']).toBeUndefined();
+    // Platform #153: Jane is no member of Pwani, and the platform's own codes are enough.
+    const atPwani = await post(`/platform/tenants/${T.pwani}/branches`, {
+      ...DRAFT,
+      parent_branch_id: R.pwaniHeadOffice,
+    });
+    expect(atPwani.status()).toBe(201);
+    // Only an ACTIVE or PROVISIONING institution takes one (a plain 409), and the platform
+    // organisation is never an institution (404).
+    await expectProblem(
+      await post(`/platform/tenants/${T.kilimo}/branches`, DRAFT),
+      409,
+      'conflict',
+    );
+    await expectProblem(
+      await post(`/platform/tenants/${T.umoja}/branches`, DRAFT),
+      409,
+      'conflict',
+    );
+    await expectProblem(
+      await post(`/platform/tenants/${IDS.platformOrganisation}/branches`, DRAFT),
+      404,
+      'resource_not_found',
+    );
 
     // The code is taken, whatever the key.
     await expectProblem(await post(acme('/branches'), DRAFT), 409, 'conflict');
@@ -278,14 +294,14 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     ]);
 
     // A replay by the same key and a taken code each add nothing to Acme's log. (A refusal at
-    // Pwani would write to Pwani's log, which this run can't read, so that step only shows that
+    // Kilimo would write to Kilimo's log, which this run can't read, so that step only shows that
     // Acme's stays untouched.)
     const replay = await post(acme('/branches'), DRAFT, key);
     expect(replay.headers()['idempotency-replayed']).toBe('true');
     await expectProblem(
-      await post(`/platform/tenants/${T.pwani}/branches`, DRAFT),
-      403,
-      'forbidden',
+      await post(`/platform/tenants/${T.kilimo}/branches`, DRAFT),
+      409,
+      'conflict',
     );
     await expectProblem(await post(acme('/branches'), DRAFT), 409, 'conflict');
     expect(await drafts()).toHaveLength(1);
@@ -530,5 +546,306 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
 
     const likoni = await read<BranchRow>(await get(acme(`/branches/${R.acmeLikoni}`)));
     expect(likoni.branch_name.length).toBe(100);
+  });
+});
+
+interface MembershipBody {
+  id: string;
+  membership_status: string;
+  created_by: { id: string } | null;
+}
+
+interface BranchBody {
+  id: string;
+  status: string;
+  status_reason: string | null;
+  submitted_by: { id: string } | null;
+}
+
+interface AuditDetail {
+  action: string;
+  reason: string | null;
+  metadata_json: string;
+  branch_id: string | null;
+  entity_id: string | null;
+}
+
+test.describe('fake API platform checker (ADR 0028, BG-02)', () => {
+  const at = (tenant: string, tail: string) => `/platform/tenants/${tenant}${tail}`;
+  const approve = (tenant: string, membershipId: string) =>
+    at(tenant, `/memberships/${membershipId}/activate`);
+  const branchRoute = (tenant: string, branchId: string, path: string) =>
+    at(tenant, `/branches/${branchId}/${path}`);
+
+  test("approves a new institution's first member, then refuses once it has its own", async ({
+    request,
+  }) => {
+    const { post } = await signIn(request, 'platform-checker');
+    const key = randomUUID();
+
+    // Amani has neither role nor branch: the window is open, so the state's 409 answers.
+    await expectProblem(await post(approve(C.bidii, C.amaniMembership), {}), 409, 'conflict');
+    // Jane invited Halima: the maker is refused by name, before the window.
+    await expectProblem(
+      await post(approve(C.bidii, C.halimaMembership), {}),
+      403,
+      'lifecycle.approver_is_membership_maker',
+    );
+
+    const approved = await post(approve(C.bidii, C.otienoMembership), {}, key);
+    expect(approved.status()).toBe(200);
+    expect(await read<MembershipBody>(approved)).toMatchObject({
+      id: C.otienoMembership,
+      membership_status: 'ACTIVE',
+      created_by: { id: C.wanjiru },
+    });
+    // A replay by the same key answers as before, though the window has closed since.
+    const replay = await post(approve(C.bidii, C.otienoMembership), {}, key);
+    expect(replay.status()).toBe(200);
+    expect(replay.headers()['idempotency-replayed']).toBe('true');
+
+    // Otieno is a second active member, made by Wanjiru: the window is closed.
+    await expectProblem(
+      await post(approve(C.bidii, C.amaniMembership), {}),
+      409,
+      'lifecycle.platform_checker_closed',
+    );
+    await expectProblem(
+      await post(approve(C.bidii, C.halimaMembership), {}),
+      403,
+      'lifecycle.approver_is_membership_maker',
+    );
+  });
+
+  test('refuses a closed window, the platform organisation, a long remark and an unknown member', async ({
+    request,
+  }) => {
+    const { post } = await signIn(request, 'platform-checker');
+
+    // Tumaini already has Mosi, made by its first administrator.
+    const njoki = '15000000-0000-4000-8000-0000000000b6';
+    await expectProblem(
+      await post(approve(C.tumaini, njoki), {}),
+      409,
+      'lifecycle.platform_checker_closed',
+    );
+    await expectProblem(
+      await post(approve(IDS.platformOrganisation, C.otienoMembership), {}),
+      404,
+      'resource_not_found',
+    );
+    // Otieno is Bidii's, not Tumaini's.
+    await expectProblem(
+      await post(approve(C.tumaini, C.otienoMembership), {}),
+      404,
+      'resource_not_found',
+    );
+    await expectProblem(
+      await post(approve(C.bidii, C.otienoMembership), { reason: 'x'.repeat(501) }),
+      400,
+      'validation_failed',
+    );
+    await expectProblem(
+      await post(approve(C.bidii, C.otienoMembership), { remark: 'Ready' }),
+      400,
+      'invalid_json',
+    );
+  });
+
+  test("submits, withdraws and activates a new institution's first branches, then refuses", async ({
+    request,
+  }) => {
+    const { get, post } = await signIn(request, 'platform-checker');
+    const branch = async (id: string) =>
+      read<BranchBody>(await get(at(C.bidii, `/branches/${id}`)));
+
+    const submitted = await post(branchRoute(C.bidii, C.bidiiKisumu, 'submit'), {});
+    expect(submitted.status()).toBe(200);
+    expect(await read<BranchBody>(submitted)).toMatchObject({
+      status: 'PENDING_APPROVAL',
+      submitted_by: { id: IDS.jane },
+    });
+    // Its submitter can't activate it on the platform route (the tenant route would let them).
+    await expectProblem(
+      await post(branchRoute(C.bidii, C.bidiiKisumu, 'activate'), {}),
+      403,
+      'lifecycle.approver_is_branch_maker',
+    );
+    await expectProblem(
+      await post(branchRoute(C.bidii, C.bidiiEldoret, 'activate'), {}),
+      403,
+      'lifecycle.approver_is_branch_maker',
+    );
+
+    const activated = await post(branchRoute(C.bidii, C.bidiiNakuru, 'activate'), {
+      reason: ' Ready to trade ',
+    });
+    expect(activated.status()).toBe(200);
+    expect(await read<BranchBody>(activated)).toMatchObject({
+      status: 'ACTIVE',
+      status_reason: 'Ready to trade',
+    });
+
+    // Nakuru is an active branch Wanjiru made: every checker step is closed now. On the branch
+    // routes the window comes before the maker refusal (Jane submitted Eldoret).
+    await expectProblem(
+      await post(branchRoute(C.bidii, C.bidiiEldoret, 'activate'), {}),
+      409,
+      'lifecycle.platform_checker_closed',
+    );
+    // A withdrawal of one's own request is not bounded: Jane submitted Kisumu.
+    const withdrawn = await post(branchRoute(C.bidii, C.bidiiKisumu, 'return'), {
+      reason: 'Wrong town',
+    });
+    expect(withdrawn.status()).toBe(200);
+    expect(await branch(C.bidiiKisumu)).toMatchObject({
+      status: 'DRAFT',
+      status_reason: 'Wrong town',
+    });
+    await expectProblem(
+      await post(branchRoute(C.bidii, C.bidiiKisumu, 'submit'), {}),
+      409,
+      'lifecycle.platform_checker_closed',
+    );
+  });
+
+  test('returns a pending branch for changes, with a required reason', async ({ request }) => {
+    const { post } = await signIn(request, 'platform-checker');
+
+    await expectProblem(
+      await post(branchRoute(C.bidii, C.bidiiNakuru, 'return'), { reason: 'ab' }),
+      400,
+      'validation_failed',
+    );
+    await expectProblem(
+      await post(branchRoute(C.bidii, C.bidiiNakuru, 'return')),
+      400,
+      'invalid_json',
+    );
+    const returned = await post(branchRoute(C.bidii, C.bidiiNakuru, 'return'), {
+      reason: 'Fix the code',
+    });
+    expect(returned.status()).toBe(200);
+    expect(await read<BranchBody>(returned)).toMatchObject({
+      status: 'DRAFT',
+      status_reason: 'Fix the code',
+    });
+    // Now a draft: the state's 409.
+    await expectProblem(
+      await post(branchRoute(C.bidii, C.bidiiNakuru, 'activate'), {}),
+      409,
+      'conflict',
+    );
+    // A closed window, a branch of another institution and the platform organisation.
+    await expectProblem(
+      await post(branchRoute(C.tumaini, C.tumainiMeru, 'activate'), {}),
+      409,
+      'lifecycle.platform_checker_closed',
+    );
+    await expectProblem(
+      await post(branchRoute(C.tumaini, C.bidiiEldoret, 'activate'), {}),
+      404,
+      'resource_not_found',
+    );
+    await expectProblem(
+      await post(branchRoute(IDS.platformOrganisation, C.bidiiEldoret, 'activate'), {}),
+      404,
+      'resource_not_found',
+    );
+  });
+
+  test("writes the checker's rows in the institution's own log, marked checkerScope", async ({
+    request,
+  }) => {
+    const { post, asTenant } = await signIn(request, 'platform-checker');
+
+    expect((await post(approve(C.imara, C.barakaMembership), { reason: 'Known' })).status()).toBe(
+      200,
+    );
+    expect((await post(branchRoute(C.imara, C.imaraVoi, 'submit'), {})).status()).toBe(200);
+    expect(
+      (await post(branchRoute(C.imara, C.imaraVoi, 'return'), { reason: 'Not yet' })).status(),
+    ).toBe(200);
+    expect(
+      (await post(branchRoute(C.imara, C.imaraLamu, 'return'), { reason: 'Fix it' })).status(),
+    ).toBe(200);
+    expect((await post(branchRoute(C.imara, C.imaraMalindi, 'activate'), {})).status()).toBe(200);
+
+    const imara = await asTenant(C.imara);
+    const rows = (
+      await read<Paged<AuditRow & { id: string }>>(await imara.get('/tenant/audit-events?size=50'))
+    ).items;
+    const details = await Promise.all(
+      rows.map(async (row) => read<AuditDetail>(await imara.get(`/tenant/audit-events/${row.id}`))),
+    );
+    const scoped = (detail: AuditDetail) =>
+      (JSON.parse(detail.metadata_json) as { checkerScope?: string }).checkerScope ?? null;
+    // Rows written in the same millisecond share a time, so their order isn't pinned: the set is.
+    const expected = [
+      ['user.approve', 'Known', 'PLATFORM'],
+      ['branch.submit', null, null],
+      ['branch.submit_as_platform_checker', null, 'PLATFORM'],
+      // Jane submitted Voi, so this is her withdrawal: never the checker's marker.
+      ['branch.return_for_changes', 'Not yet', null],
+      ['branch.withdraw', 'Not yet', null],
+      ['branch.return_for_changes', 'Fix it', null],
+      ['branch.return_for_changes_as_platform_checker', 'Fix it', 'PLATFORM'],
+      ['branch.activate', null, null],
+      ['branch.activate_as_platform_checker', null, 'PLATFORM'],
+    ];
+    const actual = details.map((detail) => [detail.action, detail.reason, scoped(detail)]);
+    expect(actual).toHaveLength(expected.length);
+    expect(actual).toEqual(expect.arrayContaining(expected));
+    expect(rows.every((row) => row.actor_id === IDS.jane)).toBe(true);
+    // Every branch row names the branch it is about (`aggregateBranchId` and the service's `audit`),
+    // never the platform operator's own selected branch.
+    const branchRows = details.filter((detail) => detail.action.startsWith('branch.'));
+    expect(branchRows).toHaveLength(8);
+    for (const detail of branchRows) expect(detail.branch_id).toBe(detail.entity_id);
+  });
+
+  test("re-checks a draft's code on submit, after the window", async ({ request }) => {
+    const { get, post } = await signIn(request, 'platform-checker');
+    const lamuTown = async () =>
+      read<BranchBody>(await get(at(C.imara, `/branches/${C.imaraLamuTown}`)));
+
+    // Lamu Town was seeded under Lamu's code: the platform's plain 409, and nothing moves.
+    await expectProblem(
+      await post(branchRoute(C.imara, C.imaraLamuTown, 'submit'), {}),
+      409,
+      'conflict',
+    );
+    expect(await lamuTown()).toMatchObject({ status: 'DRAFT', submitted_by: null });
+    // Voi's code is its own.
+    expect((await post(branchRoute(C.imara, C.imaraVoi, 'submit'), {})).status()).toBe(200);
+
+    // Malindi goes live (Wanjiru made it), closing the window: that refusal now comes first.
+    expect((await post(branchRoute(C.imara, C.imaraMalindi, 'activate'), {})).status()).toBe(200);
+    await expectProblem(
+      await post(branchRoute(C.imara, C.imaraLamuTown, 'submit'), {}),
+      409,
+      'lifecycle.platform_checker_closed',
+    );
+  });
+
+  test('gates each route on its platform code and view', async ({ request }) => {
+    const readOnly = await signIn(request, 'platform-checker-read-only');
+
+    await expectProblem(
+      await readOnly.post(approve(C.bidii, C.otienoMembership), {}),
+      403,
+      'forbidden',
+    );
+    for (const [id, path] of [
+      [C.bidiiKisumu, 'submit'],
+      [C.bidiiNakuru, 'activate'],
+      [C.bidiiNakuru, 'return'],
+    ] as const) {
+      await expectProblem(
+        await readOnly.post(branchRoute(C.bidii, id, path), { reason: 'A reason' }),
+        403,
+        'forbidden',
+      );
+    }
   });
 });

@@ -204,7 +204,8 @@ app/
 │   │   ├── tenants/             # SACCO institutions: directory (search, status/country/created
 │   │   │                          # filters, sortable headers), create wizard (new/), the record
 │   │   │                          # ([tenantId]/(record)/: hero lifecycle; Overview, Provisioning,
-│   │   │                          # Branches and Users tabs), amend ([tenantId]/amend/), and the
+│   │   │                          # Branches and Users tabs, with the platform checker's actions),
+│   │   │                          # amend ([tenantId]/amend/), and the
 │   │   │                          # branch record, branch draft and user record (branches/
 │   │   │                          # [branchId]/, branches/new/, users/[userId]/ under [tenantId]/)
 │   │   └── users/               # Platform users: the platform organisation's members, and their
@@ -281,7 +282,9 @@ modules/
 │                                # Actions, and components (modules/platform-administration/tenants/);
 │                                # branches/, users/ and overview/ hold an institution's branch and
 │                                # user reads, the global account actions and rules, and the
-│                                # overview's counts (layer 17)
+│                                # overview's counts (layer 17); checker/ holds the platform
+│                                # checker's window rules, reads, Server Actions and row actions
+│                                # (BG-02)
 └── profile/                   # Account profile: profile-rules, the cached profile-service, and
                                  # the tab components (modules/profile/components/)
 components/
@@ -415,8 +418,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - Institution profile is ready while the institution is active and its settings read: an unset
     `default_timezone` isn't missing (a new branch takes the institution's zone) and
     `base_currency` always reads the institution's currency (BG-04, BG-12).
-  - People needs two active members, so someone other than the requester can approve. It doesn't
-    count the platform's onboarding checker or the institution's maker-checker switches (BG-02).
+  - People needs two active members, so someone other than the requester can approve. With fewer,
+    it says a platform administrator can approve the first members (the platform checker); it
+    doesn't count the institution's maker-checker switches (BG-02).
   - Identities still provisioning are noted apart and never listed as waiting (BG-11): the users
     preview reads past them (one read of at most 100), so it lists up to five requests waiting for
     a decision, and the queue holds the rest.
@@ -453,9 +457,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     decides that. Reject & revoke has no maker check and doesn't refuse a blocked account, so a
     blocked account can still be rejected, and so can your own invitation.
   - An institution with a single administrator can't approve its own invitees or activate the
-    branches it drafted while maker-checker is on: another administrator must, or the institution
-    switches maker-checker off in Settings. The platform also lets a platform checker act during
-    onboarding, which the UI doesn't offer yet (BG-02).
+    branches it drafted while maker-checker is on: another administrator must, the institution
+    switches maker-checker off in Settings, or a platform administrator acts as the platform
+    checker from the institution record (BG-02).
   - A user whose identity is still provisioning was already approved: the queue marks them and
     offers no decision (BG-11). Missing prerequisites (a role, a branch) are explained after the
     platform refuses (BG-07).
@@ -674,8 +678,17 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - The toolbar search commits on Enter or blur, not as you type.
   - The record's Branches and Users tabs list an institution's branches and users; a branch record
     is read-only (its address shown, no edit, BG-13), and "Create branch draft" is offered for an
-    active institution with a warning that the platform refuses it unless you are also a member
-    there, which it no longer does (BG-18).
+    active or provisioning institution, with no membership inside it needed (BG-18).
+  - The platform checker (`modules/platform-administration/checker/`, ADR 0028, BG-02): while an
+    institution has no active member besides its first administrator, its Users tab says so and
+    offers Approve on each pending member; while it has no active branch besides its head office,
+    its Branches tab offers Submit on a draft and Return and Activate on a pending branch. Each
+    window is one bounded read of the institution's ACTIVE rows (`size=1`): open while there are
+    none, or one the system made (`created_by` null). Approve is disabled for the member's inviter
+    and the member themself, and Activate for the branch's creator or latest submitter, who may
+    withdraw it instead, even once the window has closed; a closed window's tab says the
+    institution approves its own, and a failed window read leaves the actions to the platform's
+    named 409.
   - A user's record (an institution's, or a platform user's) suspends, reactivates or deactivates
     their sign-in account on the whole platform. Deactivate asks for the username typed back and
     can't be undone; your own account can't be suspended or deactivated (BG-35).

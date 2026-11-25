@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import { getCurrentContextProfile } from '@/auth/context-service';
@@ -17,7 +16,7 @@ import {
   BRANCH_CREATE_CODES,
   BRANCH_CREATE_INACTIVE,
   branchCreateDescription,
-  branchCreateWarning,
+  canCreateInstitutionBranch,
   parentsNote,
 } from '@/modules/platform-administration/branches/institution-branch-rules';
 import { getInstitutionBranchIndex } from '@/modules/platform-administration/branches/institution-branch-service';
@@ -32,7 +31,8 @@ interface NewInstitutionBranchPageProps {
   params: Promise<{ tenantId: string }>;
 }
 
-/** Spec §11.2's create draft, with BG-18's warning (Ruling 8). Outside `(record)`: no hero. */
+/** Spec §11.2's create draft (Ruling 8): the platform needs no membership inside the institution
+ * (BG-18). Outside `(record)`: no hero. */
 export default async function NewInstitutionBranchPage({ params }: NewInstitutionBranchPageProps) {
   const tenantId = parseInstitutionId((await params).tenantId);
   if (!tenantId) notFound();
@@ -68,7 +68,8 @@ export default async function NewInstitutionBranchPage({ params }: NewInstitutio
       Back to branches
     </Button>
   );
-  if (!canAll({ permissions: resolved?.profile.permissions ?? [] }, BRANCH_CREATE_CODES)) {
+  const holder = { permissions: resolved?.profile.permissions ?? [] };
+  if (!canAll(holder, BRANCH_CREATE_CODES)) {
     return (
       <>
         {header()}
@@ -78,7 +79,8 @@ export default async function NewInstitutionBranchPage({ params }: NewInstitutio
       </>
     );
   }
-  if (record.status !== 'ACTIVE') {
+  // The codes are held, so this refuses the institution's state only (ACTIVE or PROVISIONING).
+  if (!canCreateInstitutionBranch(record.status, holder)) {
     return (
       <>
         {header()}
@@ -106,10 +108,6 @@ export default async function NewInstitutionBranchPage({ params }: NewInstitutio
     <>
       {header(branchCreateDescription(record.displayName))}
       <Paper>
-        {/* 604 = BranchDraftForm's 640 px maxWidth less its 2 x 18 px padding: level with the form. */}
-        <Alert severity="warning" role="note" sx={{ m: 4.5, mb: 0, maxWidth: 604 }}>
-          {branchCreateWarning(record.displayName)}
-        </Alert>
         <InstitutionBranchDraftForm
           tenantId={tenantId}
           parents={parents}

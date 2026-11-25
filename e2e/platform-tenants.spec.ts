@@ -474,7 +474,7 @@ test.describe('platform tenants', () => {
     await openRecord(page, 'Institutions', 'Pwani Fishermen SACCO');
     await page.getByRole('tab', { name: 'Provisioning' }).click();
     await expect(page).toHaveURL(/\/provisioning$/);
-    await expect(mainText(page, 'KEYCLOAK_UNAVAILABLE')).toBeVisible();
+    await expect(mainText(page, 'IDENTITY_PROVIDER_FAILED')).toBeVisible();
 
     await expect(await act(page, 'Retry bootstrap')).toBeHidden();
     await expect(

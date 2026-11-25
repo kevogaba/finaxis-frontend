@@ -115,11 +115,11 @@ describe('People (BG-02)', () => {
   it.each([
     [
       1,
-      'Only 1 member is active. Approvals need at least two, so someone other than the requester can decide (maker-checker).',
+      'Only 1 member is active. Someone other than the requester must decide each approval (maker-checker): until a second member is active, a platform administrator can approve the first members.',
     ],
     [
       0,
-      'No member is active. Approvals need at least two, so someone other than the requester can decide (maker-checker).',
+      'No member is active. Someone other than the requester must decide each approval (maker-checker): until a second member is active, a platform administrator can approve the first members.',
     ],
   ])('needs attention with %i active', (count, detail) => {
     expect(peopleItem(ok(count))).toMatchObject({ state: 'attention', detail });

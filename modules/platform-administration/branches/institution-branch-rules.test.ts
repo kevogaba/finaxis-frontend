@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { TENANT_STATUSES } from '../tenants/tenant-contract';
 import {
+  BRANCH_DETAIL_DESCRIPTION,
   branchCreateDescription,
-  branchCreateWarning,
   canCreateInstitutionBranch,
   parentsNote,
   PARENTS_PARTIAL,
@@ -22,12 +22,14 @@ describe('institution branch rules', () => {
     }
   });
 
-  it.each(TENANT_STATUSES.map((status) => [status, status === 'ACTIVE'] as const))(
-    'offers a branch draft for a %s institution: %s',
-    (status, offered) => {
-      expect(canCreateInstitutionBranch(status, BOTH)).toBe(offered);
-    },
-  );
+  // BG-18 (platform #153): ACTIVE or PROVISIONING, with no membership inside the institution.
+  it.each(
+    TENANT_STATUSES.map(
+      (status) => [status, status === 'ACTIVE' || status === 'PROVISIONING'] as const,
+    ),
+  )('offers a branch draft for a %s institution: %s', (status, offered) => {
+    expect(canCreateInstitutionBranch(status, BOTH)).toBe(offered);
+  });
 
   it('needs both branch.create and branch.view (the redirect reads the draft back)', () => {
     expect(canCreateInstitutionBranch('ACTIVE', { permissions: ['branch.create'] })).toBe(false);
@@ -41,12 +43,15 @@ describe('institution branch rules', () => {
     expect(PARENTS_PARTIAL).toBe('Optional. Only the first 500 branches are listed.');
   });
 
-  it('names the institution in the BG-18 warning and the create description', () => {
-    expect(branchCreateWarning('Acme SACCO')).toBe(
-      "You can create a branch here only if you're also an active member of Acme SACCO, with a role there that allows creating branches. Otherwise the platform refuses it.",
-    );
+  it('names the institution in the create description, and who then moves the draft on', () => {
     expect(branchCreateDescription('Acme SACCO')).toBe(
-      'The draft is created in Acme SACCO. Its own administrators then submit it and activate it.',
+      'The draft is created in Acme SACCO. It is then submitted and activated from its Branches tab, by a platform administrator until the institution has an active branch besides its head office.',
+    );
+  });
+
+  it("points the branch record, where a create lands, to the institution's Branches tab", () => {
+    expect(BRANCH_DETAIL_DESCRIPTION).toBe(
+      "The institution's own administrators change its branches. While platform checking is open, a platform administrator submits and activates them from the institution's Branches tab.",
     );
   });
 });

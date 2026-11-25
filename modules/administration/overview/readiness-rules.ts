@@ -124,7 +124,9 @@ export function branchesItem(active: Settled<number>, pending: Settled<number>):
   return item('branches', 'ready', `${live} active, and none is waiting for activation.`);
 }
 
-/** At least two ACTIVE memberships, so maker-checker is possible (spec §10.8, BG-02). */
+/** At least two ACTIVE memberships, so the institution decides its own approvals (spec §10.8). Until
+ * then the platform checker approves its first members and branches (ADR 0028, BG-02), so the item
+ * says so rather than calling the institution stuck. */
 export function peopleItem(active: Settled<number>): ReadinessCheck {
   if (active === null) return item('people', 'unknown', NOT_PERMITTED);
   if (!active.ok) return item('people', 'failed', readFailed(active.problem));
@@ -132,7 +134,7 @@ export function peopleItem(active: Settled<number>): ReadinessCheck {
     return item(
       'people',
       'attention',
-      `${active.value === 0 ? 'No member is' : 'Only 1 member is'} active. Approvals need at least two, so someone other than the requester can decide (maker-checker).`,
+      `${active.value === 0 ? 'No member is' : 'Only 1 member is'} active. Someone other than the requester must decide each approval (maker-checker): until a second member is active, a platform administrator can approve the first members.`,
     );
   }
   return item('people', 'ready', `${counted(active.value, 'member is', 'members are')} active.`);

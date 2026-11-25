@@ -1004,7 +1004,8 @@ function platformTenantsScenario(): RunState {
       organisation(ids.pwani, 'pwani-fishermen', 'Pwani Fishermen SACCO', {
         ...on('2026-08-20T08:00:00Z'),
         bootstrapStatus: 'FAILED',
-        bootstrapFailureCode: 'KEYCLOAK_UNAVAILABLE',
+        // One of V24's closed set (InitialAdministratorBootstrapFailureCode), never free text.
+        bootstrapFailureCode: 'IDENTITY_PROVIDER_FAILED',
       }),
       organisation(ids.kilimo, 'kilimo-bora', 'Kilimo Bora SACCO', {
         ...on('2026-08-10T08:00:00Z'),
@@ -1535,6 +1536,196 @@ function platformRecordsScenario(): RunState {
         status: 'REVOKED',
       },
       tenantRoleAssignment(ids.esiTenantRoleAssignment, IDS.acme, ids.esi, ids.acmeAdminRole),
+    ],
+  };
+}
+
+/** bg-adopt 15 seed IDs (lane rules §5): institutions …0*, users …a*, memberships …b*, branches
+ * …c*; roles …d* and assignments …e* are internal. */
+export const CHECKER_SCENARIO_IDS = {
+  bidii: '15000000-0000-4000-8000-0000000000f1',
+  tumaini: '15000000-0000-4000-8000-0000000000f2',
+  imara: '15000000-0000-4000-8000-0000000000f3',
+  baraka: '15000000-0000-4000-8000-0000000000a7',
+  amani: '15000000-0000-4000-8000-0000000000a8',
+  barakaMembership: '15000000-0000-4000-8000-0000000000b7',
+  amaniMembership: '15000000-0000-4000-8000-0000000000b9',
+  wanjiru: '15000000-0000-4000-8000-0000000000a1',
+  otieno: '15000000-0000-4000-8000-0000000000a2',
+  halima: '15000000-0000-4000-8000-0000000000a3',
+  mosi: '15000000-0000-4000-8000-0000000000a4',
+  kariuki: '15000000-0000-4000-8000-0000000000a5',
+  njoki: '15000000-0000-4000-8000-0000000000a6',
+  otienoMembership: '15000000-0000-4000-8000-0000000000b2',
+  halimaMembership: '15000000-0000-4000-8000-0000000000b3',
+  bidiiHeadOffice: '15000000-0000-4000-8000-0000000000c1',
+  bidiiKisumu: '15000000-0000-4000-8000-0000000000c2',
+  bidiiNakuru: '15000000-0000-4000-8000-0000000000c3',
+  bidiiEldoret: '15000000-0000-4000-8000-0000000000c4',
+  tumainiHeadOffice: '15000000-0000-4000-8000-0000000000c5',
+  tumainiThika: '15000000-0000-4000-8000-0000000000c6',
+  tumainiMeru: '15000000-0000-4000-8000-0000000000c7',
+  imaraHeadOffice: '15000000-0000-4000-8000-0000000000c8',
+  imaraLamu: '15000000-0000-4000-8000-0000000000c9',
+  imaraVoi: '15000000-0000-4000-8000-0000000000ca',
+  imaraMalindi: '15000000-0000-4000-8000-0000000000cb',
+  imaraLamuTown: '15000000-0000-4000-8000-0000000000cc',
+} as const;
+
+/** The platform checker's codes (ADR 0028), each with its view: granted only here. */
+const PLATFORM_CHECKER_CODES = [
+  'user.approve',
+  'membership.view',
+  'branch.create',
+  'branch.approve',
+];
+
+/**
+ * bg-adopt 15 (BG-02, BG-18): a copy of `platform-operator` plus two new institutions Jane isn't a
+ * member of. Bidii has only its first administrator, Wanjiru (made by the system), active, and only
+ * its head office (the system's) active, so both checker windows are open: Otieno waits for
+ * approval with his role and branch (a 200), Halima waits invited by Jane (her Approve is disabled),
+ * Amani waits with neither role nor branch (a 409 while the window is open),
+ * Kisumu is Wanjiru's draft, Nakuru her pending branch, and Eldoret pending as Jane submitted it
+ * (Activate disabled, Withdraw offered). Tumaini already has Mosi and Thika active, made by its first
+ * administrator Kariuki, so both windows are closed, with Njoki and Meru still pending. Jane is
+ * Imara's first administrator (made by the system, so its windows are open too), holding
+ * `audit.view` there: the fake-API spec reads what the checker wrote in Imara's own log (BG-06).
+ */
+function platformCheckerScenario(): RunState {
+  const state = platformOperator();
+  const ids = CHECKER_SCENARIO_IDS;
+  const seed = (tail: string) => `15000000-0000-4000-8000-0000000000${tail}`;
+  const person = (id: string, username: string, displayName: string, status = 'ACTIVE') => ({
+    id,
+    username,
+    email: `${username}@checker.example`,
+    displayName,
+    status,
+    keycloakSubject: `e2e-${username}`,
+  });
+  const member = (
+    id: string,
+    organisationId: string,
+    userId: string,
+    overrides: Partial<FakeMembership> = {},
+  ): FakeMembership => ({ ...membership(id, organisationId, userId), ...overrides });
+  const office = (id: string, organisationId: string, code: string, name: string) =>
+    branch(id, organisationId, code, name, code === 'HEAD_OFFICE' ? 'HEAD_OFFICE' : 'OPERATIONS');
+  const by = (draftedBy: string, status: string, submittedBy?: string) => ({
+    draftedBy,
+    status,
+    ...(submittedBy && { submittedBy }),
+  });
+  const pending = { status: 'PENDING_APPROVAL', type: 'STAFF' };
+  return {
+    ...state,
+    organisations: [
+      ...state.organisations,
+      organisation(ids.bidii, 'bidii-traders', 'Bidii Traders SACCO'),
+      organisation(ids.tumaini, 'tumaini-savings', 'Tumaini Savings SACCO'),
+      organisation(ids.imara, 'imara-dairy', 'Imara Dairy SACCO'),
+    ],
+    users: [
+      ...state.users,
+      person(ids.wanjiru, 'wanjiru.njeri', 'Wanjiru Njeri'),
+      person(ids.otieno, 'otieno.ouma', 'Otieno Ouma', 'INVITED'),
+      person(ids.halima, 'halima.said', 'Halima Said', 'INVITED'),
+      person(ids.kariuki, 'kariuki.mwangi', 'Kariuki Mwangi'),
+      person(ids.mosi, 'mosi.kiprono', 'Mosi Kiprono'),
+      person(ids.njoki, 'njoki.wambui', 'Njoki Wambui', 'INVITED'),
+      person(ids.baraka, 'baraka.otieno', 'Baraka Otieno', 'INVITED'),
+      person(ids.amani, 'amani.chege', 'Amani Chege', 'INVITED'),
+    ],
+    // Newest first is reverse seed order: Bidii lists Amani, Halima, Otieno, then Wanjiru.
+    memberships: [
+      ...state.memberships,
+      member(seed('b1'), ids.bidii, ids.wanjiru),
+      member(ids.otienoMembership, ids.bidii, ids.otieno, { ...pending, invitedBy: ids.wanjiru }),
+      member(ids.halimaMembership, ids.bidii, ids.halima, { ...pending, invitedBy: IDS.jane }),
+      member(seed('b4'), ids.tumaini, ids.kariuki),
+      member(seed('b5'), ids.tumaini, ids.mosi, { type: 'STAFF', invitedBy: ids.kariuki }),
+      member(seed('b6'), ids.tumaini, ids.njoki, { ...pending, invitedBy: ids.kariuki }),
+      member(seed('b8'), ids.imara, IDS.jane),
+      member(ids.barakaMembership, ids.imara, ids.baraka, { ...pending, invitedBy: ids.wanjiru }),
+      member(ids.amaniMembership, ids.bidii, ids.amani, { ...pending, invitedBy: ids.wanjiru }),
+    ],
+    branches: [
+      ...state.branches,
+      office(ids.bidiiHeadOffice, ids.bidii, 'HEAD_OFFICE', 'Head Office'),
+      {
+        ...office(ids.bidiiKisumu, ids.bidii, 'KISUMU', 'Kisumu Branch'),
+        ...by(ids.wanjiru, 'DRAFT'),
+        createdAt: '2026-11-10T08:00:00Z',
+      },
+      {
+        ...office(ids.bidiiNakuru, ids.bidii, 'NAKURU', 'Nakuru Branch'),
+        ...by(ids.wanjiru, 'PENDING_APPROVAL', ids.wanjiru),
+        createdAt: '2026-11-11T08:00:00Z',
+      },
+      {
+        ...office(ids.bidiiEldoret, ids.bidii, 'ELDORET', 'Eldoret Branch'),
+        ...by(ids.wanjiru, 'PENDING_APPROVAL', IDS.jane),
+        createdAt: '2026-11-12T08:00:00Z',
+      },
+      office(ids.tumainiHeadOffice, ids.tumaini, 'HEAD_OFFICE', 'Head Office'),
+      {
+        ...office(ids.tumainiThika, ids.tumaini, 'THIKA', 'Thika Branch'),
+        ...by(ids.kariuki, 'ACTIVE', ids.kariuki),
+      },
+      {
+        ...office(ids.tumainiMeru, ids.tumaini, 'MERU', 'Meru Branch'),
+        ...by(ids.kariuki, 'PENDING_APPROVAL', ids.kariuki),
+      },
+      office(ids.imaraHeadOffice, ids.imara, 'HEAD_OFFICE', 'Head Office'),
+      {
+        ...office(ids.imaraLamu, ids.imara, 'LAMU', 'Lamu Branch'),
+        ...by(ids.wanjiru, 'PENDING_APPROVAL', ids.wanjiru),
+      },
+      { ...office(ids.imaraVoi, ids.imara, 'VOI', 'Voi Branch'), ...by(ids.wanjiru, 'DRAFT') },
+      // A draft under Lamu's code, which `uq_branch_organisation_code` keeps a real tenant from
+      // holding: seeded only so the fake-API spec pins submit's code recheck.
+      {
+        ...office(ids.imaraLamuTown, ids.imara, 'LAMU', 'Lamu Town Branch'),
+        ...by(ids.wanjiru, 'DRAFT'),
+      },
+      {
+        ...office(ids.imaraMalindi, ids.imara, 'MALINDI', 'Malindi Branch'),
+        ...by(ids.wanjiru, 'PENDING_APPROVAL', ids.wanjiru),
+      },
+    ],
+    // Otieno's approval needs an active role and an active branch (contract §F).
+    branchAssignments: [
+      ...state.branchAssignments,
+      assignment(seed('e1'), ids.bidii, ids.wanjiru, ids.bidiiHeadOffice, 'HOME'),
+      assignment(seed('e2'), ids.bidii, ids.otieno, ids.bidiiHeadOffice, 'HOME'),
+      assignment(seed('e5'), ids.imara, ids.baraka, ids.imaraHeadOffice, 'HOME'),
+    ],
+    // The platform role only: no tenant role gains a code it doesn't hold in `platform-operator`.
+    roles: [
+      ...state.roles.map((candidate) =>
+        candidate.id === IDS.platformAdminRole
+          ? {
+              ...candidate,
+              permissions: [
+                ...candidate.permissions,
+                ...PLATFORM_CHECKER_CODES.filter((code) => !candidate.permissions.includes(code)),
+              ],
+            }
+          : candidate,
+      ),
+      role(seed('d1'), ids.bidii, 'TENANT_ADMIN', 'Tenant admin', ['branch.view']),
+      role(seed('d2'), ids.imara, 'TENANT_ADMIN', 'Tenant admin', [
+        'auth.select_organisation',
+        'audit.view',
+      ]),
+    ],
+    roleAssignments: [
+      ...state.roleAssignments,
+      tenantRoleAssignment(seed('e3'), ids.bidii, ids.wanjiru, seed('d1')),
+      tenantRoleAssignment(seed('e4'), ids.bidii, ids.otieno, seed('d1')),
+      tenantRoleAssignment(seed('e6'), ids.imara, IDS.jane, seed('d2')),
+      tenantRoleAssignment(seed('e7'), ids.imara, ids.baraka, seed('d2')),
     ],
   };
 }
@@ -2124,6 +2315,25 @@ const BUILDERS = {
   // cases. Only the platform role loses them: Jane keeps branch.create at Acme, so a refused
   // platform branch draft there proves the platform gate, not BG-18.
   'platform-records': platformRecordsScenario,
+  // bg-adopt 15 (platform checker). `platform-checker-read-only` holds the platform's read codes
+  // only, so neither tab offers a checker action or a window note.
+  'platform-checker': platformCheckerScenario,
+  'platform-checker-read-only': () => {
+    const state = platformCheckerScenario();
+    return {
+      ...state,
+      roles: state.roles.map((candidate) =>
+        candidate.id === IDS.platformAdminRole
+          ? {
+              ...candidate,
+              permissions: candidate.permissions.filter(
+                (code) => !PLATFORM_CHECKER_CODES.includes(code),
+              ),
+            }
+          : candidate,
+      ),
+    };
+  },
   'platform-records-read-only': () => {
     const state = platformRecordsScenario();
     const stripped: readonly string[] = [...PLATFORM_RECORD_CODES, 'tenant.approve'];

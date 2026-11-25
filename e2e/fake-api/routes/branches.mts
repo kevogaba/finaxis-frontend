@@ -211,6 +211,17 @@ type Guard = (
   branch: FakeBranch,
 ) => ((reason: string | null) => void) | undefined;
 
+/** `lifecycleStore.hasAmended`: the caller has a successful `branch.update` audit row on it. */
+export const hasAmended = (access: AccessContext, branch: FakeBranch) =>
+  access.state.auditEvents.some(
+    (event) =>
+      event.organisationId === branch.organisationId &&
+      event.entityId === branch.id &&
+      event.action === 'branch.update' &&
+      event.outcome === 'SUCCESS' &&
+      event.actorUserId === access.claims.userId,
+  );
+
 /** BG-08: the drafter, then anyone with a successful `branch.update` on it, is refused by name,
  * before the state check (BranchProvisioningService.requireApproverIsNotBranchMaker), with a
  * `DENIED` `branch.activate` row (HIGH, about the target branch, the code as its reason) that
@@ -220,14 +231,7 @@ type Guard = (
 const makerChecker: Guard = (access, branch) => {
   const me = access.claims.userId;
   const drafted = branch.draftedBy === me;
-  const amended = access.state.auditEvents.some(
-    (event) =>
-      event.organisationId === branch.organisationId &&
-      event.entityId === branch.id &&
-      event.action === 'branch.update' &&
-      event.outcome === 'SUCCESS' &&
-      event.actorUserId === me,
-  );
+  const amended = hasAmended(access, branch);
   if (!drafted && !amended) return undefined;
   if (
     makerCheckerRequired(
@@ -294,7 +298,7 @@ const notHeadOffice: Guard = (access, branch) => {
 
 /** BranchProvisioningService.returnForChanges: the creator or latest submitter withdraws their own
  * request (`branch.create`), anyone else returns it (`branch.approve`). */
-const withdrawing = (access: AccessContext, branch: FakeBranch) =>
+export const withdrawing = (access: AccessContext, branch: FakeBranch) =>
   [branch.draftedBy, branch.submittedBy].includes(access.claims.userId);
 
 /** The code a return needs: the intent is read from the branch's makers before any permission
@@ -318,6 +322,43 @@ const withdrawal: Guard = (access, branch) => {
     });
   };
 };
+
+/** One FSM transition of a branch, as both the tenant routes and the platform checker's write it:
+ * the state, the latest submitter, the business dates, the reason and the FSM's audit row, in the
+ * branch's own organisation's log (a platform action on a tenant is written there, BG-06). The
+ * platform stamps the row with the target branch (`aggregateBranchId`); the platform checker's
+ * routes pass it as `branchId`. ponytail: the tenant routes keep the selected branch, as before. */
+export function moveBranch(
+  access: AccessContext,
+  branch: FakeBranch,
+  change: {
+    path: string;
+    to: string;
+    action: string;
+    reason: string | null;
+    branchId?: string;
+  },
+): void {
+  branch.status = change.to;
+  if (change.path === 'submit') branch.submittedBy = access.claims.userId; // the latest submitter
+  // The tenant's business date (#165): the first activation's, kept on reactivation, and the
+  // closure's (a discarded draft's too, #222).
+  const businessDate = access.state.businessDates.find(
+    (row) => row.organisationId === branch.organisationId,
+  )?.date;
+  if (change.to === 'ACTIVE') branch.openedOn ??= businessDate;
+  if (change.to === 'CLOSED') branch.closedOn = businessDate;
+  branch.statusReason = change.reason; // overwritten by every transition (contract §C)
+  branch.updatedAt = new Date().toISOString();
+  recordAuditEvent(access.state, access, {
+    entityType: 'BRANCH',
+    entityId: branch.id,
+    action: change.action,
+    reason: change.reason,
+    organisationId: branch.organisationId,
+    ...(change.branchId !== undefined && { branchId: change.branchId }),
+  });
+}
 
 function transition(
   path: string,
@@ -350,23 +391,7 @@ function transition(
       if (!from.includes(branch.status)) {
         throw problem(409, 'conflict', `The branch must be ${from.join(' or ')}.`);
       }
-      branch.status = to;
-      if (path === 'submit') branch.submittedBy = access.claims.userId; // the latest submitter
-      // The tenant's business date (#165): the first activation's, kept on reactivation, and the
-      // closure's (a discarded draft's too, #222).
-      const businessDate = access.state.businessDates.find(
-        (row) => row.organisationId === branch.organisationId,
-      )?.date;
-      if (to === 'ACTIVE') branch.openedOn ??= businessDate;
-      if (to === 'CLOSED') branch.closedOn = businessDate;
-      branch.statusReason = reason; // overwritten by every transition (contract §C)
-      branch.updatedAt = new Date().toISOString();
-      recordAuditEvent(context.state, access, {
-        entityType: 'BRANCH',
-        entityId: branch.id,
-        action,
-        reason,
-      });
+      moveBranch(access, branch, { path, to, action, reason });
       after?.(reason);
       return branchDetailWire(access, branch);
     });

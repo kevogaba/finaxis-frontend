@@ -8,14 +8,19 @@ import { renderWithProviders } from '@/test/test-utils';
 const T = '17000000-0000-4000-8000-0000000000ac';
 const B = '17000000-0000-4000-8000-0000000000b2';
 
-const { getCurrentContextProfile, getTenant, listInstitutionBranches, redirect } = vi.hoisted(
-  () => ({
-    getCurrentContextProfile: vi.fn(),
-    getTenant: vi.fn(),
-    listInstitutionBranches: vi.fn(),
-    redirect: vi.fn(),
-  }),
-);
+const {
+  getCurrentContextProfile,
+  getTenant,
+  listInstitutionBranches,
+  readActiveBranches,
+  redirect,
+} = vi.hoisted(() => ({
+  getCurrentContextProfile: vi.fn(),
+  getTenant: vi.fn(),
+  listInstitutionBranches: vi.fn(),
+  readActiveBranches: vi.fn(),
+  redirect: vi.fn(),
+}));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('next/navigation', async (importOriginal) => ({
@@ -42,10 +47,22 @@ vi.mock('@/modules/platform-administration/tenants/tenant-service', () => ({
 vi.mock('@/modules/platform-administration/branches/institution-branch-service', () => ({
   listInstitutionBranches: (...args: unknown[]) => listInstitutionBranches(...args) as unknown,
 }));
+vi.mock('@/modules/platform-administration/checker/checker-service', () => ({
+  readActiveBranches: (...args: unknown[]) => readActiveBranches(...args) as unknown,
+}));
+vi.mock('@/modules/platform-administration/checker/checker-actions', () => ({
+  activateInstitutionBranch: vi.fn(),
+  returnInstitutionBranch: vi.fn(),
+  submitInstitutionBranch: vi.fn(),
+}));
 
 const { default: BranchesTab } = await import('./page');
 
 // 22:30 UTC is already the next day in Africa/Nairobi (the runner's zone): "10 Jul" can only be UTC.
+const ME = '17000000-0000-4000-8000-0000000000ae';
+const ADMIN = { id: '17000000-0000-4000-8000-0000000000a1', displayName: 'Achieng Odera' };
+const CHECKER_CODES = ['branch.view', 'branch.create', 'branch.approve'];
+
 const MOMBASA = {
   id: B,
   branchCode: 'MOMBASA_RD',
@@ -53,6 +70,24 @@ const MOMBASA = {
   branchType: 'OPERATIONS',
   status: 'ACTIVE',
   createdAt: '2026-07-10T22:30:00Z',
+  createdBy: null as { id: string; displayName: string } | null,
+  submittedBy: null as { id: string; displayName: string } | null,
+};
+const KISUMU = {
+  ...MOMBASA,
+  id: '17000000-0000-4000-8000-0000000000b4',
+  branchCode: 'KISUMU',
+  branchName: 'Kisumu Branch',
+  status: 'DRAFT',
+  createdBy: ADMIN,
+};
+const NAKURU = {
+  ...KISUMU,
+  id: '17000000-0000-4000-8000-0000000000b3',
+  branchCode: 'NAKURU',
+  branchName: 'Nakuru Branch',
+  status: 'PENDING_APPROVAL',
+  submittedBy: ADMIN,
 };
 
 function branchPage(items: readonly (typeof MOMBASA)[], number = 0, totalPages = 1) {
@@ -76,6 +111,8 @@ interface Setup {
   tenant?: Error;
   /** What the list read settles with: a page, or an Error that rejects it. */
   list?: ReturnType<typeof branchPage> | Error;
+  /** What the checker window's read settles with (ACTIVE branches, `size=1`). */
+  active?: ReturnType<typeof branchPage> | Error;
 }
 
 /** Programs every read the tab makes. A test names only what it varies. */
@@ -84,10 +121,11 @@ function setup({
   status = 'ACTIVE',
   tenant,
   list = branchPage([MOMBASA]),
+  active = branchPage([MOMBASA]),
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions },
+    profile: { user_id: ME, permissions },
     context: { organization: { id: '00000000-0000-0000-0000-000000000000', name: 'Platform' } },
   });
   if (tenant) getTenant.mockRejectedValue(tenant);
@@ -102,6 +140,8 @@ function setup({
   }
   if (list instanceof Error) listInstitutionBranches.mockRejectedValue(list);
   else listInstitutionBranches.mockResolvedValue(list);
+  if (active instanceof Error) readActiveBranches.mockRejectedValue(active);
+  else readActiveBranches.mockResolvedValue(active);
 }
 
 async function show(
@@ -212,7 +252,16 @@ describe('BranchesTab: the list', () => {
 });
 
 describe('BranchesTab: the draft button', () => {
-  it.each(TENANT_STATUSES.filter((status) => status !== 'ACTIVE'))(
+  // BG-18 (platform #153): no membership inside the institution, and PROVISIONING too.
+  it('offers a draft for an institution still being provisioned', async () => {
+    setup({ status: 'PROVISIONING' });
+
+    await show();
+
+    expect(draftLink()).toBeVisible();
+  });
+
+  it.each(TENANT_STATUSES.filter((status) => status !== 'ACTIVE' && status !== 'PROVISIONING'))(
     'offers no draft for an institution that is %s',
     async (status) => {
       setup({ status });
@@ -235,6 +284,105 @@ describe('BranchesTab: the draft button', () => {
       expect(draftLink()).toBeNull();
     },
   );
+});
+
+describe('BranchesTab: the platform checker (BG-02)', () => {
+  const button = (name: string | RegExp) => screen.queryByRole('button', { name });
+
+  it('says the window is open, and offers Submit on a draft and Return and Activate on a pending branch', async () => {
+    setup({ permissions: CHECKER_CODES, list: branchPage([NAKURU, KISUMU, MOMBASA]) });
+
+    await show();
+
+    expect(within(section()).getByRole('note')).toHaveTextContent(
+      'Platform checking is open: Acme SACCO has no active branch besides its head office, so a platform administrator can submit, return and activate its first branches.',
+    );
+    expect(button('Submit Kisumu Branch for approval')).toBeEnabled();
+    expect(button('Return Nakuru Branch for changes')).toBeEnabled();
+    expect(button('Activate Nakuru Branch')).toBeEnabled();
+    // An active branch offers nothing.
+    expect(button(/Mombasa Road Branch/)).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeVisible();
+    expect(readActiveBranches).toHaveBeenCalledWith(T);
+  });
+
+  it('offers its submitter Withdraw, and Activate disabled with the caption', async () => {
+    setup({
+      permissions: CHECKER_CODES,
+      list: branchPage([{ ...NAKURU, submittedBy: { id: ME, displayName: 'Jane' } }]),
+    });
+
+    await show();
+
+    expect(button('Withdraw Nakuru Branch')).toBeEnabled();
+    expect(button('Return Nakuru Branch for changes')).toBeNull();
+    expect(button('Activate Nakuru Branch')).toBeDisabled();
+    expect(button('Activate Nakuru Branch')).toHaveAccessibleDescription(
+      'You created or submitted this branch, so another administrator must activate it.',
+    );
+  });
+
+  it('offers no checker action once the institution has its own active branch, and says it decides', async () => {
+    setup({
+      permissions: CHECKER_CODES,
+      list: branchPage([NAKURU, KISUMU]),
+      active: branchPage([{ ...MOMBASA, createdBy: ADMIN }]),
+    });
+
+    await show();
+
+    expect(within(section()).getByRole('note')).toHaveTextContent(
+      'Acme SACCO now approves its own branches.',
+    );
+    expect(button('Submit Kisumu Branch for approval')).toBeNull();
+    expect(button('Activate Nakuru Branch')).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Actions' })).toBeNull();
+  });
+
+  it("offers the actions with no note when the window can't be read: the platform's 409 explains", async () => {
+    setup({
+      permissions: CHECKER_CODES,
+      list: branchPage([NAKURU]),
+      active: new BackendApiError(503, { requestId: 'req-w' }),
+    });
+
+    await show();
+
+    expect(within(section()).queryByRole('note')).toBeNull();
+    expect(button('Activate Nakuru Branch')).toBeEnabled();
+  });
+
+  it('submits and returns but never activates in an institution still being provisioned', async () => {
+    setup({
+      permissions: CHECKER_CODES,
+      status: 'PROVISIONING',
+      list: branchPage([NAKURU, KISUMU]),
+    });
+
+    await show();
+
+    // The open note doesn't promise Activate, which a PROVISIONING institution can't take.
+    expect(within(section()).getByRole('note')).toHaveTextContent(
+      'Platform checking is open: Acme SACCO has no active branch besides its head office, so a platform administrator can submit and return its first branches. Activation waits until the institution is active.',
+    );
+    expect(button('Submit Kisumu Branch for approval')).toBeEnabled();
+    expect(button('Return Nakuru Branch for changes')).toBeEnabled();
+    expect(button('Activate Nakuru Branch')).toBeNull();
+  });
+
+  it.each([
+    ['with branch.view alone', ['branch.view'], 'ACTIVE'],
+    ['without branch.view', ['branch.create', 'branch.approve'], 'ACTIVE'],
+    ['for a suspended institution', CHECKER_CODES, 'SUSPENDED'],
+  ])('neither reads the window nor offers an action %s', async (_label, permissions, status) => {
+    setup({ permissions, status, list: branchPage([NAKURU, KISUMU]) });
+
+    await show();
+
+    expect(readActiveBranches).not.toHaveBeenCalled();
+    expect(within(section()).queryByRole('note')).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Actions' })).toBeNull();
+  });
 });
 
 describe('BranchesTab: failures and empty states', () => {

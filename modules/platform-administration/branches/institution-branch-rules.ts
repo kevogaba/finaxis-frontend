@@ -13,43 +13,39 @@ export const BRANCH_CREATE_CODES = ['branch.create', 'branch.view'] as const;
 /** The most branches the parent picker and the parent-name lookup read (5 pages of 100). */
 export const BRANCH_INDEX_CEILING = 500;
 
+/** The institution states a draft can be created in: any other is a 409 (`requireOrganisationAllowsBranch`). */
+const DRAFT_STATES: readonly TenantStatus[] = ['ACTIVE', 'PROVISIONING'];
+
 /**
- * Ruling 8. The shared branch service refuses an institution that isn't ACTIVE (or the transient
- * PROVISIONING) with a 409 (contract §E.3), so only an ACTIVE one is offered. BG-18's second
- * condition, a membership with `branch.create` inside the institution, can't be seen from the
- * platform: the form warns, and a 403 is explained.
+ * BG-18 (platform #153): the platform route checks `branch.create` and `branch.view` in the platform
+ * organisation only, with no membership inside the institution, for an ACTIVE or PROVISIONING one.
  */
 export function canCreateInstitutionBranch(
   status: TenantStatus,
   holder: PermissionHolder,
 ): boolean {
-  return status === 'ACTIVE' && canAll(holder, BRANCH_CREATE_CODES);
+  return DRAFT_STATES.includes(status) && canAll(holder, BRANCH_CREATE_CODES);
 }
 
 export const BRANCHES_DESCRIPTION =
-  "The institution's own administrators submit, activate and change its branches.";
+  "The institution's own administrators submit, activate and change its branches, once it has approvers of its own.";
+/** The record after a create lands here: it points to where the draft goes next (BG-02). */
 export const BRANCH_DETAIL_DESCRIPTION =
-  "Read-only here: the institution's own administrators run its branches.";
-export const BRANCH_CREATE_REFUSED =
-  'The platform refused this branch. You must also be an active member of this institution, with a role there that allows creating branches. Ask one of its administrators to create it, or to give you that access.';
+  "The institution's own administrators change its branches. While platform checking is open, a platform administrator submits and activates them from the institution's Branches tab.";
 export const BRANCH_CREATE_CONFLICT =
   "The branch couldn't be created. Its code may already be in use, or the institution can't add branches right now.";
 export const BRANCH_CODE_MAY_BE_TAKEN = 'This code may already be in use.';
 export const BRANCH_CREATE_INACTIVE = {
-  title: 'Only an active institution can take new branches',
-  description: "This institution isn't active, so the platform would refuse a new branch.",
+  title: "This institution can't take new branches",
+  description:
+    'Only an active institution, or one being provisioned, can take new branches. The platform would refuse one here.',
 } as const;
 export const PARENTS_UNAVAILABLE =
   "Optional. This institution's branches couldn't be loaded, so no parent can be chosen right now. Refresh to try again.";
 export const PARENTS_PARTIAL = `Optional. Only the first ${BRANCH_INDEX_CEILING} branches are listed.`;
 
 export function branchCreateDescription(institutionName: string): string {
-  return `The draft is created in ${institutionName}. Its own administrators then submit it and activate it.`;
-}
-
-/** BG-18, shown on the form as a warning note. */
-export function branchCreateWarning(institutionName: string): string {
-  return `You can create a branch here only if you're also an active member of ${institutionName}, with a role there that allows creating branches. Otherwise the platform refuses it.`;
+  return `The draft is created in ${institutionName}. It is then submitted and activated from its Branches tab, by a platform administrator until the institution has an active branch besides its head office.`;
 }
 
 /** The parent picker's helper (rule 9): a failed or capped index never reads as "no branches". */

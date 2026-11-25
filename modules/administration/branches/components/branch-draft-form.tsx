@@ -159,7 +159,7 @@ export function BranchDraftForm({
   useEffect(() => {
     if (!failure) return;
     applyFieldErrors(setError, failure.fieldErrors, FIELDS);
-    // A failure that names no field (BG-18's 403, a 409, a network error) leaves applyFieldErrors
+    // A failure that names no field (a 403, a 409, a network error) leaves applyFieldErrors
     // nothing to focus, and Create draft went disabled while it held focus, so focus fell to
     // <body> and the next Tab starts past the form (gate finding I2). ReasonDialog does the same.
     if (!FIELDS.some((name) => failure.fieldErrors[name] !== undefined)) submitRef.current?.focus();

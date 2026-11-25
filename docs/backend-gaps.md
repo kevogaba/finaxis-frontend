@@ -147,12 +147,12 @@ miscount things today.
 
 ## Summary
 
-9 backend fixed · 6 partly fixed · 0 open · 3 adopted · 17 closed.
+7 backend fixed · 6 partly fixed · 0 open · 4 adopted · 18 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
 | BG-01 | P0       | Adopted       | No approval-request / pending-change model (no return-for-changes, resubmission, branch rejection) |
-| BG-02 | P0       | Backend fixed | A tenant created through the API cannot onboard a second person through the API                    |
+| BG-02 | P0       | Adopted       | A tenant created through the API cannot onboard a second person through the API                    |
 | BG-03 | P0       | Closed        | Branch pinning: a selected branch hides every other branch; draft branches are unreachable         |
 | BG-04 | P0       | Closed        | Tenant settings `PUT` fails with 500 and rolls back (per source reading)                           |
 | BG-05 | P0       | Closed        | Published OpenAPI casing is wrong and list-item schemas are missing                                |
@@ -168,7 +168,7 @@ miscount things today.
 | BG-15 | P1       | Backend fixed | No aggregate counts (role users/permissions, branch users, tenant branches/users)                  |
 | BG-16 | P1       | Backend fixed | Audit search and recording limitations                                                             |
 | BG-17 | P1       | Partly fixed  | Missing user profile fields (phone read/edit, member number, last activity, MFA/security)          |
-| BG-18 | P1       | Backend fixed | Platform administrators can't create tenant branches without tenant membership                     |
+| BG-18 | P1       | Closed        | Platform administrators can't create tenant branches without tenant membership                     |
 | BG-19 | P2       | Backend fixed | No global search endpoint                                                                          |
 | BG-20 | P2       | Partly fixed  | No export endpoints                                                                                |
 | BG-21 | P2       | Backend fixed | No close-of-business readiness checks exposed                                                      |
@@ -273,7 +273,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-02 — A tenant created through the API cannot onboard a second person · P0
 
-- **Status:** Backend fixed. Platform #153, #223, #250, #282 (ADR 0028, ADR 0032).
+- **Status:** Adopted (frontend #122). Platform #153, #223, #250, #282 (ADR 0028, ADR 0032). The
+  maker-checker switches were adopted in frontend #114.
 - **Gap:** Tenant approval creates one user, the `TENANT_ADMIN` bootstrap admin. That admin cannot
   approve their own invites (maker-checker 403) nor activate branches they drafted. Platform
   administrators cannot step in: tenant routes reject the platform context
@@ -281,7 +282,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
   requires tenant membership (`lifecycle/application/BranchProvisioningService.kt:38-42`). No setting
   disables the rule; the local seed works only because migration V4 seeds a second actor.
 - **Frontend handling:** approve controls are disabled for the maker with an explanation; the overview
-  readiness item "People" flags tenants with fewer than two active members (layer 14).
+  readiness item "People" flags tenants with fewer than two active members (layer 14), and says that
+  a platform administrator can approve the first ones (frontend #122).
 - **Backend resolution:**
   - A platform checker can approve a new tenant's first members and branches:
     `POST /platform/tenants/{tenant_id}/memberships/{id}/activate` (`user.approve` in the platform
@@ -298,11 +300,30 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Still open:** tenant routes still refuse the platform context, and there is no platform invite
   route, so the tenant administrator is always the maker of an invitation. The checker window can
   reopen if the tenant suspends members or branches (accepted on platform #223).
-- **To adopt:** the platform checker routes on the institution record (handling 409
-  `lifecycle.platform_checker_closed`); revisit the overview's People rule, since two active members
-  is no longer the only way through. Done in frontend #114: the switches are read
-  (`GET /tenant/settings/{key}`) before the maker is refused, and a switch that is off lets the
-  maker decide.
+- **Verified 2026-11-25** (platform `6a8ea28`): the bootstrap administrator and the head office are
+  the rows the system actor made, which a platform caller reads as `created_by: null`, and the system
+  makes at most one of each. The window is checked after the maker refusals on the membership route
+  (an inviter or the member is refused by name even once it has closed) and before them on the
+  branch routes. Activation needs an ACTIVE tenant; submit and return an ACTIVE or PROVISIONING one;
+  a withdrawal by the branch's creator or latest submitter is not bounded by the window. Each route
+  writes the FSM's row and the checker's (`user.approve` with `checkerScope = PLATFORM`,
+  `branch.submit_as_platform_checker`, `branch.activate_as_platform_checker`,
+  `branch.return_for_changes_as_platform_checker`) in the tenant's own log.
+- **Adopted** (frontend #114): the switches are read (`GET /tenant/settings/{key}`) before the maker
+  is refused, and a switch that is off lets the maker decide.
+- **Adopted** (frontend #122): the institution record's Users and Branches tabs read each window
+  with one bounded read of the institution's ACTIVE rows (`size=1`): open while there are none, or
+  one with no maker. While it is open the tab says so ("Platform checking is open: … has no active
+  member besides its first administrator …", or "… no active branch besides its head office …"),
+  and its rows offer the checker's actions: Approve on a pending member (`user.approve` with
+  `membership.view`, an ACTIVE institution), Submit on a draft (`branch.create`), and Return and
+  Activate on a pending branch (`branch.approve`; Activate for an ACTIVE institution only), each
+  with `branch.view`. Approve is disabled, with the reason, for the member's inviter and the member
+  themself, and Activate for the branch's creator or latest submitter, who is offered Withdraw
+  instead, also once the window has closed. Once it has closed, the tab says the institution
+  approves its own members (or branches) and offers no checker action. A failed window read offers
+  the actions, and the named 409 explains a closed window. The People readiness item mentions the
+  platform checker.
 
 ### BG-03 — Branch pinning · P0
 
@@ -850,7 +871,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-18 — Platform branch creation needs tenant membership · P1
 
-- **Status:** Backend fixed. Platform #153.
+- **Status:** Closed (frontend #122). Platform #153.
 - **Gap:** `POST /platform/tenants/{id}/branches` checks `branch.create` in PLATFORM **and** inside the
   tenant (`BranchProvisioningService.kt:38-42`), so it returns 403 unless the platform administrator is
   an active member of that tenant.
@@ -862,8 +883,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Verified 2026-11-24:** a platform-created draft can be platform-submitted only while the
   platform-checker window is open (BG-02); after that the tenant submits it.
 - **Still open:** nothing.
-- **To adopt:** drop the membership warning and its 403 copy; consider offering it for PROVISIONING
-  institutions.
+- **Closed** (frontend #122): "Create branch draft" is offered for an ACTIVE or PROVISIONING
+  institution to holders of `branch.create` and `branch.view`; the membership warning and its 403
+  copy are gone, and a 403 is explained by its status. The draft is then submitted, returned and
+  activated from the Branches tab while the platform-checker window is open (BG-02).
 
 ### BG-19 — No global search · P2
 

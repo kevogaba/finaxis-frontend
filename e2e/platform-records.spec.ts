@@ -170,10 +170,7 @@ test.describe('platform records: institution branches', () => {
     await expect(page).toHaveURL((url) => url.pathname.endsWith(`/branches/${R.acmeHeadOffice}`));
   });
 
-  test("creates a branch draft where you're a member, and opens it", async ({
-    context,
-    page,
-  }, testInfo) => {
+  test('creates a branch draft, and opens it', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo, 'platform-records');
     await enterPlatform(page, `${ACME}/branches`, 'Acme SACCO');
 
@@ -181,17 +178,13 @@ test.describe('platform records: institution branches', () => {
     await expect(
       page.getByRole('heading', { level: 1, name: 'Create branch draft' }),
     ).toBeVisible();
-    await expect(
-      mainText(
-        page,
-        "You can create a branch here only if you're also an active member of Acme SACCO",
-      ),
-    ).toBeVisible();
+    // BG-18 (platform #153): no membership inside the institution is needed, so nothing warns.
+    await expect(page.getByRole('main').getByRole('note')).toHaveCount(0);
 
     await expect(
       mainText(
         page,
-        'The draft is created in Acme SACCO. Its own administrators then submit it and activate it.',
+        'The draft is created in Acme SACCO. It is then submitted and activated from its Branches tab, by a platform administrator until the institution has an active branch besides its head office.',
       ),
     ).toBeVisible();
 
@@ -209,7 +202,7 @@ test.describe('platform records: institution branches', () => {
     await expect(page).toHaveURL((url) => /\/branches\/[0-9a-f-]{36}$/.test(url.pathname));
   });
 
-  test("explains the platform's refusal where you aren't a member", async ({
+  test('moves keyboard focus to the branch code the platform refuses as taken', async ({
     context,
     page,
   }, testInfo) => {
@@ -220,59 +213,27 @@ test.describe('platform records: institution branches', () => {
       'Create branch draft',
     );
 
+    // Pwani's head office holds the code: the platform's 409 names it.
     const code = page.getByRole('textbox', { name: 'Branch code' });
-    await code.fill('THIKA');
+    await code.fill('HEAD_OFFICE');
     await page.getByRole('textbox', { name: 'Branch name' }).fill('Thika Road Branch');
     const create = page.getByRole('button', { name: 'Create draft' });
     await expectHydrated(create);
-    await create.click();
+    // Enter on the button itself: it goes disabled while it holds focus, so the browser drops focus
+    // to <body>, and the refusal takes it to the field it names.
+    await create.focus();
+    await page.keyboard.press('Enter');
 
-    await expect(
-      mainText(page, /You must also be an active member of this institution/),
-    ).toBeVisible();
-    // The page's warning is no wider than the form it warns about: level with the refusal below it.
-    const main = page.getByRole('main');
-    const warning = await main.getByRole('note').boundingBox();
-    const refusal = await main
-      .getByRole('alert')
-      .filter({ hasText: /You must also be an active member/ })
-      .boundingBox();
-    expect(warning?.x).toBeCloseTo(refusal?.x ?? -1, 0);
-    expect(warning?.width).toBeCloseTo(refusal?.width ?? -1, 0);
+    await expect(mainText(page, /Its code may already be in use/)).toBeVisible();
+    await expect(code).toBeFocused();
+    await expect(code).toHaveAccessibleDescription('This code may already be in use.');
     // The refusal keeps what was typed.
-    await expect(code).toHaveValue('THIKA');
     await expect(page.getByRole('textbox', { name: 'Branch name' })).toHaveValue(
       'Thika Road Branch',
     );
   });
 
-  test('keeps keyboard focus on Create draft after the platform refuses the draft', async ({
-    context,
-    page,
-  }, testInfo) => {
-    await authenticate(context, testInfo, 'platform-records');
-    await enterPlatform(
-      page,
-      `/platform-admin/tenants/${T.pwani}/branches/new`,
-      'Create branch draft',
-    );
-
-    await page.getByRole('textbox', { name: 'Branch code' }).fill('THIKA');
-    await page.getByRole('textbox', { name: 'Branch name' }).fill('Thika Road Branch');
-    const create = page.getByRole('button', { name: 'Create draft' });
-    await expectHydrated(create);
-    // Enter on the button itself: it goes disabled while it holds focus, so the browser drops focus
-    // to <body>, and a refusal that names no field (BG-18) gives nothing else to take it back.
-    await create.focus();
-    await page.keyboard.press('Enter');
-
-    await expect(
-      mainText(page, /You must also be an active member of this institution/),
-    ).toBeVisible();
-    await expect(create).toBeFocused();
-  });
-
-  test("offers no branch draft for an institution that isn't active", async ({
+  test("offers no branch draft for an institution that isn't active or provisioning", async ({
     context,
     page,
   }, testInfo) => {
@@ -288,7 +249,7 @@ test.describe('platform records: institution branches', () => {
     await expect(
       page.getByRole('heading', { level: 1, name: 'Create branch draft' }),
     ).toBeVisible();
-    await expect(mainText(page, 'Only an active institution can take new branches')).toBeVisible();
+    await expect(mainText(page, "This institution can't take new branches")).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Branch code' })).toHaveCount(0);
   });
 });

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import Box from '@mui/material/Box';
+import { getCurrentContextProfile } from '@/auth/context-service';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -20,6 +21,16 @@ import { UserDirectoryTable } from '@/modules/administration/users/components/us
 import { MEMBERSHIP_STATUSES, USER_STATUSES } from '@/modules/administration/users/user-contract';
 import { hasUserFilters, parseUserListQuery } from '@/modules/administration/users/user-query';
 import { userStatusLabel } from '@/modules/administration/users/user-rules';
+import {
+  canCheckMembers,
+  checkerWindow,
+  memberApproval,
+  memberCheckerNote,
+  type CheckerWindow,
+} from '@/modules/platform-administration/checker/checker-rules';
+import { readActiveMembers } from '@/modules/platform-administration/checker/checker-service';
+import { CheckerNote } from '@/modules/platform-administration/checker/components/checker-note';
+import { MemberApproveButton } from '@/modules/platform-administration/checker/components/checker-row-actions';
 import { parseInstitutionId } from '@/modules/platform-administration/tenants/institution-id';
 import { getTenant } from '@/modules/platform-administration/tenants/tenant-service';
 import { INSTITUTION_USERS_DESCRIPTION } from '@/modules/platform-administration/users/account-rules';
@@ -47,13 +58,29 @@ const FIELDS: ToolbarField[] = [
   },
 ];
 
+/** The institution (the layout's cached read) and the caller, then ADR 0028's window from one
+ * bounded read, made only for a holder who could act on it (`active` null otherwise). */
+async function readMemberWindow(tenantId: string) {
+  const [tenant, selected] = await Promise.all([
+    load(getTenant(tenantId)),
+    getCurrentContextProfile(),
+  ]);
+  const permissions = selected.kind === 'resolved' ? selected.profile.permissions : [];
+  const active =
+    tenant.ok && canCheckMembers(tenant.value.status, { permissions })
+      ? await load(readActiveMembers(tenantId))
+      : null;
+  return { tenant, selected, active };
+}
+
 interface UsersTabProps {
   params: Promise<{ tenantId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 /** An institution's users (spec §11.2): the hero is the layout's, so the list sits in one card.
- * Account actions live on each user's record, never here. */
+ * Account actions live on each user's record; the one action here is the platform checker's
+ * Approve, while the institution has no active member besides its first administrator (BG-02). */
 export default async function UsersTab({ params, searchParams }: UsersTabProps) {
   const tenantId = parseInstitutionId((await params).tenantId);
   if (!tenantId) notFound(); // rule 7: before any read
@@ -61,9 +88,10 @@ export default async function UsersTab({ params, searchParams }: UsersTabProps) 
 
   const urlParams = toSearchParams(await searchParams);
   const query = parseUserListQuery(urlParams);
-  const [tenant, users] = await Promise.all([
-    // The layout's cached read: if it failed, the layout renders that failure, not this tab.
-    load(getTenant(tenantId)),
+  // The window's read needs the institution and the caller, so it follows them, beside the list
+  // read: neither waits on the other.
+  const [{ tenant, selected, active }, users] = await Promise.all([
+    readMemberWindow(tenantId),
     load(listInstitutionUsers(tenantId, query)),
   ]);
   // The layout renders the institution's failure and drops this tab; this shows only when the two
@@ -76,6 +104,12 @@ export default async function UsersTab({ params, searchParams }: UsersTabProps) 
       </SectionCard>
     );
   }
+
+  const resolved = selected.kind === 'resolved' ? selected : null;
+  const callerId = resolved?.profile.user_id ?? null;
+  const checking = active !== null;
+  // A failed window read leaves the actions offered: the platform's named 409 explains a closed one.
+  const opening: CheckerWindow = active?.ok ? checkerWindow(active.value) : 'unknown';
 
   if (!users.ok) {
     return (
@@ -95,9 +129,17 @@ export default async function UsersTab({ params, searchParams }: UsersTabProps) 
   }
 
   const total = users.value.page.totalItems;
+  // Each row's Approve; the column shows only when a row has one.
+  const approvals = new Map(
+    (checking && opening !== 'closed' ? users.value.items : []).flatMap((user) => {
+      const approval = memberApproval(user, callerId);
+      return approval ? [[user.id, approval] as const] : [];
+    }),
+  );
 
   return (
     <SectionCard title="Users" description={INSTITUTION_USERS_DESCRIPTION}>
+      {checking && <CheckerNote note={memberCheckerNote(tenant.value.displayName, opening)} />}
       <ListNavigationProvider>
         <Box sx={{ position: 'relative' }}>
           <ListToolbar
@@ -118,7 +160,28 @@ export default async function UsersTab({ params, searchParams }: UsersTabProps) 
                 }
               />
             ) : (
-              <UserDirectoryTable users={users.value.items} basePath={path} />
+              <UserDirectoryTable
+                users={users.value.items}
+                basePath={path}
+                rowActions={
+                  approvals.size > 0
+                    ? (user) => {
+                        const approval = approvals.get(user.id);
+                        return (
+                          approval && (
+                            <MemberApproveButton
+                              tenantId={tenantId}
+                              membershipId={user.membershipId}
+                              name={user.displayName}
+                              blocked={approval.blocked}
+                              contextOrganisationId={resolved?.context.organization.id}
+                            />
+                          )
+                        );
+                      }
+                    : undefined
+                }
+              />
             )}
             <TablePaginationBar page={users.value.page} />
           </ListBusyRegion>

@@ -1,3 +1,6 @@
+// Server-only: `rowActions` is a render prop, which can never cross to a Client Component.
+import 'server-only';
+import type { ReactNode } from 'react';
 import Link from '@mui/material/Link';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -37,6 +40,9 @@ interface BranchDirectoryTableProps {
   /** The name link's cap: 320 px by default. Layer 17's tab passes `min(320px, 60vw)`, so a long
    * name's ellipsis stays inside a 375 px card (10's `NAME_MAX_WIDTH`). */
   nameMaxWidth?: number | string;
+  /** A last "Actions" column, a row's own controls (the platform checker's, BG-02). Server
+   * Component: this function prop never crosses to the client either. */
+  rowActions?: (branch: BranchSummary) => ReactNode;
 }
 
 /** The branch directory (spec §10.3): every header is a server-built sort link. */
@@ -48,6 +54,7 @@ export function BranchDirectoryTable({
   basePath = '/admin/branches',
   createdLabel = 'Created',
   nameMaxWidth = 320,
+  rowActions,
 }: BranchDirectoryTableProps) {
   return (
     // Keyboard-scrollable at 375 px, where the 760 px table overflows (as 10's users table and 07's
@@ -80,6 +87,7 @@ export function BranchDirectoryTable({
                 </TableCell>
               );
             })}
+            {rowActions && <TableCell>Actions</TableCell>}
           </TableRow>
         </TableHead>
         <TableBody>
@@ -112,6 +120,7 @@ export function BranchDirectoryTable({
               <TableCell sx={{ whiteSpace: 'nowrap' }}>
                 {formatInstant(branch.createdAt, timeZone).date}
               </TableCell>
+              {rowActions && <TableCell>{rowActions(branch)}</TableCell>}
             </TableRow>
           ))}
         </TableBody>

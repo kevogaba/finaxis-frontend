@@ -1,3 +1,6 @@
+// Server-only: `rowActions` is a render prop, which can never cross to a Client Component.
+import 'server-only';
+import type { ReactNode } from 'react';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Link from '@mui/material/Link';
@@ -25,12 +28,19 @@ interface UserDirectoryTableProps {
   users: readonly UserSummary[];
   /** Where a user's record lives: 10's own by default; layer 17 passes the platform's. */
   basePath?: string;
+  /** A last "Actions" column, a row's own controls (the platform checker's Approve, BG-02). Server
+   * Component: this function prop never crosses to the client — keep it that way. */
+  rowActions?: (user: UserSummary) => ReactNode;
 }
 
 /** The users directory (spec §10.5): newest first as the backend returns it, so no header sorts
  * (the endpoint has no sort, contract §E.3). Rows carry no hover highlight, since only the name
  * link navigates. */
-export function UserDirectoryTable({ users, basePath = '/admin/users' }: UserDirectoryTableProps) {
+export function UserDirectoryTable({
+  users,
+  basePath = '/admin/users',
+  rowActions,
+}: UserDirectoryTableProps) {
   return (
     // Keyboard-scrollable at 375 px, where the 760 px table overflows (07's history-table rule, as in
     // the branch assignments table). Not "Users": the table keeps that name, and a landmark and a
@@ -47,6 +57,7 @@ export function UserDirectoryTable({ users, basePath = '/admin/users' }: UserDir
             {COLUMNS.map((label) => (
               <TableCell key={label}>{label}</TableCell>
             ))}
+            {rowActions && <TableCell>Actions</TableCell>}
           </TableRow>
         </TableHead>
         <TableBody>
@@ -108,6 +119,7 @@ export function UserDirectoryTable({ users, basePath = '/admin/users' }: UserDir
                 <TableCell>
                   <StatusChip value={user.userStatus} label={userStatusLabel(user.userStatus)} />
                 </TableCell>
+                {rowActions && <TableCell>{rowActions(user)}</TableCell>}
               </TableRow>
             );
           })}
