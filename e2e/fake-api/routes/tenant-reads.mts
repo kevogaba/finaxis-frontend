@@ -57,6 +57,7 @@ export function branchPage(
       branch_type: branch.type,
       status: branch.status,
       created_at: branch.createdAt,
+      parent_branch_id: branch.parentBranchId, // BG-09; never the address
       ...branchMakersWire(access, branch),
     })),
     query,

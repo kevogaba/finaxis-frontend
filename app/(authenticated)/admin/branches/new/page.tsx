@@ -2,11 +2,7 @@ import type { Metadata } from 'next';
 import Paper from '@mui/material/Paper';
 import { getCurrentContextProfile } from '@/auth/context-service';
 import { permissionHolder } from '@/auth/permissions';
-import {
-  canCreateBranch,
-  SCOPED_BRANCHES_NOTE,
-  scopedBranchView,
-} from '@/modules/administration/branches/branch-rules';
+import { canCreateBranch } from '@/modules/administration/branches/branch-rules';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { PageHeader } from '@/components/shell/page-header';
 import { getBranchIndex, getOrganisationTimeZone } from '@/lib/api/lookups';
@@ -52,8 +48,6 @@ export default async function NewBranchPage() {
             id,
             label: `${branch.name} (${branch.code})`,
           }))}
-          // BG-03: the index is `GET /branches`' answer, only the branches `branch.view` covers.
-          parentsNote={scopedBranchView(holder) ? `Optional. ${SCOPED_BRANCHES_NOTE}` : undefined}
         />
       </Paper>
     </>

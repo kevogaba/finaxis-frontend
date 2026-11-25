@@ -29,7 +29,7 @@ export function canCreateInstitutionBranch(
 export const BRANCHES_DESCRIPTION =
   "The institution's own administrators submit, activate and change its branches.";
 export const BRANCH_DETAIL_DESCRIPTION =
-  "Read-only here: the institution's own administrators run its branches. The platform doesn't return a branch's address.";
+  "Read-only here: the institution's own administrators run its branches.";
 export const BRANCH_CREATE_REFUSED =
   'The platform refused this branch. You must also be an active member of this institution, with a role there that allows creating branches. Ask one of its administrators to create it, or to give you that access.';
 export const BRANCH_CREATE_CONFLICT =

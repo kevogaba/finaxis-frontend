@@ -3,12 +3,18 @@ import type { BranchStatus } from './branch-contract';
 import {
   availableBranchActions,
   branchDraftSchema,
-  canActOnBranch,
+  branchEditSchema,
   branchTypeLabel,
+  canActOnBranch,
   canAssignUsers,
+  changedBranchFields,
   canCreateBranch,
+  canEditBranch,
   canRevokeAssignments,
+  EDIT_DRAFT_WARNING,
+  EDITABLE_BRANCH_STATES,
   isTimeZone,
+  parentOptions,
   pendingBranchAction,
   scopedBranchView,
   sentBackNote,
@@ -262,6 +268,167 @@ describe('branch rules', () => {
   it('says a branch-scoped branch.view lists only its branches', () => {
     expect(scopedBranchView(wide(['branch.view']))).toBe(false);
     expect(scopedBranchView(atAandB(['branch.view'], A))).toBe(true);
+  });
+
+  it('edits a DRAFT or ACTIVE branch with branch.update and branch.view (BG-13)', () => {
+    const codes = ['branch.view', 'branch.update'];
+    expect(EDITABLE_BRANCH_STATES).toEqual(['DRAFT', 'ACTIVE']);
+    expect(canEditBranch(at(A), wide(codes))).toBe(true);
+    expect(canEditBranch(at(A, 'DRAFT'), wide(codes))).toBe(true);
+    for (const status of ['PENDING_APPROVAL', 'SUSPENDED', 'CLOSED', 'ARCHIVED'] as const) {
+      expect(canEditBranch(at(A, status), wide(codes))).toBe(false);
+    }
+    // Review Focus 3: the mutation without its view (ADR 0030).
+    expect(canEditBranch(at(A), wide(['branch.update']))).toBe(false);
+  });
+
+  it('edits through a branch-scope grant only at that ACTIVE branch, while it is selected', () => {
+    const codes = ['branch.view', 'branch.update'];
+    // The route's gate reads the selected context; the target check, the grant at the branch.
+    expect(canEditBranch(at(A), atAandB(codes, A))).toBe(true);
+    // Selected at B, the grant at A still passes both checks: B's grant opens the route.
+    expect(canEditBranch(at(A), atAandB(codes, B))).toBe(true);
+    // At All branches the route's gate sees no branch.update.
+    expect(canEditBranch(at(A), atAandB(codes, null))).toBe(false);
+    // A branch-scope grant reaches no draft (#242), even the selected branch's.
+    expect(canEditBranch(at(A, 'DRAFT'), atAandB(codes, A))).toBe(false);
+    // Nor a branch it doesn't name.
+    expect(canEditBranch(at('branch-c'), atAandB(codes, A))).toBe(false);
+  });
+
+  it('warns that editing a draft costs its editor the activation', () => {
+    expect(EDIT_DRAFT_WARNING).toBe(
+      "If you edit this draft, you won't be able to activate it yourself.",
+    );
+  });
+
+  it('offers as parents every open branch but itself and those below it', () => {
+    const entry = (name: string, parentId: string | null, status = 'ACTIVE') => ({
+      name,
+      code: name.toUpperCase(),
+      parentId,
+      status,
+    });
+    const index = new Map([
+      ['hq', entry('Head', null)],
+      ['me', entry('Me', 'hq')],
+      ['child', entry('Child', 'me')],
+      ['grandchild', entry('Grandchild', 'child', 'DRAFT')],
+      ['sibling', entry('Sibling', 'hq', 'SUSPENDED')],
+      ['closed', entry('Closed', null, 'CLOSED')],
+      ['archived', entry('Archived', null, 'ARCHIVED')],
+    ]);
+    expect(parentOptions(index, 'me', 'hq')).toEqual([
+      { id: 'hq', label: 'Head (HEAD)' },
+      { id: 'sibling', label: 'Sibling (SIBLING)' },
+    ]);
+    // The current parent stays listed even once closed, so the field still shows it.
+    expect(parentOptions(index, 'me', 'closed').map((option) => option.id)).toEqual([
+      'hq',
+      'sibling',
+      'closed',
+    ]);
+    // A parent the index lacks (past its ceiling, or unreadable) by its short id.
+    const parent = 'c3000000-0000-4000-8000-0000000000cc';
+    expect(parentOptions(new Map(), 'me', parent)).toEqual([{ id: parent, label: 'c3000000' }]);
+  });
+
+  describe('changedBranchFields (BG-13)', () => {
+    const stored = {
+      branchName: 'Westlands Branch',
+      parentBranchId: null,
+      timezone: 'Africa/Nairobi',
+      address: { line_1: 'Mpaka Road', city: ' Nairobi ', building: 'Block B' },
+    };
+    const values = {
+      ...DRAFT,
+      branchName: 'Westlands Branch',
+      line_1: 'Mpaka Road',
+      line_2: '',
+      city: 'Nairobi',
+      region: '',
+      postal_code: '',
+    };
+
+    it('is empty when nothing changed, whatever whitespace was stored', () => {
+      expect(changedBranchFields(stored, values)).toEqual({});
+    });
+
+    it('names each changed field, an emptied parent as ""', () => {
+      expect(
+        changedBranchFields(stored, {
+          ...values,
+          branchName: 'Westlands Mall',
+          timezone: 'Africa/Kampala',
+        }),
+      ).toEqual({ branchName: 'Westlands Mall', timezone: 'Africa/Kampala' });
+      expect(changedBranchFields({ ...stored, parentBranchId: 'hq' }, values)).toEqual({
+        parentBranchId: '',
+      });
+      expect(changedBranchFields(stored, { ...values, parentBranchId: 'hq' })).toEqual({
+        parentBranchId: 'hq',
+      });
+    });
+
+    it('sends the five address fields together, with the other stored keys as JSON', () => {
+      expect(changedBranchFields(stored, { ...values, city: 'Kisumu' })).toEqual({
+        line_1: 'Mpaka Road',
+        line_2: '',
+        city: 'Kisumu',
+        region: '',
+        postal_code: '',
+        otherAddress: '{"building":"Block B"}',
+      });
+      // No other stored key, no JSON.
+      expect(changedBranchFields({ ...stored, address: { city: 'Nairobi' } }, values)).toEqual({
+        line_1: 'Mpaka Road',
+        line_2: '',
+        city: 'Nairobi',
+        region: '',
+        postal_code: '',
+      });
+    });
+  });
+
+  it('takes an optional address of at most 120 characters a field, trimmed (Q9)', () => {
+    expect(
+      branchDraftSchema.parse({ ...DRAFT, line_1: ' Kenyatta Avenue ', postal_code: '' }),
+    ).toMatchObject({ line_1: 'Kenyatta Avenue', postal_code: '' });
+    const long = branchDraftSchema.safeParse({ ...DRAFT, city: 'x'.repeat(121) });
+    expect(long.success).toBe(false);
+    expect(long.error?.issues[0]).toMatchObject({
+      path: ['city'],
+      message: 'Use at most 120 characters.',
+    });
+  });
+
+  it('edits with the fixed code and type unchecked, and keeps an unusual stored zone', () => {
+    const schema = branchEditSchema({ timezone: '+05:30', address: {} });
+    const values = { ...DRAFT, branchCode: 'legacy code', branchType: 'x'.repeat(80) };
+    expect(schema.safeParse({ ...values, timezone: '+05:30' }).success).toBe(true);
+    expect(schema.safeParse({ ...values, timezone: 'Africa/Kampala' }).success).toBe(true);
+    expect(schema.safeParse({ ...values, timezone: '+03:00' }).success).toBe(false);
+    expect(schema.safeParse({ ...values, branchName: 'N' }).success).toBe(false);
+  });
+
+  it('caps only an address value the user changed, so a long stored one never blocks a save', () => {
+    const stored = 'Plot 7, '.repeat(20).trim(); // 159 characters: the platform caps none
+    const schema = branchEditSchema({
+      timezone: 'Africa/Nairobi',
+      address: { line_1: ` ${stored} `, city: 'Nairobi' },
+    });
+    const values = { ...DRAFT, line_1: stored, city: 'Nairobi' };
+    // A name-only edit, the long line untouched (the form trims, as the comparison does).
+    expect(schema.safeParse({ ...values, branchName: 'Westlands Mall' }).success).toBe(true);
+    // A changed neighbour sends it back unchanged: still accepted.
+    expect(schema.safeParse({ ...values, city: 'Kisumu' }).success).toBe(true);
+    // Changed, it must fit the 120.
+    const edited = schema.safeParse({ ...values, line_1: `${stored}!` });
+    expect(edited.error?.issues).toEqual([
+      expect.objectContaining({ path: ['line_1'], message: 'Use at most 120 characters.' }),
+    ]);
+    // A field stored short and changed to something long is refused too.
+    expect(schema.safeParse({ ...values, region: 'x'.repeat(121) }).success).toBe(false);
   });
 
   it('labels enum-like types and keeps free text as typed', () => {

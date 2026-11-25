@@ -5,7 +5,10 @@ import { z } from 'zod';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiPost } from '@/lib/api/tenant-api';
-import { branchDraftResultSchema } from '@/modules/administration/branches/branch-contract';
+import {
+  addressWire,
+  branchDraftResultSchema,
+} from '@/modules/administration/branches/branch-contract';
 import { branchDraftSchema } from '@/modules/administration/branches/branch-rules';
 import { isInstitutionId } from '../tenants/institution-id';
 import { institutionBranchesHref } from './institution-branch-query';
@@ -19,8 +22,8 @@ const idempotencyKey = z.uuid();
 /** BG-29: never the reserved platform organisation, in any letter case. */
 const tenantId = z.string().refine(isInstitutionId, 'Choose an institution.');
 
-/** 08's draft fields, posted to the platform route (contract §E.2). No address: it is stored but
- * never returned (BG-13). */
+/** 08's draft fields, posted to the platform route (contract §E.2), the address only when one of
+ * its fields is filled in (BG-13). */
 export async function createInstitutionBranchDraft(
   _previous: ActionResult | null,
   formData: FormData,
@@ -30,6 +33,7 @@ export async function createInstitutionBranchDraft(
     formData,
     async (input) => {
       const institution = input.tenantId.toLowerCase();
+      const address = addressWire(input);
       const draft = branchDraftResultSchema.parse(
         await apiPost(
           `/api/v1/platform/tenants/${institution}/branches`,
@@ -39,6 +43,7 @@ export async function createInstitutionBranchDraft(
             branch_type: input.branchType,
             parent_branch_id: input.parentBranchId || null,
             timezone: input.timezone,
+            ...(Object.keys(address).length > 0 ? { address } : {}),
           },
           input.idempotencyKey,
         ),

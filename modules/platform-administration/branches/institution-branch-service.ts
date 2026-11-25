@@ -18,7 +18,7 @@ export async function listInstitutionBranches(tenantId: string, query: BranchLis
   return await apiGet(institutionBranchListApiPath(id(tenantId), query), branchPageSchema);
 }
 
-/** One read per request. 08's detail schema: `address` (always `{}`, BG-13) isn't mapped. */
+/** One read per request, with 08's detail schema. */
 export const getInstitutionBranch = cache(async (tenantId: string, branchId: string) => {
   return await apiGet(
     `/api/v1/platform/tenants/${id(tenantId)}/branches/${id(branchId)}`,

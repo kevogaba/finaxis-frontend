@@ -8,13 +8,34 @@ const tenantUserSchema = z
   .object({ id: z.string(), display_name: z.string(), email: z.string() })
   .transform((user) => ({ id: user.id, displayName: user.display_name, email: user.email }));
 
+// The parent and status feed only the edit form's parent picker, so they're nullish: the read's
+// catch below hides a parse failure, and a drift in either must not blank every page's names. A
+// plain-string status, since a lookup tolerates one it doesn't know.
 const branchNameSchema = z
-  .object({ id: z.string(), branch_name: z.string(), branch_code: z.string() })
+  .object({
+    id: z.string(),
+    branch_name: z.string(),
+    branch_code: z.string(),
+    parent_branch_id: z.string().nullish(),
+    status: z.string().nullish(),
+  })
   .transform((branch) => ({
     id: branch.id,
-    branchName: branch.branch_name,
-    branchCode: branch.branch_code,
+    entry: {
+      name: branch.branch_name,
+      code: branch.branch_code,
+      parentId: branch.parent_branch_id ?? null,
+      status: branch.status ?? null,
+    },
   }));
+
+export interface BranchIndexEntry {
+  name: string;
+  code: string;
+  parentId: string | null;
+  /** `null` when the list item didn't carry one. */
+  status: string | null;
+}
 
 const tenantTimeZoneSchema = z.object({ timezone: z.string() });
 
@@ -44,26 +65,24 @@ const BRANCH_PAGE_SIZE = 100;
 // backend name lookup (docs/backend-gaps.md BG-09) if tenants grow past it.
 const BRANCH_PAGE_CEILING = 5;
 
-export const getBranchIndex = cache(
-  async (): Promise<ReadonlyMap<string, { name: string; code: string }>> => {
-    const index = new Map<string, { name: string; code: string }>();
-    try {
-      for (let page = 0; page < BRANCH_PAGE_CEILING; page += 1) {
-        const result = await apiGet(
-          `/api/v1/branches?page=${page}&size=${BRANCH_PAGE_SIZE}&sort_by=branchName&sort_dir=ASC`,
-          pageSchema(branchNameSchema),
-        );
-        result.items.forEach((branch) => {
-          index.set(branch.id, { name: branch.branchName, code: branch.branchCode });
-        });
-        if (!result.page.hasNext) break;
-      }
-    } catch {
-      // Without branch.view the index stays empty; callers fall back to short IDs.
+export const getBranchIndex = cache(async (): Promise<ReadonlyMap<string, BranchIndexEntry>> => {
+  const index = new Map<string, BranchIndexEntry>();
+  try {
+    for (let page = 0; page < BRANCH_PAGE_CEILING; page += 1) {
+      const result = await apiGet(
+        `/api/v1/branches?page=${page}&size=${BRANCH_PAGE_SIZE}&sort_by=branchName&sort_dir=ASC`,
+        pageSchema(branchNameSchema),
+      );
+      result.items.forEach((branch) => {
+        index.set(branch.id, branch.entry);
+      });
+      if (!result.page.hasNext) break;
     }
-    return index;
-  },
-);
+  } catch {
+    // Without branch.view the index stays empty; callers fall back to short IDs.
+  }
+  return index;
+});
 
 const roleIndexSchema = z
   .object({

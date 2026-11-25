@@ -147,7 +147,7 @@ miscount things today.
 
 ## Summary
 
-11 backend fixed · 8 partly fixed · 0 open · 1 adopted · 15 closed.
+10 backend fixed · 8 partly fixed · 0 open · 1 adopted · 16 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -163,7 +163,7 @@ miscount things today.
 | BG-10 | P1       | Backend fixed | No global user directory or global user read                                                       |
 | BG-11 | P1       | Partly fixed  | Invitation state not exposed; no resend; provisioning can stick with no recovery                   |
 | BG-12 | P1       | Backend fixed | Tenant settings catalogue unenforced and missing metadata; platform-only key unmanageable          |
-| BG-13 | P1       | Backend fixed | Branch address never returned; no branch update; opened/closed dates never set                     |
+| BG-13 | P1       | Closed        | Branch address never returned; no branch update; opened/closed dates never set                     |
 | BG-14 | P1       | Backend fixed | Tenant legal name / registration number write-only; PATCH wipes them                               |
 | BG-15 | P1       | Backend fixed | No aggregate counts (role users/permissions, branch users, tenant branches/users)                  |
 | BG-16 | P1       | Backend fixed | Audit search and recording limitations                                                             |
@@ -655,7 +655,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-13 — Branch address, update, and dates · P1
 
-- **Status:** Backend fixed. Platform #165, #203 (V18, V19).
+- **Status:** Closed (frontend #118). Platform #165, #203 (V18, V19).
 - **Gap:** `address` is accepted and stored but branch detail always returns `{}`
   (`BranchController.kt:860`, `PlatformTenantBranchController.kt:323`). No branch update endpoint.
   `opened_on`/`closed_on` are never set by the API.
@@ -671,8 +671,27 @@ the same bullets): the first is the gap as found, the second what the UI still d
     backfilled older branches with approximate dates.
 - **Still open:** no platform PATCH route; PENDING_APPROVAL and SUSPENDED branches can't be edited;
   list items don't carry the address; a discarded draft gets a `closed_on` and no `opened_on`.
-- **To adopt:** show and enter the address (`branch-contract.ts` drops it today) and add an Edit
-  form gated on `branch.update`.
+- **To adopt:** done in frontend #118. The branch detail parses `address`; the tenant Overview and
+  the platform branch page show it on one line (`formatAddress`: decision Q9's keys `line_1`,
+  `line_2`, `city`, `region`, `postal_code` in order, then any other stored key), and the Overview
+  also names Drafted by and Submitted by. Both create forms take the five fields and send `address`
+  only when one is filled in. `/admin/branches/{id}/edit` (an Edit link on the record) is gated by
+  `canEditBranch`, which is `canActOnBranch` on `branch.update` for a DRAFT or ACTIVE branch
+  (`EDITABLE_BRANCH_STATES`): the route's code in the selected context, then `branch.update` and
+  `branch.view` at the branch, tenant-wide or through a BRANCH grant there while it is ACTIVE, so a
+  draft is edited tenant-wide only. It reuses the create form with the code and type fixed, and
+  `updateBranch` PATCHes only the changed fields: an emptied parent as `null`, and the address whole
+  (`{}` when blank) with any other stored key kept. The form's 120-character cap applies only to an
+  address value the user changed, so a longer stored one never blocks a save. The parent picker
+  leaves out the branch itself, the branches below it and closed ones, and says when a
+  branch-scoped `branch.view` lists only its branches. A draft warns that its editor can't activate
+  it, and the 409, 422 and 404 are explained by code. The opening and closing dates show once set.
+  The e2e fake API stores and returns the address (a number or boolean value as its text, as
+  Jackson coerces it) and both dates, adds `parent_branch_id` to list items, and answers the PATCH
+  in the platform's order: the body's 400s, the route gate, `{}`, the target check, then 404 and
+  the state (audit `branch.update` with the changed field names). It refuses an editor's activation
+  with `lifecycle.approver_is_branch_modifier` unless the switch is off, recording the refusal as a
+  `DENIED` `branch.activate` row, as the platform does for the drafter's too.
 
 ### BG-14 — Tenant legal name and registration number · P1
 

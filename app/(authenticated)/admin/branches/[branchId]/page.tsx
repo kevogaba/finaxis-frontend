@@ -9,6 +9,8 @@ import NextLink from '@/components/navigation/next-link';
 import { load } from '@/lib/api/load';
 import { getBranchIndex, getOrganisationTimeZone } from '@/lib/api/lookups';
 import { formatBusinessDate, formatInstant, shortId } from '@/lib/format';
+import { makerLabel } from '@/modules/administration/approvals/components/request-facts';
+import { formatAddress } from '@/modules/administration/branches/branch-contract';
 import { branchTypeLabel, sentBackNote } from '@/modules/administration/branches/branch-rules';
 import {
   countActiveAssignments,
@@ -33,7 +35,9 @@ export default async function BranchOverviewPage({ params }: BranchOverviewPageP
   if (!branch.ok) return null; // the layout renders the failure or the guided state
 
   const record = branch.value;
-  const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
+  const profile = selected.kind === 'resolved' ? selected.profile : null;
+  const holder = { permissions: profile?.permissions ?? [] };
+  const me = profile?.user_id ?? '';
   const [index, assignments] = await Promise.all([
     record.parentBranchId ? getBranchIndex() : Promise.resolve(null),
     can(holder, 'branch_assignment.view') ? load(countActiveAssignments(branchId)) : null,
@@ -59,8 +63,12 @@ export default async function BranchOverviewPage({ params }: BranchOverviewPageP
       ),
     },
     { label: 'Timezone', value: record.timezone },
+    { label: 'Address', value: formatAddress(record.address) ?? '—' },
     { label: 'Last status reason', value: sentBackNote(record) ?? record.statusReason ?? '—' },
-    // Never set by the API today (BG-13) — shown only when present.
+    // BG-08: "You (…)" for the caller, "—" when the record names nobody.
+    { label: 'Drafted by', value: makerLabel(record.createdBy, me) },
+    { label: 'Submitted by', value: makerLabel(record.submittedBy, me) },
+    // Set by the first activation and by closure (BG-13): shown once set.
     ...(record.openedOn
       ? [{ label: 'Opened on', value: formatBusinessDate(record.openedOn, 'short') }]
       : []),

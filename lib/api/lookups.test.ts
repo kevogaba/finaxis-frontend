@@ -54,21 +54,48 @@ describe('lookups', () => {
     apiGet
       .mockImplementationOnce(
         wire({
-          items: [{ id: 'b1', branch_name: 'Head Office', branch_code: 'HQ' }],
+          items: [
+            {
+              id: 'b1',
+              branch_name: 'Head Office',
+              branch_code: 'HQ',
+              parent_branch_id: null,
+              status: 'ACTIVE',
+            },
+          ],
           page: envelope(0, true),
         }),
       )
       .mockImplementationOnce(
         wire({
-          items: [{ id: 'b2', branch_name: 'Westlands', branch_code: 'WST' }],
+          items: [
+            {
+              id: 'b2',
+              branch_name: 'Westlands',
+              branch_code: 'WST',
+              parent_branch_id: 'b1',
+              status: 'CLOSED',
+            },
+          ],
           page: envelope(1, false),
         }),
       );
 
     const index = await getBranchIndex();
 
-    expect(index.get('b1')).toEqual({ name: 'Head Office', code: 'HQ' });
-    expect(index.get('b2')).toEqual({ name: 'Westlands', code: 'WST' });
+    // The parent and status feed the edit form's parent picker (BG-09's branch items, BG-13).
+    expect(index.get('b1')).toEqual({
+      name: 'Head Office',
+      code: 'HQ',
+      parentId: null,
+      status: 'ACTIVE',
+    });
+    expect(index.get('b2')).toEqual({
+      name: 'Westlands',
+      code: 'WST',
+      parentId: 'b1',
+      status: 'CLOSED',
+    });
     expect(apiGet).toHaveBeenCalledTimes(2);
     expect(apiGet).toHaveBeenNthCalledWith(
       1,
@@ -80,6 +107,23 @@ describe('lookups', () => {
       '/api/v1/branches?page=1&size=100&sort_by=branchName&sort_dir=ASC',
       expect.anything(),
     );
+  });
+
+  it('keeps the names when a branch item lacks its parent or status', async () => {
+    apiGet.mockImplementationOnce(
+      wire({
+        items: [{ id: 'b1', branch_name: 'Head Office', branch_code: 'HQ' }],
+        page: envelope(0, false),
+      }),
+    );
+
+    // Only the parent picker reads them: a drift there never blanks a name.
+    expect((await getBranchIndex()).get('b1')).toEqual({
+      name: 'Head Office',
+      code: 'HQ',
+      parentId: null,
+      status: null,
+    });
   });
 
   it('stops at the 5-page ceiling', async () => {

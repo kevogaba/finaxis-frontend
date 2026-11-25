@@ -542,6 +542,7 @@ export const BRANCH_SCENARIO_IDS = {
  * read-only gating scenario (e2e/branches.spec.ts "offers no mutations without the permissions"). */
 const BRANCH_ADMIN_CODES = [
   'branch.create',
+  'branch.update',
   'branch.approve',
   'branch.suspend',
   'branch.reactivate',

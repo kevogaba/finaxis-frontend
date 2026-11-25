@@ -1,12 +1,18 @@
 'use server';
 
+import { refresh } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
-import { apiDelete, apiPost } from '@/lib/api/tenant-api';
+import { apiDelete, apiPatch, apiPost } from '@/lib/api/tenant-api';
 import { UUID_PATTERN, uuidSchema } from '@/lib/api/wire';
-import { BRANCH_ASSIGNMENT_TYPES, branchDraftResultSchema } from './branch-contract';
+import {
+  ADDRESS_KEYS,
+  addressWire,
+  BRANCH_ASSIGNMENT_TYPES,
+  branchDraftResultSchema,
+} from './branch-contract';
 import { ACTIVATE_FORBIDDEN, branchDraftSchema } from './branch-rules';
 
 const idempotencyKey = z.uuid();
@@ -52,6 +58,7 @@ export async function createBranchDraft(
     branchDraftSchema.extend({ idempotencyKey }),
     formData,
     async (input) => {
+      const address = addressWire(input);
       const draft = branchDraftResultSchema.parse(
         await apiPost(
           '/api/v1/branches',
@@ -61,6 +68,7 @@ export async function createBranchDraft(
             branch_type: input.branchType,
             parent_branch_id: input.parentBranchId || null,
             timezone: input.timezone,
+            ...(Object.keys(address).length > 0 ? { address } : {}),
           },
           input.idempotencyKey,
         ),
@@ -75,6 +83,96 @@ export async function createBranchDraft(
     'conflict',
     "The branch couldn't be created. Its code may already be in use, or the institution can't add branches right now.",
     { branchCode: 'This code may already be in use.' },
+  );
+}
+
+const RELOAD = 'Reload the page and try again.';
+
+/** The edit form's stored address keys outside the five, as JSON: kept, never guessed at. */
+const otherAddress = z
+  .string()
+  .transform((text, context): unknown => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      context.addIssue({ code: 'custom', message: RELOAD });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.record(z.string(), z.string(), { error: RELOAD }));
+
+/** An address field as the edit form sends it: trimmed, uncapped. The form caps a value the user
+ * changed at 120 (`branchEditSchema`); the platform caps none, so an unchanged stored value of any
+ * length goes back with a changed neighbour, as stored. */
+const sentAddressField = z.string().trim().optional();
+
+/** Every field optional: the edit form sends only what changed, and the five address fields
+ * together when the address did. */
+const updateInput = branchDraftSchema
+  .omit({ branchCode: true, branchType: true })
+  .partial()
+  .extend({
+    line_1: sentAddressField,
+    line_2: sentAddressField,
+    city: sentAddressField,
+    region: sentAddressField,
+    postal_code: sentAddressField,
+    idempotencyKey,
+    branchId: uuidSchema,
+    otherAddress: otherAddress.optional(),
+  });
+
+/** `otherAddress` is no field the form shows, so its parse failing (a stale or altered page)
+ * names no highlighted field: say so at the form's level instead. */
+function staleOtherAddress(result: ActionResult): ActionResult {
+  if (result.ok || result.fieldErrors.otherAddress === undefined) return result;
+  const fieldErrors = Object.fromEntries(
+    Object.entries(result.fieldErrors).filter(([name]) => name !== 'otherAddress'),
+  );
+  return {
+    ...result,
+    formError: `We couldn't keep this branch's other address details. ${RELOAD}`,
+    fieldErrors,
+  };
+}
+
+/** PATCH /branches/{id} (BG-13): an absent field stays as it is, an empty parent detaches with
+ * `null`, and the address is replaced whole. */
+export async function updateBranch(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const result = await runServerAction(updateInput, formData, async (input) => {
+    const addressSent = ADDRESS_KEYS.some((key) => input[key] !== undefined);
+    await apiPatch(
+      `/api/v1/branches/${input.branchId}`,
+      {
+        ...(input.branchName === undefined ? {} : { branch_name: input.branchName }),
+        ...(input.parentBranchId === undefined
+          ? {}
+          : { parent_branch_id: input.parentBranchId || null }),
+        ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+        ...(addressSent ? { address: addressWire(input, input.otherAddress) } : {}),
+      },
+      input.idempotencyKey,
+    );
+    // Before the redirect, as updateRole does: the record layout's hero shows the new name.
+    refresh();
+    redirect(`/admin/branches/${input.branchId}`);
+  });
+  // 409 = the state OR a closed parent; 422 = the zone, the branch as its own parent or a cycle.
+  return explain(
+    explain(
+      explain(
+        staleOtherAddress(result),
+        'conflict',
+        'This branch can no longer be edited in its current state, or the parent you chose has closed. Refresh and check.',
+      ),
+      'invalid_operation',
+      "The time zone or parent branch isn't accepted. A branch can't be its own ancestor.",
+    ),
+    'resource_not_found',
+    'The parent branch no longer exists.',
   );
 }
 

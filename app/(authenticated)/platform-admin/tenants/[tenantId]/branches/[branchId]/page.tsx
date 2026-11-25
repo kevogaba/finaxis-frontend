@@ -15,6 +15,7 @@ import NextLink from '@/components/navigation/next-link';
 import { PageHeader } from '@/components/shell/page-header';
 import { load } from '@/lib/api/load';
 import { formatBusinessDate, formatInstant, shortId } from '@/lib/format';
+import { formatAddress } from '@/modules/administration/branches/branch-contract';
 import { branchTypeLabel } from '@/modules/administration/branches/branch-rules';
 import { institutionBranchesHref } from '@/modules/platform-administration/branches/institution-branch-query';
 import {
@@ -42,7 +43,7 @@ interface InstitutionBranchPageProps {
   params: Promise<{ tenantId: string; branchId: string }>;
 }
 
-/** A branch read-only (spec §11.2): the platform has no branch lifecycle, edit or address (BG-13). */
+/** A branch read-only (spec §11.2): the platform has no branch lifecycle or edit (BG-13). */
 export default async function InstitutionBranchPage({ params }: InstitutionBranchPageProps) {
   const raw = await params;
   const tenantId = parseInstitutionId(raw.tenantId);
@@ -103,8 +104,9 @@ export default async function InstitutionBranchPage({ params }: InstitutionBranc
       ),
     },
     { label: 'Timezone', value: record.timezone },
+    { label: 'Address', value: formatAddress(record.address) ?? '—' },
     { label: 'Last status reason', value: record.statusReason ?? '—' },
-    // Never set by the API today (BG-13): shown only when present.
+    // Set by the first activation and by closure (BG-13): shown once set.
     ...(record.openedOn
       ? [{ label: 'Opened on', value: formatBusinessDate(record.openedOn, 'short') }]
       : []),

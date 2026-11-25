@@ -289,3 +289,52 @@ describe('BranchRecordLayout: sending a request back (BG-01)', () => {
     expect(screen.getByText('LIK · Branch')).toBeInTheDocument();
   });
 });
+
+describe('BranchRecordLayout: Edit (BG-13)', () => {
+  const edit = () => screen.queryByRole('link', { name: 'Edit' });
+  const codes = ['branch.view', 'branch.update'];
+
+  it.each(['ACTIVE', 'DRAFT'])(
+    'links a %s branch to its edit page with branch.update',
+    async (status) => {
+      setup({ codes, status });
+      await show();
+
+      expect(edit()).toHaveAttribute('href', `/admin/branches/${BRANCH}/edit`);
+    },
+  );
+
+  it('offers no Edit in any other state, or without branch.update', async () => {
+    setup({ codes, status: 'SUSPENDED' });
+    const { unmount } = await show();
+    expect(edit()).not.toBeInTheDocument();
+    unmount();
+
+    setup({ codes: ['branch.view'], status: 'ACTIVE' });
+    await show();
+    expect(edit()).not.toBeInTheDocument();
+  });
+
+  // BG-03: the route's gate reads the selected context, the service the grant at the target.
+  const scoped = { codes, branchOnly: codes, heldAt: [BRANCH] };
+  const here = { id: BRANCH, name: 'Likoni' };
+
+  it('links an ACTIVE branch for a branch-scoped editor with that branch selected', async () => {
+    setup({ ...scoped, status: 'ACTIVE', selected: here });
+    await show();
+
+    expect(edit()).toHaveAttribute('href', `/admin/branches/${BRANCH}/edit`);
+  });
+
+  it('offers a branch-scoped editor no Edit at All branches, nor on a draft', async () => {
+    setup({ ...scoped, status: 'ACTIVE', selected: null });
+    const { unmount } = await show();
+    expect(edit()).not.toBeInTheDocument();
+    unmount();
+
+    // A branch-scope grant never reaches a draft (#242), even with that branch selected.
+    setup({ ...scoped, status: 'DRAFT', selected: here });
+    await show();
+    expect(edit()).not.toBeInTheDocument();
+  });
+});

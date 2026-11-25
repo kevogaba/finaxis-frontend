@@ -242,6 +242,10 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
     expect(own.status()).toBe(403);
     // BG-08: its own code, never the `forbidden` of a missing permission.
     expect(await own.json()).toMatchObject({ code: 'lifecycle.approver_is_branch_maker' });
+    expect(await auditedOn(request, headers, branchId)).toContainEqual({
+      action: 'branch.activate',
+      reason: 'lifecycle.approver_is_branch_maker',
+    });
     // Before the state: the drafter's DRAFT, which alone would be a 409, is refused by name too.
     const draft = await request.post(api('/branches'), {
       headers,
@@ -581,5 +585,306 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
     });
     expect(refused.status()).toBe(403);
     expect(await refused.json()).toMatchObject({ code: 'forbidden' });
+  });
+
+  // BG-13: the platform at 6a8ea28 stores and returns the address and the lifecycle dates.
+  test('returns the stored address, and dates the first activation and the closure', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'branches', null);
+    const address = { line_1: 'Kenyatta Avenue', city: 'Nairobi', building: 'Block B' };
+    const created = await request.post(api('/branches'), {
+      headers,
+      data: {
+        ...DRAFT_BODY,
+        branch_code: 'NAIROBI_CBD',
+        parent_branch_id: IDS.headOffice,
+        address,
+      },
+    });
+    const { branch_id: branchId } = (await created.json()) as { branch_id: string };
+    expect(
+      await (await request.get(api(`/branches/${branchId}`), { headers })).json(),
+    ).toMatchObject({ address, opened_on: null, closed_on: null });
+    // List items carry the parent (BG-09), never the address.
+    const listed = await request.get(api('/branches?q=NAIROBI_CBD'), { headers });
+    const [item] = ((await listed.json()) as { items: Record<string, unknown>[] }).items;
+    expect(item).toMatchObject({ id: branchId, parent_branch_id: IDS.headOffice });
+    expect(item).not.toHaveProperty('address');
+    // ApiJsonCodec keeps Jackson's scalar coercion: a number or boolean is stored as its text; a
+    // nested value isn't an address.
+    const coerced = await request.post(api('/branches'), {
+      headers,
+      data: { ...DRAFT_BODY, branch_code: 'FLOORS', address: { floor: 3, lift: true } },
+    });
+    const { branch_id: coercedId } = (await coerced.json()) as { branch_id: string };
+    expect(
+      await (await request.get(api(`/branches/${coercedId}`), { headers })).json(),
+    ).toMatchObject({ address: { floor: '3', lift: 'true' } });
+    const bad = await request.post(api('/branches'), {
+      headers,
+      data: { ...DRAFT_BODY, branch_code: 'BAD', address: { floor: { level: 3 } } },
+    });
+    expect(await bad.json()).toMatchObject({ code: 'invalid_json' });
+
+    // The tenant's business date: set by the first activation and kept on reactivation.
+    const thika = BRANCH_SCENARIO_IDS.thikaRoad;
+    const activated = await request.post(api(`/branches/${thika}/activate`), { headers, data: {} });
+    expect(await activated.json()).toMatchObject({ opened_on: '07-09-2026', closed_on: null });
+    await request.post(api(`/branches/${thika}/suspend`), { headers, data: { reason: 'Audit' } });
+    const back = await request.post(api(`/branches/${thika}/reactivate`), { headers, data: {} });
+    expect(await back.json()).toMatchObject({ status: 'ACTIVE', opened_on: '07-09-2026' });
+    const closed = await request.post(api(`/branches/${thika}/close`), {
+      headers,
+      data: { reason: 'Merged' },
+    });
+    expect(await closed.json()).toMatchObject({ opened_on: '07-09-2026', closed_on: '07-09-2026' });
+  });
+
+  test('updates a draft or active branch with only the fields it is sent (BG-13)', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'branches', null);
+    const westlands = IDS.westlands;
+    const patch = (data?: unknown, id: string = westlands) =>
+      request.patch(api(`/branches/${id}`), { headers, data });
+
+    const renamed = await patch({ branch_name: 'Westlands Mall', address: { city: 'Nairobi' } });
+    expect(renamed.status()).toBe(200);
+    expect(await renamed.json()).toMatchObject({
+      id: westlands,
+      branch_name: 'Westlands Mall',
+      branch_code: 'WESTLANDS',
+      timezone: 'Africa/Nairobi',
+      address: { city: 'Nairobi' },
+    });
+    // Field names only: an address is personal data (BranchProvisioningService.update).
+    const audited = await request.get(
+      api(`/tenant/audit-events?entity_id=${westlands}&action=branch.update`),
+      { headers },
+    );
+    const { items } = (await audited.json()) as { items: { id: string; actor_id: string }[] };
+    expect(items).toMatchObject([{ actor_id: IDS.jane }]);
+    const detail = await request.get(api(`/tenant/audit-events/${items[0]?.id ?? ''}`), {
+      headers,
+    });
+    expect(await detail.json()).toMatchObject({
+      metadata_json: '{"changedFields":"branch_name,address"}',
+    });
+
+    // A parent set, then detached by an explicit null; an absent field keeps its value.
+    expect(await (await patch({ parent_branch_id: IDS.headOffice })).json()).toMatchObject({
+      parent_branch_id: IDS.headOffice,
+      branch_name: 'Westlands Mall',
+    });
+    expect(await (await patch({ parent_branch_id: null })).json()).toMatchObject({
+      parent_branch_id: null,
+    });
+    // `{}` clears the address; a zone changes; a draft is editable too.
+    expect(await (await patch({ address: {}, timezone: 'Africa/Kampala' })).json()).toMatchObject({
+      address: {},
+      timezone: 'Africa/Kampala',
+    });
+    expect((await patch({ branch_name: 'Karen' }, BRANCH_SCENARIO_IDS.karen)).status()).toBe(200);
+
+    for (const [data, code] of [
+      [undefined, 'invalid_json'],
+      [{}, 'validation_failed'],
+      [{ branch_name: null, address: null }, 'validation_failed'],
+      [{ branch_code: 'WEST' }, 'invalid_json'],
+      [{ branch_type: 'HEAD_OFFICE' }, 'invalid_json'],
+      [{ status: 'CLOSED' }, 'invalid_json'],
+      [{ branch_name: 'N' }, 'validation_failed'],
+      [{ branch_name: '   ' }, 'validation_failed'],
+      [{ timezone: ' ' }, 'validation_failed'],
+      [{ parent_branch_id: 'not-a-uuid' }, 'invalid_json'],
+      [{ address: { floor: { level: 3 } } }, 'invalid_json'],
+      [{ address: { floors: [3] } }, 'invalid_json'],
+    ] as const) {
+      const refused = await patch(data);
+      expect(refused.status(), JSON.stringify(data)).toBe(400);
+      expect(await refused.json()).toMatchObject({ code });
+    }
+  });
+
+  test('refuses an edit by state, zone, parent and permission, naming each (BG-13)', async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'branches', null);
+    const patch = (id: string, data: unknown) =>
+      request.patch(api(`/branches/${id}`), { headers, data });
+    const refusal = async (id: string, data: unknown) => {
+      const response = await patch(id, data);
+      return {
+        status: response.status(),
+        code: ((await response.json()) as { code: string }).code,
+      };
+    };
+
+    // Only DRAFT or ACTIVE (409 otherwise).
+    for (const id of [BRANCH_SCENARIO_IDS.thikaRoad, BRANCH_SCENARIO_IDS.kisumu]) {
+      expect(await refusal(id, { branch_name: 'Renamed' })).toEqual({
+        status: 409,
+        code: 'conflict',
+      });
+    }
+    // A raw offset, the branch as its own parent, or a parent below it: 422.
+    expect(await refusal(IDS.westlands, { timezone: '+03:00' })).toEqual({
+      status: 422,
+      code: 'invalid_operation',
+    });
+    expect(await refusal(IDS.westlands, { parent_branch_id: IDS.westlands })).toEqual({
+      status: 422,
+      code: 'invalid_operation',
+    });
+    // Thika Road sits under the head office.
+    expect(
+      await refusal(IDS.headOffice, { parent_branch_id: BRANCH_SCENARIO_IDS.thikaRoad }),
+    ).toEqual({ status: 422, code: 'invalid_operation' });
+    // An unknown parent is 404; a closed one 409.
+    expect(
+      await refusal(IDS.westlands, { parent_branch_id: '08000000-0000-4000-8000-0000000000ff' }),
+    ).toEqual({ status: 404, code: 'resource_not_found' });
+    expect(await refusal(IDS.westlands, { parent_branch_id: BRANCH_SCENARIO_IDS.oldTown })).toEqual(
+      { status: 409, code: 'conflict' },
+    );
+
+    // branch.update is its own permission (V19): without it the route's own gate refuses, naming
+    // nothing (Spring's `@PreAuthorize` refusal).
+    const reader = await contextFor(request, 'default', null);
+    const denied = await request.patch(api(`/branches/${IDS.westlands}`), {
+      headers: reader,
+      data: { branch_name: 'Renamed' },
+    });
+    expect(denied.status()).toBe(403);
+    expect(await denied.json()).toMatchObject({
+      code: 'forbidden',
+      detail: 'You are not permitted to perform this action.',
+    });
+  });
+
+  // BranchController.update: the `@Valid` body resolves before the route's `@PreAuthorize`, which
+  // runs before the controller's `{}` check, which runs before the service's target check and 404.
+  test("answers an edit's body first, then the route gate, then {}, then the target (BG-13)", async ({
+    request,
+  }) => {
+    const reader = await contextFor(request, 'default', null);
+    const editor = await contextFor(request, 'branches', null);
+    const scoped = await contextFor(request, 'branches-branch-scoped', IDS.headOffice);
+    const refusal = async (headers: Record<string, string>, id: string, data?: unknown) => {
+      const response = await request.patch(api(`/branches/${id}`), { headers, data });
+      const body = (await response.json()) as { code: string; detail: string };
+      return { status: response.status(), code: body.code, detail: body.detail };
+    };
+    const unknown = randomUUID();
+
+    // The body's 400 comes before the route's 403, and before a 404 or the target's 403.
+    for (const [headers, id] of [
+      [reader, IDS.westlands],
+      [editor, unknown],
+      [scoped, IDS.westlands],
+    ] as const) {
+      expect(await refusal(headers, id)).toMatchObject({ status: 400, code: 'invalid_json' });
+      expect(await refusal(headers, id, { branch_code: 'WEST' })).toMatchObject({
+        status: 400,
+        code: 'invalid_json',
+      });
+      expect(await refusal(headers, id, { branch_name: 'N' })).toMatchObject({
+        status: 400,
+        code: 'validation_failed',
+      });
+    }
+    // `{}` is checked in the method body, so the route's gate refuses first.
+    expect(await refusal(reader, IDS.westlands, {})).toMatchObject({
+      status: 403,
+      detail: 'You are not permitted to perform this action.',
+    });
+    // Past the gate, `{}` precedes the target check and the 404.
+    expect(await refusal(editor, unknown, {})).toMatchObject({
+      status: 400,
+      code: 'validation_failed',
+    });
+    expect(await refusal(scoped, IDS.westlands, {})).toMatchObject({
+      status: 400,
+      code: 'validation_failed',
+    });
+  });
+
+  // BG-03: the route's gate reads the selected context, the service the grant at the target, which
+  // counts only while that branch is ACTIVE (#242).
+  test('edits through a branch-scope grant only at its ACTIVE branch, with it selected', async ({
+    request,
+  }) => {
+    const atHeadOffice = await contextFor(request, 'branches-branch-scoped', IDS.headOffice);
+    const patch = (headers: Record<string, string>, id: string) =>
+      request.patch(api(`/branches/${id}`), { headers, data: { branch_name: 'Renamed' } });
+
+    const own = await patch(atHeadOffice, IDS.headOffice);
+    expect(own.status()).toBe(200);
+    expect(await own.json()).toMatchObject({ branch_name: 'Renamed' });
+    // Another branch, a draft, or an unknown id: the target check names the code, never a 404.
+    for (const id of [IDS.westlands, BRANCH_SCENARIO_IDS.karen, randomUUID()]) {
+      const refused = await patch(atHeadOffice, id);
+      expect(refused.status(), id).toBe(403);
+      expect(await refused.json()).toMatchObject({ detail: 'Missing permission: branch.update.' });
+    }
+    // At All branches the route's own gate refuses it, naming nothing.
+    const institution = await contextFor(request, 'branches-branch-scoped', null);
+    const gated = await patch(institution, IDS.headOffice);
+    expect(gated.status()).toBe(403);
+    expect(await gated.json()).toMatchObject({
+      detail: 'You are not permitted to perform this action.',
+    });
+  });
+
+  test("refuses an editor's activation, unless the branch maker-checker switch is off", async ({
+    request,
+  }) => {
+    const headers = await contextFor(request, 'branches', null);
+    const thika = BRANCH_SCENARIO_IDS.thikaRoad; // Mary drafted it
+    await request.post(api(`/branches/${thika}/return`), {
+      headers,
+      data: { reason: 'Fix the name' },
+    });
+    expect(
+      (
+        await request.patch(api(`/branches/${thika}`), {
+          headers,
+          data: { branch_name: 'Thika Road Mall' },
+        })
+      ).status(),
+    ).toBe(200);
+    await request.post(api(`/branches/${thika}/submit`), { headers, data: {} });
+
+    const refused = await request.post(api(`/branches/${thika}/activate`), { headers, data: {} });
+    expect(refused.status()).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: 'lifecycle.approver_is_branch_modifier' });
+    // Recorded independently of the refused request (#251): DENIED, HIGH, the code as its reason.
+    const denied = await request.get(
+      api(`/tenant/audit-events?entity_id=${thika}&action=branch.activate`),
+      { headers },
+    );
+    expect(((await denied.json()) as { items: unknown[] }).items).toEqual([
+      expect.objectContaining({
+        actor_id: IDS.jane,
+        branch_id: thika,
+        resource_type: 'BRANCH',
+        resource_id: thika,
+        outcome: 'DENIED',
+        severity: 'HIGH',
+        reason: 'lifecycle.approver_is_branch_modifier',
+      }),
+    ]);
+
+    await request.put(api('/tenant/settings/require_maker_checker_for_branch_creation'), {
+      headers,
+      data: { value: 'false', reason: 'One-person test' },
+    });
+    const allowed = await request.post(api(`/branches/${thika}/activate`), { headers, data: {} });
+    expect(allowed.status()).toBe(200);
+    expect(await auditedOn(request, headers, thika)).toContainEqual({
+      action: 'branch.self_approve',
+      reason: null,
+    });
   });
 });

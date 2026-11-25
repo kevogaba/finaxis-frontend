@@ -6,9 +6,13 @@ import { renderWithProviders } from '@/test/test-utils';
 import { UUID_PATTERN } from '@/lib/api/wire';
 import { BranchDraftForm } from './branch-draft-form';
 
-const { createBranchDraft } = vi.hoisted(() => ({ createBranchDraft: vi.fn() }));
+const { createBranchDraft, updateBranch } = vi.hoisted(() => ({
+  createBranchDraft: vi.fn(),
+  updateBranch: vi.fn(),
+}));
 vi.mock('../branch-actions', () => ({
   createBranchDraft: (...args: unknown[]) => createBranchDraft(...args) as unknown,
+  updateBranch: (...args: unknown[]) => updateBranch(...args) as unknown,
 }));
 
 const TENANT = '99999999-9999-4999-8999-999999999999';
@@ -111,6 +115,11 @@ describe('BranchDraftForm', () => {
       branchType: 'OPERATIONS',
       parentBranchId: '',
       timezone: 'Africa/Nairobi',
+      line_1: '',
+      line_2: '',
+      city: '',
+      region: '',
+      postal_code: '',
     });
 
     await user.click(create);
@@ -169,6 +178,162 @@ describe('BranchDraftForm', () => {
       'href',
       `/platform-admin/tenants/${TENANT}/branches`,
     );
+  });
+
+  it('takes an optional address in five labelled fields (decision Q9)', async () => {
+    const user = userEvent.setup();
+    createBranchDraft.mockResolvedValueOnce({ ok: true });
+    const { code, name, create } = renderForm();
+
+    expect(screen.getByRole('group', { name: 'Address (optional)' })).toBeInTheDocument();
+    await user.type(code, 'THIKA');
+    await user.type(name, 'Thika Road Branch');
+    await user.type(screen.getByRole('textbox', { name: 'Address line 1' }), '3 Lake Road');
+    await user.type(screen.getByRole('textbox', { name: 'City or town' }), 'Thika');
+    for (const label of ['Address line 2', 'Region', 'Postal code']) {
+      expect(screen.getByRole('textbox', { name: label })).not.toBeRequired();
+    }
+    await user.click(create);
+
+    await waitFor(() => {
+      expect(createBranchDraft).toHaveBeenCalledTimes(1);
+    });
+    expect(sent(0)?.get('line_1')).toBe('3 Lake Road');
+    expect(sent(0)?.get('city')).toBe('Thika');
+    expect(sent(0)?.get('region')).toBe('');
+  });
+
+  describe('editing a branch (BG-13)', () => {
+    const BRANCH = {
+      id: '44444444-4444-4444-8444-444444444444',
+      branchCode: 'WESTLANDS',
+      branchName: 'Westlands Branch',
+      branchType: 'OPERATIONS',
+      parentBranchId: '22222222-2222-4222-8222-222222222222',
+      timezone: 'Africa/Nairobi',
+      address: { line_1: 'Mpaka Road', city: 'Nairobi', building: 'Block B' },
+    };
+    const sentUpdate = (call: number) =>
+      Object.fromEntries((updateBranch.mock.calls[call]?.[1] as FormData | undefined) ?? []);
+
+    function renderEdit(branch: typeof BRANCH = BRANCH) {
+      renderWithProviders(
+        <BranchDraftForm
+          branch={branch}
+          parents={PARENTS}
+          defaultTimeZone="Africa/Nairobi"
+          contextOrganisationId={ORG}
+        />,
+      );
+      return {
+        name: screen.getByRole('textbox', { name: 'Branch name' }),
+        save: screen.getByRole('button', { name: 'Save changes' }),
+      };
+    }
+
+    beforeEach(() => {
+      updateBranch.mockReset();
+    });
+
+    it('shows the stored values, with the code, type and other address keys read-only', () => {
+      renderEdit();
+      expect(screen.getByRole('textbox', { name: 'Branch name' })).toHaveValue('Westlands Branch');
+      for (const [label, value] of [
+        ['Branch code', 'WESTLANDS'],
+        ['Branch type', 'OPERATIONS'],
+        ['building', 'Block B'],
+      ]) {
+        expect(screen.getByRole('textbox', { name: label })).toHaveAttribute('readonly');
+        expect(screen.getByRole('textbox', { name: label })).toHaveValue(value);
+      }
+      expect(screen.getByRole('textbox', { name: 'Address line 1' })).toHaveValue('Mpaka Road');
+      expect(screen.getByRole('combobox', { name: 'Parent branch' })).toHaveValue(
+        'Head Office (HEAD_OFFICE)',
+      );
+      expect(screen.getByRole('link', { name: 'Cancel' })).toHaveAttribute(
+        'href',
+        `/admin/branches/${BRANCH.id}`,
+      );
+      expect(screen.queryByRole('button', { name: 'Create draft' })).not.toBeInTheDocument();
+    });
+
+    it('sends only what changed, and retries with the same key (Review Focus 2)', async () => {
+      const user = userEvent.setup();
+      updateBranch.mockResolvedValueOnce(CONFLICT).mockResolvedValueOnce({ ok: true });
+      const { name, save } = renderEdit();
+
+      await user.type(name, ' Mall');
+      await user.click(save);
+
+      await waitFor(() => {
+        expect(updateBranch).toHaveBeenCalledTimes(1);
+      });
+      expect(sentUpdate(0)).toEqual({
+        idempotencyKey: expect.stringMatching(UUID_PATTERN) as unknown,
+        branchId: BRANCH.id,
+        contextOrganisationId: ORG,
+        branchName: 'Westlands Branch Mall',
+      });
+      expect(createBranchDraft).not.toHaveBeenCalled();
+      // The failure has settled (Save is no longer pending) before the retry.
+      expect(await screen.findByText(/Reference: req-3/)).toBeInTheDocument();
+
+      await user.click(save);
+      await waitFor(() => {
+        expect(updateBranch).toHaveBeenCalledTimes(2);
+      });
+      expect(sentUpdate(1).idempotencyKey).toBe(sentUpdate(0).idempotencyKey);
+    });
+
+    it('sends the whole address, keeping the other stored keys', async () => {
+      const user = userEvent.setup();
+      updateBranch.mockResolvedValueOnce({ ok: true });
+      const { save } = renderEdit();
+
+      await user.clear(screen.getByRole('textbox', { name: 'City or town' }));
+      await user.click(save);
+
+      await waitFor(() => {
+        expect(updateBranch).toHaveBeenCalledTimes(1);
+      });
+      expect(sentUpdate(0)).toMatchObject({
+        line_1: 'Mpaka Road',
+        city: '',
+        otherAddress: '{"building":"Block B"}',
+      });
+      expect(sentUpdate(0)).not.toHaveProperty('branchName');
+    });
+
+    it('saves a name-only edit past a stored address line longer than the form allows', async () => {
+      const user = userEvent.setup();
+      updateBranch.mockResolvedValueOnce({ ok: true });
+      const long = 'Plot 7, '.repeat(20).trim(); // the platform caps none
+      const { name, save } = renderEdit({
+        ...BRANCH,
+        address: { ...BRANCH.address, line_1: long },
+      });
+
+      await user.type(name, ' Mall');
+      await user.click(save);
+
+      await waitFor(() => {
+        expect(updateBranch).toHaveBeenCalledTimes(1);
+      });
+      expect(sentUpdate(0)).not.toHaveProperty('line_1');
+      expect(screen.queryByText(/Check the highlighted fields/)).not.toBeInTheDocument();
+    });
+
+    it('says when nothing changed, and sends nothing', async () => {
+      const user = userEvent.setup();
+      const { save } = renderEdit();
+
+      await user.click(save);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        "You haven't changed anything yet.",
+      );
+      expect(updateBranch).not.toHaveBeenCalled();
+    });
   });
 
   describe('keyboard focus after a failed submit (gate finding I2)', () => {

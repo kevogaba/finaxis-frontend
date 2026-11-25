@@ -98,8 +98,8 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
 
     const all = await list('');
     expect(all.page.total_items).toBe(5);
-    // Newest first, and the summary's fields this layer reads (no timezone, no parent), with its
-    // makers (BG-08).
+    // Newest first, and the summary's fields the UI reads (no timezone, no address), with its
+    // parent (BG-09) and makers (BG-08).
     expect(all.items[0]?.id).toBe(R.acmeLikoni);
     expect(Object.keys(all.items[0] ?? {})).toEqual([
       'id',
@@ -109,6 +109,7 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
       'branch_type',
       'status',
       'created_at',
+      'parent_branch_id',
       'created_by',
       'submitted_by',
     ]);
@@ -125,7 +126,7 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     expect(pwani.items.map((item) => item.id)).toEqual([R.pwaniHeadOffice]);
   });
 
-  test('reads a branch of that institution only, its address never returned (BG-13)', async ({
+  test('reads a branch of that institution only, with its stored address (BG-13)', async ({
     request,
   }) => {
     const { get } = await signIn(request);
@@ -156,7 +157,8 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     const k1 = randomUUID();
     const k2 = randomUUID();
 
-    const created = await post(acme('/branches'), DRAFT, k1);
+    const address = { line_1: '3 Lake Road', city: 'Thika' };
+    const created = await post(acme('/branches'), { ...DRAFT, address }, k1);
     expect(created.status()).toBe(201);
     const { branch_id: branchId, status } = await read<{ branch_id: string; status: string }>(
       created,
@@ -165,6 +167,7 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     expect(await read(await get(acme(`/branches/${branchId}`)))).toMatchObject({
       status: 'DRAFT',
       branch_code: 'THIKA',
+      address,
     });
 
     // Jane is no member of Pwani: the platform code isn't enough. The refusal stores nothing, so the

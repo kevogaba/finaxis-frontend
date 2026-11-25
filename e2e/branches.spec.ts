@@ -15,6 +15,7 @@ import { BRANCH_SCENARIO_IDS, IDS } from './fake-api/scenarios.mts';
 
 const ALL_BRANCHES = /All branches \(institution level\)/;
 const MAKER_CHECKER = 'You drafted this branch, so another administrator must activate it.';
+const EDIT_DRAFT_WARNING = "If you edit this draft, you won't be able to activate it yourself.";
 
 async function openDirectory(page: Page, branch: RegExp | null = ALL_BRANCHES) {
   await enterAdmin(page, '/admin/branches', { heading: 'Branches', branch });
@@ -355,6 +356,74 @@ test.describe('branches', () => {
     await expect(page).toHaveURL(/\/select-context/);
   });
 
+  test("edits an active branch's name and address, and shows them on its Overview (BG-13)", async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'branches');
+    await openDirectory(page);
+    await openRecord(page, 'Branches', 'Westlands Branch');
+
+    await page.getByRole('link', { name: 'Edit', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/branches/${IDS.westlands}/edit$`));
+    const main = page.getByRole('main');
+    await expect(main.getByRole('textbox', { name: 'Branch code' })).toHaveAttribute('readonly');
+    // An active branch: no draft warning.
+    await expect(page.getByText(EDIT_DRAFT_WARNING)).toHaveCount(0);
+    await main.getByRole('textbox', { name: 'Branch name' }).fill('Westlands Mall Branch');
+    await main.getByRole('textbox', { name: 'Address line 1' }).fill('Mpaka Road');
+    await main.getByRole('textbox', { name: 'City or town' }).fill('Nairobi');
+    await main.getByRole('button', { name: 'Save changes' }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/admin/branches/${IDS.westlands}$`));
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Westlands Mall Branch' }),
+    ).toBeVisible();
+    await expect(mainText(page, 'Mpaka Road, Nairobi')).toBeVisible();
+    await page.getByRole('tab', { name: 'Audit' }).click();
+    await expect(page.getByRole('table', { name: 'Audit events' })).toContainText('Edited branch');
+  });
+
+  test('warns that editing a draft costs its editor the activation', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'branches');
+    await openDirectory(page);
+    await page.goto(`/admin/branches/${BRANCH_SCENARIO_IDS.karen}/edit`);
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Karen Branch' })).toBeVisible();
+    await expect(mainText(page, EDIT_DRAFT_WARNING)).toBeVisible();
+    // Nothing changed yet: said so, and nothing is sent.
+    await page.getByRole('main').getByRole('button', { name: 'Save changes' }).click();
+    await expect(mainText(page, "You haven't changed anything yet.")).toBeVisible();
+    await expect(page).toHaveURL(/\/edit$/);
+  });
+
+  test('keeps a 100-character address inside the page at 375 px (Review Focus 5)', async ({
+    context,
+    page,
+  }, testInfo) => {
+    const narrow = A11Y_CASES[1];
+    expect(narrow.width).toBe(375);
+    await applyA11yCase(page, narrow);
+    await authenticate(context, testInfo, 'branches');
+    await openDirectory(page);
+    await page.goto(`/admin/branches/${IDS.westlands}/edit`);
+
+    // One 100-character token with no break point (no space, hyphen or slash), so only
+    // `overflow-wrap: anywhere` keeps it inside the page: the hardest case for wrapping.
+    const longLine = 'X'.repeat(100);
+    const main = page.getByRole('main');
+    await main.getByRole('textbox', { name: 'Address line 1' }).fill(longLine);
+    await main.getByRole('button', { name: 'Save changes' }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/admin/branches/${IDS.westlands}$`));
+    await expect(mainText(page, longLine)).toBeVisible();
+    await expectA11yCaseApplied(page, narrow);
+    await expectNoSeriousOrCriticalViolations(page);
+  });
+
   test('offers no mutations without the permissions', async ({ context, page }, testInfo) => {
     await authenticate(context, testInfo); // default: branch reads only
     await openDirectory(page);
@@ -363,6 +432,7 @@ test.describe('branches', () => {
     await expect(page.getByRole('link', { name: 'Create branch' })).toHaveCount(0);
     await openRecord(page, 'Branches', 'Westlands Branch');
     await expect(page.getByRole('button', { name: /^(Suspend|Close branch)$/ })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Users' }).click();
     await expect(rowsOf(page, 'Branch users')).toHaveCount(2);
     await expect(page.getByRole('button', { name: 'Assign user' })).toHaveCount(0);
@@ -392,6 +462,7 @@ test.describe('branches', () => {
 
       for (const [path, heading] of [
         ['/admin/branches/new', 'Create branch'],
+        [`/admin/branches/${BRANCH_SCENARIO_IDS.karen}/edit`, 'Karen Branch'],
         [`/admin/branches/${BRANCH_SCENARIO_IDS.oldTown}`, /^Old Town Branch/],
         [`/admin/branches/${IDS.westlands}/users`, 'Westlands Branch'],
       ] as const) {

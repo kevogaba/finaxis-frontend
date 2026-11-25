@@ -5,8 +5,10 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import EditOutlined from '@mui/icons-material/EditOutlined';
 import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { ReasonDialog } from '@/components/data-display/reason-dialog';
+import NextLink from '@/components/navigation/next-link';
 import { useToast } from '@/components/providers/toast-provider';
 import type { FormAction } from '@/lib/api/action-result';
 import {
@@ -113,6 +115,8 @@ const BLOCKED_ID = 'branch-activate-blocked';
 
 interface BranchLifecycleActionsProps {
   branchId: string;
+  /** The edit page, when `canEditBranch` (BG-13); a link, before the transitions. */
+  editHref?: string;
   /** Named by Discard: the code stays taken. */
   branchCode: string;
   branchName: string;
@@ -131,6 +135,7 @@ interface BranchLifecycleActionsProps {
 /** Record hero lifecycle (spec §10.3): availability comes from `availableBranchActions`. */
 export function BranchLifecycleActions({
   branchId,
+  editHref,
   branchCode,
   branchName,
   actions,
@@ -222,6 +227,16 @@ export function BranchLifecycleActions({
           >
             {warning}
           </Alert>
+        )}
+        {editHref && (
+          <Button
+            component={NextLink}
+            href={editHref}
+            variant="outlined"
+            startIcon={<EditOutlined />}
+          >
+            Edit
+          </Button>
         )}
         {actions.map((id, index) => (
           <Button
