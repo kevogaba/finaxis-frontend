@@ -41,14 +41,10 @@ const requiredReason = z
   .max(500, 'Keep the reason under 500 characters.');
 
 /** Create and amend share these causes (contract §D, §I). Each 422 names its likely field and
- * hedges. Only create sends settings, so only its copy points at the base currency setting and the
- * initial settings. The currency 422 can come from either currency, so when create sent the
- * initial one (`currencySettingSent`), both fields are marked. */
-function explainDraft(
-  result: ActionResult,
-  withSettings: boolean,
-  currencySettingSent = false,
-): ActionResult {
+ * hedges. Only create sends settings, so only its copy points at the initial settings. No base
+ * currency setting is ever sent (it mirrors `base_currency_code`), so the currency 422 is the
+ * institution's own. */
+function explainDraft(result: ActionResult, withSettings: boolean): ActionResult {
   const taken = explain(
     result,
     TENANT_CODE_TAKEN,
@@ -58,15 +54,8 @@ function explainDraft(
   const currency = explain(
     taken,
     'accounting.currency_invalid',
-    withSettings
-      ? "The platform can't settle in this currency. Choose another base currency, or clear the base currency setting."
-      : "The platform can't settle in this currency. Choose another base currency.",
-    {
-      baseCurrencyCode: "The platform can't settle in this currency.",
-      ...(currencySettingSent && {
-        baseCurrencySetting: "The platform can't settle in this currency.",
-      }),
-    },
+    "The platform can't settle in this currency. Choose another base currency.",
+    { baseCurrencyCode: "The platform can't settle in this currency." },
   );
   return explain(
     currency,
@@ -89,20 +78,17 @@ export async function createTenantDraft(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const sent = { currencySetting: false };
   const result = await runServerAction(
     tenantDraftSchema.extend({ idempotencyKey }),
     formData,
     async (input) => {
-      const settings = initialSettings(input);
-      sent.currencySetting = Boolean(settings.base_currency);
       let created: unknown;
       try {
         created = await apiPost(
           BASE,
           {
             ...tenantDraftBody(input),
-            initial_settings: settings,
+            initial_settings: initialSettings(input),
             business_date: isoToBusinessDate(input.businessDate),
           },
           input.idempotencyKey,
@@ -125,7 +111,7 @@ export async function createTenantDraft(
       redirect(`/platform-admin/tenants/${draft.tenantId}`);
     },
   );
-  return explainDraft(result, true, sent.currencySetting);
+  return explainDraft(result, true);
 }
 
 export async function amendTenantDraft(

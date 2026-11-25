@@ -230,13 +230,21 @@ describe('tenantDraftSchema', () => {
     ['countryCode', '', 'Choose a country.'],
     ['baseCurrencyCode', 'KE', 'Choose a currency.'],
     ['timezone', 'Mars/Olympus', 'Choose a timezone.'],
+    // The platform refuses a raw offset (TimeZoneRule, #276).
+    ['timezone', '+03:00', 'Choose a timezone.'],
     ['adminEmail', 'amina', 'Enter a valid email address.'],
     ['adminUsername', 'am', 'Use 3–50 letters, digits, dots, underscores or hyphens.'],
     // Required by the backend although it is typed nullable (spec §11.1).
     ['adminPhone', '', 'Use the international format, e.g. +254712000140.'],
     ['businessDate', '2026-02-30', 'Choose a valid date.'],
     ['defaultTimezoneSetting', 'Mars/Olympus', 'Choose a timezone.'],
-    ['auditRetentionDays', '-1', 'Enter a whole number of days.'],
+    ['defaultTimezoneSetting', '+03:00', 'Choose a timezone.'],
+    // The platform bounds retention to 2555–36500 days (TenantSettingCatalog, #278).
+    ['auditRetentionDays', '-1', 'Enter 2555 to 36500 days.'],
+    ['auditRetentionDays', '365', 'Enter 2555 to 36500 days.'],
+    ['auditRetentionDays', '2554', 'Enter 2555 to 36500 days.'],
+    ['auditRetentionDays', '36501', 'Enter 2555 to 36500 days.'],
+    ['auditRetentionDays', '3000.5', 'Enter 2555 to 36500 days.'],
   ] as const)('rejects %s = %j with its own message', (field, value, message) => {
     const result = tenantDraftSchema.safeParse({ ...VALID, [field]: value });
     expect(result.success).toBe(false);
@@ -270,19 +278,24 @@ describe('the draft body', () => {
     });
   });
 
-  it('sends only the catalogue settings that were filled in, as strings', () => {
+  it('accepts retention at both bounds', () => {
+    for (const days of ['2555', '36500', ' 3650 ']) {
+      expect(tenantDraftSchema.safeParse({ ...VALID, auditRetentionDays: days }).success).toBe(
+        true,
+      );
+    }
+  });
+
+  // base_currency mirrors base_currency_code, so it is never sent (a different one is a 422).
+  it('sends only the catalogue settings that were filled in, as strings, never base_currency', () => {
     expect(initialSettings(VALID)).toEqual({});
     expect(
       initialSettings({
         ...VALID,
         defaultTimezoneSetting: 'Africa/Nairobi',
-        baseCurrencySetting: 'KES',
-        auditRetentionDays: '0365',
+        auditRetentionDays: '03650',
       }),
-    ).toEqual({
-      default_timezone: 'Africa/Nairobi',
-      base_currency: 'KES',
-      audit_retention_days: '365',
-    });
+    ).toEqual({ default_timezone: 'Africa/Nairobi', audit_retention_days: '3650' });
+    expect(Object.keys(EMPTY_TENANT_DRAFT)).not.toContain('baseCurrencySetting');
   });
 });

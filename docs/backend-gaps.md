@@ -70,12 +70,16 @@ miscount things today.
 5. **`base_currency` is a read-only mirror of the organisation's currency** (platform #282): `PUT`
    and `DELETE` answer 422 `invalid_operation`. `settingActions` offers Reset whenever a value is
    set, which it now always is, so Reset is offered and fails; the key is also still in
-   `EDITABLE_KEYS` (BG-04, BG-12).
+   `EDITABLE_KEYS` (BG-04, BG-12). **Adopted** (frontend #113): base currency is read-only by
+   key ("Set from the institution's currency. It can't be changed here."), with no Edit or Reset,
+   and has left `EDITABLE_KEYS`.
 6. **The maker-checker switches are real** (platform #282, ADR 0032): on by default, and a stored
    `false` lets the tenant's own maker approve (audited), and also the invited person and a branch's
    amenders; reading a switch needs `settings.view`. Settings still says "Always on (enforced)", and
    the approval actions refuse the maker before any write even when the switch is off (BG-01,
-   BG-12).
+   BG-12). **Adopted on Settings** (frontend #113): the three switches show their stored state
+   and change after a confirmation; turning a maker-checker switch off needs a reason and says what
+   it relaxes. The approval actions' maker refusals are entry 08's.
 7. **A mutation implies more views** (ADR 0030, V22): `user.invite` needs `membership.view` and
    `user.view`; `user.assign_role` needs `role_assignment.view`. `INVITE_CODES` and the assign-role
    gates don't include them, so the action shows and then gets a 403. Role composition refuses a
@@ -106,6 +110,9 @@ miscount things today.
 12. **Stricter create validation:** `audit_retention_days` is bounded to 2555–36500 days (the draft
     wizard accepts 0–99999), a `base_currency` initial setting must equal `base_currency_code`, and
     a time zone must be an IANA id the platform knows (raw offsets are 422) (BG-12, BG-13, BG-14).
+    **Adopted** (frontend #113): the draft wizard bounds retention to 2555–36500 days, sends no
+    `base_currency` setting (it follows the institution's currency), and every time-zone field
+    (`isTimeZone`) accepts IANA ids only.
 13. **Adding to your own access needs `user.assign_self`** (platform #342, PR #346, ADR 0044, V39).
     Assigning yourself a role or a branch, adding a permission to a role you hold, or re-enabling a
     `DISABLED` role you hold is 403 `forbidden` (detail `Missing permission: user.assign_self.`)
@@ -133,14 +140,14 @@ miscount things today.
 
 ## Summary
 
-14 backend fixed · 8 partly fixed · 0 open · 1 adopted · 12 closed.
+13 backend fixed · 8 partly fixed · 0 open · 1 adopted · 13 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
 | BG-01 | P0       | Partly fixed  | No approval-request / pending-change model (no return-for-changes, resubmission, branch rejection) |
 | BG-02 | P0       | Backend fixed | A tenant created through the API cannot onboard a second person through the API                    |
 | BG-03 | P0       | Backend fixed | Branch pinning: a selected branch hides every other branch; draft branches are unreachable         |
-| BG-04 | P0       | Backend fixed | Tenant settings `PUT` fails with 500 and rolls back (per source reading)                           |
+| BG-04 | P0       | Closed        | Tenant settings `PUT` fails with 500 and rolls back (per source reading)                           |
 | BG-05 | P0       | Closed        | Published OpenAPI casing is wrong and list-item schemas are missing                                |
 | BG-06 | P0       | Backend fixed | No platform audit endpoint; tenant audit is 403 in the platform context                            |
 | BG-07 | P1       | Adopted       | Business-rule failures return 500 instead of 4xx                                                   |
@@ -297,7 +304,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-04 — Tenant settings `PUT` fails with 500 · P0
 
-- **Status:** Backend fixed. Platform #150, covered through the idempotency aspect by
+- **Status:** Closed (frontend #113). Platform #150, covered through the idempotency aspect by
   `TenantSettingIdempotentPutIntegrationTests`.
 - **Gap:** `IdempotencyExecutor.kt:39` validates each successful mutation response with
   `SafeReplayResponse.kt:112-153`, which rejects any property whose name contains `key`;
@@ -315,9 +322,11 @@ the same bullets): the first is the gap as found, the second what the UI still d
   with the same key returns the same body. The replay-safety filter exempts `key` only for the exact
   setting response shape.
 - **Still open:** nothing.
-- **To adopt:** take `base_currency` out of `EDITABLE_KEYS` (it is read-only now, BG-12), then flip
-  `SETTINGS_EDIT_ENABLED`, and drop the overview's "settings can't be saved yet". Offer only time
-  zones the platform accepts (IANA ids; raw offsets are 422).
+- **To adopt:** done in frontend #113: `base_currency` left `EDITABLE_KEYS` (read-only, BG-12),
+  `SETTINGS_EDIT_ENABLED` and `settings-flags.ts` are gone, so Edit (`PUT`, with the dialog's
+  minted idempotency key) is live, and the overview's "settings can't be saved yet" is retired
+  (Institution profile no longer counts an unset `default_timezone`). The time-zone picker offers
+  IANA ids only.
 
 ### BG-05 — OpenAPI casing wrong; list-item schemas missing · P0
 
@@ -559,6 +568,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
 ### BG-12 — Settings catalogue unenforced and under-described · P1
 
 - **Status:** Backend fixed. Platform #164 (also #271, #272, #273, #276, #277, #278, #331), ADR 0032.
+  The tenant part is adopted (frontend #113); the platform Settings tab for retention is entry
+  22's.
 - **Gap:** None of the six catalogue keys is read at runtime (`lifecycle/domain/TenantSettingCatalog.kt:25-159`):
   the maker-checker toggles are no-ops (maker-checker always applies), auto-advance doesn't exist,
   accounting reads the organisation's currency column, retention isn't enforced. The catalogue has no
@@ -596,9 +607,12 @@ the same bullets): the first is the gap as found, the second what the UI still d
   read-only flag, so read-only is decided by key. The list is sorted by key, not group, and the API's
   labels differ from the UI's ("Default time zone", "Require maker-checker for user invitations", …).
   Reading a maker-checker switch needs `settings.view`. `settings.operational` is never listed.
-- **To adopt:** render labels, groups and `is_default` from the API instead of `SETTING_GROUPS`;
-  offer Reset only when `is_default` is false; make `base_currency` read-only; make the maker-checker
-  and auto-advance switches editable with true copy; add a platform Settings tab for retention.
+- **To adopt:** add a platform Settings tab for retention (entry 22). Done in frontend #113:
+  Settings renders the API's labels, descriptions and groups (`groupSettings`, in the order
+  General, Approvals, Business date, Audit) instead of `SETTING_GROUPS`; Reset is offered only when
+  `is_default` is false; `base_currency` and `audit_retention_days` are read-only by key; and the
+  maker-checker and auto-advance switches are real switches, gated on `settings.update` (and
+  `business_date.advance` to turn automatic advance on) tenant-wide.
 
 ### BG-13 — Branch address, update, and dates · P1
 

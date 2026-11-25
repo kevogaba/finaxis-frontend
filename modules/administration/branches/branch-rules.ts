@@ -71,17 +71,43 @@ export function branchTypeLabel(type: string): string {
   return /^[A-Z0-9_]+$/.test(type) ? humanizeEnum(type) : type;
 }
 
+/** `Intl` lists neither UTC spelling, though the platform's zone list holds both. */
+const UTC_ZONES = ['UTC', 'Etc/UTC'];
+
+/** The zones a time-zone field offers: the runtime's IANA list plus UTC, sorted, with `current`
+ * first when the list lacks it, so a stored value still shows. */
+export function timeZones(current?: string): string[] {
+  const zones = [...new Set([...Intl.supportedValuesOf('timeZone'), ...UTC_ZONES])].sort();
+  return current && !zones.includes(current) ? [current, ...zones] : zones;
+}
+
+/** `Etc/GMT-3`: the fixed offsets the platform names (TimeZoneRule; V37 stored offsets as these). */
+const FIXED_OFFSET = /^Etc\/GMT[+-]\d{1,2}$/;
+/** Ids the runtime accepts but the JDK's list (TimeZoneRule) leaves out. */
+const NOT_IN_JDK = new Set(['EST', 'MST', 'HST', 'ROC', 'GMT+0', 'GMT-0', 'US/Pacific-New']);
+
+/**
+ * An IANA id the platform accepts (TimeZoneRule, #276): a listed zone, a link to one (`Asia/Kolkata`
+ * where the runtime lists `Asia/Calcutta`), or a fixed `Etc/GMT` offset. A raw offset (`+03:00`)
+ * is refused, though `Intl` formats with it: it resolves to itself, never to a listed zone.
+ */
 export function isTimeZone(value: string): boolean {
+  let zone: string;
   try {
-    new Intl.DateTimeFormat('en-GB', { timeZone: value });
-    return true;
+    zone = new Intl.DateTimeFormat('en-GB', { timeZone: value }).resolvedOptions().timeZone;
   } catch {
     return false;
   }
+  // The platform matches ids exactly: a wrong-case spelling resolves to the same zone, but it is
+  // refused (`africa/nairobi`, `Utc`), as are the few ids the JDK doesn't list.
+  if (NOT_IN_JDK.has(value) || (value !== zone && value.toLowerCase() === zone.toLowerCase())) {
+    return false;
+  }
+  return /^[A-Z]/.test(value) && (FIXED_OFFSET.test(zone) || timeZones().includes(zone));
 }
 
-/** CreateBranch (contract §D), shared by the form (RHF) and the Server Action. The backend
- * doesn't validate the timezone; an invalid one would break every date on the record later. */
+/** CreateBranch (contract §D), shared by the form (RHF) and the Server Action. The timezone is an
+ * IANA id, as the platform requires (a raw offset is a 422, #276). */
 export const branchDraftSchema = z.object({
   branchCode: z
     .string()

@@ -14,7 +14,7 @@ import type { ActionResult, FormAction } from '@/lib/api/action-result';
 import { applyFieldErrors } from '@/lib/apply-field-errors';
 import { createBranchDraft } from '../branch-actions';
 import { BRANCH_TYPE_SUGGESTIONS } from '../branch-contract';
-import { branchDraftSchema, type BranchDraftValues } from '../branch-rules';
+import { branchDraftSchema, timeZones, type BranchDraftValues } from '../branch-rules';
 
 const FIELDS = ['branchCode', 'branchName', 'branchType', 'parentBranchId', 'timezone'] as const;
 
@@ -49,11 +49,6 @@ interface BranchDraftFormProps {
   hiddenFields?: Readonly<Record<string, string>>;
   /** Replaces the Parent branch helper "Optional." when the options couldn't load or were capped. */
   parentsNote?: string;
-}
-
-function timeZones(defaultTimeZone: string): string[] {
-  const zones = Intl.supportedValuesOf('timeZone');
-  return zones.includes(defaultTimeZone) ? zones : [defaultTimeZone, ...zones];
 }
 
 /**

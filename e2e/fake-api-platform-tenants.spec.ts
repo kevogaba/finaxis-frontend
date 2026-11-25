@@ -32,7 +32,7 @@ const DRAFT = {
   base_currency_code: 'KES',
   timezone: 'Africa/Nairobi',
   admin: ADMIN,
-  initial_settings: { audit_retention_days: '365' },
+  initial_settings: { audit_retention_days: '3650' },
   business_date: null,
 };
 
@@ -88,6 +88,41 @@ test.describe('fake API platform tenants (contract §E.2, layer 16)', () => {
     });
     expect(taken.status()).toBe(409);
     expect(await taken.json()).toMatchObject({ code: 'conflict' });
+  });
+
+  test('refuses retention outside 2555–36500 days, a different base currency setting and a raw offset', async ({
+    request,
+  }) => {
+    const headers = await signIn(request, 'platform-tenants', IDS.platformOrganisation);
+    const create = (code: string, changes: Record<string, unknown>) =>
+      request.post(api('/platform/tenants'), {
+        headers,
+        data: { ...DRAFT, tenant_code: code, ...changes },
+      });
+    const refused = async (code: string, changes: Record<string, unknown>) => {
+      const response = await create(code, changes);
+      expect(response.status(), code).toBe(422);
+      expect(await response.json()).toMatchObject({ code: 'invalid_operation' });
+    };
+
+    await refused('short-retention', { initial_settings: { audit_retention_days: '2554' } });
+    await refused('long-retention', { initial_settings: { audit_retention_days: '36501' } });
+    await refused('other-currency', { initial_settings: { base_currency: 'UGX' } });
+    await refused('offset-zone', { timezone: '+03:00' });
+    await refused('offset-setting', { initial_settings: { default_timezone: '+03:00' } });
+    await refused('bad-switch', {
+      initial_settings: { require_maker_checker_for_user_invites: 'yes' },
+    });
+
+    // The bounds themselves, the draft's own currency, and an Etc/GMT zone are accepted.
+    for (const [code, changes] of [
+      ['min-retention', { initial_settings: { audit_retention_days: '2555' } }],
+      ['max-retention', { initial_settings: { audit_retention_days: '36500' } }],
+      ['same-currency', { initial_settings: { base_currency: 'kes' } }],
+      ['fixed-offset', { timezone: 'Etc/GMT-3' }],
+    ] as const) {
+      expect((await create(code, changes)).status(), code).toBe(201);
+    }
   });
 
   test('refuses the approval to its maker and to its submitter, and approves a request another operator submitted with a replayable 202', async ({

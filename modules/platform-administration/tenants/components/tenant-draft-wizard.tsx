@@ -42,12 +42,7 @@ import {
 } from '../tenant-rules';
 
 type FieldName = keyof TenantDraftValues;
-type OptionName =
-  | 'countryCode'
-  | 'baseCurrencyCode'
-  | 'timezone'
-  | 'defaultTimezoneSetting'
-  | 'baseCurrencySetting';
+type OptionName = 'countryCode' | 'baseCurrencyCode' | 'timezone' | 'defaultTimezoneSetting';
 
 interface DraftStep extends WizardStep {
   fields: readonly FieldName[];
@@ -81,7 +76,7 @@ const ADMINISTRATOR: DraftStep = {
 const SETTINGS: DraftStep = {
   label: 'Initial settings',
   helper: 'Optional settings stored with the draft',
-  fields: ['defaultTimezoneSetting', 'baseCurrencySetting', 'auditRetentionDays'],
+  fields: ['defaultTimezoneSetting', 'auditRetentionDays'],
 };
 const REVIEW: DraftStep = {
   label: 'Review',
@@ -118,7 +113,6 @@ const LABELS: Record<FieldName, string> = {
   adminPhone: 'Phone',
   adminSendApplicationInvite: 'Send application invite',
   defaultTimezoneSetting: 'Default timezone setting',
-  baseCurrencySetting: 'Base currency setting',
   auditRetentionDays: 'Audit retention (days)',
 };
 
@@ -223,9 +217,6 @@ function TenantDraftReview({ values, options, steps, pending, onEdit }: TenantDr
     adminPhone: values.adminPhone,
     adminSendApplicationInvite: values.adminSendApplicationInvite === 'true' ? 'Yes' : 'No',
     defaultTimezoneSetting: values.defaultTimezoneSetting || NOT_SET,
-    baseCurrencySetting: values.baseCurrencySetting
-      ? labelOf(options.currencies, values.baseCurrencySetting)
-      : NOT_SET,
     auditRetentionDays: values.auditRetentionDays
       ? String(Number(values.auditRetentionDays))
       : NOT_SET,
@@ -541,9 +532,9 @@ export function TenantDraftWizard({
       {current.label === SETTINGS.label && (
         <Box sx={FIELD_GROUP}>
           <Alert severity="info">
-            These settings are stored with the institution, but the platform doesn&apos;t apply them
-            yet. Maker-checker always applies, so its switches aren&apos;t offered here, and neither
-            is automatic business date advance.
+            Base currency always follows the institution&apos;s currency. Maker-checker and
+            automatic business date advance are set by the institution&apos;s administrators, on its
+            Settings page.
           </Alert>
           <OptionField
             control={control}
@@ -552,17 +543,10 @@ export function TenantDraftWizard({
             options={options.timeZones}
             hint="Optional."
           />
-          <OptionField
-            control={control}
-            trigger={trigger}
-            name="baseCurrencySetting"
-            options={options.currencies}
-            hint="Optional."
-          />
           <TextField
             {...text(
               'auditRetentionDays',
-              'Optional. A whole number of days; only the platform can set it.',
+              'Optional. 2555 to 36500 days; unset keeps audit events for good.',
             )}
             slotProps={{ htmlInput: { inputMode: 'numeric', maxLength: 5 } }}
           />

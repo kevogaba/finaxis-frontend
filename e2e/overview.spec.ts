@@ -21,7 +21,7 @@ const NOTHING_WAITING = 'Nothing is waiting for your approval.';
 const PROVISIONING = '1 identity is still being provisioned: approval already ran.';
 const ONE_MEMBER =
   'Only 1 member is active. Approvals need at least two, so someone other than the requester can decide (maker-checker).';
-const NOT_SET = "Not set: default timezone and base currency. Settings can't be saved yet.";
+const ACTIVE = 'The institution is active.';
 const READINESS_NOTE =
   "Each item is computed from live data. An item your role can't read says so.";
 
@@ -75,7 +75,7 @@ const CHIP_SCENES = [
   {
     scenario: 'overview-attention',
     states: [
-      ['Institution profile', 'Needs attention'],
+      ['Institution profile', 'Ready'],
       ['Branches', 'Needs attention'],
       ['People', 'Needs attention'],
       ['Onboarding', 'Needs attention'],
@@ -160,7 +160,7 @@ test.describe('overview: the cards', () => {
     await expect(bar).toHaveAttribute('aria-valuenow', '100');
     await expect(bar).toHaveAttribute('aria-valuetext', '5 of 5 ready');
     await expectItems(page, 'Ready', [
-      ['Institution profile', 'Active, with a default timezone and a base currency.'],
+      ['Institution profile', ACTIVE],
       ['Branches', '2 branches are active, and none is waiting for activation.'],
       ['People', '2 members are active.'],
       ['Onboarding', 'No one is waiting for approval.'],
@@ -228,10 +228,10 @@ test.describe('overview: the cards', () => {
     const bar = card(page, 'Operational readiness').getByRole('progressbar', {
       name: 'Operational readiness',
     });
-    await expect(bar).toHaveAttribute('aria-valuenow', '0');
-    await expect(bar).toHaveAttribute('aria-valuetext', '0 of 5 ready');
+    await expect(bar).toHaveAttribute('aria-valuenow', '20');
+    await expect(bar).toHaveAttribute('aria-valuetext', '1 of 5 ready');
+    await expectItems(page, 'Ready', [['Institution profile', ACTIVE]]);
     await expectItems(page, 'Needs attention', [
-      ['Institution profile', NOT_SET],
       ['Branches', '2 branches are active. 3 branches are waiting for activation.'],
       ['People', ONE_MEMBER],
       ['Onboarding', `3 users are waiting for approval. ${PROVISIONING}`],
@@ -298,9 +298,9 @@ test.describe('overview: the cards', () => {
       card(page, 'Operational readiness').getByRole('progressbar', {
         name: 'Operational readiness',
       }),
-    ).toHaveAttribute('aria-valuetext', '0 of 5 ready · 1 not checked');
+    ).toHaveAttribute('aria-valuetext', '1 of 5 ready · 1 not checked');
+    await expectItems(page, 'Ready', [['Institution profile', ACTIVE]]);
     await expectItems(page, 'Needs attention', [
-      ['Institution profile', NOT_SET],
       ['People', ONE_MEMBER],
       ['Onboarding', `3 users are waiting for approval. ${PROVISIONING}`],
     ]);

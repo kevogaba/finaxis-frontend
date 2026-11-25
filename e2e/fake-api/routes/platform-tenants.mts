@@ -7,6 +7,7 @@ import {
 } from '../access.mts';
 import type { AccessContext } from '../access.mts';
 import {
+  isIanaZone,
   objectBody,
   pageOf,
   parseInstantParam,
@@ -108,23 +109,37 @@ function findTenant(context: RouteContext): FakeOrganisation {
   return tenant;
 }
 
-function isZone(value: string): boolean {
-  try {
-    new Intl.DateTimeFormat('en-GB', { timeZone: value });
-    return true;
-  } catch {
-    return false;
+const isCurrency = (code: string) =>
+  code !== 'XXX' && Intl.supportedValuesOf('currency').includes(code);
+
+/** TenantSettingCatalog.canonicalize: whether `value` (trimmed) is valid for `key`. */
+function validSetting(key: string, value: string, baseCurrencyCode: string): boolean {
+  switch (key) {
+    case 'default_timezone':
+      return isIanaZone(value);
+    case 'base_currency':
+      // Canonicalised first, so an unsettleable code answers with accounting's own code; then it
+      // must equal the draft's own currency (validateCreate), since it only mirrors it.
+      if (!isCurrency(value.toUpperCase())) {
+        throw problem(422, 'accounting.currency_invalid', 'The currency is not valid.');
+      }
+      return value.toUpperCase() === baseCurrencyCode;
+    case 'audit_retention_days':
+      return /^\d+$/.test(value) && Number(value) >= 2555 && Number(value) <= 36500;
+    default:
+      return value.toLowerCase() === 'true' || value.toLowerCase() === 'false';
   }
 }
 
-function checkInitialSettings(value: unknown): void {
+function checkInitialSettings(value: unknown, baseCurrencyCode: string): void {
   if (value === undefined || value === null) return;
   if (typeof value !== 'object' || Array.isArray(value)) throw invalidJson();
   for (const [key, setting] of Object.entries(value as Record<string, unknown>)) {
     if (typeof setting !== 'string') throw invalidJson();
     // Catalogue keys only, with typed values (contract §D, §H): anything else is a 422.
-    if (!CATALOGUE_KEYS.includes(key)) throw invalidOperation();
-    if (key === 'audit_retention_days' && !/^\d+$/.test(setting)) throw invalidOperation();
+    if (!CATALOGUE_KEYS.includes(key) || !validSetting(key, setting.trim(), baseCurrencyCode)) {
+      throw invalidOperation();
+    }
   }
 }
 
@@ -145,9 +160,10 @@ interface DraftFields {
 /**
  * Mirrors the draft DTOs' bean validation (contract §D): an absent non-null field is `invalid_json`;
  * a blank or malformed value, and the admin's phone (typed nullable but `@NotBlank`), is a
- * `validation_failed` violation. The service's 422s come next: an unknown ZoneId, an unsettleable
- * currency and, on create only, a non-catalogue or mistyped initial setting (amend ignores
- * `initial_settings` and `business_date`).
+ * `validation_failed` violation. The service's 422s come next: an unsettleable currency, a zone
+ * that isn't an IANA id and, on create only, a non-catalogue or mistyped initial setting (retention
+ * outside 2555–36500 days, or a `base_currency` other than `base_currency_code`; amend refuses a
+ * non-empty `initial_settings` with a 422 on the platform, which the UI never sends).
  */
 function draftFields(body: Record<string, unknown>, options: { amend: boolean }): DraftFields {
   const admin = objectBody(body.admin, ADMIN_KEYS);
@@ -218,13 +234,13 @@ function draftFields(body: Record<string, unknown>, options: { amend: boolean })
   if (violations.length > 0) {
     throw problem(400, 'validation_failed', 'Validation failed.', violations);
   }
-  if (!isZone(timezone)) throw invalidOperation();
-  const currencies = Intl.supportedValuesOf('currency');
-  if (baseCurrencyCode === 'XXX' || !currencies.includes(baseCurrencyCode)) {
+  if (!isCurrency(baseCurrencyCode)) {
     throw problem(422, 'accounting.currency_invalid', 'The currency is not valid.');
   }
+  // TimeZoneRule (#276): an IANA id; a raw offset is a 422.
+  if (!isIanaZone(timezone)) throw invalidOperation();
   if (!options.amend) {
-    checkInitialSettings(body.initial_settings);
+    checkInitialSettings(body.initial_settings, baseCurrencyCode);
     checkBusinessDate(body.business_date);
   }
   return { code, displayName, countryCode, baseCurrencyCode, timezone };

@@ -16,7 +16,6 @@ import {
   USER_QUEUE_HREF,
 } from '@/modules/administration/approvals/approval-rules';
 import type { BusinessDateStatus } from '@/modules/administration/business-date/business-date-contract';
-import { SETTINGS_EDIT_ENABLED } from '@/modules/administration/settings/settings-flags';
 import { USERS_HREF } from '@/modules/administration/users/invite-rules';
 
 /**
@@ -95,27 +94,13 @@ function item(id: ReadinessItemId, state: ReadinessState, detail: string): Readi
   return { id, label: READINESS_LABELS[id], state, detail };
 }
 
-/** A stored setting as the settings read maps it: a masked value is `null` but `redacted`. */
-export interface SettingFact {
-  key: string;
-  value: string | null;
-  redacted: boolean;
-}
-
-const PROFILE_KEYS = [
-  ['default_timezone', 'default timezone'],
-  ['base_currency', 'base currency'],
-] as const;
-
-/** BG-04: the platform can't save a setting yet, so an unset key can't be set from this app. */
-const UNSAVABLE = SETTINGS_EDIT_ENABLED ? '' : " Settings can't be saved yet.";
-
-/** Organisation ACTIVE, and `default_timezone` and `base_currency` set (spec §10.8). Every request
- * re-validates the organisation as ACTIVE (contract §A), so the status the profile carries is
- * checked but in practice always passes. */
+/** Organisation ACTIVE, with its settings readable (spec §10.8). An unset `default_timezone` isn't
+ * missing (a new branch takes the organisation's zone) and `base_currency` always reads the
+ * organisation's currency, so no key is checked. Every request re-validates the organisation as
+ * ACTIVE (contract §A), so the status the profile carries is checked but in practice always passes. */
 export function institutionItem(
   organisationStatus: string,
-  settings: Settled<{ items: readonly SettingFact[] }>,
+  settings: Settled<unknown>,
 ): ReadinessCheck {
   if (organisationStatus !== 'ACTIVE') {
     return item(
@@ -126,15 +111,7 @@ export function institutionItem(
   }
   if (settings === null) return item('institution', 'unknown', NOT_PERMITTED);
   if (!settings.ok) return item('institution', 'failed', readFailed(settings.problem));
-  const isSet = (key: string) =>
-    settings.value.items.some(
-      (setting) => setting.key === key && (setting.value !== null || setting.redacted),
-    );
-  const missing = PROFILE_KEYS.filter(([key]) => !isSet(key)).map(([, label]) => label);
-  if (missing.length > 0) {
-    return item('institution', 'attention', `Not set: ${missing.join(' and ')}.${UNSAVABLE}`);
-  }
-  return item('institution', 'ready', 'Active, with a default timezone and a base currency.');
+  return item('institution', 'ready', 'The institution is active.');
 }
 
 /** At least one ACTIVE branch and none PENDING_APPROVAL (spec §10.8). */
@@ -256,7 +233,7 @@ export interface ReadinessItem extends ReadinessCheck {
 /** What the section read: each `null` when the holder lacks that item's code (`READINESS_CODES`). */
 export interface ReadinessReads {
   organisationStatus: string;
-  settings: Settled<{ items: readonly SettingFact[] }>;
+  settings: Settled<unknown>;
   activeBranches: Settled<number>;
   pendingBranches: Settled<number>;
   activeMembers: Settled<number>;

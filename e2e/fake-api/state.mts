@@ -158,10 +158,9 @@ export interface RunState {
   idempotency: Map<string, { fingerprint: string; status: number; body: unknown }>;
   /** Mutations that fail with a lock timeout before one succeeds. */
   lockTimeoutsRemaining: number;
-  /** Stored tenant settings only; an unset catalogue key shows its default (contract §H). */
+  /** Stored tenant settings only; an unset catalogue key shows its default, and `base_currency`
+   * reads the organisation's column (contract §H). */
   tenantSettings: FakeTenantSetting[];
-  /** The tenant has posted a journal, so `base_currency` can't change (409). */
-  baseCurrencyFrozen: boolean;
 }
 
 const runs = new Map<string, RunState>();

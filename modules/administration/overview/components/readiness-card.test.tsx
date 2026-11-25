@@ -51,7 +51,11 @@ const setting = (key: string, value: string | null): TenantSetting => ({
   key,
   value,
   redacted: false,
-  platformAdminOnly: false,
+  valueType: 'STRING',
+  isDefault: false,
+  label: key,
+  description: null,
+  group: 'General',
 });
 
 function settled() {
