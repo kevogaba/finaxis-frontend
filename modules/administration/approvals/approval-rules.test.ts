@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BranchStatus } from '@/modules/administration/branches/branch-contract';
 import { MAKER_CHECKER_BLOCKED } from '@/modules/administration/branches/branch-rules';
-import {
-  PROVISIONING_NOTE,
-  USER_MAKER_CHECKER_BLOCKED,
-} from '@/modules/administration/users/user-rules';
+import { USER_MAKER_CHECKER_BLOCKED } from '@/modules/administration/users/user-rules';
 import {
   approvalQueueTabs,
   canCountPendingApprovals,
@@ -171,6 +168,17 @@ describe('where a user approval stands', () => {
     expect(userApprovalState(membership, user)).toBe(state);
   });
 
+  // BG-11: the membership's invitation, where it was read, tells a failed provisioning apart.
+  it.each([
+    ['IN_PROGRESS', 'provisioning'],
+    ['FAILED', 'provisioning-failed'],
+    // A re-invite's provisioning user: this life's approval hasn't run (ADR 0037).
+    ['AWAITING_APPROVAL', 'awaiting'],
+    [null, 'provisioning'],
+  ] as const)('reads a provisioning member whose invitation is %s as %s', (invitation, state) => {
+    expect(userApprovalState('PENDING_APPROVAL', 'PROVISIONING_IDP', invitation)).toBe(state);
+  });
+
   it('offers Approve and Reject & revoke while it waits, each by its own code', () => {
     expect(availableUserDecisions('awaiting', APPROVER)).toEqual(['approve', 'reject']);
     expect(availableUserDecisions('blocked', APPROVER)).toEqual(['approve', 'reject']);
@@ -202,6 +210,7 @@ describe('where a user approval stands', () => {
       availableUserDecisions('awaiting', wide(['user.approve', 'user.view', 'membership.revoke'])),
     ).toEqual([]);
     expect(availableUserDecisions('provisioning', APPROVER)).toEqual([]);
+    expect(availableUserDecisions('provisioning-failed', APPROVER)).toEqual([]);
     expect(availableUserDecisions('decided', APPROVER)).toEqual([]);
   });
 
@@ -248,7 +257,12 @@ describe('where a user approval stands', () => {
   it('says what happened instead of offering a decision', () => {
     expect(userOutcomeNote('awaiting', 'PENDING_APPROVAL')).toBeNull();
     expect(userOutcomeNote('blocked', 'PENDING_APPROVAL')).toBeNull();
-    expect(userOutcomeNote('provisioning', 'PENDING_APPROVAL')).toBe(PROVISIONING_NOTE);
+    expect(userOutcomeNote('provisioning', 'PENDING_APPROVAL')).toBe(
+      'Approved: their sign-in identity is being created, and the invitation is sent when it completes. If creating it fails, it can be retried from their user record.',
+    );
+    expect(userOutcomeNote('provisioning-failed', 'PENDING_APPROVAL')).toBe(
+      "Approved, but their sign-in identity couldn't be created. Their user record says why, and provisioning can be retried from there.",
+    );
     expect(userOutcomeNote('decided', 'ACTIVE')).toBe('Approved: this membership is active.');
     expect(userOutcomeNote('decided', 'REVOKED')).toBe(
       "Rejected: this membership was revoked, and this email can't be invited to this institution again.",

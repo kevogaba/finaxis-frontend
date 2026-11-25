@@ -147,7 +147,7 @@ miscount things today.
 
 ## Summary
 
-7 backend fixed · 5 partly fixed · 0 open · 5 adopted · 18 closed.
+7 backend fixed · 3 partly fixed · 0 open · 7 adopted · 18 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -161,7 +161,7 @@ miscount things today.
 | BG-08 | P1       | Closed        | Maker identity not exposed; maker-checker 403 indistinguishable from missing permission            |
 | BG-09 | P1       | Adopted       | No `user_id` filters on branch assignments / memberships; thin list items                          |
 | BG-10 | P1       | Backend fixed | No global user directory or global user read                                                       |
-| BG-11 | P1       | Partly fixed  | Invitation state not exposed; no resend; provisioning can stick with no recovery                   |
+| BG-11 | P1       | Adopted       | Invitation state not exposed; no resend; provisioning can stick with no recovery                   |
 | BG-12 | P1       | Backend fixed | Tenant settings catalogue unenforced and missing metadata; platform-only key unmanageable          |
 | BG-13 | P1       | Closed        | Branch address never returned; no branch update; opened/closed dates never set                     |
 | BG-14 | P1       | Closed        | Tenant legal name / registration number write-only; PATCH wipes them                               |
@@ -175,7 +175,7 @@ miscount things today.
 | BG-22 | P2       | Adopted       | No notifications endpoint                                                                          |
 | BG-23 | P2       | Closed        | Context discovery inconsistencies (`total_items` overcount, duplicate branch IDs)                  |
 | BG-24 | P2       | Closed        | Bootstrap status can flip COMPLETED → FAILED from unrelated invitee failures                       |
-| BG-25 | P2       | Partly fixed  | Identity and email delivery defaults (Keycloak admin off, email off, no password step)             |
+| BG-25 | P2       | Adopted       | Identity and email delivery defaults (Keycloak admin off, email off, no password step)             |
 | BG-26 | P2       | Closed        | Ignored or dangerous sort parameters                                                               |
 | BG-27 | P2       | Closed        | Role lifecycle gaps (no delete; DISABLED roles assignable; ARCHIVED unused)                        |
 | BG-28 | P2       | Partly fixed  | Terminal states without recovery (rejected tenant code stays taken; revoked member can't return)   |
@@ -474,7 +474,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
   role or branch went stale, and the platform's own 400 says the details weren't accepted. Approve
   explains 404 (gone) and 409 (decided, or no active role or branch), revoke 409 (already revoked),
   assign role 422 (no longer active), and amend's 409 hedges between a taken code and a draft no
-  longer a draft (frontend #109). The user record still withholds Approve once approval ran.
+  longer a draft (frontend #109). The user record still withholds Approve once approval ran, and
+  offers Retry provisioning in its place once provisioning failed (BG-11, frontend #124).
 - **Backend resolution:**
   - Invite: an organisation that isn't ACTIVE is 409 `conflict`. An invalid email, a blank username
     or display name, STAFF/ADMIN without a branch, no role, or a BRANCH role without a branch is 400
@@ -629,7 +630,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-11 — Invitation state, resend, and stuck provisioning · P1
 
-- **Status:** Partly fixed. Platform #162, #274 (also #237, #313).
+- **Status:** Adopted (frontend #124). Platform #162, #274 (also #237, #313).
 - **Gap:** No invitation entity, status, expiry, or accepted timestamp; the `identity_dispatch_log` is
   internal. No resend endpoint. With Keycloak admin disabled (the default, `application.yaml:378`),
   approval leaves users in `PROVISIONING_IDP` and memberships `PENDING_APPROVAL` forever; approving
@@ -660,8 +661,43 @@ the same bullets): the first is the gap as found, the second what the UI still d
   Retry has no maker-checker rule, needs a recorded dispatch that hasn't succeeded, and is a 200
   no-op while a job runs; resend also needs a dispatch row. A REVOKED membership whose last dispatch
   failed still reads `FAILED` (code `CANCELLED`), so Retry also checks the membership and user status.
-- **To adopt:** show `invitation.status` and its error code on the user record with Retry and
-  Resend, and replace the "Provisioning identity" guidance and the overview's provisioning note.
+- **To adopt:** done in frontend #124.
+  - The user record's Overview reads `invitation` with the membership (`membership.view`
+    tenant-wide), and its layout reads it only for a pending member whose account is
+    PROVISIONING_IDP. "Provisioning identity" splits into **Identity in progress** and **Identity
+    failed**; the Onboarding card marks the third step Failed and lists the identity
+    provisioning's status (with its attempts, once more than one, only while it failed or is in
+    progress: a resend adds one to a completed dispatch's count), the failure's reason worded by
+    its code (never the platform's text; an unknown or missing code reads "The reason wasn't
+    recorded.", and "then retry" is said only beside a Retry the reader is offered) and its last
+    update in the organisation's zone. The fact reads "Identity provisioning", not "Invitation", so
+    a NOT_REQUIRED one never contradicts Resend beside it. A row of a list carries no
+    `invitation`, so it still reads "Provisioning identity", as does a record whose reader lacks
+    `membership.view`. A pending provisioning member whose invitation reads AWAITING_APPROVAL (a
+    re-invite's first approval, ADR 0037) is awaiting approval, and Approve queues it.
+  - **Retry provisioning** (`user.approve` + `membership.view`, tenant-wide) replaces Approve for a
+    PENDING_APPROVAL member whose account is PROVISIONING_IDP and whose invitation is FAILED; while
+    it is in progress neither is offered. Its 409 reads "Provisioning can't be retried now.
+    Refresh to see where it stands."
+  - **Resend invitation** (`user.invite` + `membership.view` + `user.view`, tenant-wide) is offered
+    for an INVITED account with an ACTIVE membership, whatever its invitation reads (the platform
+    touches the user's newest succeeded dispatch in any institution, so the cooldown, five
+    minutes by default and configurable, runs from provisioning's own success or the last
+    resend). Both 409 codes are named: `…_too_soon` "Their account was set up, or an invitation
+    sent, moments ago. Try again in a few minutes.", `…_not_applicable` "There's no invitation to
+    resend for this person. Refresh to see where they stand." (on a stale page, they have most
+    often signed in since). Resend leaves the hero's actions as they were, so its trigger keeps
+    focus, and its success moves none on a later refresh.
+  - Both are confirmations with no field, each with its own minted idempotency key. The approval
+    page says, as a warning, when provisioning failed and sends the approver to the record, and
+    the overview's provisioning note says a failed one can be retried from the user record (list
+    rows carry no invitation, so it can't say which). The audit vocabulary names
+    `user.invitation_retry` and `user.invitation_resend`.
+  - The fake API derives `invitation` from a per-membership dispatch, as `deriveInvitationStatus`
+    does, and serves retry and resend with the platform's gates, 409s, five-minute cooldown and
+    audit rows; a repeat approval requeues a failed dispatch. `users-invite-dispatch-edges` seeds an
+    invited member with no dispatch (resend not applicable) and a pending one whose dispatch
+    already succeeded (retry a 409).
 
 ### BG-12 — Settings catalogue unenforced and under-described · P1
 
@@ -1039,7 +1075,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-25 — Identity and email delivery defaults · P2
 
-- **Status:** Partly fixed. Platform #162, #274.
+- **Status:** Adopted (frontend #124). Platform #162, #274.
 - **Gap:** Keycloak admin provisioning and outbound email are disabled by default; with email off,
   invite and welcome emails fail permanently (audited, no state change). The Keycloak
   execute-actions email sends `VERIFY_EMAIL` only — no `UPDATE_PASSWORD`, lifespan, or redirect.
@@ -1054,8 +1090,11 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Still open:** `finaxis.keycloak.admin.enabled` and `finaxis.email.enabled` still default to off
   (Keycloak admin off logs no warning); the redirect is unset by default; SMTP delivery failures
   aren't surfaced.
-- **To adopt:** the Invitation step can say the email includes a set-password step. Delivery still
-  depends on the deployment.
+- **To adopt:** done in frontend #124. The invite wizard's identity-provider option says the
+  email asks them to verify their address and set a password, with a link that lasts 72 hours, and
+  its note says delivery depends on how the platform is set up, that a failed identity provisioning
+  shows on the user record, and that an undelivered email isn't shown. Resend invitation's dialog
+  says the same.
 
 ### BG-26 — Sort parameters · P2
 

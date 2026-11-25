@@ -26,6 +26,9 @@ export const AUDIT_ACTIONS = [
   { value: 'user.keycloak_provisioning', label: 'Provisioned identity', entityType: 'USER' },
   { value: 'user.application_invite', label: 'Sent application invite', entityType: 'USER' },
   { value: 'user.welcome_email', label: 'Sent welcome email', entityType: 'USER' },
+  // BG-11 (platform #274): InvitationRecoveryService's rows.
+  { value: 'user.invitation_retry', label: 'Retried identity provisioning', entityType: 'USER' },
+  { value: 'user.invitation_resend', label: 'Resent invitation', entityType: 'USER' },
   { value: 'membership.suspend', label: 'Suspended membership', entityType: 'USER' },
   { value: 'membership.reactivate', label: 'Reactivated membership', entityType: 'USER' },
   {

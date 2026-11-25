@@ -18,8 +18,14 @@ const ALL_BRANCHES = /All branches \(institution level\)/;
 
 // The app's copy, repeated here: Playwright can't resolve the app's `@/` imports, and an E2E only
 // imports import-free modules. Each string is asserted verbatim, so a reworded message fails here.
-const PROVISIONING_NOTE =
-  "Approval ran, and their sign-in identity is being created. The invitation is sent when it completes. If it stays here, identity provisioning may be switched off on the platform, and it can't be retried from here.";
+const IDENTITY_IN_PROGRESS_NOTE =
+  'Approval ran, and their sign-in identity is being created. The invitation is sent when it completes.';
+const IDENTITY_FAILED_NOTE =
+  "Approval ran, but their sign-in identity couldn't be created. Once the reason below is dealt with, provisioning can be retried.";
+const IDENTITY_PROVIDER_FAILED =
+  "The identity provider refused the request. Check that it's configured, then retry.";
+const RESEND_TOO_SOON =
+  'Their account was set up, or an invitation sent, moments ago. Try again in a few minutes.';
 const NO_MEMBERSHIP_VIEW =
   "Membership actions need permission to view memberships, which your role doesn't include.";
 const OWN_MEMBERSHIP =
@@ -304,8 +310,9 @@ test.describe('users: directory and lifecycle', () => {
 
     await expect(dialog).toBeHidden();
     await expect(toast(page, 'Approval recorded')).toBeVisible();
-    // The 202: the hero's onboarding chip moves on while the membership stays pending.
-    await expect(hero(page).getByText('Provisioning identity', { exact: true })).toBeVisible();
+    // The 202: the hero's onboarding chip moves on while the membership stays pending, read from
+    // the membership's invitation (BG-11).
+    await expect(hero(page).getByText('Identity in progress', { exact: true })).toBeVisible();
     await expect(
       hero(page).getByText('Membership pending approval', { exact: true }),
     ).toBeVisible();
@@ -313,7 +320,10 @@ test.describe('users: directory and lifecycle', () => {
     await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
     // Approve left, so focus lands on the first action that remains.
     await expect(page.getByRole('button', { name: 'Reject & revoke', exact: true })).toBeFocused();
-    await expect(mainText(page, PROVISIONING_NOTE)).toBeVisible();
+    await expect(mainText(page, IDENTITY_IN_PROGRESS_NOTE)).toBeVisible();
+    await expect(fact(page, 'Identity provisioning')).toHaveText('In progress');
+    // A job still queued has nothing to retry.
+    await expect(page.getByRole('button', { name: 'Retry provisioning' })).toHaveCount(0);
   });
 
   test('approves an existing account straight to active (200)', async ({
@@ -391,9 +401,10 @@ test.describe('users: directory and lifecycle', () => {
     await authenticate(context, testInfo, 'users');
     await enterUser(page, USERS.daniel, 'Daniel Mutua');
 
-    // Approval already ran (the account is provisioning), so Approve is withheld.
-    await expect(hero(page).getByText('Provisioning identity', { exact: true })).toBeVisible();
+    // Approval already ran and provisioning failed (BG-11): Retry stands in for Approve.
+    await expect(hero(page).getByText('Identity failed', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Retry provisioning' })).toBeVisible();
 
     await press(page.getByRole('button', { name: 'Reject & revoke', exact: true }));
     const dialog = page.getByRole('alertdialog', { name: 'Reject and revoke Daniel Mutua?' });
@@ -434,7 +445,7 @@ test.describe('users: directory and lifecycle', () => {
     const other = await context.newPage();
     await openUser(other, USERS.amina, 'Amina Odhiambo');
     await expect(await act(other, 'Approve')).toBeHidden();
-    await expect(hero(other).getByText('Provisioning identity', { exact: true })).toBeVisible();
+    await expect(hero(other).getByText('Identity in progress', { exact: true })).toBeVisible();
     await expect(
       hero(other).getByText('Membership pending approval', { exact: true }),
     ).toBeVisible();
@@ -451,12 +462,94 @@ test.describe('users: directory and lifecycle', () => {
     // who sees that (the page showed her as provisioning, so the guard has nothing to compare).
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: 'Amina Odhiambo' })).toBeVisible();
-    await expect(hero(page).getByText('Provisioning identity', { exact: true })).toBeVisible();
+    await expect(hero(page).getByText('Identity in progress', { exact: true })).toBeVisible();
     await expect(
       hero(page).getByText('Membership pending approval', { exact: true }),
     ).toBeVisible();
     await expect(hero(page).getByText('Revoked', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Reject & revoke', exact: true })).toBeVisible();
+  });
+
+  // BG-11: the design's "Identity failed" record.
+  test("shows why a member's provisioning failed, and Retry moves it back to in progress", async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users');
+    await enterUser(page, USERS.daniel, 'Daniel Mutua');
+
+    await expect(hero(page).getByText('Identity failed', { exact: true })).toBeVisible();
+    const onboarding = page.getByRole('region', { name: 'Onboarding' });
+    const steps = onboarding.getByRole('list', { name: 'Onboarding steps' });
+    await expect(steps.getByRole('listitem').nth(2)).toContainText('Failed');
+    await expect(mainText(page, IDENTITY_FAILED_NOTE)).toBeVisible();
+    await expect(fact(page, 'Identity provisioning')).toHaveText('Failed after 3 attempts');
+    await expect(fact(page, 'Reason')).toHaveText(IDENTITY_PROVIDER_FAILED);
+    await expect(fact(page, 'Last update (Africa/Nairobi)')).toHaveText('24 Nov 2026 · 09:14');
+
+    await press(page.getByRole('button', { name: 'Retry provisioning' }));
+    const dialog = page.getByRole('dialog', {
+      name: 'Retry identity provisioning for Daniel Mutua?',
+    });
+    await expect(dialog).toContainText(
+      "We'll ask the identity provider to create their account again.",
+    );
+    await expectGuardFields(dialog);
+    await expect(dialog.locator('input[name="membershipId"]')).toHaveValue(USERS.danielMembership);
+    await dialog.getByRole('button', { name: 'Retry', exact: true }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(toast(page, 'Provisioning retried')).toBeVisible();
+    await expect(hero(page).getByText('Identity in progress', { exact: true })).toBeVisible();
+    await expect(
+      hero(page).getByText('Membership pending approval', { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Retry provisioning' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+    // Retry left, so focus lands on the action that remains.
+    await expect(page.getByRole('button', { name: 'Reject & revoke', exact: true })).toBeFocused();
+    await expect(mainText(page, IDENTITY_IN_PROGRESS_NOTE)).toBeVisible();
+    await expect(fact(page, 'Identity provisioning')).toHaveText('In progress after 3 attempts');
+    await expect(page.getByRole('main').locator('dt').filter({ hasText: 'Reason' })).toHaveCount(0);
+  });
+
+  test("resends an invited member's invitation, and says so when it was sent moments ago", async ({
+    context,
+    page,
+  }, testInfo) => {
+    // `users-invite` adds user.invite to the administrator's role.
+    await authenticate(context, testInfo, 'users-invite');
+    await enterUser(page, USERS.esther, 'Esther Njoki');
+    await expect(hero(page).getByText('Awaiting first sign-in', { exact: true })).toBeVisible();
+    // Her provisioning succeeded in August.
+    await expect(fact(page, 'Identity provisioning')).toHaveText('Completed');
+    const lastUpdate = fact(page, 'Last update (Africa/Nairobi)');
+    await expect(lastUpdate).toHaveText('02 Aug 2026 · 12:00');
+
+    const resend = async () => {
+      await press(page.getByRole('button', { name: 'Resend invitation' }));
+      const dialog = page.getByRole('dialog', { name: "Resend Esther Njoki's invitation?" });
+      await expect(dialog).toContainText(
+        'The identity provider emails them a new link to verify their address and set a password. The link lasts 72 hours. Delivery depends on how the platform is set up.',
+      );
+      await expectGuardFields(dialog);
+      await dialog.getByRole('button', { name: 'Resend', exact: true }).click();
+      return dialog;
+    };
+
+    await expect(await resend()).toBeHidden();
+    await expect(toast(page, 'Invitation resent')).toBeVisible();
+    // The refreshed record: the resend moved the last update, and the platform's extra attempt is
+    // no failure, so no count is shown.
+    await expect(lastUpdate).not.toHaveText('02 Aug 2026 · 12:00');
+    await expect(fact(page, 'Identity provisioning')).toHaveText('Completed');
+    // The same actions remain, so focus returns to Resend.
+    await expect(page.getByRole('button', { name: 'Resend invitation' })).toBeFocused();
+
+    // Within the five-minute cooldown the platform refuses it by name: the dialog stays open.
+    const again = await resend();
+    await expect(again.getByText(RESEND_TOO_SOON)).toBeVisible();
+    await expect(again).toBeVisible();
   });
 
   test('suspends and reactivates a member, and audits both', async ({

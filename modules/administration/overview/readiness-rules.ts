@@ -141,9 +141,11 @@ export function peopleItem(active: Settled<number>): ReadinessCheck {
 }
 
 /** Approval already ran for these (BG-11): they wait for the identity provider, not for anyone
- * here. The Onboarding item and the Pending approvals card both note them, apart from the count. */
+ * here, and a failed one is retried from the member's record. The Onboarding item and the Pending
+ * approvals card both note them, apart from the count: list rows carry no invitation, so the note
+ * can't say which failed. */
 export function provisioningNote(count: number): string {
-  return `${counted(count, 'identity is', 'identities are')} still being provisioned: approval already ran.`;
+  return `${counted(count, 'identity is', 'identities are')} still being provisioned: approval already ran. If provisioning failed, it can be retried from their user record.`;
 }
 
 /** No user approval awaiting a decision; identities still provisioning are noted apart (spec

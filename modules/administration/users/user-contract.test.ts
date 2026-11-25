@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  INVITATION_STATUSES,
   MEMBERSHIP_STATUSES,
   MEMBERSHIP_TYPES,
   USER_STATUSES,
@@ -56,6 +57,7 @@ const wireDetail = {
   user_status: 'ACTIVE',
   created_at: '2026-07-01T08:00:00Z',
   updated_at: '2026-07-24T08:00:00Z',
+  invitation: { status: 'COMPLETED', attempts: 1, last_error_code: null, updated_at: null },
 };
 
 describe('user contract', () => {
@@ -180,7 +182,67 @@ describe('user contract', () => {
       createdAt: '2026-07-01T08:00:00Z',
       updatedAt: '2026-07-24T08:00:00Z',
       createdBy: { id: VICTOR, displayName: 'Victor Otieno' },
+      invitation: { status: 'COMPLETED', attempts: 1, lastErrorCode: null, updatedAt: null },
     });
+  });
+
+  // BG-11 (platform #274): where the identity provisioning stands.
+  it('maps a failed invitation with its code, attempts and last change', () => {
+    expect(
+      membershipDetailSchema.parse({
+        ...wireDetail,
+        invitation: {
+          status: 'FAILED',
+          attempts: 3,
+          last_error_code: 'IDENTITY_PROVIDER_FAILED',
+          updated_at: '2026-11-24T06:14:00Z',
+        },
+      }).invitation,
+    ).toEqual({
+      status: 'FAILED',
+      attempts: 3,
+      lastErrorCode: 'IDENTITY_PROVIDER_FAILED',
+      updatedAt: '2026-11-24T06:14:00Z',
+    });
+  });
+
+  it('accepts every documented invitation status, a code it does not know, and a null invitation', () => {
+    for (const status of INVITATION_STATUSES) {
+      expect(
+        membershipDetailSchema.safeParse({
+          ...wireDetail,
+          invitation: { ...wireDetail.invitation, status },
+        }).success,
+        status,
+      ).toBe(true);
+    }
+    // A code added later is kept, and worded as unrecorded (INVITATION_ERROR_COPY).
+    expect(
+      membershipDetailSchema.parse({
+        ...wireDetail,
+        invitation: { ...wireDetail.invitation, status: 'FAILED', last_error_code: 'NEW_CODE' },
+      }).invitation?.lastErrorCode,
+    ).toBe('NEW_CODE');
+    // Documented nullable: `null` on a mutation's answer that doesn't read it.
+    expect(membershipDetailSchema.parse({ ...wireDetail, invitation: null }).invitation).toBeNull();
+  });
+
+  it.each([
+    ['an absent invitation', { ...wireDetail, invitation: undefined }],
+    [
+      'an unknown invitation status',
+      { ...wireDetail, invitation: { ...wireDetail.invitation, status: 'SENT' } },
+    ],
+    [
+      'negative attempts',
+      { ...wireDetail, invitation: { ...wireDetail.invitation, attempts: -1 } },
+    ],
+    [
+      'a date-only last change',
+      { ...wireDetail, invitation: { ...wireDetail.invitation, updated_at: '2026-11-24' } },
+    ],
+  ])('rejects %s on the detail', (_case, wire) => {
+    expect(membershipDetailSchema.safeParse(wire).success).toBe(false);
   });
 
   it.each([

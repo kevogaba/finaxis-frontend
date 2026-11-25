@@ -5,6 +5,7 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import { ConfirmDialog } from '@/components/data-display/confirm-dialog';
 import { focusRecordTitle } from '@/components/data-display/focus-record-title';
 import { ReasonDialog } from '@/components/data-display/reason-dialog';
 import { useToast } from '@/components/providers/toast-provider';
@@ -13,6 +14,8 @@ import { APPROVAL_REMARK } from '@/modules/administration/approvals/approval-cop
 import {
   approveMembership,
   reactivateMembership,
+  resendInvitation,
+  retryInvitation,
   revokeMembership,
   suspendMembership,
 } from '../membership-actions';
@@ -24,9 +27,13 @@ const WARNING_ID = 'user-lifecycle-warning';
 
 interface ActionCopy {
   label: string;
+  /** The dialog's confirm button, when it isn't the trigger's label. */
+  confirmLabel?: string;
   title: string;
   description: string;
-  reason: 'optional' | 'required';
+  /** `none`: a confirmation with no field (ConfirmDialog), for Retry and Resend, which take no
+   * body (BG-11). */
+  reason: 'optional' | 'required' | 'none';
   /** The reason field's label and helper text, when not "Reason" (Approve's remark). */
   reasonLabel?: string;
   reasonHelperText?: string;
@@ -49,6 +56,29 @@ function copyFor(id: MembershipAction, name: string): ActionCopy {
         destructive: false,
         success: 'Approval recorded',
         action: approveMembership,
+      };
+    case 'retry':
+      return {
+        label: 'Retry provisioning',
+        confirmLabel: 'Retry',
+        title: `Retry identity provisioning for ${name}?`,
+        description: "We'll ask the identity provider to create their account again.",
+        reason: 'none',
+        destructive: false,
+        success: 'Provisioning retried',
+        action: retryInvitation,
+      };
+    case 'resend':
+      return {
+        label: 'Resend invitation',
+        confirmLabel: 'Resend',
+        title: `Resend ${name}'s invitation?`,
+        description:
+          'The identity provider emails them a new link to verify their address and set a password. The link lasts 72 hours. Delivery depends on how the platform is set up.',
+        reason: 'none',
+        destructive: false,
+        success: 'Invitation resent',
+        action: resendInvitation,
       };
     case 'reject':
       return {
@@ -129,16 +159,22 @@ export function UserLifecycleActions({
   const [open, setOpen] = useState<MembershipAction | null>(null);
   const buttonRefs = useRef(new Map<string, HTMLButtonElement | null>());
   // 08's I3: a successful transition swaps the whole action set (`refresh()`), unmounting the
-  // trigger that had focus. `succeededRef` holds which action just succeeded, set only by a real
-  // success below, so the effect runs the recovery once per transition. It keys on the set's
-  // contents (`actionKey`), not the array: the server hands back a new array on every render.
-  const succeededRef = useRef<string | null>(null);
+  // trigger that had focus. `succeededRef` holds the action that just succeeded and the set it was
+  // offered in, set only by a real success below. The refresh hands this component a new `actions`
+  // array (the server's props, even for the same set; nothing on the client re-creates it), so the
+  // effect below runs once per refresh, and the first after a success consumes it. Focus moves only
+  // when that refresh changed the set. One that left it alone (Resend) keeps focus on the trigger,
+  // which the closing dialog restores, and leaves nothing for a later refresh, or leaving the
+  // record, to act on.
+  const succeededRef = useRef<{ id: MembershipAction; offered: string } | null>(null);
   const actionKey = actions.join(',');
 
   useEffect(() => {
     const succeeded = succeededRef.current;
     if (succeeded === null) return;
     succeededRef.current = null;
+    const current = [...actions];
+    if (current.join(',') === succeeded.offered) return;
 
     // A blocked action is disabled and can't take focus (`focus()` on it is a no-op), so
     // "enabled" is read off the live DOM node, not re-derived from `blocked` here.
@@ -146,8 +182,7 @@ export function UserLifecycleActions({
       const node = buttonRefs.current.get(id);
       return node && node.isConnected && !node.disabled ? node : null;
     };
-    const current = actionKey === '' ? [] : actionKey.split(',');
-    let target = current.includes(succeeded) ? focusable(succeeded) : null;
+    let target = current.includes(succeeded.id) ? focusable(succeeded.id) : null;
     for (const id of current) {
       if (target) break;
       target = focusable(id);
@@ -157,7 +192,7 @@ export function UserLifecycleActions({
     } else {
       focusRecordTitle();
     }
-  }, [actionKey]);
+  }, [actions]);
 
   // A success that empties the set (Reject, Revoke) unmounts this component before the effect
   // above runs for a new render, so the same fallback runs from the cleanup instead. Aliasing the
@@ -249,17 +284,34 @@ export function UserLifecycleActions({
           setOpen(null);
         };
         const succeed = () => {
-          succeededRef.current = id;
+          succeededRef.current = { id, offered: actionKey };
           setOpen(null);
           notify(copy.success);
         };
+        if (copy.reason === 'none') {
+          return (
+            <ConfirmDialog
+              key={id}
+              open={open === id}
+              title={copy.title}
+              description={copy.description}
+              confirmLabel={copy.confirmLabel ?? copy.label}
+              action={copy.action}
+              contextOrganisationId={contextOrganisationId}
+              onClose={close}
+              onSuccess={succeed}
+            >
+              <input type="hidden" name="membershipId" value={membershipId} />
+            </ConfirmDialog>
+          );
+        }
         return (
           <ReasonDialog
             key={id}
             open={open === id}
             title={copy.title}
             description={copy.description}
-            confirmLabel={copy.label}
+            confirmLabel={copy.confirmLabel ?? copy.label}
             reason={copy.reason}
             reasonLabel={copy.reasonLabel}
             reasonHelperText={copy.reasonHelperText}

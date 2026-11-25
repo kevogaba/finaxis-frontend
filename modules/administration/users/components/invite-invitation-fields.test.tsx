@@ -32,8 +32,9 @@ describe('InviteInvitationFields', () => {
       name: 'Send the identity-provider invitation',
     });
     expect(identity).toBeChecked();
+    // BG-25: the email asks them to verify their address and set a password, with a 72-hour link.
     expect(identity).toHaveAccessibleDescription(
-      'After approval, once their sign-in identity is created, the identity provider emails them to verify their address.',
+      'After approval, once their sign-in identity is created, the identity provider emails them a link to verify their address and set a password. The link lasts 72 hours.',
     );
     const application = screen.getByRole('checkbox', { name: 'Send the application invitation' });
     expect(application).not.toBeChecked();
@@ -42,6 +43,9 @@ describe('InviteInvitationFields', () => {
     );
     // BG-25: a note, not an alert, so a screen reader isn't interrupted.
     expect(screen.getByRole('note')).toHaveTextContent(INVITATION_NOTE);
+    expect(INVITATION_NOTE).toBe(
+      "Whether these emails go out depends on how the platform is set up. If creating their sign-in identity fails, their user record says so, but an email that isn't delivered isn't shown.",
+    );
   });
 
   it("keeps each flag as the form's 'true' or 'false'", async () => {

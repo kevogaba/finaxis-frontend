@@ -1122,7 +1122,8 @@ function userAuditEvent(
  * administrator and the inviter of Amina, Brian, Daniel and Felix; Jane invited Carol, so Jane's
  * approval of her is a 403 (maker-checker, BG-08). Amina, Carol and Daniel have no identity link,
  * so an approval queues identity provisioning (a 202) unless it is refused first: Daniel's already
- * ran, so approving him again requeues it, another 202 (BG-07, BG-11). Brian has one (a 200).
+ * ran and failed three times, so approving him again, or Retry, requeues it (BG-07, BG-11). Brian
+ * has one (a 200). Esther is invited and awaits her first sign-in, so her invitation can be resent.
  * Ann's email sits inside Joann's, and Wanjiru's name is the 100-character maximum. The fake lists
  * newest first, so the directory reads Joann … Victor, then Jane.
  */
@@ -1254,11 +1255,25 @@ function usersScenario(): RunState {
       member(ids.carolMembership, ids.carol, 'STAFF', 'PENDING_APPROVAL', {
         invitedBy: IDS.jane,
       }),
+      // BG-11: Victor's approval queued Daniel's identity, and all three attempts failed.
       member(ids.danielMembership, ids.daniel, 'STAFF', 'PENDING_APPROVAL', {
         invitedBy: ids.victor,
+        dispatch: {
+          status: 'FAILED',
+          attempts: 3,
+          lastError: 'IDENTITY_PROVIDER_FAILED:IdentityProvisioningException',
+          updatedAt: '2026-11-24T06:14:00Z',
+        },
       }),
+      // Esther's identity was provisioned long ago, so her invitation can be resent (BG-11).
       member(ids.estherMembership, ids.esther, 'STAFF', 'ACTIVE', {
         primaryBranchId: IDS.headOffice,
+        dispatch: {
+          status: 'SUCCEEDED',
+          attempts: 1,
+          lastError: null,
+          updatedAt: '2026-08-02T09:00:00Z',
+        },
       }),
       member(ids.felixMembership, ids.felix, 'STAFF', 'ACTIVE', {
         primaryBranchId: IDS.westlands,
@@ -1905,6 +1920,14 @@ export const INVITE_SCENARIO_IDS = {
   otienoMembership: '11000000-0000-4000-8000-0000000000d2',
 } as const;
 
+/** bg-adopt 17 seed IDs (BG-11): `users-invite-dispatch-edges`' two members, …01–…04. */
+export const DISPATCH_EDGE_IDS = {
+  grace: 'a1700000-0000-4000-8000-000000000001',
+  graceMembership: 'a1700000-0000-4000-8000-000000000002',
+  kevin: 'a1700000-0000-4000-8000-000000000003',
+  kevinMembership: 'a1700000-0000-4000-8000-000000000004',
+} as const;
+
 /** The seeds' words the invite e2e types and asserts. */
 export const INVITE_SCENARIO_TEXT = {
   rehemaEmail: 'rehema.mwangi@pwani-traders.example',
@@ -2108,7 +2131,16 @@ function overviewAttentionScenario(): RunState {
       ...state.memberships,
       pending(ids.halimaMembership, ids.halima),
       pending(ids.nyokabiMembership, ids.nyokabi),
-      pending(ids.barakaMembership, ids.baraka),
+      // Approval ran: his identity is being provisioned (BG-11).
+      {
+        ...pending(ids.barakaMembership, ids.baraka),
+        dispatch: {
+          status: 'PENDING',
+          attempts: 0,
+          lastError: null,
+          updatedAt: '2026-09-15T08:00:00Z',
+        },
+      },
       pending(ids.wanjikuMembership, ids.wanjiku),
     ],
     branches: [
@@ -2426,6 +2458,41 @@ const BUILDERS = {
   // with a branch is refused, and the wizard isn't offered). `users` itself has no user.invite.
   'users-invite': usersInviteScenario,
   'users-invite-limited': () => withoutPermission(usersInviteScenario(), 'user.assign_branch'),
+  // BG-11's two dispatch edges, for the fake API's own spec. Grace is invited, with an ACTIVE
+  // membership, but no provisioning dispatch was ever recorded for her (an identity linked before
+  // the dispatch log, say), so a resend is not applicable. Kevin's dispatch has just SUCCEEDED
+  // while his account and membership still wait on it, so a retry is a 409: nothing failed.
+  'users-invite-dispatch-edges': () => {
+    const state = usersInviteScenario();
+    const ids = DISPATCH_EDGE_IDS;
+    const person = (id: string, username: string, displayName: string, status: string) => ({
+      id,
+      username,
+      email: `${username}@greenfield.example`,
+      displayName,
+      status,
+      keycloakSubject: `e2e-${username}`,
+    });
+    state.users.push(person(ids.grace, 'grace.wairimu', 'Grace Wairimu', 'INVITED'), {
+      ...person(ids.kevin, 'kevin.mwangi', 'Kevin Mwangi', 'PROVISIONING_IDP'),
+      identityLinked: false,
+    });
+    state.memberships.push(
+      { ...membership(ids.graceMembership, IDS.greenfield, ids.grace), type: 'STAFF' },
+      {
+        ...membership(ids.kevinMembership, IDS.greenfield, ids.kevin),
+        type: 'STAFF',
+        status: 'PENDING_APPROVAL',
+        dispatch: {
+          status: 'SUCCEEDED',
+          attempts: 1,
+          lastError: null,
+          updatedAt: '2026-11-24T06:14:00Z',
+        },
+      },
+    );
+    return state;
+  },
   // BG-22: the same with the invites' maker-checker switch off, so the platform's count includes
   // the invitations Jane sends herself and the bell reads one more after hers.
   'users-invite-self-approval': () => {

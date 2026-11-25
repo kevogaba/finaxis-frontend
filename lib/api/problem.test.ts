@@ -151,6 +151,19 @@ describe('describeProblem', () => {
         'Wrong workspace',
         'This page belongs to an institution workspace. Switch workspace to open it.',
       ],
+      // BG-11: Resend invitation's two refusals.
+      [
+        409,
+        'lifecycle.invitation_resend_too_soon',
+        'Too soon to resend',
+        'Their account was set up, or an invitation sent, moments ago. Try again in a few minutes.',
+      ],
+      [
+        409,
+        'lifecycle.invitation_resend_not_applicable',
+        'Nothing to resend',
+        "There's no invitation to resend for this person. Refresh to see where they stand.",
+      ],
     ])('explains %i %s by its code', (status, code, title, message) => {
       expect(describeProblem(new BackendApiError(status, { code, requestId: 'req-5' }))).toEqual({
         title,

@@ -49,18 +49,23 @@ const APPROVE_NOT_FOUND = 'This request no longer exists. Refresh the page.';
 const APPROVE_CONFLICT =
   'This request was already decided, or the person has no active role or branch yet. Refresh and check.';
 const REVOKE_CONFLICT = 'This membership was already revoked. Refresh and check.';
+const RETRY_CONFLICT = "Provisioning can't be retried now. Refresh to see where it stands.";
 
 const ACTION_NAMES = [
   'approveMembership',
   'suspendMembership',
   'reactivateMembership',
   'revokeMembership',
+  'retryInvitation',
+  'resendInvitation',
 ] as const;
 const PATHS = {
   approveMembership: 'activate',
   suspendMembership: 'suspend',
   reactivateMembership: 'reactivate',
   revokeMembership: 'revoke',
+  retryInvitation: 'invitation/retry',
+  resendInvitation: 'invitation/resend',
 } as const;
 
 type Run = (input: unknown) => Promise<unknown>;
@@ -306,6 +311,59 @@ describe('membership actions', () => {
       fieldErrors: { reason: 'Keep the reason under 500 characters.' },
     });
     expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  // BG-11 (platform #274): neither takes a body.
+  describe('retryInvitation', () => {
+    it('retries with an empty body on the invitation path, forwarding the form key', async () => {
+      await actions.retryInvitation(null, form({ idempotencyKey: KEY, membershipId: MEMBERSHIP }));
+      expect(apiPost).toHaveBeenCalledTimes(1);
+      expect(apiPost).toHaveBeenCalledWith(
+        `/api/v1/tenant/memberships/${MEMBERSHIP}/invitation/retry`,
+        {},
+        KEY,
+      );
+    });
+
+    // Review Focus 1: approved, revoked or provisioned elsewhere since the page loaded.
+    it('explains a 409 as nothing left to retry, keeping the reference', async () => {
+      runServerAction.mockResolvedValueOnce(failure('conflict'));
+      expect(await actions.retryInvitation(null, form({}))).toEqual({
+        ...failure('conflict'),
+        formError: RETRY_CONFLICT,
+      });
+    });
+
+    it('leaves other failure codes alone', async () => {
+      for (const code of ['forbidden', 'resource_not_found', 'IDEMPOTENCY_KEY_REUSED']) {
+        runServerAction.mockResolvedValueOnce(failure(code));
+        expect(await actions.retryInvitation(null, form({}))).toEqual(failure(code));
+      }
+    });
+  });
+
+  describe('resendInvitation', () => {
+    it('resends with an empty body on the invitation path, forwarding the form key', async () => {
+      await actions.resendInvitation(null, form({ idempotencyKey: KEY, membershipId: MEMBERSHIP }));
+      expect(apiPost).toHaveBeenCalledTimes(1);
+      expect(apiPost).toHaveBeenCalledWith(
+        `/api/v1/tenant/memberships/${MEMBERSHIP}/invitation/resend`,
+        {},
+        KEY,
+      );
+    });
+
+    // Its two 409s are named by their codes in describeProblem, never re-worded here.
+    it('leaves its failures as describeProblem words them', async () => {
+      for (const code of [
+        'lifecycle.invitation_resend_too_soon',
+        'lifecycle.invitation_resend_not_applicable',
+        'forbidden',
+      ]) {
+        runServerAction.mockResolvedValueOnce(failure(code));
+        expect(await actions.resendInvitation(null, form({}))).toEqual(failure(code));
+      }
+    });
   });
 
   describe.each(ACTION_NAMES)('%s', (name) => {

@@ -461,7 +461,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     switches maker-checker off in Settings, or a platform administrator acts as the platform
     checker from the institution record (BG-02).
   - A user whose identity is still provisioning was already approved: the queue marks them and
-    offers no decision (BG-11). Missing prerequisites (a role, a branch) are explained after the
+    offers no decision, and the approval page says when provisioning failed and links to the
+    user record, which retries it (BG-11). Missing prerequisites (a role, a branch) are explained after the
     platform refuses (BG-07).
   - A tenant-wide `branch.approve` activates whichever branch is selected (BG-03). A pending
     branch grants no branch-scoped permission (platform #242), so the queue, the bell and the
@@ -599,7 +600,11 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   administrator must approve, and opens the new user's record (or the directory when the reply has
   no readable id). Known limits:
   - The directory shows only what user summaries carry, and the onboarding state is derived
-    from the membership and user statuses (`docs/backend-gaps.md` BG-09, BG-11).
+    from the membership and user statuses (`docs/backend-gaps.md` BG-09). On the record, the
+    membership's `invitation` splits a provisioning identity into in progress and failed, and the
+    Overview's Onboarding card gives its status (with the attempts while it failed or is in
+    progress), the failure's reason by its code and its last update (BG-11); a list row carries
+    none, so it reads "Provisioning identity".
   - A user's membership is read by the id the user read carries, with `membership.view` held
     institution-wide, as the platform checks it (BG-33), and the Branch assignments tab pages
     their active assignments on the platform, newest assigned first, each naming its branch
@@ -612,7 +617,11 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     while maker-checker for user invitations is known to be on, and for a blocked account, and
     withheld once approval ran; with the switch off it stays enabled under a warning (BG-08).
     Other refusals are explained by their codes (BG-07, BG-08).
-    "Provisioning identity" offers no retry or resend, which the platform now has (BG-11).
+    Once provisioning failed, Retry provisioning (`user.approve`) stands in for Approve, and an
+    invited member awaiting their first sign-in can be sent their invitation again
+    (`user.invite`), once a few minutes (five by default, configurable on the platform) have
+    passed since their account was set up or an invitation was last sent, in any institution
+    (BG-11).
   - Reject & revoke and Revoke are presented as permanent, and the invite wizard refuses the
     email, though the platform now re-invites a revoked member (BG-28).
     Suspend and Revoke are disabled on your own record (BG-35). Revoking your own branch
@@ -648,8 +657,10 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     can't be seen: its email is reused with its own name, username and phone, which the Review
     step says, and a username it holds is refused (a 409 since the platform's fix).
   - The Invitation step starts from the contract's flag defaults (identity-provider invitation on,
-    application invitation off), and either can be changed; whether the emails go out depends on
-    the platform (BG-25). The phone can't be viewed afterwards in this workspace (BG-17).
+    application invitation off), and either can be changed. The identity provider's email asks
+    them to verify their address and set a password, with a 72-hour link; whether the emails go
+    out depends on the platform, and an undelivered one isn't shown (BG-25). The phone can't be
+    viewed afterwards in this workspace (BG-17).
     Nothing is kept across a reload.
 - The Platform Administration workspace (`/platform-admin`, reachable only when the selected
   context's organisation is the platform organisation) manages SACCO institutions through

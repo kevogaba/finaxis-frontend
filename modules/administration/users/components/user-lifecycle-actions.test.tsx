@@ -11,17 +11,26 @@ import {
 } from '../user-rules';
 import { UserLifecycleActions } from './user-lifecycle-actions';
 
-const { approveMembership, reactivateMembership, revokeMembership, suspendMembership } = vi.hoisted(
-  () => ({
-    approveMembership: vi.fn(),
-    reactivateMembership: vi.fn(),
-    revokeMembership: vi.fn(),
-    suspendMembership: vi.fn(),
-  }),
-);
+const {
+  approveMembership,
+  reactivateMembership,
+  resendInvitation,
+  retryInvitation,
+  revokeMembership,
+  suspendMembership,
+} = vi.hoisted(() => ({
+  approveMembership: vi.fn(),
+  reactivateMembership: vi.fn(),
+  resendInvitation: vi.fn(),
+  retryInvitation: vi.fn(),
+  revokeMembership: vi.fn(),
+  suspendMembership: vi.fn(),
+}));
 vi.mock('../membership-actions', () => ({
   approveMembership: (...args: unknown[]) => approveMembership(...args) as unknown,
   reactivateMembership: (...args: unknown[]) => reactivateMembership(...args) as unknown,
+  resendInvitation: (...args: unknown[]) => resendInvitation(...args) as unknown,
+  retryInvitation: (...args: unknown[]) => retryInvitation(...args) as unknown,
   revokeMembership: (...args: unknown[]) => revokeMembership(...args) as unknown,
   suspendMembership: (...args: unknown[]) => suspendMembership(...args) as unknown,
 }));
@@ -390,6 +399,166 @@ describe('UserLifecycleActions', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: NAME })).toHaveFocus();
     });
+  });
+
+  // BG-11: Retry provisioning, a confirmation with no field (ConfirmDialog).
+  it('retries provisioning through a confirmation, carrying the membership, key and organisation', async () => {
+    const user = userEvent.setup();
+    retryInvitation.mockResolvedValueOnce({ ok: true });
+    const { rerender } = renderActions({ actions: ['retry', 'reject'] });
+
+    const retry = screen.getByRole('button', { name: 'Retry provisioning' });
+    expect(retry).toHaveClass('MuiButton-contained', 'MuiButton-colorPrimary');
+    await user.click(retry);
+    const dialog = screen.getByRole('dialog', {
+      name: `Retry identity provisioning for ${NAME}?`,
+    });
+    expect(dialog).toHaveAccessibleDescription(
+      "We'll ask the identity provider to create their account again.",
+    );
+    expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => {
+      expect(retryInvitation).toHaveBeenCalledTimes(1);
+    });
+    expectScoped(retryInvitation.mock.calls[0]?.[1] as FormData);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Provisioning retried');
+
+    // In progress again: Retry goes, so focus lands on the action that remains.
+    rerender(record({ actions: ['reject'] }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Reject & revoke' })).toHaveFocus();
+    });
+  });
+
+  // Review Focus 1 and 2: a refusal keeps the dialog open with its words, and a retry replays.
+  it('keeps the key after a refused retry, and sends it again', async () => {
+    const user = userEvent.setup();
+    retryInvitation
+      .mockResolvedValueOnce({
+        ok: false,
+        formError: "Provisioning can't be retried now. Refresh to see where it stands.",
+        fieldErrors: {},
+        code: 'conflict',
+        requestId: 'req-4',
+      })
+      .mockResolvedValueOnce({ ok: true });
+    renderActions({ actions: ['retry', 'reject'] });
+
+    await user.click(screen.getByRole('button', { name: 'Retry provisioning' }));
+    const dialog = screen.getByRole('dialog', {
+      name: `Retry identity provisioning for ${NAME}?`,
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      "Provisioning can't be retried now. Refresh to see where it stands. Reference: req-4",
+    );
+
+    await user.click(within(dialog).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(retryInvitation).toHaveBeenCalledTimes(2);
+    });
+    const [first, second] = retryInvitation.mock.calls.map((call) => call[1] as FormData);
+    expect(second?.get('idempotencyKey')).toBe(first?.get('idempotencyKey'));
+    expectScoped(second);
+  });
+
+  it('resends the invitation, saying what the email asks and how long the link lasts (BG-25)', async () => {
+    const user = userEvent.setup();
+    resendInvitation.mockResolvedValueOnce({ ok: true });
+    const { rerender } = renderActions({ actions: ['resend', 'suspend', 'revoke'] });
+
+    expect(screen.getByRole('button', { name: 'Resend invitation' })).toHaveClass(
+      'MuiButton-contained',
+    );
+    expect(screen.getByRole('button', { name: 'Suspend' })).toHaveClass('MuiButton-outlined');
+    await user.click(screen.getByRole('button', { name: 'Resend invitation' }));
+    const dialog = screen.getByRole('dialog', { name: `Resend ${NAME}'s invitation?` });
+    expect(dialog).toHaveAccessibleDescription(
+      'The identity provider emails them a new link to verify their address and set a password. The link lasts 72 hours. Delivery depends on how the platform is set up.',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Resend' }));
+
+    await waitFor(() => {
+      expect(resendInvitation).toHaveBeenCalledTimes(1);
+    });
+    expectScoped(resendInvitation.mock.calls[0]?.[1] as FormData);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invitation resent');
+
+    // The same actions after the refresh: the closing dialog gave focus back to Resend, and it
+    // stays there.
+    rerender(record({ actions: ['resend', 'suspend', 'revoke'] }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Resend invitation' })).toHaveFocus();
+    });
+  });
+
+  // Review (should-fix 2): Resend leaves the set as it was, so its success must not linger for a
+  // later refresh that does change it, or for leaving the record, to move focus.
+  it('moves no focus on a later change to the actions after a Resend', async () => {
+    const user = userEvent.setup();
+    resendInvitation.mockResolvedValueOnce({ ok: true });
+    const { rerender } = renderActions({ actions: ['resend', 'suspend', 'revoke'] });
+
+    await user.click(screen.getByRole('button', { name: 'Resend invitation' }));
+    const dialog = screen.getByRole('dialog', { name: `Resend ${NAME}'s invitation?` });
+    await user.click(within(dialog).getByRole('button', { name: 'Resend' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invitation resent');
+    // Resend's own refresh: the same set.
+    rerender(record({ actions: ['resend', 'suspend', 'revoke'] }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Resend invitation' })).toHaveFocus();
+    });
+
+    // The person moves on, then a later refresh (they signed in, say) drops Resend.
+    screen.getByRole('button', { name: 'Resend invitation' }).blur();
+    expect(document.body).toHaveFocus();
+    rerender(record({ actions: ['suspend', 'revoke'] }));
+    expect(screen.queryByRole('button', { name: 'Resend invitation' })).not.toBeInTheDocument();
+    expect(document.body).toHaveFocus();
+
+    // Leaving the record: the unmount's fallback has no success to act on either.
+    rerender(
+      <main>
+        <h1>{NAME}</h1>
+      </main>,
+    );
+    expect(screen.getByRole('heading', { name: NAME })).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
+  });
+
+  it('mints a fresh key for each opening after a success', async () => {
+    const user = userEvent.setup();
+    resendInvitation.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({
+      ok: false,
+      formError:
+        'Their account was set up, or an invitation sent, moments ago. Try again in a few minutes.',
+      fieldErrors: {},
+      code: 'lifecycle.invitation_resend_too_soon',
+      requestId: null,
+    });
+    renderActions({ actions: ['resend', 'suspend', 'revoke'] });
+    const resend = async () => {
+      // MUI keeps the page aria-hidden until a closing dialog's exit transition ends.
+      const trigger = await screen.findByRole('button', { name: 'Resend invitation' });
+      await user.click(trigger);
+      const dialog = screen.getByRole('dialog', { name: `Resend ${NAME}'s invitation?` });
+      await user.click(within(dialog).getByRole('button', { name: 'Resend' }));
+      return dialog;
+    };
+
+    await resend();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invitation resent');
+    const dialog = await resend();
+    expect(
+      await within(dialog).findByText(
+        'Their account was set up, or an invitation sent, moments ago. Try again in a few minutes.',
+      ),
+    ).toBeInTheDocument();
+    const [first, second] = resendInvitation.mock.calls.map((call) => call[1] as FormData);
+    expect(second?.get('idempotencyKey')).toMatch(UUID);
+    expect(second?.get('idempotencyKey')).not.toBe(first?.get('idempotencyKey'));
   });
 
   it('shows the note on its own', () => {

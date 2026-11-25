@@ -21,7 +21,7 @@ import { sendIdempotent } from '../idempotency.mts';
 import { makerCheckerRequired } from './settings.mts';
 import { route } from '../router.mts';
 import type { Route, RouteContext } from '../router.mts';
-import type { FakeMembership, FakeUser } from '../state.mts';
+import type { FakeDispatch, FakeMembership, FakeUser } from '../state.mts';
 
 const NEED_A_BRANCH = ['STAFF', 'ADMIN'];
 const membershipNotFound = () => problem(404, 'resource_not_found', 'Membership not found.');
@@ -82,6 +82,77 @@ const MEMBERSHIP_SORTS: Record<string, (member: Member & { id: string }) => stri
   membershipType: ({ membership }) => membership.type,
 };
 
+/** `InvitationStatus.kt`'s closed failure codes; any other stored prefix reads UNKNOWN. */
+const KNOWN_ERROR_CODES = [
+  'IDENTITY_PROVIDER_FAILED',
+  'CONFLICT',
+  'NOT_FOUND',
+  'INVALID_STATE',
+  'DATABASE_ERROR',
+  'UNEXPECTED',
+  'CANCELLED',
+];
+
+/** `deriveInvitationStatus` (platform #274, BG-11): no dispatch is AWAITING_APPROVAL while pending
+ * and NOT_REQUIRED after; SUCCEEDED is COMPLETED; FAILED is COMPLETED behind an ACTIVE or SUSPENDED
+ * membership (stale) and FAILED otherwise, a REVOKED one included; anything else is IN_PROGRESS.
+ * The code comes from the stored `<CODE>:<ExceptionClass>`, only while FAILED. ponytail: the fake
+ * runs no provisioning job, so a revoke never turns a queued dispatch into `CANCELLED`. */
+function invitationWire(membership: FakeMembership) {
+  const { dispatch } = membership;
+  if (!dispatch) {
+    return {
+      status: membership.status === 'PENDING_APPROVAL' ? 'AWAITING_APPROVAL' : 'NOT_REQUIRED',
+      attempts: 0,
+      last_error_code: null,
+      updated_at: null,
+    };
+  }
+  let status = 'IN_PROGRESS';
+  if (dispatch.status === 'SUCCEEDED') status = 'COMPLETED';
+  else if (dispatch.status === 'FAILED') {
+    status = ['ACTIVE', 'SUSPENDED'].includes(membership.status) ? 'COMPLETED' : 'FAILED';
+  }
+  const prefix = /^([A-Z][A-Z_]*):/.exec(dispatch.lastError ?? '')?.[1];
+  return {
+    status,
+    attempts: dispatch.attempts,
+    last_error_code:
+      status === 'FAILED' && dispatch.lastError !== null
+        ? prefix && KNOWN_ERROR_CODES.includes(prefix)
+          ? prefix
+          : 'UNKNOWN'
+        : null,
+    updated_at: dispatch.updatedAt,
+  };
+}
+
+/** `recordDispatch`: the job an approval queues, PENDING with no attempt yet. */
+const queuedDispatch = (): FakeDispatch => ({
+  status: 'PENDING',
+  attempts: 0,
+  lastError: null,
+  updatedAt: new Date().toISOString(),
+});
+
+const IDENTITY_PROVISIONING_REFUSED =
+  'The user account is not in a state that allows identity provisioning.';
+
+/** `requeueFailedProvisioning`: a dispatch never recorded, or one that SUCCEEDED, is the first
+ * approval's 409; a FAILED one runs again (PENDING, the time moved, the attempts and the stored
+ * error kept); one still queued or running is left alone. Returns JobRunr's outcome. */
+function requeueFailedProvisioning(dispatch: FakeDispatch | undefined): string {
+  if (!dispatch || dispatch.status === 'SUCCEEDED') throw conflict(IDENTITY_PROVISIONING_REFUSED);
+  if (dispatch.status !== 'FAILED') return 'NOT_FAILED';
+  dispatch.status = 'PENDING';
+  dispatch.updatedAt = new Date().toISOString();
+  return 'REQUEUED';
+}
+
+/** `finaxis.invitation.resend-cooldown`'s default. */
+const RESEND_COOLDOWN_MS = 5 * 60 * 1000;
+
+/** MembershipDetailResponse: every read and membership mutation carries `invitation` (BG-11). */
 const detailWire = (access: AccessContext, { membership, user }: Member) => ({
   id: membership.id,
   organisation_id: membership.organisationId,
@@ -96,6 +167,7 @@ const detailWire = (access: AccessContext, { membership, user }: Member) => ({
   created_at: membership.createdAt,
   updated_at: membership.updatedAt,
   ...inviterWire(access, membership),
+  invitation: invitationWire(membership),
 });
 
 function memberOf(context: RouteContext, access: AccessContext): Member | null {
@@ -210,15 +282,21 @@ export function approveMembership(
         );
       }
       // The account's state, last (UserProvisioningService's requestKeycloakProvisioningIfNeeded,
-      // then activateMembershipIfPossible). A repeat while provisioning requeues it, another 202
-      // that changes nothing (BG-11): the membership stays PENDING_APPROVAL.
-      if (user.status !== 'PROVISIONING_IDP') {
+      // then activateMembershipIfPossible). A repeat while provisioning requeues a failed job or
+      // leaves a queued one alone, another 202 (BG-11): the membership stays PENDING_APPROVAL. The
+      // first approval of this membership's life (no dispatch yet: a re-invite, ADR 0037) queues
+      // its own.
+      if (user.status === 'PROVISIONING_IDP') {
+        if (membership.dispatch) requeueFailedProvisioning(membership.dispatch);
+        else membership.dispatch = queuedDispatch();
+      } else {
         if (user.identityLinked === false) {
           // No identity yet: only a DRAFT or PENDING_APPROVAL account may be provisioned.
           if (!['DRAFT', 'PENDING_APPROVAL'].includes(user.status)) {
-            throw conflict('The user account is not in a state that allows identity provisioning.');
+            throw conflict(IDENTITY_PROVISIONING_REFUSED);
           }
           user.status = 'PROVISIONING_IDP';
+          membership.dispatch = queuedDispatch();
         } else {
           // Linked: only an ACTIVE or INVITED account's membership may be activated, so a
           // suspended or deactivated account blocks the approval.
@@ -324,6 +402,77 @@ export const membershipRoutes: Route[] = [
     requirePermission(access, 'user.approve');
     const request = await activationRemark(context);
     approveMembership(context, access, memberOf(context, access), request, null);
+  }),
+
+  // BG-11 (InvitationRecoveryService.retry): `user.approve` and its view, tenant-wide, before the
+  // lookup; no body is read and no maker-checker rule applies. Only a pending member whose account
+  // waits on provisioning, with a dispatch that hasn't succeeded, is retried (409 `conflict`
+  // otherwise); a job still queued is a 200 that changes nothing. Audited on the user.
+  route('POST', '/api/v1/tenant/memberships/:membership_id/invitation/retry', (context) => {
+    const access = tenantAccess(context);
+    requirePermission(access, 'user.approve');
+    sendIdempotent(context, {}, () => {
+      const member = memberOf(context, access);
+      if (!member) throw membershipNotFound();
+      const { membership, user } = member;
+      if (membership.status !== 'PENDING_APPROVAL' || user.status !== 'PROVISIONING_IDP') {
+        throw conflict(IDENTITY_PROVISIONING_REFUSED);
+      }
+      const job = requeueFailedProvisioning(membership.dispatch);
+      recordAuditEvent(access.state, access, {
+        entityType: 'USER',
+        entityId: user.id,
+        action: 'user.invitation_retry',
+        reason: null,
+        metadata: { membershipId: membership.id, job },
+      });
+      return detailWire(access, member);
+    });
+  }),
+
+  // BG-11 (InvitationRecoveryService.resend): `user.invite` and its views (`membership.view`,
+  // `user.view`), tenant-wide, first. An INVITED account with an ACTIVE membership only (else 409
+  // `lifecycle.invitation_resend_not_applicable`); then the user's newest SUCCEEDED provisioning
+  // dispatch, in any institution, is touched (an attempt, the time) unless it changed within the
+  // cooldown (409 `lifecycle.invitation_resend_too_soon`); with none, not applicable either.
+  route('POST', '/api/v1/tenant/memberships/:membership_id/invitation/resend', (context) => {
+    const access = tenantAccess(context);
+    requirePermission(access, 'user.invite');
+    sendIdempotent(context, {}, () => {
+      const member = memberOf(context, access);
+      if (!member) throw membershipNotFound();
+      const { membership, user } = member;
+      const notApplicable = () =>
+        problem(
+          409,
+          'lifecycle.invitation_resend_not_applicable',
+          'An invitation can be resent only to an account that is invited and has not signed in.',
+        );
+      if (user.status !== 'INVITED' || membership.status !== 'ACTIVE') throw notApplicable();
+      const newest = access.state.memberships
+        .filter((row) => row.userId === user.id && row.dispatch?.status === 'SUCCEEDED')
+        .map((row) => row.dispatch)
+        .filter((dispatch): dispatch is FakeDispatch => dispatch !== undefined)
+        .sort((a, b) => instantKey(b.updatedAt).localeCompare(instantKey(a.updatedAt)))[0];
+      if (!newest) throw notApplicable();
+      if (Date.now() - new Date(newest.updatedAt).getTime() < RESEND_COOLDOWN_MS) {
+        throw problem(
+          409,
+          'lifecycle.invitation_resend_too_soon',
+          'This invitation was sent a moment ago; wait before sending it again.',
+        );
+      }
+      newest.attempts += 1;
+      newest.updatedAt = new Date().toISOString();
+      recordAuditEvent(access.state, access, {
+        entityType: 'USER',
+        entityId: user.id,
+        action: 'user.invitation_resend',
+        reason: null,
+        metadata: { membershipId: membership.id, attempt: String(newest.attempts) },
+      });
+      return detailWire(access, member);
+    });
   }),
 
   transition('suspend', 'membership.suspend', true, (access, { membership, user }, reason) => {

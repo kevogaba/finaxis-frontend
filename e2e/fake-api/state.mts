@@ -45,6 +45,18 @@ export interface FakeUser {
   identityLinked?: boolean;
 }
 
+/** A membership's identity-provisioning dispatch (platform #274's `identity_dispatch_log` row for
+ * its current life), from which its `invitation` is derived (BG-11). */
+export interface FakeDispatch {
+  /** PENDING (queued), RUNNING, FAILED or SUCCEEDED. */
+  status: string;
+  /** Provisioning attempts plus resends. */
+  attempts: number;
+  /** `<CODE>:<ExceptionClass>` once an attempt failed; kept when it is requeued. */
+  lastError: string | null;
+  updatedAt: string;
+}
+
 export interface FakeMembership {
   id: string;
   organisationId: string;
@@ -56,6 +68,8 @@ export interface FakeMembership {
   updatedAt: string;
   /** The membership's `created_by`, its inviter (BG-08); absent = the system. */
   invitedBy?: string;
+  /** Its identity-provisioning dispatch (BG-11); absent = none recorded. */
+  dispatch?: FakeDispatch;
 }
 
 export interface FakeBranch {

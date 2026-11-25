@@ -118,7 +118,7 @@ describe('PendingApprovalsSection', () => {
       `/admin/approvals/branches/${NYERI.id}`,
     );
     expect(within(card()).getByRole('note')).toHaveTextContent(
-      '1 identity is still being provisioned: approval already ran.',
+      '1 identity is still being provisioned: approval already ran. If provisioning failed, it can be retried from their user record.',
     );
     expect(within(card()).getByRole('link', { name: 'Open the approval queue' })).toHaveAttribute(
       'href',

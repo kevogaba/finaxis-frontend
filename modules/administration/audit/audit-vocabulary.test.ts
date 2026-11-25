@@ -30,6 +30,14 @@ describe('audit vocabulary', () => {
     );
   });
 
+  it('names the invitation retry and resend, on the user (BG-11)', () => {
+    expect(actionLabel('user.invitation_retry')).toBe('Retried identity provisioning');
+    expect(actionLabel('user.invitation_resend')).toBe('Resent invitation');
+    expect(actionsForEntityType('USER').map((action) => action.value)).toEqual(
+      expect.arrayContaining(['user.invitation_retry', 'user.invitation_resend']),
+    );
+  });
+
   it('names a branch edit (BG-13)', () => {
     expect(actionLabel('branch.update')).toBe('Edited branch');
     expect(actionsForEntityType('BRANCH').map((action) => action.value)).toContain('branch.update');
