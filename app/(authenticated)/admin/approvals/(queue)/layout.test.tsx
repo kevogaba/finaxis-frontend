@@ -27,7 +27,7 @@ vi.mock('@/modules/administration/approvals/approval-service', () => ({
 
 const { default: ApprovalQueueLayout } = await import('./layout');
 
-const BOTH = ['user.approve', 'user.view', 'branch.activate', 'branch.view'];
+const BOTH = ['user.approve', 'user.view', 'branch.approve', 'branch.view'];
 const resolved = (permissions: string[]) => ({
   kind: 'resolved',
   profile: { permissions },
@@ -64,13 +64,13 @@ describe('ApprovalQueueLayout', () => {
   });
 
   it('reads and offers only what the holder’s codes allow, and nothing without either pair', async () => {
-    getCurrentContextProfile.mockResolvedValue(resolved(['branch.activate', 'branch.view']));
+    getCurrentContextProfile.mockResolvedValue(resolved(['branch.approve', 'branch.view']));
     const { unmount } = await show();
     expect(tabNames()).toEqual(['Branch activation (3)']);
     expect(countUserApprovals).not.toHaveBeenCalled();
     unmount();
 
-    getCurrentContextProfile.mockResolvedValue(resolved(['user.approve', 'branch.activate']));
+    getCurrentContextProfile.mockResolvedValue(resolved(['user.approve', 'branch.approve']));
     await show();
     expect(screen.queryByRole('navigation', { name: 'Approval queue sections' })).toBeNull();
     // Only the first render's branch count: the second read nothing.

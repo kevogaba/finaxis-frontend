@@ -94,7 +94,7 @@ describe.each(Object.entries(routes))('%s', (_name, route) => {
       kind: 'resolved',
       profile: {
         user_id: 'b2000000-0000-4000-8000-0000000000bb',
-        permissions: ['user.approve', 'user.view', 'branch.activate', 'branch.view'],
+        permissions: ['user.approve', 'user.view', 'branch.approve', 'branch.view'],
         branches: [],
       },
       context: { organization: { id: 'org-1', name: 'Greenfield' }, branch: null },

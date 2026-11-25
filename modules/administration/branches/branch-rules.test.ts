@@ -12,7 +12,7 @@ import {
 const ALL = [
   'branch.view',
   'branch.create',
-  'branch.activate',
+  'branch.approve',
   'branch.suspend',
   'branch.reactivate',
   'branch.close',

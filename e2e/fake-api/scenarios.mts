@@ -542,7 +542,7 @@ export const BRANCH_SCENARIO_IDS = {
  * read-only gating scenario (e2e/branches.spec.ts "offers no mutations without the permissions"). */
 const BRANCH_ADMIN_CODES = [
   'branch.create',
-  'branch.activate',
+  'branch.approve',
   'branch.suspend',
   'branch.reactivate',
   'branch.close',
@@ -1448,7 +1448,7 @@ export const APPROVAL_SCENARIO_TEXT = {
  * Rose holds no role and Samuel no branch (each approval is a 500, BG-07), Tabitha is an auditor
  * (branch-exempt, a 200), Zawadi carries the 100-character name and the unbreakable email (a 202),
  * and Usha's account is suspended. Three branches wait for activation (Victor drafted Kericho and
- * Lamu, Jane drafted Naivasha) and Voi is still a draft. Jane gains `branch.activate`.
+ * Lamu, Jane drafted Naivasha) and Voi is still a draft. Jane gains `branch.approve`.
  */
 function approvalsScenario(): RunState {
   const state = usersScenario();
@@ -1544,7 +1544,7 @@ function approvalsScenario(): RunState {
     ],
     roles: state.roles.map((candidate) =>
       candidate.id === IDS.tenantAdminRole
-        ? { ...candidate, permissions: [...candidate.permissions, 'branch.activate'] }
+        ? { ...candidate, permissions: [...candidate.permissions, 'branch.approve'] }
         : candidate,
     ),
     roleAssignments: [
@@ -1681,7 +1681,7 @@ function overviewBase(): RunState {
       candidate.id === IDS.tenantAdminRole
         ? {
             ...candidate,
-            permissions: [...candidate.permissions, 'user.approve', 'branch.activate'],
+            permissions: [...candidate.permissions, 'user.approve', 'branch.approve'],
           }
         : candidate,
     ),
@@ -1801,11 +1801,11 @@ function overviewAttentionScenario(): RunState {
 /**
  * Layer 14, `overview-branch-scoped` (BG-33): the attention data, with Jane's branch codes on a
  * BRANCH grant at Head Office instead of her tenant role. With Head Office selected, `/auth/me`
- * lists `branch.view` and `branch.activate`, but the branch reads need them at tenant scope, so
+ * lists `branch.view` and `branch.approve`, but the branch reads need them at tenant scope, so
  * each answers 403: the Branches item and the approvals card's branch read fail on their own.
  */
 function overviewBranchScopedScenario(): RunState {
-  const state = withoutPermission(overviewAttentionScenario(), 'branch.view', 'branch.activate');
+  const state = withoutPermission(overviewAttentionScenario(), 'branch.view', 'branch.approve');
   const ids = OVERVIEW_SCENARIO_IDS;
   return {
     ...state,
@@ -1814,7 +1814,7 @@ function overviewBranchScopedScenario(): RunState {
       {
         ...role(ids.branchReviewerRole, IDS.greenfield, 'BRANCH_REVIEWER', 'Branch reviewer', [
           'branch.view',
-          'branch.activate',
+          'branch.approve',
         ]),
         systemRole: false,
       },

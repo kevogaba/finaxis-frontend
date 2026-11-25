@@ -46,7 +46,7 @@ const { default: BranchRecordLayout } = await import('./layout');
 const BRANCH = '08000000-0000-4000-8000-000000000006';
 const ME = '10000000-0000-4000-8000-0000000000aa'; // the signed-in administrator
 const ORG = '55555555-5555-4555-8555-555555555555';
-const ALL_CODES = ['branch.view', 'branch.activate', 'audit.view'];
+const ALL_CODES = ['branch.view', 'branch.approve', 'audit.view'];
 
 /** Programs every service the layout reads: a branch awaiting approval, which Activate is on offer for. */
 function setup(maker: string | null | Error = null) {

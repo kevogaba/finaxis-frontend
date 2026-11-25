@@ -109,10 +109,10 @@ test.describe('fake API: the overview scenarios (layer 14)', () => {
       seedScenario(scenario).roles.find((role) => role.id === IDS.tenantAdminRole)?.permissions ??
       [];
     expect(codes('overview-attention')).toEqual(
-      expect.arrayContaining(['user.approve', 'branch.activate', 'audit.view']),
+      expect.arrayContaining(['user.approve', 'branch.approve', 'audit.view']),
     );
     expect(codes('default')).not.toContain('user.approve');
-    expect(codes('default')).not.toContain('branch.activate');
+    expect(codes('default')).not.toContain('branch.approve');
     const limited = codes('overview-limited');
     for (const code of [
       'business_date.view',
@@ -123,9 +123,7 @@ test.describe('fake API: the overview scenarios (layer 14)', () => {
     ]) {
       expect(limited).not.toContain(code);
     }
-    expect(limited).toEqual(
-      expect.arrayContaining(['branch.activate', 'branch.view', 'user.view']),
-    );
+    expect(limited).toEqual(expect.arrayContaining(['branch.approve', 'branch.view', 'user.view']));
     const get = await signIn(request, 'overview-limited');
     expect((await get('/tenant/business-date')).status()).toBe(403);
     expect((await get('/tenant/memberships?membership_status=ACTIVE&size=1')).status()).toBe(403);
@@ -137,7 +135,7 @@ test.describe('fake API: the overview scenarios (layer 14)', () => {
     const headers = await contextFor(request, 'overview-branch-scoped', IDS.headOffice);
     const get = (path: string) => request.get(api(path), { headers });
     const me = await read<{ permissions: string[] }>(await get('/auth/me'));
-    expect(me.permissions).toEqual(expect.arrayContaining(['branch.view', 'branch.activate']));
+    expect(me.permissions).toEqual(expect.arrayContaining(['branch.view', 'branch.approve']));
     expect((await get('/branches?status=ACTIVE&size=1')).status()).toBe(403);
     expect(
       (

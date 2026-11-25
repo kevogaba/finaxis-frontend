@@ -23,7 +23,7 @@ import {
  * says so when it is missing. */
 export const USER_APPROVAL_CODES = ['user.approve', 'user.view'] as const;
 /** The Branch activation tab and the bell's branch count: activate reads the branch back (BG-31). */
-export const BRANCH_ACTIVATION_CODES = ['branch.activate', 'branch.view'] as const;
+export const BRANCH_ACTIVATION_CODES = ['branch.approve', 'branch.view'] as const;
 
 export const APPROVALS_HREF = '/admin/approvals';
 export const USER_QUEUE_HREF = `${APPROVALS_HREF}/users`;

@@ -20,7 +20,7 @@ export const administrationNavigationItems: readonly WorkspaceNavigationItem[] =
     href: '/admin/approvals',
     label: 'Approval queue',
     icon: FactCheckOutlined,
-    requiresAny: ['user.approve', 'branch.activate'],
+    requiresAny: ['user.approve', 'branch.approve'],
   },
   {
     href: '/admin/users',

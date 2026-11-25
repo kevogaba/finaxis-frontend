@@ -33,7 +33,7 @@ const { PendingApprovalNotifications } = await import('./tenant-notifications');
 
 const ORGANISATION = '17000000-0000-4000-8000-0000000000cc';
 const WESTLANDS = '28000000-0000-4000-8000-0000000000dd';
-const BOTH = ['user.approve', 'user.view', 'branch.activate', 'branch.view'];
+const BOTH = ['user.approve', 'user.view', 'branch.approve', 'branch.view'];
 
 const PROFILE: BackendProfile = {
   user_id: '39000000-0000-4000-8000-0000000000aa',
@@ -127,7 +127,7 @@ describe('PendingApprovalNotifications', () => {
 
   it('says to switch to All branches with a branch selected', async () => {
     const user = userEvent.setup({ delay: null });
-    resolved(['branch.activate', 'branch.view'], {
+    resolved(['branch.approve', 'branch.view'], {
       branch: { id: WESTLANDS, name: 'Westlands Branch' },
     });
     countBranchActivations.mockResolvedValue(1);
@@ -142,7 +142,7 @@ describe('PendingApprovalNotifications', () => {
 
   it('tells an account that works at one branch who activates, never to switch', async () => {
     const user = userEvent.setup({ delay: null });
-    resolved(['branch.activate', 'branch.view'], {
+    resolved(['branch.approve', 'branch.view'], {
       branch: { id: WESTLANDS, name: 'Westlands Branch' },
       activeBranches: 1,
     });
@@ -205,7 +205,7 @@ describe('PendingApprovalNotifications', () => {
 
   it.each([
     ['outside the administration workspace', BOTH, MODULES.platform],
-    ['without either pair of codes', ['user.approve', 'branch.activate'], MODULES.tenant],
+    ['without either pair of codes', ['user.approve', 'branch.approve'], MODULES.tenant],
     ['with only the read codes', ['user.view', 'branch.view'], MODULES.tenant],
   ])('reads nothing %s', async (_case, permissions, module) => {
     resolved(permissions, { module });
