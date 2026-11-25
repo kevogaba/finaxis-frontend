@@ -26,6 +26,7 @@ interface MembershipSummary {
   membership_status: string;
   membership_type: string;
   primary_branch_id: string | null;
+  primary_branch_name: string | null;
 }
 
 interface AssignmentRow {
@@ -34,6 +35,8 @@ interface AssignmentRow {
   branch_id: string | null;
   scope_type?: string;
   status: string;
+  branch_name?: string;
+  assigned_at?: string;
 }
 
 interface AuditRow {
@@ -68,36 +71,55 @@ async function expectProblem(response: APIResponse, status: number, code: string
 }
 
 test.describe('fake API memberships and the users scenarios (contract §E.3, layer 10)', () => {
-  test('lists memberships by a substring search, newest first, with no names', async ({
+  test('lists memberships by a substring search or a user, newest first, with names (BG-09)', async ({
     request,
   }) => {
     const { get } = await signIn(request);
     const list = async (query: string) =>
       read<Paged<MembershipSummary>>(await get(`/tenant/memberships${query}`));
 
-    // Ann's address sits inside Joann's, so the search returns both: Joann, the newer, first.
+    // Ann's address sits inside Joann's, so the search returns both. They were created together, so
+    // the higher id, Joann's, comes first.
     const nested = await list('?q=ann.mwangi@greenfield.example');
     expect(nested.items.map((item) => item.user_id)).toEqual([USERS.joann, USERS.ann]);
     expect(nested.page.total_items).toBe(2);
-    // No names on a summary (BG-09): exactly these fields, with the inviter (BG-08).
+    // Names, the primary branch's name and the creation embedded (BG-09), with the inviter (BG-08).
     expect(Object.keys(nested.items[0] ?? {})).toEqual([
       'id',
       'user_id',
       'membership_status',
       'membership_type',
       'primary_branch_id',
+      'username',
+      'email',
+      'display_name',
+      'primary_branch_name',
+      'created_at',
       'created_by',
     ]);
     expect(nested.items[0]).toMatchObject({
       id: USERS.joannMembership,
       membership_status: 'ACTIVE',
       membership_type: 'STAFF',
+      username: 'joann.mwangi',
+      email: 'joann.mwangi@greenfield.example',
+      display_name: 'Joann Mwangi',
+      primary_branch_name: null,
+      created_at: '2026-07-01T08:00:00Z',
     });
     expect(nested.items[1]).toMatchObject({ id: USERS.annMembership, membership_type: 'ADMIN' });
+    expect((await list(`?user_id=${USERS.felix}`)).items).toEqual([
+      expect.objectContaining({
+        id: USERS.felixMembership,
+        primary_branch_id: IDS.westlands,
+        primary_branch_name: 'Westlands Branch',
+      }),
+    ]);
 
-    // Newest first across the whole directory.
+    // Newest first across the whole directory; the seeds share a creation time, so by id.
     const everyone = await list('');
     expect(everyone.items.map((item) => item.user_id)).toEqual([
+      IDS.jane,
       USERS.joann,
       USERS.ann,
       USERS.wanjiru,
@@ -110,7 +132,6 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       USERS.brian,
       USERS.amina,
       USERS.victor,
-      IDS.jane,
     ]);
 
     const suspended = await list('?membership_status=SUSPENDED');
@@ -118,10 +139,28 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
     const auditors = await list('?membership_type=AUDITOR');
     expect(auditors.items.map((item) => item.user_id)).toEqual([USERS.wanjiru]);
 
-    // `sort_*` is accepted and ignored (contract §E.3): same rows, same order, never a 500.
-    const sorted = await get('/tenant/memberships?sort_by=bogus&sort_dir=ASC');
-    expect(sorted.status()).toBe(200);
-    expect((await read<Paged<MembershipSummary>>(sorted)).items).toEqual(everyone.items);
+    // The sort is honoured (BG-26): ascending by type, the id breaking ties, highest first.
+    const byType = await list('?sort_by=membershipType&sort_dir=ASC');
+    expect(byType.items.map((item) => item.membership_type)).toEqual([
+      'ADMIN',
+      'ADMIN',
+      'ADMIN',
+      'AUDITOR',
+      ...Array<string>(9).fill('STAFF'),
+    ]);
+    expect(byType.items.slice(0, 3).map((item) => item.user_id)).toEqual([
+      IDS.jane,
+      USERS.ann,
+      USERS.victor,
+    ]);
+    // A `sort_dir` alone changes nothing; an unknown field is a 400 naming the field.
+    expect((await list('?sort_dir=ASC')).items).toEqual(everyone.items);
+    const bogus = await get('/tenant/memberships?sort_by=bogus');
+    expect(bogus.status()).toBe(400);
+    expect(await read<ProblemBody>(bogus)).toMatchObject({
+      code: 'invalid_parameter',
+      violations: [{ field: 'sort_by' }],
+    });
   });
 
   test('treats % and _ in q as wildcards (contract §A)', async ({ request }) => {
@@ -534,30 +573,64 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
     });
   });
 
-  test('pads users-many-assignments past the scan ceiling', async ({ request }) => {
-    const page = async (scenario: ScenarioName, number: number) =>
+  test("pages users-many-assignments: Felix's twelve, newest assigned first, names embedded", async ({
+    request,
+  }) => {
+    const { get } = await signIn(request, 'users-many-assignments');
+    const page = async (query: string) =>
       read<Paged<AssignmentRow>>(
-        await (
-          await signIn(request, scenario)
-        ).get(
-          `/tenant/branch-assignments?user_id=${USERS.felix}&status=ACTIVE&page=${String(number)}&size=100`,
-        ),
+        await get(`/tenant/branch-assignments?user_id=${USERS.felix}&status=ACTIVE${query}`),
       );
 
-    // The scan reads five pages of 100: the fifth still has more, so it is truncated.
-    const last = await page('users-many-assignments', 4);
-    expect(last.page).toMatchObject({ number: 4, has_next: true });
-    expect(last.items).toHaveLength(100);
-    // Felix's own row is on the first page, inside the ceiling.
-    const first = await page('users-many-assignments', 0);
-    expect(first.items.find((row) => row.user_id === USERS.felix)).toMatchObject({
-      id: '10000000-0000-4000-8000-000000000207',
-      branch_id: IDS.westlands,
+    const first = await page('&page=0&size=10');
+    expect(first.page).toMatchObject({ total_items: 12, total_pages: 2, has_next: true });
+    expect(first.items[0]).toEqual({
+      id: 'a1600000-0000-4000-8000-000000000061',
+      user_id: USERS.felix,
+      branch_id: 'a1600000-0000-4000-8000-000000000011',
+      assignment_type: 'OPERATE',
+      status: 'ACTIVE',
+      username: 'felix.omondi',
+      display_name: 'Felix Omondi',
+      branch_name: 'Outpost 11',
+      assigned_at: '2026-10-11T08:00:00Z',
     });
-    // The control: without the padding, the same page is past the end.
-    const plain = await page('users', 4);
-    expect(plain.page.has_next).toBe(false);
-    expect(plain.items).toEqual([]);
+    // His seeded Westlands Home, the oldest, ends the second page.
+    const second = await page('&page=1&size=10');
+    expect(second.items.map((row) => row.branch_name)).toEqual(['Outpost 01', 'Westlands Branch']);
+    expect(second.items[1]).toMatchObject({
+      id: '10000000-0000-4000-8000-000000000207',
+      assigned_at: '2026-07-01T08:00:00Z',
+    });
+    // Ascending when asked, with the same twelve.
+    const oldest = await page('&sort_by=assignedAt&sort_dir=ASC&size=1');
+    expect(oldest.items[0]?.branch_name).toBe('Westlands Branch');
+    // The control: without the outposts he holds one.
+    const plain = await read<Paged<AssignmentRow>>(
+      await (
+        await signIn(request)
+      ).get(`/tenant/branch-assignments?user_id=${USERS.felix}&status=ACTIVE`),
+    );
+    expect(plain.page.total_items).toBe(1);
+  });
+
+  test('sorts branch assignments only by the fields the platform allows', async ({ request }) => {
+    const { get } = await signIn(request);
+    const bogus = await get(`/tenant/branch-assignments?user_id=${USERS.felix}&sort_by=bogus`);
+    expect(bogus.status()).toBe(400);
+    expect(await read<ProblemBody>(bogus)).toMatchObject({
+      code: 'invalid_parameter',
+      violations: [{ field: 'sort_by' }],
+    });
+    await expectProblem(
+      await get(`/tenant/branch-assignments?sort_dir=sideways`),
+      400,
+      'invalid_parameter',
+    );
+    // Each allowed field answers.
+    for (const field of ['assignedAt', 'assignmentType', 'status']) {
+      expect((await get(`/tenant/branch-assignments?sort_by=${field}`)).status(), field).toBe(200);
+    }
   });
 
   test('reads memberships in a branch context too, and searches assignments by user (BG-03)', async ({

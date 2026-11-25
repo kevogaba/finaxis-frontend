@@ -301,7 +301,39 @@ test.describe('fake API branches (contract §E.3–§E.4)', () => {
       api(`/tenant/branch-assignments/${BRANCH_SCENARIO_IDS.peterAtWestlands}`),
       { headers },
     );
-    expect(await revoked.json()).toMatchObject({ status: 'REVOKED' });
+    expect(revoked.status()).toBe(200);
+    // The platform answers with the row read back, BranchAssignmentDetailResponse (contract §E.3).
+    const detail = (await revoked.json()) as Record<string, unknown>;
+    expect(Object.keys(detail).sort()).toEqual(
+      [
+        'id',
+        'organisation_id',
+        'user_id',
+        'branch_id',
+        'assignment_type',
+        'status',
+        'assigned_at',
+        'assigned_by',
+        'revoked_at',
+        'revoked_by',
+        'created_at',
+        'updated_at',
+        'username',
+        'display_name',
+        'branch_name',
+      ].sort(),
+    );
+    expect(detail).toMatchObject({
+      id: BRANCH_SCENARIO_IDS.peterAtWestlands,
+      organisation_id: IDS.greenfield,
+      user_id: BRANCH_SCENARIO_IDS.peter,
+      branch_id: IDS.westlands,
+      status: 'REVOKED',
+      revoked_by: IDS.jane,
+      branch_name: 'Westlands Branch',
+    });
+    expect(Date.parse(String(detail.revoked_at))).not.toBeNaN();
+    expect(detail.updated_at).toBe(detail.revoked_at);
   });
 
   test('answers an off-list branch sort_by as a 400, including names every object inherits', async ({

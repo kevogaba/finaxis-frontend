@@ -125,12 +125,11 @@ export const BRANCH_REQUEST = 'Branch activation: a submitted branch';
 export const REQUEST_DESCRIPTION = 'Who asked, and when. The full history is in the audit trail.';
 export const CHECKS_DESCRIPTION =
   "What the platform requires before it approves or activates. A check this page can't read is left to the platform.";
-export const MEMBERSHIP_NOT_FOUND = "Their membership couldn't be found";
 export const READ_FAILED = "Couldn't be loaded";
 
-/** One page of role assignments: a pending user holds a handful (Ruling 8, AGENTS.md's seventh
- * paging exception). */
-export const REQUESTED_ROLES_CEILING = 100;
+/** One page of role assignments and one of branch assignments: a pending user holds a handful
+ * (Ruling 8, AGENTS.md's seventh paging exception). */
+export const REQUESTED_ACCESS_CEILING = 100;
 export const REQUESTED_ACCESS_DESCRIPTION =
   'The access they get once approved: their roles and branches were assigned when they were invited.';
 export const ROLES_NOT_PERMITTED = "Your role can't view role assignments.";
@@ -141,7 +140,8 @@ export const NO_ACTIVE_ROLE = 'They hold no active role.';
 export const NO_ACTIVE_ROLE_SEEN =
   'No active role was found among the role assignments this page could check.';
 export const NO_ACTIVE_BRANCH = 'They hold no active branch assignment.';
-// A branch-scoped view narrows the scan and a capped scan hides rows: neither can say "none" (rule 9).
+// A branch-scoped view sees only its branches' rows: it can't say "none" (rule 9).
 export const NO_ACTIVE_BRANCH_SEEN =
   'No active branch assignment was found among those this page could check.';
-export const ROLES_CAPPED = `Only the first ${REQUESTED_ROLES_CEILING} role assignments are shown. Their record lists them all.`;
+export const ROLES_CAPPED = `Only the first ${REQUESTED_ACCESS_CEILING} role assignments are shown. Their record lists them all.`;
+export const BRANCHES_CAPPED = `Only the first ${REQUESTED_ACCESS_CEILING} branch assignments are shown. Their record lists them all.`;

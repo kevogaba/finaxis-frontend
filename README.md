@@ -467,8 +467,9 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     branch grants no branch-scoped permission (platform #242), so the queue, the bell and the
     approval page are for tenant-wide holders only. The queue gates on `branch.approve`, which
     replaced the deprecated `branch.activate` (V21).
-  - The requested roles show one page of 100 and say so when there are more; branch assignments
-    come from the bounded scan (BG-09). The bell has no push updates (BG-22).
+  - The requested roles and branch assignments show one page of 100 each and say so when there
+    are more; the membership is read by the id the user read carries (BG-09). The bell has no push
+    updates (BG-22).
 - Business date (`/admin/business-date`, `modules/administration/business-date/`) reads
   `GET /tenant/business-date` and `GET /tenant/business-date/history` and renders the current date,
   status, and a paginated history table, plus an app-bar chip (spec §8) linking back to the page.
@@ -537,9 +538,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   - The directory's Type filter offers only the two platform types (`HEAD_OFFICE`, `OPERATIONS`);
     a tenant-defined type filters only through a hand-edited `?type=` URL.
   - The toolbar search commits on Enter or blur, not as you type.
-  - The Users tab resolves each visible assignment's user name with its own read, since the
-    contract's assignment rows carry no name; the platform's rows now do (`docs/backend-gaps.md`
-    BG-09).
+  - The Users tab reads each visible assignment's user for the name and email: the platform's
+    assignment rows now embed the name, but not the email (`docs/backend-gaps.md` BG-09).
 - Roles & permissions (`/admin/roles`, `modules/administration/roles/`) lists roles from
   `GET /tenant/roles`: code/name search, status and system/custom filters, and sortable
   Role/Code/Status headers. It creates and edits custom roles and activates or deactivates them.
@@ -591,8 +591,8 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   from `GET /tenant/users` (search, user status and membership status filters; newest first,
   no sort) and opens a record with the membership lifecycle (approve, reject and revoke,
   suspend, reactivate, revoke) and Overview, Roles & access, Branch assignments and Audit tabs.
-  The Audit tab offers up to four views: User record, Account, Membership (once the membership
-  is found) and Performed by. "Invite user" (`/admin/users/new`) is a four-step wizard
+  The Audit tab offers four views: User record, Account, Membership (by the id the user read
+  carries) and Performed by. "Invite user" (`/admin/users/new`) is a four-step wizard
   (Identity, Access, Invitation, Review), open to a holder of `user.invite`, `membership.view` and
   `user.view` institution-wide, and of `user.assign_branch`, `branch_assignment.view`, `role.view`
   and `branch.view`; it posts one invitation, which a different
@@ -600,13 +600,14 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
   no readable id). Known limits:
   - The directory shows only what user summaries carry, and the onboarding state is derived
     from the membership and user statuses (`docs/backend-gaps.md` BG-09, BG-11).
-  - A user's membership is found by searching memberships for their email (at most 5 pages of
-    100 matches) and matching the user id exactly; their branch assignments come from a scan of
-    at most 500 active assignments, marked partial when it stops early (with or without a
-    selected branch), and only the selected branch shows while one is selected (BG-09, BG-03).
-    Assign branch offers the first 100 active branches (only the selected one while a branch is
-    selected). Assign role offers the active roles among the first 500 by name (the role index's
-    ceiling) and says so under the Role field when there are more (BG-09).
+  - A user's membership is read by the id the user read carries, with `membership.view` held
+    institution-wide, as the platform checks it (BG-33), and the Branch assignments tab pages
+    their active assignments on the platform, newest assigned first, each naming its branch
+    (BG-09); a branch-scoped `branch_assignment.view` sees only its branches, whichever branch is
+    selected (All branches too), and says so (BG-03). Assign branch offers the first 100 active
+    branches to a tenant-wide grant, and the branches a branch-scoped grant is held at otherwise.
+    Assign role offers the active roles among the first 500 by name (the role index's ceiling)
+    and says so under the Role field when there are more (BG-09).
   - Approve is disabled, with the reason, for the user's inviter (the record's `created_by`)
     while maker-checker for user invitations is known to be on, and for a blocked account, and
     withheld once approval ran; with the switch off it stays enabled under a warning (BG-08).
@@ -618,19 +619,18 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     assignment from the Branch assignments tab shows no self warning (layer 08's
     `RevokeAssignmentButton` has no `self` prop, unlike the Roles & access revoke); at the
     selected branch it invalidates your context, and the next request goes to context selection.
-  - A branch-scoped role offers only branches the user is assigned to; a partial scan that found
-    none says so instead of claiming none. When a capped scan did find one of their branches, the
-    One branch choice lists only the branches it found, so others beyond the first 500 may be
-    missing and nothing says so (`RoleScopeFields` shows its hint only while no branch is
-    offered). Role assignment changes are audited per assignment and branch assignment changes on
+  - A branch-scoped role offers only branches the user is assigned to, from one page of 100 of
+    their assignments, and says so when there are more: a page that held none of their branches
+    says so under the Scope field instead of claiming none, and one that held some offers those
+    and says "Only the first 100 of their branch assignments are offered." under the Branch
+    field. Role assignment changes are audited per assignment and branch assignment changes on
     the branch, so the Audit tab, which doesn't use the platform's `subject_user_id` filter yet,
     can't show them (BG-16).
   - A count or list that couldn't be read says so rather than vanishing or reading as none: the
     Overview's role and branch counts show `Couldn't be loaded` (with the request reference) and
-    leave a row out only when you may not read it; a capped scan that found nothing reads
-    `None found (partial)`; the Branch assignments empty state names what could not be seen (a
-    selected branch, a capped scan); and an empty role index (a failed read) reads "Roles couldn't
-    be loaded", not "no active roles".
+    leave a row out only when you may not read it; the Branch assignments empty state names what
+    could not be seen (the branches a branch-scoped view can't see); and an empty role index (a
+    failed read) reads "Roles couldn't be loaded", not "no active roles".
   - No phone, member number, last activity, MFA or profile edit. The platform now has the member
     number, a membership edit and, in the platform context only, the phone and last sign-in
     (BG-17).

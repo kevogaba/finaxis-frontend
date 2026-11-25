@@ -117,12 +117,16 @@ describe('RoleScopeFields', () => {
     );
   });
 
-  it('shows no hint while a branch is offered', () => {
+  // While branches are on offer the hint is the capped-read note (`roleScopeHint`): it is the
+  // Branch field's, so the Scope field keeps its own help.
+  const CAPPED = 'Only the first 100 of their branch assignments are offered.';
+
+  it('keeps the Scope field to its own help while a branch is offered', () => {
     renderWithProviders(
       <form>
         <RoleScopeFields
           branches={[{ id: WESTLANDS, label: 'Westlands Branch (WESTLANDS)' }]}
-          branchHint="Assign them to a branch first to give a branch-scoped role."
+          branchHint={CAPPED}
           fieldErrors={{}}
         />
       </form>,
@@ -130,16 +134,16 @@ describe('RoleScopeFields', () => {
 
     const scope = screen.getByRole('combobox', { name: 'Scope' });
     expect(scope).toHaveAccessibleDescription('Applies at every branch and at institution level.');
-    expect(screen.queryByText(/Assign them to a branch first/)).toBeNull();
+    expect(screen.queryByText(CAPPED)).toBeNull();
   });
 
-  it('keeps the branch-scope help, not the hint, once one branch is chosen', async () => {
+  it('says, under the Branch field and associated to it, when the branches offered may be only some', async () => {
     const user = userEvent.setup();
     renderWithProviders(
       <form>
         <RoleScopeFields
           branches={[{ id: WESTLANDS, label: 'Westlands Branch (WESTLANDS)' }]}
-          branchHint="Assign them to a branch first to give a branch-scoped role."
+          branchHint={CAPPED}
           fieldErrors={{}}
         />
       </form>,
@@ -150,6 +154,40 @@ describe('RoleScopeFields', () => {
     expect(screen.getByRole('combobox', { name: 'Scope' })).toHaveAccessibleDescription(
       'Applies at that branch only, while it is active. The user must already be assigned to it.',
     );
+    expect(screen.getByRole('combobox', { name: 'Branch' })).toHaveAccessibleDescription(CAPPED);
+  });
+
+  it('gives the Branch field no description without a hint, and a field error over the hint', async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderWithProviders(
+      <form>
+        <RoleScopeFields
+          branches={[{ id: WESTLANDS, label: 'Westlands Branch (WESTLANDS)' }]}
+          fieldErrors={{}}
+        />
+      </form>,
+    );
+
+    await user.click(screen.getByRole('combobox', { name: 'Scope' }));
+    await user.click(screen.getByRole('option', { name: 'One branch' }));
+    expect(screen.getByRole('combobox', { name: 'Branch' })).toHaveAccessibleDescription('');
+    unmount();
+
+    renderWithProviders(
+      <form>
+        <RoleScopeFields
+          branches={[{ id: WESTLANDS, label: 'Westlands Branch (WESTLANDS)' }]}
+          branchHint={CAPPED}
+          fieldErrors={{ branchId: 'Choose a branch.' }}
+          institution={false}
+        />
+      </form>,
+    );
+
+    expect(screen.getByRole('combobox', { name: 'Branch' })).toHaveAccessibleDescription(
+      'Choose a branch.',
+    );
+    expect(screen.queryByText(CAPPED)).toBeNull();
   });
 });
 

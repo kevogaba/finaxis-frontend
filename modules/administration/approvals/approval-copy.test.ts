@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   APPROVED_TOAST,
   approvalOutcome,
+  BRANCHES_CAPPED,
   decisionCopy,
-  REQUESTED_ROLES_CEILING,
+  REQUESTED_ACCESS_CEILING,
   ROLES_CAPPED,
 } from './approval-copy';
 
@@ -66,10 +67,13 @@ describe('the pages’ copy', () => {
     expect(new Set(Object.values(APPROVED_TOAST)).size).toBe(3);
   });
 
-  it('names the roles ceiling in its note', () => {
-    expect(REQUESTED_ROLES_CEILING).toBe(100);
+  it('names the ceiling in the roles’ and the branches’ notes', () => {
+    expect(REQUESTED_ACCESS_CEILING).toBe(100);
     expect(ROLES_CAPPED).toBe(
       'Only the first 100 role assignments are shown. Their record lists them all.',
+    );
+    expect(BRANCHES_CAPPED).toBe(
+      'Only the first 100 branch assignments are shown. Their record lists them all.',
     );
   });
 });

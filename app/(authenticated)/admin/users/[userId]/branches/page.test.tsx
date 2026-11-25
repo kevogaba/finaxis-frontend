@@ -4,11 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
 import type { UserBranchAssignmentsTable } from '@/modules/administration/users/components/user-branch-assignments-table';
-import {
-  OWN_ACCESS,
-  PARTIAL_SCAN_NOTE,
-  SCOPED_ASSIGNMENTS_NOTE,
-} from '@/modules/administration/users/user-rules';
+import { OWN_ACCESS, SCOPED_ASSIGNMENTS_NOTE } from '@/modules/administration/users/user-rules';
 import { SCOPED_BRANCHES_NOTE } from '@/modules/administration/branches/branch-rules';
 import { resolvedStyle } from '@/test/resolved-style';
 import { renderWithProviders } from '@/test/test-utils';
@@ -52,6 +48,8 @@ vi.mock('@/auth/context-service', () => ({
 }));
 vi.mock('@/lib/api/lookups', () => ({
   getBranchIndex: () => getBranchIndex() as unknown,
+  // Not the runner's zone (Africa/Nairobi), so only the organisation's can produce these times.
+  getOrganisationTimeZone: () => Promise.resolve('Asia/Kolkata'),
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
   getUser: (...args: unknown[]) => getUser(...args) as unknown,
@@ -64,8 +62,7 @@ vi.mock('@/modules/administration/branches/branch-actions', () => ({
   assignBranchUser: vi.fn(),
   revokeBranchAssignment: vi.fn(),
 }));
-// The real table, recording the rows the page hands it: a full tie in the sort is invisible in the
-// rendered cells.
+// The real table, recording the rows the page hands it, in order.
 vi.mock(
   '@/modules/administration/users/components/user-branch-assignments-table',
   async (importOriginal) => {
@@ -107,8 +104,12 @@ const TRUNCATED_NOTE = 'Only the first 100 active branches are listed.';
 const NO_ROWS = 'This user has no branch assignments.';
 const OFFER = 'Assign a branch so they can work there.';
 const OTHER_BRANCHES = "They may be assigned to branches you can't view.";
-const BEYOND_CEILING =
-  'Only the first 500 branch assignments were checked, so they may be assigned beyond them.';
+/** The names the platform embeds in each assignment (BG-09). */
+const NAMES: Record<string, string> = {
+  [HEAD_OFFICE]: 'Head Office',
+  [WESTLANDS]: 'Westlands Branch',
+  [KISUMU]: 'Kisumu',
+};
 /** Every code tenant-wide but these, held only through BRANCH grants (BG-33), at `heldAt`. */
 const scopedTo = (...codes: string[]) => ALL_CODES.filter((code) => !codes.includes(code));
 
@@ -116,6 +117,8 @@ interface Row {
   id: string;
   branchId: string;
   assignmentType: string;
+  branchName: string;
+  assignedAt: string;
 }
 interface Setup {
   permissions?: string[];
@@ -123,11 +126,14 @@ interface Setup {
   tenantWide?: string[];
   /** Where the others are held (BRANCH scopes' `branch_ids`); defaults to the selected branch. */
   heldAt?: string[];
+  /** Codes held only through BRANCH grants at `heldAt` that the selected context doesn't hold: in
+   * `/auth/me`'s scopes, not its `permissions`. */
+  elsewhere?: string[];
   selectedBranch?: { id: string; name: string } | null;
   membershipStatus?: string;
+  /** Every ACTIVE assignment of theirs, in the platform's order; the mock pages them. */
   rows?: Row[];
-  truncated?: boolean;
-  scanError?: Error;
+  rowsError?: Error;
   userError?: Error;
   activeBranches?: { id: string; branchName: string; branchCode: string }[];
   activeHasNext?: boolean;
@@ -143,10 +149,10 @@ function setup({
   tenantWide = permissions,
   selectedBranch = null,
   heldAt = selectedBranch ? [selectedBranch.id] : [],
+  elsewhere = [],
   membershipStatus = 'ACTIVE',
   rows = [],
-  truncated = false,
-  scanError,
+  rowsError,
   userError,
   activeBranches = [
     { id: HEAD_OFFICE, branchName: 'Head Office', branchCode: 'HEAD_OFFICE' },
@@ -165,11 +171,14 @@ function setup({
     kind: 'resolved',
     profile: {
       permissions,
-      permission_scopes: permissions.map((code) =>
-        tenantWide.includes(code)
-          ? { code, scope: 'TENANT' }
-          : { code, scope: 'BRANCH', branch_ids: heldAt },
-      ),
+      permission_scopes: [
+        ...permissions.map((code) =>
+          tenantWide.includes(code)
+            ? { code, scope: 'TENANT' }
+            : { code, scope: 'BRANCH', branch_ids: heldAt },
+        ),
+        ...elsewhere.map((code) => ({ code, scope: 'BRANCH', branch_ids: heldAt })),
+      ],
       user_id: signedInAs,
       branches: [],
     },
@@ -177,8 +186,24 @@ function setup({
   });
   if (userError) getUser.mockRejectedValue(userError);
   else getUser.mockResolvedValue({ id: FELIX, displayName: 'Felix Omondi', membershipStatus });
-  if (scanError) listUserBranchAssignments.mockRejectedValue(scanError);
-  else listUserBranchAssignments.mockResolvedValue({ items: rows, truncated });
+  if (rowsError) listUserBranchAssignments.mockRejectedValue(rowsError);
+  else {
+    // The platform pages them (BG-09): the page the URL asked for, past the end empty.
+    listUserBranchAssignments.mockImplementation(
+      (_userId: string, { page, size }: { page: number; size: number }) =>
+        Promise.resolve({
+          items: rows.slice(page * size, (page + 1) * size),
+          page: {
+            number: page,
+            size,
+            totalItems: rows.length,
+            totalPages: Math.ceil(rows.length / size),
+            hasNext: (page + 1) * size < rows.length,
+            hasPrevious: page > 0,
+          },
+        }),
+    );
+  }
   if (activeError) listBranches.mockRejectedValue(activeError);
   else {
     listBranches.mockResolvedValue({
@@ -200,6 +225,8 @@ const row = (n: number, branchId: string, assignmentType: string): Row => ({
   id: `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
   branchId,
   assignmentType,
+  branchName: NAMES[branchId] ?? 'Unnamed',
+  assignedAt: '2026-11-02T07:30:00Z',
 });
 
 type Query = Record<string, string | undefined>;
@@ -240,11 +267,11 @@ const noteOf = (text: string): HTMLElement => {
   return note;
 };
 const dataRows = () => within(screen.getByRole('table')).getAllByRole('row').slice(1);
-/** The Branch and Assignment type cells of a data row (the Actions cell only holds the revoke). */
+/** The Branch, Assignment type and Assigned cells of a data row (Actions only holds the revoke). */
 const cellText = (tr: HTMLElement) =>
   within(tr)
     .getAllByRole('cell')
-    .slice(0, 2)
+    .slice(0, 3)
     .map((cell) => cell.textContent);
 
 async function openDrawer() {
@@ -285,7 +312,7 @@ describe('UserBranchesPage: the record id', () => {
 
     // Positive control for the cases above: a valid id does read, and the page renders.
     expect(getUser).toHaveBeenCalledWith(FELIX);
-    expect(listUserBranchAssignments).toHaveBeenCalledWith(FELIX);
+    expect(listUserBranchAssignments).toHaveBeenCalledWith(FELIX, { page: 0, size: 10 });
     expect(screen.getByRole('table', { name: 'Branch assignments' })).toBeInTheDocument();
   });
 
@@ -311,57 +338,38 @@ describe('UserBranchesPage: landmarks', () => {
 });
 
 describe('UserBranchesPage: the rows', () => {
-  it('sorts by branch name, then assignment type, naming an unknown branch by its short id', async () => {
-    setup({
-      rows: [
-        row(5, WESTLANDS, 'HOME'),
-        row(4, HEAD_OFFICE, 'VIEW'),
-        row(3, HEAD_OFFICE, 'HOME'),
-        row(2, UNKNOWN_BRANCH, 'OPERATE'),
-        row(1, KISUMU, 'APPROVE'),
-      ],
-    });
+  // BG-09: the platform sorts (newest assigned first) and pages; the rows carry their branch names.
+  it("lists the platform's page in its order, with the embedded names and dates", async () => {
+    const rows = [
+      { ...row(5, WESTLANDS, 'HOME'), assignedAt: '2026-11-15T03:35:00Z' },
+      row(4, HEAD_OFFICE, 'VIEW'),
+      { ...row(2, UNKNOWN_BRANCH, 'OPERATE'), branchName: 'Mombasa Road' },
+    ];
+    setup({ rows });
 
     await show();
 
     expect(dataRows().map(cellText)).toEqual([
-      // An unknown branch shows its short id and no code; digits sort before letters.
-      ['99999999', 'Operate'],
-      ['Head OfficeHEAD_OFFICE', 'Home'],
-      ['Head OfficeHEAD_OFFICE', 'View'],
-      ['KisumuKISUMU', 'Approve'],
-      ['Westlands BranchWESTLANDS', 'Home'],
+      // Five and a half hours ahead of UTC: the organisation's zone, not the runner's.
+      ['Westlands Branch', 'Home', '15 Nov 2026 · 09:05'],
+      ['Head Office', 'View', '02 Nov 2026 · 13:00'],
+      // A branch no index holds is named by its assignment all the same.
+      ['Mombasa Road', 'Operate', '02 Nov 2026 · 13:00'],
     ]);
+    expect(tableRows.at(-1)?.map((r) => r.assignmentId)).toEqual(rows.map((r) => r.id));
+    expect(screen.getByRole('columnheader', { name: 'Assigned (Asia/Kolkata)' })).toBeVisible();
   });
 
-  it('orders one branch by assignment type even when the assignment ids say otherwise', async () => {
-    setup({
-      rows: [
-        row(1, HEAD_OFFICE, 'VIEW'),
-        row(2, HEAD_OFFICE, 'HOME'),
-        row(3, HEAD_OFFICE, 'APPROVE'),
-      ],
-    });
+  it('reads no branch index for a tenant-wide grant: the rows name their branches', async () => {
+    setup({ rows: [row(1, WESTLANDS, 'HOME')] });
 
     await show();
 
-    expect(dataRows().map((tr) => cellText(tr)[1])).toEqual(['Approve', 'Home', 'View']);
+    expect(screen.getByRole('table')).toHaveTextContent('Westlands Branch');
+    expect(getBranchIndex).not.toHaveBeenCalled();
   });
 
-  it('breaks a full tie by assignment id, so the scan order never moves a row between pages', async () => {
-    const [a, b, c] = [
-      row(7, HEAD_OFFICE, 'HOME'),
-      row(8, HEAD_OFFICE, 'HOME'),
-      row(9, HEAD_OFFICE, 'HOME'),
-    ];
-    setup({ rows: [c, a, b] });
-
-    await show();
-
-    expect(tableRows.at(-1)?.map((r) => r.assignmentId)).toEqual([a.id, b.id, c.id]);
-  });
-
-  it('pages the sorted rows by the URL: page 2 of 25 holds the last 5', async () => {
+  it('reads the page the URL asks for: page 2 of 25 holds the last 5', async () => {
     setup({
       rows: Array.from({ length: 25 }, (_, n) =>
         row(n + 1, n % 2 === 0 ? HEAD_OFFICE : WESTLANDS, n < 12 ? 'HOME' : 'OPERATE'),
@@ -370,6 +378,7 @@ describe('UserBranchesPage: the rows', () => {
 
     await show(FELIX, { page: '2' });
 
+    expect(listUserBranchAssignments).toHaveBeenCalledWith(FELIX, { page: 2, size: 10 });
     expect(dataRows()).toHaveLength(5);
     expect(screen.getByText('21–25 of 25')).toBeInTheDocument();
     // An in-range page is not redirected.
@@ -381,6 +390,7 @@ describe('UserBranchesPage: the rows', () => {
 
     await show(FELIX, { size: '20' });
 
+    expect(listUserBranchAssignments).toHaveBeenCalledWith(FELIX, { page: 0, size: 20 });
     expect(dataRows()).toHaveLength(20);
     expect(screen.getByText('1–20 of 25')).toBeInTheDocument();
   });
@@ -416,8 +426,8 @@ describe('UserBranchesPage: the rows', () => {
     expect(screen.getByText('No branch assignments')).toBeInTheDocument();
   });
 
-  it('shows the forbidden state for a 403 scan, and still offers the assignment', async () => {
-    setup({ scanError: new BackendApiError(403, { code: 'forbidden' }) });
+  it('shows the forbidden state for a 403 read, and still offers the assignment', async () => {
+    setup({ rowsError: new BackendApiError(403, { code: 'forbidden' }) });
 
     await show();
 
@@ -427,8 +437,8 @@ describe('UserBranchesPage: the rows', () => {
     expect(screen.getByRole('button', { name: 'Assign branch' })).toBeInTheDocument();
   });
 
-  it('shows the error state, with its reference, for any other scan failure', async () => {
-    setup({ scanError: new BackendApiError(500, { requestId: 'req-1' }) });
+  it('shows the error state, with its reference, for any other read failure', async () => {
+    setup({ rowsError: new BackendApiError(500, { requestId: 'req-1' }) });
 
     await show();
 
@@ -511,9 +521,10 @@ describe('UserBranchesPage: the rows', () => {
 
     await show();
 
+    // In the platform's order, as listed.
     expect(screen.getAllByRole('button', { name: /^Revoke/ })).toEqual([
-      screen.getByRole('button', { name: /View assignment at Kisumu$/ }),
       screen.getByRole('button', { name: /Home assignment at Westlands Branch$/ }),
+      screen.getByRole('button', { name: /View assignment at Kisumu$/ }),
     ]);
   });
 
@@ -531,7 +542,7 @@ describe('UserBranchesPage: the rows', () => {
 });
 
 describe('UserBranchesPage: what the list says about itself', () => {
-  it('shows no note for a tenant-wide view when the scan was complete, whichever branch is selected', async () => {
+  it('shows no note for a tenant-wide view, whichever branch is selected', async () => {
     setup({
       rows: [row(1, WESTLANDS, 'HOME')],
       selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
@@ -543,49 +554,40 @@ describe('UserBranchesPage: what the list says about itself', () => {
     expect(alerts()).toHaveLength(0);
   });
 
-  it('shows only the partial-scan note when the scan was capped, even with no row', async () => {
-    setup({ rows: [], truncated: true });
-
-    await show();
-
-    expect(alerts().map((alert) => alert.textContent)).toEqual([PARTIAL_SCAN_NOTE]);
-    // Not "No branch assignments": under a note saying the list may be incomplete, that is a guess.
-    expect(emptyState().title).toBe('No branch assignments found');
-  });
-
   // BG-03: a search by user lists only the branches a branch-scoped view covers.
-  it('says a branch-scoped view sees only its branches, then the partial-scan note', async () => {
-    setup({ tenantWide: scopedTo('branch_assignment.view'), truncated: true });
+  it('says a branch-scoped view sees only its branches, as a note, not an alert (2)', async () => {
+    setup({ tenantWide: scopedTo('branch_assignment.view'), rows: [row(1, HEAD_OFFICE, 'HOME')] });
 
     await show();
 
-    expect(alerts()).toHaveLength(2);
-    const scoped = noteOf(SCOPED_ASSIGNMENTS_NOTE);
-    const partial = noteOf(PARTIAL_SCAN_NOTE);
-    expect(scoped.compareDocumentPosition(partial) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it('marks both static notes as notes, not alerts, so a screen reader is not interrupted on every visit (2)', async () => {
-    setup({ tenantWide: scopedTo('branch_assignment.view'), truncated: true });
-
-    await show();
-
-    expect(alerts()).toHaveLength(2);
-    for (const alert of alerts()) expect(alert).toHaveAttribute('role', 'note');
+    expect(alerts().map((alert) => alert.textContent)).toEqual([SCOPED_ASSIGNMENTS_NOTE]);
+    expect(noteOf(SCOPED_ASSIGNMENTS_NOTE)).toHaveAttribute('role', 'note');
     expect(screen.queryAllByRole('alert')).toHaveLength(0);
-    expect(screen.getAllByRole('note')).toHaveLength(2);
   });
 
-  it('leaves room under the last note, so it does not touch the table header (M2)', async () => {
+  // BG-03: the search by user answers a branch grant at All branches too, which the layout's tab
+  // offers it (`canAnywhere`).
+  it('lists a branch grant’s rows at All branches, under the same note', async () => {
     setup({
-      tenantWide: scopedTo('branch_assignment.view'),
-      truncated: true,
+      permissions: scopedTo('branch_assignment.view'),
+      elsewhere: ['branch_assignment.view'],
+      heldAt: [HEAD_OFFICE],
       rows: [row(1, HEAD_OFFICE, 'HOME')],
     });
 
     await show();
 
-    // Three steps of the theme's spacing under the notes, as above them. jsdom 31 resolves the
+    expect(listUserBranchAssignments).toHaveBeenCalledTimes(1);
+    expect(within(screen.getByRole('table')).getByText('Head Office')).toBeInTheDocument();
+    expect(alerts().map((alert) => alert.textContent)).toEqual([SCOPED_ASSIGNMENTS_NOTE]);
+  });
+
+  it('leaves room under the note, so it does not touch the table header (M2)', async () => {
+    setup({ tenantWide: scopedTo('branch_assignment.view'), rows: [row(1, HEAD_OFFICE, 'HOME')] });
+
+    await show();
+
+    // Three steps of the theme's spacing under the note, as above it. jsdom 31 resolves the
     // computed padding, so compare it with what three steps resolve to.
     const step3 = resolvedStyle('paddingTop', 'calc(3 * var(--finaxis-spacing))');
     const notes = alerts()[0]?.parentElement;
@@ -596,7 +598,7 @@ describe('UserBranchesPage: what the list says about itself', () => {
 });
 
 describe('UserBranchesPage: the empty state says only what could be seen (1c)', () => {
-  it('claims no assignments only when the whole list was visible: a tenant-wide view, scan complete', async () => {
+  it('claims no assignments only when the whole list was visible: a tenant-wide view', async () => {
     setup({ selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' } });
 
     await show();
@@ -625,35 +627,8 @@ describe('UserBranchesPage: the empty state says only what could be seen (1c)', 
     expect(screen.queryByText('No branch assignments')).toBeNull();
   });
 
-  it('says a capped scan found none, and that they may be beyond what was checked', async () => {
-    setup({ truncated: true });
-
-    await show();
-
-    expect(emptyState()).toEqual({
-      title: 'No branch assignments found',
-      description: `${BEYOND_CEILING} ${OFFER}`,
-    });
-    expect(screen.queryByText(NO_ROWS)).toBeNull();
-  });
-
-  it('keeps the offer out of a capped scan when nothing can be assigned', async () => {
-    setup({ truncated: true, membershipStatus: 'REVOKED' });
-
-    await show();
-
-    expect(emptyState()).toEqual({
-      title: 'No branch assignments found',
-      description: BEYOND_CEILING,
-    });
-  });
-
   it('shows no empty state at all while a row is listed (the control for the cases above)', async () => {
-    setup({
-      tenantWide: scopedTo('branch_assignment.view'),
-      truncated: true,
-      rows: [row(1, HEAD_OFFICE, 'HOME')],
-    });
+    setup({ tenantWide: scopedTo('branch_assignment.view'), rows: [row(1, HEAD_OFFICE, 'HOME')] });
 
     await show();
 
@@ -717,8 +692,11 @@ describe('UserBranchesPage: assigning a branch', () => {
     expect(branch).toHaveAccessibleDescription(TRUNCATED_NOTE);
   });
 
-  it("takes that note from the branch read, never from the scan's own ceiling", async () => {
-    setup({ activeHasNext: false, truncated: true });
+  it("takes that note from the branch read, never from the assignments' own paging", async () => {
+    setup({
+      activeHasNext: false,
+      rows: Array.from({ length: 25 }, (_, n) => row(n + 1, HEAD_OFFICE, 'HOME')),
+    });
     await show();
 
     const { branch } = await openDrawer();
@@ -815,11 +793,11 @@ describe('UserBranchesPage: assigning a branch', () => {
     },
   );
 
-  // Without the view the platform refuses the scan, too.
+  // Without the view the platform refuses the read, too.
   it('offers no assignment, and reads no branch list, with no branch_assignment.view', async () => {
     setup({
       permissions: ALL_CODES.filter((c) => c !== 'branch_assignment.view'),
-      scanError: new BackendApiError(403, { code: 'forbidden' }),
+      rowsError: new BackendApiError(403, { code: 'forbidden' }),
     });
 
     await show();

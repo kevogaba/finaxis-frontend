@@ -9,7 +9,7 @@ import {
 } from '@/auth/permissions';
 import { withViews } from '@/auth/permission-views';
 import { humanizeEnum, type StatusTone } from '@/components/data-display/status-chip';
-import { UUID_PATTERN, type Page } from '@/lib/api/wire';
+import { UUID_PATTERN } from '@/lib/api/wire';
 import type { MakerGate } from '@/modules/administration/approvals/maker-checker';
 import type { MembershipStatus, UserStatus } from './user-contract';
 
@@ -209,10 +209,6 @@ export const USERS_BRANCH_SCOPED =
   'Your role lets you view users at a branch only. Seeing everyone in this institution needs that permission for the whole institution. Ask an administrator if you need access.';
 export const NO_MEMBERSHIP_VIEW =
   "Membership actions need permission to view memberships, which your role doesn't include.";
-export const MEMBERSHIP_MISSING =
-  "This user's membership couldn't be found, so its actions aren't available.";
-export const MEMBERSHIP_UNAVAILABLE =
-  "This user's membership couldn't be loaded, so its actions aren't available. Refresh to try again.";
 export const OWN_MEMBERSHIP =
   "You can't suspend or revoke your own membership. Ask another administrator.";
 export const USER_MAKER_CHECKER_BLOCKED =
@@ -254,19 +250,12 @@ export function blockedMembershipActions(
   return blocked;
 }
 
-/** The email lookup's outcome (Ruling 7): a miss within the ceiling isn't a failure. */
-export type MembershipLookup = 'found' | 'missing' | 'failed';
-
 /** Why the hero has no actions the holder's codes suggest; null when nothing needs saying
- * (including for a holder with no lifecycle code at all). */
-export function membershipActionsNote(
-  holder: PermissionHolder,
-  lookup: MembershipLookup,
-): string | null {
+ * (including for a holder with no lifecycle code at all). The user read carries the membership's id
+ * (BG-09), so the actions never wait on a lookup. */
+export function membershipActionsNote(holder: PermissionHolder): string | null {
   if (!canAny(holder, LIFECYCLE_CODES)) return null;
-  if (!can(holder, 'membership.view')) return NO_MEMBERSHIP_VIEW;
-  if (lookup === 'missing') return MEMBERSHIP_MISSING;
-  return lookup === 'failed' ? MEMBERSHIP_UNAVAILABLE : null;
+  return can(holder, 'membership.view') ? null : NO_MEMBERSHIP_VIEW;
 }
 
 export const OWN_ACCESS = "You can't add to your own access. A tenant administrator can.";
@@ -301,11 +290,10 @@ export function canAssignUserBranch(
   );
 }
 
-/** The most rows a scan reads: memberships can't be filtered by user (BG-09), and a user's branch
- * assignments, searched by `user_id` (BG-03), come a page at a time, so a scan pages through at
- * most this many. Client-safe, so the copy that names the ceiling and the service that enforces it
- * (`SCAN_PAGES` in user-service.ts) can't drift apart. */
-export const SCAN_CEILING = 500;
+/** The Assign-role drawer's branch scopes come from one page of the user's ACTIVE branch
+ * assignments, the platform's largest (AGENTS.md's fifth paging exception); past it the hint says
+ * so. Client-safe, so the copy that names it and the page that reads it can't drift apart. */
+export const ROLE_SCOPE_ASSIGNMENTS_PAGE = 100;
 
 export const ACCESS_DESCRIPTION =
   'Roles this user holds. Institution scope applies everywhere; branch scope only while that branch is selected.';
@@ -325,7 +313,6 @@ export function rolesCappedHint(ceiling: number): string {
 export function rolesCappedNoneActive(ceiling: number): string {
   return `None of the first ${ceiling} roles by name is active, and roles after that can't be assigned from this page.`;
 }
-export const PARTIAL_SCAN_NOTE = `This list may be incomplete: only the first ${SCAN_CEILING} of this user's branch assignments were read.`;
 
 /** BG-03: a branch assignment search by user lists every branch to a tenant-wide
  * `branch_assignment.view`, and only the ACTIVE branches a branch-scoped grant covers otherwise,
@@ -355,9 +342,10 @@ export function roleScopeBranches(
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** Why "One branch" is disabled, or undefined while a branch is on offer. `truncated` is the scan's
- * ceiling flag: a user held outside the window looks unassigned, so the hint says the scan was
- * partial instead of claiming they have no branch (Ruling 8). */
+/** Why "One branch" is disabled; while a branch is on offer, that the offer may be only some of
+ * them, or undefined when it is all of them. `truncated`: their assignments ran past the one page
+ * read (`ROLE_SCOPE_ASSIGNMENTS_PAGE`), so a branch held after it looks unassigned and the hint says
+ * so instead of claiming they have none, or that the branches offered are all theirs (Ruling 8). */
 export function roleScopeHint(input: {
   readable: boolean;
   offered: number;
@@ -365,7 +353,11 @@ export function roleScopeHint(input: {
   /** The holder assigns roles at some branches only (not tenant-wide). */
   someBranches: boolean;
 }): string | undefined {
-  if (input.offered > 0) return undefined;
+  if (input.offered > 0) {
+    return input.truncated
+      ? `Only the first ${ROLE_SCOPE_ASSIGNMENTS_PAGE} of their branch assignments are offered.`
+      : undefined;
+  }
   if (!input.readable) {
     return input.someBranches
       ? "Their branch assignments can't be read here, so no branch can be offered."
@@ -373,8 +365,8 @@ export function roleScopeHint(input: {
   }
   if (input.truncated) {
     return input.someBranches
-      ? `Only the first ${SCAN_CEILING} of their branch assignments were checked, and none was at a branch where you can assign roles.`
-      : `Only the first ${SCAN_CEILING} of their branch assignments were checked, so only institution scope is offered here.`;
+      ? `Only the first ${ROLE_SCOPE_ASSIGNMENTS_PAGE} of their branch assignments were checked, and none was at a branch where you can assign roles.`
+      : `Only the first ${ROLE_SCOPE_ASSIGNMENTS_PAGE} of their branch assignments were checked, so only institution scope is offered here.`;
   }
   if (input.someBranches) {
     return "They aren't assigned to a branch where you can assign roles. Assign them to one first to give a branch-scoped role.";
@@ -382,65 +374,32 @@ export function roleScopeHint(input: {
   return 'Assign them to a branch first to give a branch-scoped role.';
 }
 
-/** `scoped`: the caller views only some branches' assignments (`scopedAssignmentView`). */
-export function branchAssignmentCount(count: number, truncated: boolean, scoped: boolean): string {
-  const where = scoped ? ' at branches you can view' : '';
-  if (!truncated) return `${count}${where}`;
-  return count === 0 ? `None found${where} (partial)` : `At least ${count}${where} (partial)`;
+/** `scoped`: the caller views only some branches' assignments (`scopedAssignmentView`), so the
+ * count is theirs, never the institution's. */
+export function branchAssignmentCount(count: number, scoped: boolean): string {
+  return scoped ? `${count} at branches you can view` : String(count);
 }
 
-/** The Branch assignments tab's empty state. "No branch assignments" is a fact only when everything
- * could be seen: a branch-scoped view sees only its branches (BG-03), and a capped scan hides the
- * rows past its ceiling (Ruling 8). A capped scan wins the title, since "No assignment at" would be
- * a guess there too. */
+/** The Branch assignments tab's empty state. "No branch assignments" is a fact only when every
+ * branch could be seen: a branch-scoped view sees only its branches (BG-03). */
 export function branchAssignmentsEmptyState(input: {
   scoped: boolean;
-  truncated: boolean;
   /** An Assign branch button is on the tab. */
   assignOffered: boolean;
 }): { title: string; description: string } {
-  const { scoped, truncated, assignOffered } = input;
   const offer = 'Assign a branch so they can work there.';
-  if (!scoped && !truncated) {
+  if (!input.scoped) {
     return {
       title: 'No branch assignments',
-      description: assignOffered ? offer : 'This user has no branch assignments.',
+      description: input.assignOffered ? offer : 'This user has no branch assignments.',
     };
   }
-  const description: string[] = [];
-  if (truncated) {
-    description.push(
-      `Only the first ${SCAN_CEILING} branch assignments were checked, so they may be assigned beyond them.`,
-    );
-  }
-  if (scoped) description.push("They may be assigned to branches you can't view.");
-  if (assignOffered) description.push(offer);
   return {
-    title:
-      scoped && !truncated
-        ? 'No assignment at branches you can view'
-        : 'No branch assignments found',
-    description: description.join(' '),
-  };
-}
-
-/** Server-side paging of a bounded, already filtered list (the scan's rows for one user), so the
- * URL holds page and size like every other list (AGENTS.md). */
-export function pageOfItems<T>(
-  items: readonly T[],
-  paging: { page: number; size: number },
-): Page<T> {
-  const start = paging.page * paging.size;
-  return {
-    items: items.slice(start, start + paging.size),
-    page: {
-      number: paging.page,
-      size: paging.size,
-      totalItems: items.length,
-      totalPages: Math.ceil(items.length / paging.size),
-      hasNext: start + paging.size < items.length,
-      hasPrevious: paging.page > 0,
-    },
+    title: 'No assignment at branches you can view',
+    description: [
+      "They may be assigned to branches you can't view.",
+      ...(input.assignOffered ? [offer] : []),
+    ].join(' '),
   };
 }
 

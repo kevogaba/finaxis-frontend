@@ -277,6 +277,7 @@ function invite(state: RunState, access: AccessContext, input: Invitation) {
       branchId: row.branchId,
       type: row.type,
       status: 'ACTIVE',
+      assignedAt: now,
     });
   }
   for (const row of input.roles) {

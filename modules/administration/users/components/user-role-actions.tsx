@@ -20,7 +20,8 @@ interface AssignUserRoleButtonProps {
   roleHint?: string;
   /** The branches a BRANCH-scope role may name: the ones the user is already assigned to. */
   branches: readonly SelectOption[];
-  /** Why no branch is offered, when none is (shown under the Scope field). */
+  /** Why no branch is offered, when none is (shown under the Scope field), or that the branches
+   * offered may be only some of theirs (shown under the Branch field). */
   branchHint?: string;
   /** See `RoleScopeFields`. */
   institution?: boolean;

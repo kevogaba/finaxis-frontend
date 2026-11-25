@@ -5,21 +5,19 @@ import { permissionScopes } from '@/test/permission-scopes';
 import { renderWithProviders } from '@/test/test-utils';
 
 const {
+  countUserBranchAssignments,
   countUserRoleAssignments,
-  findUserMembership,
   getBranchIndex,
   getCurrentContextProfile,
   getMembership,
   getUser,
-  listUserBranchAssignments,
 } = vi.hoisted(() => ({
+  countUserBranchAssignments: vi.fn(),
   countUserRoleAssignments: vi.fn(),
-  findUserMembership: vi.fn(),
   getBranchIndex: vi.fn(),
   getCurrentContextProfile: vi.fn(),
   getMembership: vi.fn(),
   getUser: vi.fn(),
-  listUserBranchAssignments: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
@@ -39,11 +37,11 @@ vi.mock('@/lib/api/lookups', () => ({
   getBranchIndex: () => getBranchIndex() as unknown,
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
+  countUserBranchAssignments: (...args: unknown[]) =>
+    countUserBranchAssignments(...args) as unknown,
   countUserRoleAssignments: (...args: unknown[]) => countUserRoleAssignments(...args) as unknown,
-  findUserMembership: (...args: unknown[]) => findUserMembership(...args) as unknown,
   getMembership: (...args: unknown[]) => getMembership(...args) as unknown,
   getUser: (...args: unknown[]) => getUser(...args) as unknown,
-  listUserBranchAssignments: (...args: unknown[]) => listUserBranchAssignments(...args) as unknown,
 }));
 
 const { default: UserOverviewPage } = await import('./page');
@@ -60,20 +58,18 @@ interface Setup {
   permissions?: string[];
   /** Of `permissions`, the ones held only at one branch (BG-33). */
   branchOnly?: string[];
+  /** Codes held only at a branch that isn't selected (All branches, say): in `/auth/me`'s scopes,
+   * not its `permissions`. */
+  elsewhere?: string[];
   selectedBranch?: { id: string; name: string } | null;
   membershipStatus?: string;
   userStatus?: string;
-  /** What the membership lookup settles with; an Error rejects it. */
-  membership?: { id: string } | null | Error;
-  /** What the membership detail read settles with; an Error rejects it. */
+  /** What the membership read (by the user read's id) settles with; an Error rejects it. */
   detail?: Record<string, unknown> | Error;
   /** The role count read: the count, or an Error that rejects it. */
   roleCount?: number | Error;
-  /** The branch scan: how many of the user's rows it found, and whether it hit its ceiling. */
-  scanRows?: number;
-  truncated?: boolean;
-  /** An Error rejects the branch scan instead. */
-  scanError?: Error;
+  /** The branch count read (`size=1`'s total): the count, or an Error that rejects it. */
+  branchCount?: number | Error;
 }
 
 const DETAIL = {
@@ -89,19 +85,23 @@ const DETAIL = {
 function setup({
   permissions = ALL_CODES,
   branchOnly = [],
+  elsewhere = [],
   selectedBranch = null,
   membershipStatus = 'ACTIVE',
   userStatus = 'ACTIVE',
-  membership = { id: MEMBERSHIP },
   detail = DETAIL,
   roleCount = 2,
-  scanRows = 3,
-  truncated = false,
-  scanError,
+  branchCount = 3,
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions, permission_scopes: permissionScopes(permissions, branchOnly) },
+    profile: {
+      permissions,
+      permission_scopes: [
+        ...permissionScopes(permissions, branchOnly),
+        ...permissionScopes(elsewhere, elsewhere),
+      ],
+    },
     context: { organization: { id: 'org-1', name: 'Greenfield' }, branch: selectedBranch },
   });
   getUser.mockResolvedValue({
@@ -111,20 +111,14 @@ function setup({
     displayName: 'Felix Omondi',
     membershipStatus,
     userStatus,
+    membershipId: MEMBERSHIP,
   });
-  if (membership instanceof Error) findUserMembership.mockRejectedValue(membership);
-  else findUserMembership.mockResolvedValue(membership);
   if (detail instanceof Error) getMembership.mockRejectedValue(detail);
   else getMembership.mockResolvedValue(detail);
   if (roleCount instanceof Error) countUserRoleAssignments.mockRejectedValue(roleCount);
   else countUserRoleAssignments.mockResolvedValue(roleCount);
-  if (scanError) listUserBranchAssignments.mockRejectedValue(scanError);
-  else {
-    listUserBranchAssignments.mockResolvedValue({
-      items: Array.from({ length: scanRows }, (_, n) => ({ id: `row-${n}` })),
-      truncated,
-    });
-  }
+  if (branchCount instanceof Error) countUserBranchAssignments.mockRejectedValue(branchCount);
+  else countUserBranchAssignments.mockResolvedValue(branchCount);
   getBranchIndex.mockResolvedValue(
     new Map([[WESTLANDS, { name: 'Westlands Branch', code: 'WESTLANDS' }]]),
   );
@@ -157,7 +151,7 @@ describe('UserOverviewPage: the record', () => {
     getUser.mockRejectedValue(new BackendApiError(404, { code: 'resource_not_found' }));
 
     expect(await UserOverviewPage({ params: Promise.resolve({ userId: FELIX }) })).toBeNull();
-    expect(findUserMembership).not.toHaveBeenCalled();
+    expect(getMembership).not.toHaveBeenCalled();
   });
 });
 
@@ -237,28 +231,27 @@ describe('UserOverviewPage: the profile', () => {
 });
 
 describe('UserOverviewPage: the branch assignment count', () => {
-  it('is the number of rows found at institution level', async () => {
-    setup({ scanRows: 3 });
+  // BG-09: one `size=1` read by user, whose total is the count: no scan, so never partial.
+  it("is the read's total at institution level", async () => {
+    setup({ branchCount: 3 });
 
     await show();
 
-    expect(listUserBranchAssignments).toHaveBeenCalledWith(FELIX);
+    expect(countUserBranchAssignments).toHaveBeenCalledWith(FELIX);
     expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(/^3$/);
   });
 
-  it('says it is partial when the scan hit its ceiling, never a bare count', async () => {
-    setup({ scanRows: 3, truncated: true });
+  it('shows a user with no branch as a count of 0', async () => {
+    setup({ branchCount: 0 });
 
     await show();
 
-    expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(
-      /^At least 3 \(partial\)$/,
-    );
+    expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(/^0$/);
   });
 
   // BG-03: a search by user ignores the selected branch.
   it('counts every branch for a tenant-wide view, whichever branch is selected', async () => {
-    setup({ scanRows: 2, selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' } });
+    setup({ branchCount: 2, selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' } });
 
     await show();
 
@@ -266,7 +259,7 @@ describe('UserOverviewPage: the branch assignment count', () => {
   });
 
   it('says a branch-scoped view counts only the branches it covers', async () => {
-    setup({ scanRows: 2, branchOnly: ['branch_assignment.view'] });
+    setup({ branchCount: 2, branchOnly: ['branch_assignment.view'] });
 
     await show();
 
@@ -275,55 +268,49 @@ describe('UserOverviewPage: the branch assignment count', () => {
     );
   });
 
-  it('says none were found, and that it is partial, for a branch-scoped view too (never "0 at" or "At least 0")', async () => {
-    setup({ scanRows: 0, truncated: true, branchOnly: ['branch_assignment.view'] });
+  // BG-03: the search by user answers with every branch a grant covers, at All branches too.
+  it('counts a branch-scoped view held at a branch that is not selected, saying so', async () => {
+    setup({
+      permissions: without('branch_assignment.view'),
+      elsewhere: ['branch_assignment.view'],
+      branchCount: 1,
+    });
 
     await show();
 
+    expect(countUserBranchAssignments).toHaveBeenCalledWith(FELIX);
     expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(
-      /^None found at branches you can view \(partial\)$/,
-    );
-    expect(screen.queryByText(/^0 at/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/at least 0/i)).not.toBeInTheDocument();
-  });
-
-  it('says none were found, and that it is partial, at institution level when a capped scan found nothing', async () => {
-    setup({ scanRows: 0, truncated: true });
-
-    await show();
-
-    expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(
-      /^None found \(partial\)$/,
+      /^1 at branches you can view$/,
     );
   });
 
-  it("keeps the row and says the count couldn't be loaded when the scan failed (1a)", async () => {
-    setup({ scanError: new BackendApiError(500, { requestId: 'req-scan' }) });
+  it("keeps the row and says the count couldn't be loaded when its read failed (1a)", async () => {
+    setup({ branchCount: new BackendApiError(500, { requestId: 'req-branches' }) });
 
     await show();
 
     const value = fact(card('Profile'), 'Branch assignments');
     expect(value).toHaveTextContent(/^Couldn't be loaded/);
-    expect(within(value).getByText('Reference: req-scan')).toBeInTheDocument();
-    expect(value).not.toHaveTextContent(/^\d|partial/);
+    expect(within(value).getByText('Reference: req-branches')).toBeInTheDocument();
+    expect(value).not.toHaveTextContent(/^\d/);
   });
 
-  it('shows a failed scan on the row even when it is a 403, since the holder has the code', async () => {
-    setup({ scanError: new BackendApiError(403, { code: 'forbidden' }) });
+  it('shows a failed read on the row even when it is a 403, since the holder has the code', async () => {
+    setup({ branchCount: new BackendApiError(403, { code: 'forbidden' }) });
 
     await show();
 
     expect(fact(card('Profile'), 'Branch assignments')).toHaveTextContent(/^Couldn't be loaded/);
   });
 
-  it('is shown only with branch_assignment.view, and the scan is read only then', async () => {
+  it('is shown only with branch_assignment.view, and read only then', async () => {
     setup({ permissions: without('branch_assignment.view') });
 
     await show();
 
     expect(hasFact(card('Profile'), 'User status')).toBe(true); // it did render
     expect(hasFact(card('Profile'), 'Branch assignments')).toBe(false);
-    expect(listUserBranchAssignments).not.toHaveBeenCalled();
+    expect(countUserBranchAssignments).not.toHaveBeenCalled();
   });
 });
 
@@ -333,7 +320,7 @@ describe('UserOverviewPage: the membership card', () => {
 
     await show();
 
-    expect(findUserMembership).toHaveBeenCalledWith(FELIX, EMAIL);
+    // BG-09: by the id the user read carries, with no search.
     expect(getMembership).toHaveBeenCalledWith(MEMBERSHIP);
     expect(fact(card('Membership'), 'Membership type')).toHaveTextContent(/^Staff$/);
     expect(fact(card('Membership'), 'Membership status')).toHaveTextContent(/^Active$/);
@@ -378,43 +365,34 @@ describe('UserOverviewPage: the membership card', () => {
         "You can't view membership details in your current role.",
       ),
     ).toBeInTheDocument();
-    expect(findUserMembership).not.toHaveBeenCalled();
     expect(getMembership).not.toHaveBeenCalled();
   });
 
-  it('says the membership could not be found, and reads no detail, when the lookup finds none', async () => {
-    setup({ membership: null });
+  // BG-33: the platform checks the membership read tenant-wide, so a branch grant would be a 403.
+  it('says so, and reads nothing, for membership.view held only at the selected branch', async () => {
+    setup({
+      branchOnly: ['membership.view'],
+      selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' },
+    });
 
     await show();
 
-    const membership = card('Membership');
     expect(
-      within(membership).getByText("This user's membership couldn't be found."),
+      within(card('Membership')).getByText(
+        "You can't view membership details in your current role.",
+      ),
     ).toBeInTheDocument();
-    expect(within(membership).queryByText('Something went wrong')).not.toBeInTheDocument();
     expect(getMembership).not.toHaveBeenCalled();
   });
 
-  it('shows the failure, with its reference, when the lookup fails', async () => {
-    setup({ membership: new BackendApiError(500, { requestId: 'req-1' }) });
-
-    await show();
-
-    const membership = card('Membership');
-    expect(within(membership).getByText('Something went wrong')).toBeInTheDocument();
-    expect(within(membership).getByText('Reference: req-1')).toBeInTheDocument();
-    expect(within(membership).queryByText(/couldn't be found/)).not.toBeInTheDocument();
-    expect(getMembership).not.toHaveBeenCalled();
-  });
-
-  it('shows the failure, with its reference, when the membership detail fails', async () => {
+  it('shows the failure, with its reference, when the membership read fails', async () => {
     setup({ detail: new BackendApiError(500, { requestId: 'req-2' }) });
 
     await show();
 
     const membership = card('Membership');
+    expect(within(membership).getByText('Something went wrong')).toBeInTheDocument();
     expect(within(membership).getByText('Reference: req-2')).toBeInTheDocument();
-    expect(within(membership).queryByText(/couldn't be found/)).not.toBeInTheDocument();
     expect(hasFact(card('Membership'), 'Membership type')).toBe(false);
   });
 });

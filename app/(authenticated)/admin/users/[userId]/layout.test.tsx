@@ -6,8 +6,6 @@ import { BackendApiError } from '@/auth/backend-api';
 import { SELF_APPROVAL_NOTE_USERS } from '@/modules/administration/approvals/maker-checker';
 import {
   accountBlockedNote,
-  MEMBERSHIP_MISSING,
-  MEMBERSHIP_UNAVAILABLE,
   NO_MEMBERSHIP_VIEW,
   OWN_MEMBERSHIP,
   USER_MAKER_CHECKER_BLOCKED,
@@ -22,22 +20,16 @@ const CONTEXT_NOT_SELECTED = {
   reason: 'invalid-context',
 } satisfies SelectedContextProfile;
 
-const {
-  findUserMembership,
-  getCurrentContextProfile,
-  getUser,
-  readMakerCheckerSwitch,
-  redirect,
-  router,
-} = vi.hoisted(() => ({
-  findUserMembership: vi.fn(),
-  getCurrentContextProfile: vi.fn(),
-  getUser: vi.fn(),
-  readMakerCheckerSwitch: vi.fn(),
-  redirect: vi.fn(),
-  // One stable router object, as in table-pagination-bar.test.tsx.
-  router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
-}));
+const { getCurrentContextProfile, getUser, readMakerCheckerSwitch, redirect, router } = vi.hoisted(
+  () => ({
+    getCurrentContextProfile: vi.fn(),
+    getUser: vi.fn(),
+    readMakerCheckerSwitch: vi.fn(),
+    redirect: vi.fn(),
+    // One stable router object, as in table-pagination-bar.test.tsx.
+    router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
+  }),
+);
 
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 vi.mock('next/navigation', async (importOriginal) => ({
@@ -54,7 +46,6 @@ vi.mock('@/auth/context-service', () => ({
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
   getUser: (...args: unknown[]) => getUser(...args) as unknown,
-  findUserMembership: (...args: unknown[]) => findUserMembership(...args) as unknown,
 }));
 vi.mock('@/modules/administration/settings/settings-service', () => ({
   readMakerCheckerSwitch: (...args: unknown[]) => readMakerCheckerSwitch(...args) as unknown,
@@ -89,12 +80,13 @@ const without = (...codes: string[]) => ALL_CODES.filter((code) => !codes.includ
 
 interface Setup {
   permissions?: string[];
+  /** Codes held only at a branch, which All branches doesn't select: in `/auth/me`'s scopes, not its
+   * `permissions`. */
+  elsewhere?: string[];
   /** The signed-in user's own id, as `/auth/me` reports it. */
   signedInAs?: string;
   membershipStatus?: string;
   userStatus?: string;
-  /** What the membership lookup settles with; an Error rejects it. */
-  membership?: { id: string } | null | Error;
   /** The record's inviter id (`created_by`, BG-08); null for the system, or someone hidden. */
   inviter?: string | null;
   /** `require_maker_checker_for_user_invites`, as the reader answers it. */
@@ -104,16 +96,23 @@ interface Setup {
 /** Programs every service the layout reads. A test names only what it varies. */
 function setup({
   permissions = ALL_CODES,
+  elsewhere = [],
   signedInAs = ME,
   membershipStatus = 'ACTIVE',
   userStatus = 'ACTIVE',
-  membership = { id: MEMBERSHIP },
   inviter = null,
   switchState = 'on',
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions, permission_scopes: permissionScopes(permissions), user_id: signedInAs },
+    profile: {
+      permissions,
+      permission_scopes: [
+        ...permissionScopes(permissions),
+        ...permissionScopes(elsewhere, elsewhere),
+      ],
+      user_id: signedInAs,
+    },
     context: { organization: { id: ORG, name: 'Greenfield' }, branch: null },
   });
   getUser.mockResolvedValue({
@@ -123,10 +122,9 @@ function setup({
     displayName: 'Felix Omondi',
     membershipStatus,
     userStatus,
+    membershipId: MEMBERSHIP,
     createdBy: inviter === null ? null : { id: inviter, displayName: null },
   });
-  if (membership instanceof Error) findUserMembership.mockRejectedValue(membership);
-  else findUserMembership.mockResolvedValue(membership);
   readMakerCheckerSwitch.mockResolvedValue(switchState);
 }
 
@@ -270,6 +268,18 @@ describe('UserRecordLayout: the tabs', () => {
     expect(tabNames()[0]).toBe('Overview');
   });
 
+  // BG-03: the search by user answers with every branch a grant covers, at All branches too.
+  it('offers Branch assignments at All branches to a view held only through a branch grant', async () => {
+    setup({
+      permissions: without('branch_assignment.view'),
+      elsewhere: ['branch_assignment.view'],
+    });
+
+    await show();
+
+    expect(tabNames()).toEqual(['Overview', 'Roles & access', 'Branch assignments', 'Audit']);
+  });
+
   it('offers the Overview alone when the context did not resolve', async () => {
     setup();
     getCurrentContextProfile.mockResolvedValue(CONTEXT_NOT_SELECTED);
@@ -281,15 +291,16 @@ describe('UserRecordLayout: the tabs', () => {
 });
 
 describe('UserRecordLayout: the membership actions', () => {
-  it("offers the membership's actions, found by the record's own id and email", async () => {
+  // BG-09: the user read carries the membership's id, so nothing is looked up.
+  it("offers the membership's actions by the id the user read carries", async () => {
     setup();
 
     await show();
 
-    expect(findUserMembership).toHaveBeenCalledWith(FELIX, 'felix.omondi@greenfield.example');
+    expect(getUser).toHaveBeenCalledTimes(1);
     expect(button('Suspend')).toBeEnabled();
     expect(button('Revoke')).toBeEnabled();
-    expect(screen.queryByText(MEMBERSHIP_MISSING)).not.toBeInTheDocument();
+    expect(screen.queryByText(NO_MEMBERSHIP_VIEW)).not.toBeInTheDocument();
   });
 
   it('carries the membership, the rendered organisation and a minted key into each dialog (rule 6)', async () => {
@@ -441,21 +452,6 @@ describe('UserRecordLayout: the membership actions', () => {
     expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
   });
 
-  it('reads no switch when no membership was found, since no action is on offer', async () => {
-    setup({
-      membershipStatus: 'PENDING_APPROVAL',
-      userStatus: 'DRAFT',
-      membership: null,
-      inviter: ME,
-    });
-
-    await show();
-
-    expect(screen.getByText(MEMBERSHIP_MISSING)).toBeInTheDocument(); // the lookup did run
-    expect(button('Approve')).not.toBeInTheDocument();
-    expect(readMakerCheckerSwitch).not.toHaveBeenCalled();
-  });
-
   it('withholds Approve for a user whose identity is being provisioned, and keeps Reject & revoke', async () => {
     setup({ membershipStatus: 'PENDING_APPROVAL', userStatus: 'PROVISIONING_IDP' });
 
@@ -474,39 +470,14 @@ describe('UserRecordLayout: the membership actions', () => {
     expect(button('Approve')).toHaveAccessibleDescription(accountBlockedNote('LOCKED'));
   });
 
-  it('says why there are no actions without membership.view, and looks nothing up', async () => {
+  it('says why there are no actions without membership.view', async () => {
     setup({ permissions: without('membership.view') });
 
     await show();
 
     expect(screen.getByText(NO_MEMBERSHIP_VIEW)).toBeInTheDocument();
-    expect(findUserMembership).not.toHaveBeenCalled();
     expect(button('Suspend')).not.toBeInTheDocument();
     expect(button('Revoke')).not.toBeInTheDocument();
-  });
-
-  it('says the membership was not found, and offers nothing, when the lookup finds none', async () => {
-    setup({ membership: null });
-
-    await show();
-
-    expect(screen.getByText(MEMBERSHIP_MISSING)).toBeInTheDocument();
-    expect(screen.queryByText(MEMBERSHIP_UNAVAILABLE)).not.toBeInTheDocument();
-    expect(button('Suspend')).not.toBeInTheDocument();
-    expect(button('Revoke')).not.toBeInTheDocument();
-  });
-
-  it('says the membership could not be loaded, and offers nothing, when the lookup fails', async () => {
-    setup({ membership: new BackendApiError(500, { requestId: 'req-2' }) });
-
-    await show();
-
-    expect(screen.getByText(MEMBERSHIP_UNAVAILABLE)).toBeInTheDocument();
-    expect(screen.queryByText(MEMBERSHIP_MISSING)).not.toBeInTheDocument();
-    expect(button('Suspend')).not.toBeInTheDocument();
-    expect(button('Revoke')).not.toBeInTheDocument();
-    // The hero itself still renders: the failure only degrades its actions.
-    expect(screen.getByRole('heading', { level: 1, name: 'Felix Omondi' })).toBeInTheDocument();
   });
 
   it('shows neither actions nor a note to a holder with no lifecycle code', async () => {
@@ -518,11 +489,8 @@ describe('UserRecordLayout: the membership actions', () => {
     await show();
 
     expect(screen.getByRole('heading', { level: 1, name: 'Felix Omondi' })).toBeInTheDocument();
-    expect(findUserMembership).toHaveBeenCalledTimes(1); // it was looked up and found
     expect(button('Suspend')).not.toBeInTheDocument();
     expect(button('Revoke')).not.toBeInTheDocument();
-    for (const note of [NO_MEMBERSHIP_VIEW, MEMBERSHIP_MISSING, MEMBERSHIP_UNAVAILABLE]) {
-      expect(screen.queryByText(note)).not.toBeInTheDocument();
-    }
+    expect(screen.queryByText(NO_MEMBERSHIP_VIEW)).not.toBeInTheDocument();
   });
 });

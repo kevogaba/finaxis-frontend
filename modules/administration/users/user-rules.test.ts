@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { lastPageIfPastEnd } from '@/lib/api/paging';
 import {
   MEMBERSHIP_STATUSES,
   USER_STATUSES,
@@ -8,16 +7,13 @@ import {
 } from './user-contract';
 import {
   ACCESS_DESCRIPTION,
-  MEMBERSHIP_MISSING,
-  MEMBERSHIP_UNAVAILABLE,
   NO_ACTIVE_ROLES,
   NO_MEMBERSHIP_VIEW,
   OWN_ACCESS,
   OWN_MEMBERSHIP,
-  PARTIAL_SCAN_NOTE,
   PROVISIONING_NOTE,
+  ROLE_SCOPE_ASSIGNMENTS_PAGE,
   ROLES_UNAVAILABLE,
-  SCAN_CEILING,
   SCOPED_ASSIGNMENTS_NOTE,
   USER_MAKER_CHECKER_BLOCKED,
   type MembershipAction,
@@ -33,7 +29,6 @@ import {
   onboardingProgress,
   onboardingState,
   ownAccessBlocked,
-  pageOfItems,
   parseUserId,
   roleScopeBranches,
   roleScopeHint,
@@ -482,24 +477,17 @@ describe('blockedMembershipActions', () => {
 
 describe('membershipActionsNote', () => {
   it('says nothing to a holder with no lifecycle code at all', () => {
-    for (const lookup of ['found', 'missing', 'failed'] as const) {
-      expect(membershipActionsNote({ permissions: [] }, lookup)).toBeNull();
-      expect(
-        membershipActionsNote({ permissions: ['membership.view', 'user.view'] }, lookup),
-      ).toBeNull();
-    }
+    expect(membershipActionsNote({ permissions: [] })).toBeNull();
+    expect(membershipActionsNote({ permissions: ['membership.view', 'user.view'] })).toBeNull();
   });
 
   it.each(LIFECYCLE)('tells %s without membership.view why nothing is offered', (code) => {
-    expect(membershipActionsNote({ permissions: [code] }, 'found')).toBe(NO_MEMBERSHIP_VIEW);
-    expect(membershipActionsNote({ permissions: [code] }, 'missing')).toBe(NO_MEMBERSHIP_VIEW);
+    expect(membershipActionsNote({ permissions: [code] })).toBe(NO_MEMBERSHIP_VIEW);
   });
 
-  it('explains a missing or failed membership once the holder can view memberships', () => {
-    const holder = { permissions: ['membership.view', 'user.approve'] };
-    expect(membershipActionsNote(holder, 'missing')).toBe(MEMBERSHIP_MISSING);
-    expect(membershipActionsNote(holder, 'failed')).toBe(MEMBERSHIP_UNAVAILABLE);
-    expect(membershipActionsNote(holder, 'found')).toBeNull();
+  // BG-09: the user read carries the membership's id, so there is no lookup to miss or fail.
+  it('says nothing once the holder can view memberships', () => {
+    expect(membershipActionsNote({ permissions: ['membership.view', 'user.approve'] })).toBeNull();
   });
 });
 
@@ -642,10 +630,6 @@ describe('copy constants', () => {
     expect(ROLES_UNAVAILABLE).toBe(
       "Roles couldn't be loaded, so none can be assigned right now. Refresh to try again.",
     );
-    // The scan searches by user_id (BG-03): the ceiling counts their own assignments.
-    expect(PARTIAL_SCAN_NOTE).toBe(
-      "This list may be incomplete: only the first 500 of this user's branch assignments were read.",
-    );
   });
 });
 
@@ -669,14 +653,12 @@ describe('the capped role catalogue copy', () => {
   });
 });
 
-describe('SCAN_CEILING', () => {
-  it('is 500, and the sentences that name the ceiling say whatever it is (A-m3)', () => {
-    expect(SCAN_CEILING).toBe(500);
-    const checked = `first ${SCAN_CEILING} of`;
-    expect(PARTIAL_SCAN_NOTE).toContain(checked);
+describe('ROLE_SCOPE_ASSIGNMENTS_PAGE', () => {
+  it('is the platform page maximum, and the hint that names it says whatever it is (A-m3)', () => {
+    expect(ROLE_SCOPE_ASSIGNMENTS_PAGE).toBe(100);
     expect(
       roleScopeHint({ readable: true, offered: 0, truncated: true, someBranches: true }),
-    ).toContain(checked);
+    ).toContain(`first ${ROLE_SCOPE_ASSIGNMENTS_PAGE} of`);
   });
 });
 
@@ -714,17 +696,23 @@ describe('roleScopeHint', () => {
   const UNREADABLE =
     "Their branch assignments can't be read here, so only institution scope is available.";
 
-  it('says nothing while a branch is on offer', () => {
+  it('says nothing while every branch of theirs is on offer', () => {
     expect(
       roleScopeHint({ readable: true, offered: 2, truncated: false, someBranches: false }),
     ).toBeUndefined();
     expect(
       roleScopeHint({ readable: false, offered: 1, truncated: false, someBranches: true }),
     ).toBeUndefined();
-    // A capped scan that still found a branch has nothing to explain: the branch is offered.
+  });
+
+  it('says the branches on offer may be only some when a capped page still held one (Ruling 8)', () => {
+    const CAPPED = 'Only the first 100 of their branch assignments are offered.';
     expect(
       roleScopeHint({ readable: true, offered: 1, truncated: true, someBranches: false }),
-    ).toBeUndefined();
+    ).toBe(CAPPED);
+    expect(roleScopeHint({ readable: true, offered: 3, truncated: true, someBranches: true })).toBe(
+      CAPPED,
+    );
   });
 
   it('explains an unreadable scan, and no assignment where the holder may assign', () => {
@@ -745,14 +733,14 @@ describe('roleScopeHint', () => {
     ).toBe('Assign them to a branch first to give a branch-scoped role.');
   });
 
-  it('says a capped scan is partial instead of claiming the user has no branch (Ruling 8)', () => {
+  it('says a capped page is partial instead of claiming the user has no branch (Ruling 8)', () => {
     expect(
       roleScopeHint({ readable: true, offered: 0, truncated: true, someBranches: false }),
     ).toBe(
-      'Only the first 500 of their branch assignments were checked, so only institution scope is offered here.',
+      'Only the first 100 of their branch assignments were checked, so only institution scope is offered here.',
     );
     expect(roleScopeHint({ readable: true, offered: 0, truncated: true, someBranches: true })).toBe(
-      'Only the first 500 of their branch assignments were checked, and none was at a branch where you can assign roles.',
+      'Only the first 100 of their branch assignments were checked, and none was at a branch where you can assign roles.',
     );
   });
 
@@ -764,34 +752,20 @@ describe('roleScopeHint', () => {
 });
 
 describe('branchAssignmentCount', () => {
-  it('counts exactly, flags a partial scan, and says when the view is branch-scoped', () => {
-    expect(branchAssignmentCount(2, false, false)).toBe('2');
-    expect(branchAssignmentCount(500, true, false)).toBe('At least 500 (partial)');
-    expect(branchAssignmentCount(1, false, true)).toBe('1 at branches you can view');
-    expect(branchAssignmentCount(3, true, true)).toBe(
-      'At least 3 at branches you can view (partial)',
-    );
-  });
-
-  it('says none were found, never "At least 0", when a capped scan found nothing', () => {
-    expect(branchAssignmentCount(0, true, true)).toBe(
-      'None found at branches you can view (partial)',
-    );
-    expect(branchAssignmentCount(0, true, false)).toBe('None found (partial)');
-    // A complete scan that found nothing is a fact, not a hedge.
-    expect(branchAssignmentCount(0, false, false)).toBe('0');
-    expect(branchAssignmentCount(0, false, true)).toBe('0 at branches you can view');
+  it("counts the read's total, and says when the view is branch-scoped", () => {
+    expect(branchAssignmentCount(2, false)).toBe('2');
+    expect(branchAssignmentCount(0, false)).toBe('0');
+    expect(branchAssignmentCount(1, true)).toBe('1 at branches you can view');
+    expect(branchAssignmentCount(0, true)).toBe('0 at branches you can view');
   });
 });
 
 describe('branchAssignmentsEmptyState', () => {
   const OFFER = 'Assign a branch so they can work there.';
   const OTHER = "They may be assigned to branches you can't view.";
-  const BEYOND =
-    'Only the first 500 branch assignments were checked, so they may be assigned beyond them.';
-  const base = { scoped: false, truncated: false, assignOffered: false };
+  const base = { scoped: false, assignOffered: false };
 
-  it('claims no assignments only when nothing was hidden (a tenant-wide view, scan complete)', () => {
+  it('claims no assignments only when nothing was hidden (a tenant-wide view)', () => {
     expect(branchAssignmentsEmptyState(base)).toEqual({
       title: 'No branch assignments',
       description: 'This user has no branch assignments.',
@@ -812,80 +786,6 @@ describe('branchAssignmentsEmptyState', () => {
       title: 'No assignment at branches you can view',
       description: `${OTHER} ${OFFER}`,
     });
-  });
-
-  it('says a capped scan found none and that they may be beyond what was checked', () => {
-    expect(branchAssignmentsEmptyState({ ...base, truncated: true })).toEqual({
-      title: 'No branch assignments found',
-      description: BEYOND,
-    });
-    expect(
-      branchAssignmentsEmptyState({ scoped: true, truncated: true, assignOffered: true }),
-    ).toEqual({
-      title: 'No branch assignments found',
-      description: `${BEYOND} ${OTHER} ${OFFER}`,
-    });
-  });
-});
-
-describe('pageOfItems', () => {
-  const items = Array.from({ length: 23 }, (_, index) => index);
-
-  it('slices the last page and describes it like a server page', () => {
-    expect(pageOfItems(items, { page: 2, size: 10 })).toEqual({
-      items: [20, 21, 22],
-      page: {
-        number: 2,
-        size: 10,
-        totalItems: 23,
-        totalPages: 3,
-        hasNext: false,
-        hasPrevious: true,
-      },
-    });
-  });
-
-  it('slices the first page and knows there is a next one', () => {
-    const first = pageOfItems(items, { page: 0, size: 10 });
-    expect(first.items).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    expect(first.page).toMatchObject({ hasNext: true, hasPrevious: false });
-  });
-
-  it('returns no items past the end, which lastPageIfPastEnd sends back to the last page', () => {
-    const past = pageOfItems(items, { page: 3, size: 10 });
-    expect(past.items).toEqual([]);
-    expect(past.page).toEqual({
-      number: 3,
-      size: 10,
-      totalItems: 23,
-      totalPages: 3,
-      hasNext: false,
-      hasPrevious: true,
-    });
-    expect(lastPageIfPastEnd(past.page)).toBe(2);
-  });
-
-  it('reports no pages for no items, and never asks for a redirect', () => {
-    const none = pageOfItems([], { page: 0, size: 10 });
-    expect(none.items).toEqual([]);
-    expect(none.page).toEqual({
-      number: 0,
-      size: 10,
-      totalItems: 0,
-      totalPages: 0,
-      hasNext: false,
-      hasPrevious: false,
-    });
-    expect(lastPageIfPastEnd(none.page)).toBeNull();
-  });
-
-  it('has no next page when the items fill the last page exactly', () => {
-    const exact = pageOfItems(
-      Array.from({ length: 20 }, (_, index) => index),
-      { page: 1, size: 10 },
-    );
-    expect(exact.page).toMatchObject({ totalPages: 2, hasNext: false, hasPrevious: true });
-    expect(exact.items).toHaveLength(10);
   });
 });
 

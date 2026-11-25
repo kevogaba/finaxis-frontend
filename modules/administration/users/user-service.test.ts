@@ -1,14 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ZodType } from 'zod';
 import { branchAssignmentPageSchema } from '@/modules/administration/branches/branch-contract';
-import {
-  membershipDetailSchema,
-  membershipPageSchema,
-  userPageSchema,
-  userSummarySchema,
-} from './user-contract';
+import { membershipDetailSchema, userPageSchema, userSummarySchema } from './user-contract';
 import { userListApiPath, type UserListQuery } from './user-query';
-import { SCAN_CEILING } from './user-rules';
 
 const { apiGet, listRoleAssignments } = vi.hoisted(() => ({
   apiGet: vi.fn<(path: string, schema: ZodType) => Promise<unknown>>(),
@@ -24,20 +18,8 @@ vi.mock('@/modules/administration/roles/role-service', () => ({
 const service = await import('./user-service');
 
 const ANN = '10000000-0000-4000-8000-00000000000a';
-const JOANN = '10000000-0000-4000-8000-00000000000b';
-const OTHER = '10000000-0000-4000-8000-00000000000c';
-const EMAIL = 'ann.mwangi@greenfield.example';
 const BRANCH = '44444444-4444-4444-8444-444444444444';
 const MEMBERSHIP_ID = '20000000-0000-4000-8000-000000000001';
-
-const membershipWire = (userId: string, id = MEMBERSHIP_ID) => ({
-  id,
-  user_id: userId,
-  membership_status: 'ACTIVE',
-  membership_type: 'STAFF',
-  primary_branch_id: BRANCH,
-  created_by: null,
-});
 
 const assignmentWire = (id: string, userId: string) => ({
   id,
@@ -45,23 +27,29 @@ const assignmentWire = (id: string, userId: string) => ({
   branch_id: BRANCH,
   assignment_type: 'HOME',
   status: 'ACTIVE',
+  username: 'ann.mwangi',
+  display_name: 'Ann Mwangi',
+  branch_name: 'Westlands Branch',
+  assigned_at: '2026-11-02T07:30:00Z',
 });
 
 /** One backend page, run through the schema the service handed `apiGet` (so a wire drift fails). */
-const page = (items: readonly unknown[], hasNext: boolean) => (_path: string, schema: ZodType) =>
-  Promise.resolve(
-    schema.parse({
-      items,
-      page: {
-        number: 0,
-        size: 100,
-        total_items: items.length,
-        total_pages: 1,
-        has_next: hasNext,
-        has_previous: false,
-      },
-    }),
-  );
+const page =
+  (items: readonly unknown[], hasNext: boolean, totalItems = items.length) =>
+  (_path: string, schema: ZodType) =>
+    Promise.resolve(
+      schema.parse({
+        items,
+        page: {
+          number: 0,
+          size: 100,
+          total_items: totalItems,
+          total_pages: 1,
+          has_next: hasNext,
+          has_previous: false,
+        },
+      }),
+    );
 
 describe('user service', () => {
   beforeEach(() => {
@@ -105,147 +93,60 @@ describe('user service', () => {
     });
   });
 
-  describe('findUserMembership', () => {
-    it('matches the membership by user id, never the first hit', async () => {
-      // q=ann.mwangi@… also matches joann.mwangi@… (a substring), and Joann comes first.
-      apiGet.mockImplementationOnce(
-        page(
-          [membershipWire(JOANN, '20000000-0000-4000-8000-000000000002'), membershipWire(ANN)],
-          false,
-        ),
-      );
-      const found = await service.findUserMembership(ANN, EMAIL);
-      expect(found?.userId).toBe(ANN);
-      expect(found?.id).toBe(MEMBERSHIP_ID);
-      expect(apiGet).toHaveBeenCalledWith(
-        '/api/v1/tenant/memberships?q=ann.mwangi%40greenfield.example&page=0&size=100',
-        membershipPageSchema,
-      );
-      expect(apiGet.mock.lastCall?.[1]).toBe(membershipPageSchema);
-    });
+  describe('listUserBranchAssignments', () => {
+    const A1 = '30000000-0000-4000-8000-000000000001';
 
-    it('keeps scanning while pages have more, and stops at the page that holds the user', async () => {
-      apiGet
-        .mockImplementationOnce(page([membershipWire(JOANN)], true))
-        .mockImplementationOnce(page([membershipWire(ANN)], true));
-      expect((await service.findUserMembership(ANN, EMAIL))?.userId).toBe(ANN);
-      expect(apiGet).toHaveBeenCalledTimes(2);
-      expect(apiGet.mock.lastCall?.[0]).toContain('page=1&size=100');
-    });
-
-    it('scans at most five pages of 100, then gives up with null', async () => {
-      apiGet.mockImplementation(page([membershipWire(JOANN)], true));
-      expect(await service.findUserMembership(ANN, EMAIL)).toBeNull();
-      expect(apiGet).toHaveBeenCalledTimes(5);
-      expect(apiGet.mock.lastCall?.[0]).toContain('page=4&size=100');
-    });
-
-    it('stops at the last page, with null', async () => {
-      apiGet.mockImplementationOnce(page([membershipWire(JOANN)], false));
-      expect(await service.findUserMembership(ANN, EMAIL)).toBeNull();
+    // BG-09: one page the platform sorts and pages, by user (BG-03: never a branch, so the selected
+    // one doesn't narrow it), with each branch's name embedded.
+    it("reads one page of the user's ACTIVE assignments, newest assigned first", async () => {
+      apiGet.mockImplementationOnce(page([assignmentWire(A1, ANN)], true, 12));
+      const result = await service.listUserBranchAssignments(ANN, { page: 1, size: 10 });
       expect(apiGet).toHaveBeenCalledTimes(1);
+      expect(apiGet).toHaveBeenCalledWith(
+        `/api/v1/tenant/branch-assignments?user_id=${ANN}&status=ACTIVE&sort_by=assignedAt&sort_dir=DESC&page=1&size=10`,
+        branchAssignmentPageSchema,
+      );
+      expect(apiGet.mock.lastCall?.[1]).toBe(branchAssignmentPageSchema);
+      expect(apiGet.mock.lastCall?.[0]).not.toContain('branch_id');
+      expect(result.items).toEqual([
+        {
+          id: A1,
+          userId: ANN,
+          branchId: BRANCH,
+          assignmentType: 'HOME',
+          status: 'ACTIVE',
+          branchName: 'Westlands Branch',
+          assignedAt: '2026-11-02T07:30:00Z',
+        },
+      ]);
+      expect(result.page).toMatchObject({ totalItems: 12, hasNext: true });
     });
 
-    it("matches an upper-case user id against the backend's lower-case one", async () => {
-      apiGet.mockImplementationOnce(page([membershipWire(ANN)], false));
-      expect((await service.findUserMembership(ANN.toUpperCase(), EMAIL))?.userId).toBe(ANN);
-    });
-
-    it('skips the read for a blank email', async () => {
-      expect(await service.findUserMembership(ANN, '   ')).toBeNull();
+    it('rejects a malformed user id before any call, and a failed read rejects', async () => {
+      await expect(
+        service.listUserBranchAssignments('../x', { page: 0, size: 10 }),
+      ).rejects.toThrow();
       expect(apiGet).not.toHaveBeenCalled();
-    });
-
-    it('trims the email it searches for', async () => {
-      apiGet.mockImplementationOnce(page([membershipWire(ANN)], false));
-      await service.findUserMembership(ANN, `  ${EMAIL}  `);
-      expect(apiGet.mock.lastCall?.[0]).toContain('q=ann.mwangi%40greenfield.example&');
-    });
-
-    it('rejects a malformed user id before any call', async () => {
-      await expect(service.findUserMembership('../x', EMAIL)).rejects.toThrow();
-      expect(apiGet).not.toHaveBeenCalled();
-    });
-
-    it('rejects when a page fails, so the caller can show the failure (never a quiet null)', async () => {
-      apiGet.mockRejectedValueOnce(new Error('service unavailable'));
-      await expect(service.findUserMembership(ANN, EMAIL)).rejects.toThrow('service unavailable');
-
-      apiGet
-        .mockImplementationOnce(page([membershipWire(JOANN)], true))
-        .mockRejectedValueOnce(new Error('timed out'));
-      await expect(service.findUserMembership(OTHER, EMAIL)).rejects.toThrow('timed out');
+      apiGet.mockRejectedValueOnce(new Error('forbidden'));
+      await expect(service.listUserBranchAssignments(ANN, { page: 0, size: 10 })).rejects.toThrow(
+        'forbidden',
+      );
     });
   });
 
-  describe('listUserBranchAssignments', () => {
-    const A1 = '30000000-0000-4000-8000-000000000001';
-    const A2 = '30000000-0000-4000-8000-000000000002';
-    const A3 = '30000000-0000-4000-8000-000000000003';
-    const PATH = `/api/v1/tenant/branch-assignments?user_id=${ANN}&status=ACTIVE&page=0&size=100`;
-
-    // BG-03: a `user_id` search ignores the selected branch, so the scan names the user and never a
-    // branch.
-    it("searches by user, keeping only the user's rows across pages, never filtering by branch", async () => {
-      apiGet
-        .mockImplementationOnce(page([assignmentWire(A1, ANN), assignmentWire(A2, JOANN)], true))
-        .mockImplementationOnce(page([assignmentWire(A3, ANN)], false));
-      const scan = await service.listUserBranchAssignments(ANN);
-      expect(scan.items.map((row) => row.id)).toEqual([A1, A3]);
-      expect(scan.truncated).toBe(false);
-      expect(apiGet).toHaveBeenNthCalledWith(1, PATH, branchAssignmentPageSchema);
-      expect(apiGet.mock.calls.map(([path]) => path)).toEqual([
-        PATH,
-        `/api/v1/tenant/branch-assignments?user_id=${ANN}&status=ACTIVE&page=1&size=100`,
-      ]);
-      for (const [path] of apiGet.mock.calls) expect(path).not.toContain('branch_id');
+  describe('countUserBranchAssignments', () => {
+    it('counts ACTIVE assignments with one size-1 read', async () => {
+      apiGet.mockImplementationOnce(page([], true, 7));
+      await expect(service.countUserBranchAssignments(ANN)).resolves.toBe(7);
+      expect(apiGet).toHaveBeenCalledTimes(1);
+      expect(apiGet.mock.lastCall?.[0]).toBe(
+        `/api/v1/tenant/branch-assignments?user_id=${ANN}&status=ACTIVE&sort_by=assignedAt&sort_dir=DESC&page=0&size=1`,
+      );
     });
 
-    it('keeps a row repeated across pages once', async () => {
-      apiGet
-        .mockImplementationOnce(page([assignmentWire(A1, ANN)], true))
-        .mockImplementationOnce(page([assignmentWire(A1, ANN), assignmentWire(A2, ANN)], false));
-      const scan = await service.listUserBranchAssignments(ANN);
-      expect(scan.items.map((row) => row.id)).toEqual([A1, A2]);
-    });
-
-    it('matches an upper-case user id', async () => {
-      apiGet.mockImplementationOnce(page([assignmentWire(A1, ANN)], false));
-      expect((await service.listUserBranchAssignments(ANN.toUpperCase())).items).toHaveLength(1);
-    });
-
-    it('marks the scan truncated when the fifth page still has more', async () => {
-      apiGet.mockImplementation(page([assignmentWire(A1, JOANN)], true));
-      const scan = await service.listUserBranchAssignments(ANN);
-      expect(apiGet).toHaveBeenCalledTimes(5);
-      expect(apiGet.mock.lastCall?.[0]).toContain('page=4&size=100');
-      expect(scan).toEqual({ items: [], truncated: true });
-    });
-
-    it('reads SCAN_CEILING rows at most, as pages of 100 (A-m3)', async () => {
-      apiGet.mockImplementation(page([assignmentWire(A1, JOANN)], true));
-      await service.listUserBranchAssignments(ANN);
-      expect(apiGet).toHaveBeenCalledTimes(SCAN_CEILING / 100);
-    });
-
-    it('is complete when a page ends the scan, even on the fifth', async () => {
-      apiGet.mockImplementation(page([assignmentWire(A1, JOANN)], true));
-      apiGet.mockImplementationOnce(page([], true));
-      apiGet.mockImplementationOnce(page([], true));
-      apiGet.mockImplementationOnce(page([], true));
-      apiGet.mockImplementationOnce(page([], true));
-      apiGet.mockImplementationOnce(page([assignmentWire(A2, ANN)], false));
-      const scan = await service.listUserBranchAssignments(ANN);
-      expect(apiGet).toHaveBeenCalledTimes(5);
-      expect(scan.truncated).toBe(false);
-      expect(scan.items.map((row) => row.id)).toEqual([A2]);
-    });
-
-    it('rejects a malformed user id before any call, and a failed page rejects', async () => {
-      await expect(service.listUserBranchAssignments('../x')).rejects.toThrow();
-      expect(apiGet).not.toHaveBeenCalled();
+    it('rejects when unreadable, so the page can say it failed (never a quiet null, 1a)', async () => {
       apiGet.mockRejectedValueOnce(new Error('forbidden'));
-      await expect(service.listUserBranchAssignments(ANN)).rejects.toThrow('forbidden');
+      await expect(service.countUserBranchAssignments(ANN)).rejects.toThrow('forbidden');
     });
   });
 

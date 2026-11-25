@@ -31,7 +31,8 @@ interface RoleScopeFieldsProps {
    * (Ruling 10). */
   branches: readonly BranchOption[];
   fieldErrors: Partial<Record<string, string>>;
-  /** Why "One branch" is disabled, shown under the Scope field while `branches` is empty. */
+  /** Why "One branch" is disabled, shown under the Scope field while `branches` is empty; while it
+   * isn't, why the branches offered may be only some (a capped read), shown under the Branch field. */
   branchHint?: string;
   /** Institution scope needs the grant tenant-wide (`canAssignRoleInstitutionWide`): false disables
    * it, says why, and starts at branch scope. */
@@ -53,8 +54,8 @@ export function RoleScopeFields({
   institution = true,
 }: RoleScopeFieldsProps) {
   const [scope, setScope] = useState<RoleScopeType>(institution ? 'TENANT' : 'BRANCH');
-  const tenantHelp =
-    branches.length === 0 && branchHint ? `${TENANT_HELP} ${branchHint}` : TENANT_HELP;
+  const offered = branches.length > 0;
+  const tenantHelp = !offered && branchHint ? `${TENANT_HELP} ${branchHint}` : TENANT_HELP;
   const branchHelp = institution ? BRANCH_HELP : `${BRANCH_HELP} ${INSTITUTION_SCOPE_UNAVAILABLE}`;
   const helperText = fieldErrors.scopeType ?? (scope === 'TENANT' ? tenantHelp : branchHelp);
   return (
@@ -74,7 +75,7 @@ export function RoleScopeFields({
         <MenuItem value="TENANT" disabled={!institution}>
           Institution (all branches)
         </MenuItem>
-        <MenuItem value="BRANCH" disabled={branches.length === 0}>
+        <MenuItem value="BRANCH" disabled={!offered}>
           One branch
         </MenuItem>
       </TextField>
@@ -86,7 +87,7 @@ export function RoleScopeFields({
           required
           defaultValue={branches.length === 1 ? (branches[0]?.id ?? '') : ''}
           error={Boolean(fieldErrors.branchId)}
-          helperText={fieldErrors.branchId}
+          helperText={fieldErrors.branchId ?? (offered ? branchHint : undefined)}
         >
           {branches.map((branch) => (
             <MenuItem key={branch.id} value={branch.id}>

@@ -147,7 +147,7 @@ miscount things today.
 
 ## Summary
 
-7 backend fixed · 6 partly fixed · 0 open · 4 adopted · 18 closed.
+7 backend fixed · 5 partly fixed · 0 open · 5 adopted · 18 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -159,7 +159,7 @@ miscount things today.
 | BG-06 | P0       | Backend fixed | No platform audit endpoint; tenant audit is 403 in the platform context                            |
 | BG-07 | P1       | Adopted       | Business-rule failures return 500 instead of 4xx                                                   |
 | BG-08 | P1       | Closed        | Maker identity not exposed; maker-checker 403 indistinguishable from missing permission            |
-| BG-09 | P1       | Partly fixed  | No `user_id` filters on branch assignments / memberships; thin list items                          |
+| BG-09 | P1       | Adopted       | No `user_id` filters on branch assignments / memberships; thin list items                          |
 | BG-10 | P1       | Backend fixed | No global user directory or global user read                                                       |
 | BG-11 | P1       | Partly fixed  | Invitation state not exposed; no resend; provisioning can stick with no recovery                   |
 | BG-12 | P1       | Backend fixed | Tenant settings catalogue unenforced and missing metadata; platform-only key unmanageable          |
@@ -547,7 +547,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-09 — Missing filters; thin list items · P1
 
-- **Status:** Partly fixed. Platform #159 (sub-issues #188, #189, #190).
+- **Status:** Adopted (frontend #123). Platform #159 (sub-issues #188, #189, #190).
 - **Gap:** Branch assignments have no `user_id` filter (and are forced to the selected branch);
   memberships have no `user_id` filter; `/tenant/users` items lack `membership_id`, `membership_type`,
   and dates; membership items lack names; assignment items are IDs only; branch items lack timezone,
@@ -585,10 +585,28 @@ the same bullets): the first is the gap as found, the second what the UI still d
   sorts by the **account's** `created_at`, not `membership_created_at`, so User onboarding's order
   stays undefined for reused and re-invited accounts. With `user_id`, branch-assignment search still
   returns only the branches the caller may view (ACTIVE ones, for a branch-scoped holder).
-- **To adopt:** `user_id` replaces the email-search membership lookup and the 500-assignment scan,
-  with their "partial" states; embedded names replace the per-page lookups; `membership_created_at`
-  with `sort_by=createdAt` gives User onboarding a defined order. The role index's ceiling of 500
-  stays until roles take `ids`.
+- **To adopt:** done in frontend #123.
+  - The user record and the approval page read the membership by the user read's
+    `membership_id` (`GET /tenant/memberships/{id}`), so the email search and its "not found" and
+    "couldn't be loaded" notes are gone; the actions, the decisions and the Audit tab's Membership
+    view need no lookup, and the approval page takes the membership type from the user read. The
+    read needs `membership.view` tenant-wide (BG-33), as the platform checks it.
+  - The Branch assignments tab pages `GET /tenant/branch-assignments?user_id=…&status=ACTIVE`
+    on the platform (`sort_by=assignedAt`, newest first), with the URL holding page and size and
+    each row showing the embedded branch name and `assigned_at`; the Overview counts them with
+    one `size=1` read. The 500-assignment scan, its "partial" notes and counts, and the tab's
+    branch-index lookups are gone; a branch-scoped `branch_assignment.view` still says it sees
+    only its branches, and reads them at All branches too (BG-03).
+  - The approval page's Requested access reads one page of 100 branch assignments, like its
+    roles, and says so when there are more; the Assign-role drawer's branch scopes read one page
+    of 100 and say so when there are more, whether that page held none of theirs or some.
+  - Not adopted: `/tenant/users?sort_by=createdAt` sorts by the account's `created_at`, so User
+    onboarding keeps the list's default order. The branch record's Users tab still reads each
+    visible member for the email, which assignment items don't carry. The role index's ceiling
+    of 500 stays until roles take `ids`.
+  - The fake API filters memberships by `user_id`, embeds their names, sorts both lists as the
+    platform does (an unknown `sort_by` is a 400), embeds the names and `assigned_at` in
+    branch assignments, and answers a revoke with the detail shape, as the platform does.
 
 ### BG-10 — No global user directory · P1
 

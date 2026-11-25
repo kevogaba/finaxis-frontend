@@ -127,19 +127,13 @@ function roleCheck(roles: CheckRead<number>, complete: boolean): ControlCheck {
 
 function branchCheck(
   branches: CheckRead<{ count: number; complete: boolean }>,
-  membershipType: MembershipType | null,
+  membershipType: MembershipType,
 ): ControlCheck {
   const check = (state: CheckState, detail: string) =>
     checkOf('branch', 'Has an active branch assignment', state, detail);
   // Contract §F: AUDITOR and SYSTEM members are branch-exempt.
   if (membershipType === 'AUDITOR' || membershipType === 'SYSTEM') {
     return check('not-required', "Auditors and system members don't need one.");
-  }
-  if (membershipType === null) {
-    return check(
-      'platform',
-      "Their membership type couldn't be read, so this page can't tell whether they need one.",
-    );
   }
   if (branches === null) return check('platform', BRANCHES_NOT_PERMITTED);
   if (!branches.ok) {
@@ -149,7 +143,7 @@ function branchCheck(
     );
   }
   if (branches.value.count > 0) return check('passed', 'They hold an active branch assignment.');
-  // A capped scan, or one a branch-scoped view narrowed (BG-03), can't prove "none" (rule 9).
+  // A read a branch-scoped view narrowed (BG-03) can't prove "none" (rule 9).
   return branches.value.complete
     ? check(
         'failed',
@@ -169,10 +163,10 @@ export function userControlChecks(input: {
   roles: CheckRead<number>;
   /** False when a branch-scoped `role_assignment.view` narrowed that read (BG-03). */
   rolesComplete?: boolean;
-  /** ACTIVE branch assignments found; `complete`: the scan wasn't capped and no branch narrowed it. */
+  /** ACTIVE branch assignments found; `complete`: no branch-scoped view narrowed the read. */
   branches: CheckRead<{ count: number; complete: boolean }>;
-  /** null: the membership couldn't be read (no `membership.view`, not found, or failed). */
-  membershipType: MembershipType | null;
+  /** From the user read, which carries it (BG-09). */
+  membershipType: MembershipType;
   organisationName: string;
 }): ControlCheck[] {
   return [

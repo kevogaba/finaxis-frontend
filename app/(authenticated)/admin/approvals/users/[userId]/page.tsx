@@ -6,7 +6,7 @@ import Box from '@mui/material/Box';
 import Link from '@mui/material/Link';
 import Paper from '@mui/material/Paper';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can, permissionHolder } from '@/auth/permissions';
+import { can, canTenantWide, permissionHolder } from '@/auth/permissions';
 import { CopyIdButton } from '@/components/data-display/copy-id-button';
 import { DescriptionList } from '@/components/data-display/description-list';
 import { ErrorState } from '@/components/data-display/error-state';
@@ -16,7 +16,7 @@ import { SectionCard } from '@/components/data-display/section-card';
 import { humanizeEnum, StatusChip } from '@/components/data-display/status-chip';
 import NextLink from '@/components/navigation/next-link';
 import { PageHeader } from '@/components/shell/page-header';
-import { load, type Loaded } from '@/lib/api/load';
+import { load } from '@/lib/api/load';
 import { getBranchIndex, getOrganisationTimeZone, getRoleIndex } from '@/lib/api/lookups';
 import { formatInstant } from '@/lib/format';
 import { userControlChecks } from '@/modules/administration/approvals/approval-checks';
@@ -35,7 +35,10 @@ import {
   userApprovalState,
   userOutcomeNote,
 } from '@/modules/administration/approvals/approval-rules';
-import { listRequestedRoles } from '@/modules/administration/approvals/approval-service';
+import {
+  listRequestedBranches,
+  listRequestedRoles,
+} from '@/modules/administration/approvals/approval-service';
 import { ControlChecks } from '@/modules/administration/approvals/components/control-checks';
 import { DecisionBar } from '@/modules/administration/approvals/components/decision-bar';
 import { makerLabel } from '@/modules/administration/approvals/components/request-facts';
@@ -47,7 +50,6 @@ import {
 } from '@/modules/administration/approvals/maker-checker';
 import { scopedRoleAssignmentView } from '@/modules/administration/roles/role-rules';
 import { readMakerCheckerSwitch } from '@/modules/administration/settings/settings-service';
-import type { MembershipSummary } from '@/modules/administration/users/user-contract';
 import {
   membershipActionsNote,
   onboardingState,
@@ -55,24 +57,12 @@ import {
   scopedAssignmentView,
   userStatusLabel,
 } from '@/modules/administration/users/user-rules';
-import {
-  findUserMembership,
-  getUser,
-  listUserBranchAssignments,
-} from '@/modules/administration/users/user-service';
+import { getMembership, getUser } from '@/modules/administration/users/user-service';
 
 export const metadata: Metadata = { title: 'User approval' };
 
 interface UserApprovalPageProps {
   params: Promise<{ userId: string }>;
-}
-
-/** 10's membership lookup outcome (its Ruling 7): a miss within the ceiling isn't a failure. */
-function lookupOutcome(
-  membership: Loaded<MembershipSummary | null> | null,
-): 'found' | 'missing' | 'failed' {
-  if (membership?.ok === false) return 'failed';
-  return membership?.value ? 'found' : 'missing';
 }
 
 /** A user's onboarding approval (spec §10.6): the request, the person, the access they get, the
@@ -118,19 +108,20 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
   const makers = [record.createdBy?.id];
   // Each read only with its own code; load() redirects on a lost session or a stale context, and
   // any other failure is shown where its fact would be (rule 9).
-  const [membership, roles, scan, roleIndex, branchIndex, timeZone, switchState] =
+  // The membership by the id the user read carries (BG-09), which the platform checks tenant-wide
+  // (BG-33).
+  const [membership, roles, branches, roleIndex, branchIndex, timeZone, switchState] =
     await Promise.all([
-      can(holder, 'membership.view') ? load(findUserMembership(record.id, record.email)) : null,
+      canTenantWide(holder, 'membership.view') ? load(getMembership(record.membershipId)) : null,
       can(holder, 'role_assignment.view') ? load(listRequestedRoles(record.id)) : null,
-      can(holder, 'branch_assignment.view') ? load(listUserBranchAssignments(record.id)) : null,
+      can(holder, 'branch_assignment.view') ? load(listRequestedBranches(record.id)) : null,
       getRoleIndex(), // empty without role.view: names fall back to short ids
       getBranchIndex(), // empty without branch.view: names fall back to short ids
       getOrganisationTimeZone(),
       isMaker(makers, me) ? readMakerCheckerSwitch('user_invites', holder) : ('unknown' as const),
     ]);
 
-  const membershipId = membership?.ok ? (membership.value?.id ?? null) : null;
-  const decisions = membershipId ? availableUserDecisions(state, holder) : [];
+  const decisions = availableUserDecisions(state, holder);
   const gate = makerGate({ makerIds: makers, callerId: me, switchState });
   const blocked = blockedUserDecisions(decisions, {
     state,
@@ -142,7 +133,7 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
       ? SELF_APPROVAL_NOTE_USERS
       : null;
   const outcome = userOutcomeNote(state, record.membershipStatus);
-  const note = outcome === null ? membershipActionsNote(holder, lookupOutcome(membership)) : null;
+  const note = outcome === null ? membershipActionsNote(holder) : null;
   const onboarding = onboardingState(record.membershipStatus, record.userStatus);
   const invitedAt = formatInstant(record.membershipCreatedAt, timeZone);
 
@@ -167,7 +158,7 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
           // Undefined, not an empty component: RecordHero renders its actions box when truthy.
           decisions.length > 0 || note ? (
             <DecisionBar
-              subject={{ kind: 'membership', membershipId }}
+              subject={{ kind: 'membership', membershipId: record.membershipId }}
               name={record.displayName}
               decisions={decisions}
               blocked={blocked}
@@ -232,9 +223,11 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
         </SectionCard>
         <RequestedAccess
           userName={record.displayName}
+          membershipType={record.membershipType}
           membership={membership}
           roles={roles}
-          scan={scan}
+          branches={branches}
+          timeZone={timeZone}
           roleIndex={roleIndex}
           branchIndex={branchIndex}
           scopedView={scopedView}
@@ -254,20 +247,18 @@ export default async function UserApprovalPage({ params }: UserApprovalPageProps
                       ? { ok: true, value: roles.value.items.length }
                       : roles,
                 rolesComplete: !rolesScoped,
-                // A capped scan, or one a branch-scoped view narrowed, can't prove "none" (rule 9).
+                // The page's total; a branch-scoped view narrows it, so it can't prove "none"
+                // (rule 9).
                 branches:
-                  scan === null
+                  branches === null
                     ? null
-                    : scan.ok
+                    : branches.ok
                       ? {
                           ok: true,
-                          value: {
-                            count: scan.value.items.length,
-                            complete: !scan.value.truncated && !scopedView,
-                          },
+                          value: { count: branches.value.page.totalItems, complete: !scopedView },
                         }
-                      : scan,
-                membershipType: membership?.ok ? (membership.value?.type ?? null) : null,
+                      : branches,
+                membershipType: record.membershipType,
                 organisationName: resolved.context.organization.name,
               })}
             />

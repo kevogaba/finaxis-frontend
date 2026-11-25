@@ -87,11 +87,12 @@ const TENANT_HELP = 'Applies at every branch and at institution level.';
 const UNREADABLE_HINT =
   "Their branch assignments can't be read here, so only institution scope is available.";
 const PARTIAL_HINT =
-  'Only the first 500 of their branch assignments were checked, so only institution scope is offered here.';
+  'Only the first 100 of their branch assignments were checked, so only institution scope is offered here.';
 const ROLES_CAPPED_HINT =
   "Only the first 500 roles by name are offered here; roles after that can't be assigned from this page.";
 const NONE_ACTIVE_CAPPED =
   "None of the first 500 roles by name is active, and roles after that can't be assigned from this page.";
+const OFFERED_CAPPED = 'Only the first 100 of their branch assignments are offered.';
 const NO_BRANCH_HINT = 'Assign them to a branch first to give a branch-scoped role.';
 const NOT_WHERE_YOU_ASSIGN =
   "They aren't assigned to a branch where you can assign roles. Assign them to one first to give a branch-scoped role.";
@@ -139,6 +140,9 @@ interface Setup {
   tenantWide?: string[];
   /** Where the others are held (BRANCH scopes' `branch_ids`); defaults to the selected branch. */
   heldAt?: string[];
+  /** Codes held only through BRANCH grants at `heldAt` that the selected context doesn't hold: in
+   * `/auth/me`'s scopes, not its `permissions`. */
+  elsewhere?: string[];
   /** The role index the page reads: empty on any failure (lib/api/lookups.ts). */
   index?: RoleIndex;
   /** The scan stopped at its ceiling with more roles unread. */
@@ -153,10 +157,11 @@ interface Setup {
   /** The page the backend answers: defaults to a single page holding `rows`. */
   page?: { number: number; size: number; totalItems: number; totalPages: number };
   assignmentsError?: Error;
-  /** The branch assignments the scan found (only `branchId` is read). */
-  scanned?: { branchId: string }[];
+  /** The page of their branch assignments (`branchId`, and the embedded name when given). */
+  theirBranches?: { branchId: string; branchName?: string }[];
+  /** That page has more after it. */
   truncated?: boolean;
-  scanError?: Error;
+  theirBranchesError?: Error;
   userError?: Error;
 }
 
@@ -165,6 +170,7 @@ function setup({
   permissions = ALL_CODES,
   tenantWide = permissions,
   heldAt,
+  elsewhere = [],
   index = TELLER_ROLE,
   rolesTruncated = false,
   branchIndex = BRANCH_INDEX,
@@ -174,24 +180,27 @@ function setup({
   rows = [],
   page,
   assignmentsError,
-  scanned = [],
+  theirBranches = [],
   truncated = false,
-  scanError,
+  theirBranchesError,
   userError,
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
     profile: {
       permissions,
-      permission_scopes: permissions.map((code) =>
-        tenantWide.includes(code)
-          ? { code, scope: 'TENANT' }
-          : {
-              code,
-              scope: 'BRANCH',
-              branch_ids: heldAt ?? (selectedBranch ? [selectedBranch.id] : []),
-            },
-      ),
+      permission_scopes: [
+        ...permissions.map((code) =>
+          tenantWide.includes(code)
+            ? { code, scope: 'TENANT' }
+            : {
+                code,
+                scope: 'BRANCH',
+                branch_ids: heldAt ?? (selectedBranch ? [selectedBranch.id] : []),
+              },
+        ),
+        ...elsewhere.map((code) => ({ code, scope: 'BRANCH', branch_ids: heldAt ?? [] })),
+      ],
       user_id: profileUserId,
       branches: [],
     },
@@ -219,8 +228,20 @@ function setup({
       },
     });
   }
-  if (scanError) listUserBranchAssignments.mockRejectedValue(scanError);
-  else listUserBranchAssignments.mockResolvedValue({ items: scanned, truncated });
+  if (theirBranchesError) listUserBranchAssignments.mockRejectedValue(theirBranchesError);
+  else {
+    listUserBranchAssignments.mockResolvedValue({
+      items: theirBranches.map((row) => ({ branchName: 'Embedded name', ...row })),
+      page: {
+        number: 0,
+        size: 100,
+        totalItems: truncated ? 101 : theirBranches.length,
+        totalPages: truncated ? 2 : 1,
+        hasNext: truncated,
+        hasPrevious: false,
+      },
+    });
+  }
   getRoleIndexScan.mockResolvedValue({ index: new Map(index), truncated: rolesTruncated });
   getBranchIndex.mockResolvedValue(new Map(branchIndex));
 }
@@ -319,7 +340,8 @@ describe('UserAccessPage: the record id', () => {
       { userId: FELIX, status: 'ACTIVE' },
       expect.anything(),
     );
-    expect(listUserBranchAssignments).toHaveBeenCalledWith(FELIX);
+    // One page of their branch assignments, the platform's largest (BG-09).
+    expect(listUserBranchAssignments).toHaveBeenCalledWith(FELIX, { page: 0, size: 100 });
     expect(screen.getByRole('table', { name: 'Role assignments' })).toBeInTheDocument();
   });
 
@@ -597,8 +619,8 @@ describe('UserAccessPage: the branch scope on offer', () => {
     expect(await oneBranchOption(user, scope)).toHaveAttribute('aria-disabled', 'true');
   });
 
-  it('says the same when the scan itself failed, and never claims they have no branch', async () => {
-    setup({ scanError: new BackendApiError(500, { requestId: 'req-1' }) });
+  it('says the same when the read itself failed, and never claims they have no branch', async () => {
+    setup({ theirBranchesError: new BackendApiError(500, { requestId: 'req-1' }) });
     await show();
 
     const { scope } = await openDrawer();
@@ -607,8 +629,8 @@ describe('UserAccessPage: the branch scope on offer', () => {
     expect(scope).toHaveAccessibleDescription(`${TENANT_HELP} ${UNREADABLE_HINT}`);
   });
 
-  it('says the scan was partial when a capped scan found none of their branches', async () => {
-    setup({ scanned: [], truncated: true });
+  it('says the page was partial when a capped page held none of their branches', async () => {
+    setup({ theirBranches: [], truncated: true });
     await show();
 
     const { user, scope } = await openDrawer();
@@ -617,8 +639,52 @@ describe('UserAccessPage: the branch scope on offer', () => {
     expect(await oneBranchOption(user, scope)).toHaveAttribute('aria-disabled', 'true');
   });
 
-  it('says they have no branch to name when a complete scan found none, with no branch selected', async () => {
-    setup({ scanned: [], truncated: false });
+  // AGENTS.md's fifth exception: a capped page never passes for all of their branches.
+  it('says, under the Branch field, that the branches offered may be only some when the page was capped', async () => {
+    setup({ theirBranches: [{ branchId: WESTLANDS }], truncated: true });
+    await show();
+
+    const { user, scope } = await openDrawer();
+
+    expect(scope).toHaveAccessibleDescription(TENANT_HELP);
+    expect(await branchOptions(user, scope)).toEqual(['Westlands Branch (WESTLANDS)']);
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('combobox', { name: /^Branch/ })).toHaveAccessibleDescription(
+      OFFERED_CAPPED,
+    );
+  });
+
+  it('says nothing under the Branch field when the page held all of their branches', async () => {
+    setup({ theirBranches: [{ branchId: WESTLANDS }], truncated: false });
+    await show();
+
+    const { user, scope } = await openDrawer();
+
+    expect(await branchOptions(user, scope)).toEqual(['Westlands Branch (WESTLANDS)']);
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('combobox', { name: /^Branch/ })).toHaveAccessibleDescription('');
+    expect(screen.queryByText(OFFERED_CAPPED)).toBeNull();
+  });
+
+  // BG-03: the search by user answers with every branch a grant covers, whichever is selected.
+  it('reads their branches with branch_assignment.view held only at a branch that is not selected', async () => {
+    setup({
+      permissions: ALL_CODES.filter((code) => code !== 'branch_assignment.view'),
+      selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
+      heldAt: [KISUMU],
+      elsewhere: ['branch_assignment.view'],
+      theirBranches: [{ branchId: WESTLANDS }],
+    });
+    await show();
+
+    const { user, scope } = await openDrawer();
+
+    expect(listUserBranchAssignments).toHaveBeenCalledTimes(1);
+    expect(await branchOptions(user, scope)).toEqual(['Westlands Branch (WESTLANDS)']);
+  });
+
+  it('says they have no branch to name when a complete page held none, with no branch selected', async () => {
+    setup({ theirBranches: [], truncated: false });
     await show();
 
     const { user, scope } = await openDrawer();
@@ -636,7 +702,7 @@ describe('UserAccessPage: the branch scope on offer', () => {
   };
 
   it('shows Assign disabled, with why, when none of their branches is one the grant reaches', async () => {
-    setup({ ...ASSIGN_AT_BRANCHES, scanned: [{ branchId: WESTLANDS }] });
+    setup({ ...ASSIGN_AT_BRANCHES, theirBranches: [{ branchId: WESTLANDS }] });
     await show();
 
     const button = screen.getByRole('button', { name: 'Assign role' });
@@ -647,7 +713,7 @@ describe('UserAccessPage: the branch scope on offer', () => {
   it('offers a branch-scoped grant each of their branches it reaches, and no institution scope', async () => {
     setup({
       ...ASSIGN_AT_BRANCHES,
-      scanned: [{ branchId: WESTLANDS }, { branchId: HEAD_OFFICE }, { branchId: KISUMU }],
+      theirBranches: [{ branchId: WESTLANDS }, { branchId: HEAD_OFFICE }, { branchId: KISUMU }],
     });
     await show();
 
@@ -673,7 +739,7 @@ describe('UserAccessPage: the branch scope on offer', () => {
       ...ASSIGN_AT_BRANCHES,
       permissions: ALL_CODES.filter((code) => code !== 'user.assign_role'),
       selectedBranch: null,
-      scanned: [{ branchId: HEAD_OFFICE }],
+      theirBranches: [{ branchId: HEAD_OFFICE }],
     });
     await show();
 
@@ -684,7 +750,7 @@ describe('UserAccessPage: the branch scope on offer', () => {
     setup({
       tenantWide: ALL_CODES.filter((code) => code !== 'role_assignment.view'),
       selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
-      scanned: [{ branchId: HEAD_OFFICE }],
+      theirBranches: [{ branchId: HEAD_OFFICE }],
     });
     await show();
 
@@ -696,7 +762,7 @@ describe('UserAccessPage: the branch scope on offer', () => {
   it('offers a tenant-wide grant every branch they hold, whichever branch is selected', async () => {
     setup({
       selectedBranch: { id: HEAD_OFFICE, name: 'Head Office' },
-      scanned: [{ branchId: WESTLANDS }, { branchId: HEAD_OFFICE }],
+      theirBranches: [{ branchId: WESTLANDS }, { branchId: HEAD_OFFICE }],
     });
     await show();
 
@@ -708,13 +774,17 @@ describe('UserAccessPage: the branch scope on offer', () => {
     ]);
   });
 
-  it("names a branch the index doesn't know by its short id", async () => {
-    setup({ branchIndex: [], scanned: [{ branchId: WESTLANDS }] });
+  // BG-09: the assignment embeds its branch's name.
+  it("names a branch the index doesn't know by the name its assignment carries", async () => {
+    setup({
+      branchIndex: [],
+      theirBranches: [{ branchId: WESTLANDS, branchName: 'Westlands Branch' }],
+    });
     await show();
 
     const { user, scope } = await openDrawer();
 
-    expect(await branchOptions(user, scope)).toEqual(['44444444']);
+    expect(await branchOptions(user, scope)).toEqual(['Westlands Branch']);
   });
 
   it.each([

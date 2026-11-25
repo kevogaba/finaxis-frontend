@@ -3,6 +3,9 @@ import { screen, within } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
 import { VERIFIED_ON_APPROVAL } from '@/modules/administration/approvals/approval-checks';
 import {
+  BRANCHES_CAPPED,
+  MEMBERSHIP_NOT_PERMITTED,
+  READ_FAILED,
   ROLES_CAPPED,
   USER_APPROVAL_FORBIDDEN,
 } from '@/modules/administration/approvals/approval-copy';
@@ -12,8 +15,6 @@ import {
 } from '@/modules/administration/approvals/maker-checker';
 import {
   accountBlockedNote,
-  MEMBERSHIP_MISSING,
-  MEMBERSHIP_UNAVAILABLE,
   NO_MEMBERSHIP_VIEW,
   PROVISIONING_NOTE,
   USER_MAKER_CHECKER_BLOCKED,
@@ -22,19 +23,19 @@ import { renderWithProviders } from '@/test/test-utils';
 import { permissionScopes } from '@/test/permission-scopes';
 
 const {
-  findUserMembership,
   getCurrentContextProfile,
+  getMembership,
   getUser,
+  listRequestedBranches,
   listRequestedRoles,
-  listUserBranchAssignments,
   readMakerCheckerSwitch,
   redirect,
 } = vi.hoisted(() => ({
-  findUserMembership: vi.fn(),
   getCurrentContextProfile: vi.fn(),
+  getMembership: vi.fn(),
   getUser: vi.fn(),
+  listRequestedBranches: vi.fn(),
   listRequestedRoles: vi.fn(),
-  listUserBranchAssignments: vi.fn(),
   readMakerCheckerSwitch: vi.fn(),
   redirect: vi.fn(),
 }));
@@ -60,15 +61,15 @@ vi.mock('@/lib/api/lookups', () => ({
     Promise.resolve(new Map([[TELLER, { name: 'Teller', code: 'TELLER', status: 'ACTIVE' }]])),
 }));
 vi.mock('@/modules/administration/approvals/approval-service', () => ({
+  listRequestedBranches: (...args: unknown[]) => listRequestedBranches(...args) as unknown,
   listRequestedRoles: (...args: unknown[]) => listRequestedRoles(...args) as unknown,
 }));
 vi.mock('@/modules/administration/settings/settings-service', () => ({
   readMakerCheckerSwitch: (...args: unknown[]) => readMakerCheckerSwitch(...args) as unknown,
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
-  findUserMembership: (...args: unknown[]) => findUserMembership(...args) as unknown,
+  getMembership: (...args: unknown[]) => getMembership(...args) as unknown,
   getUser: (...args: unknown[]) => getUser(...args) as unknown,
-  listUserBranchAssignments: (...args: unknown[]) => listUserBranchAssignments(...args) as unknown,
 }));
 // The decision bar and the assignment tables import Server Actions; nothing here submits one.
 vi.mock('@/modules/administration/approvals/approval-actions', () => ({
@@ -111,8 +112,10 @@ interface Setup {
   permissions?: string[];
   membershipStatus?: string;
   userStatus?: string;
-  /** The membership lookup: found, null (missed), or an Error that rejects it. */
-  membership?: Record<string, unknown> | null | Error;
+  /** The membership read by the record's id: its detail, or an Error that rejects it. */
+  membership?: Record<string, unknown> | Error;
+  /** The user read's membership type (BG-09). */
+  membershipType?: string;
   /** The record's inviter (`created_by`, BG-08): null for the system, or someone hidden. */
   maker?: { id: string; displayName: string | null } | null;
   /** `require_maker_checker_for_user_invites`, as the reader answers it. */
@@ -120,7 +123,7 @@ interface Setup {
   roles?: number | Error;
   rolesHasNext?: boolean;
   branches?: number | Error;
-  truncated?: boolean;
+  branchesHasNext?: boolean;
   selectedBranch?: { id: string; name: string } | null;
   /** Of `permissions`, the ones held only at one branch (BG-33). */
   branchOnly?: string[];
@@ -137,12 +140,13 @@ function setup({
     type: 'STAFF',
     primaryBranchId: WESTLANDS,
   },
+  membershipType = 'STAFF',
   maker = { id: VICTOR, displayName: 'Victor Kamau' },
   switchState = 'on',
   roles = 1,
   rolesHasNext = false,
   branches = 1,
-  truncated = false,
+  branchesHasNext = false,
   selectedBranch = null,
   branchOnly = [],
 }: Setup = {}) {
@@ -167,13 +171,13 @@ function setup({
     membershipStatus,
     userStatus,
     membershipId: MEMBERSHIP,
-    membershipType: 'STAFF',
+    membershipType,
     createdAt: '2026-07-01T08:00:00Z',
     membershipCreatedAt: '2026-09-24T08:00:00Z',
     createdBy: maker,
   });
-  if (membership instanceof Error) findUserMembership.mockRejectedValue(membership);
-  else findUserMembership.mockResolvedValue(membership);
+  if (membership instanceof Error) getMembership.mockRejectedValue(membership);
+  else getMembership.mockResolvedValue(membership);
   readMakerCheckerSwitch.mockResolvedValue(switchState);
   if (roles instanceof Error) listRequestedRoles.mockRejectedValue(roles);
   else {
@@ -194,15 +198,24 @@ function setup({
       },
     });
   }
-  if (branches instanceof Error) listUserBranchAssignments.mockRejectedValue(branches);
+  if (branches instanceof Error) listRequestedBranches.mockRejectedValue(branches);
   else {
-    listUserBranchAssignments.mockResolvedValue({
+    listRequestedBranches.mockResolvedValue({
       items: Array.from({ length: branches }, (_, n) => ({
         id: `8${n}000000-0000-4000-8000-000000000000`,
         branchId: WESTLANDS,
         assignmentType: 'HOME',
+        branchName: 'Westlands Branch',
+        assignedAt: '2026-09-24T08:00:00Z',
       })),
-      truncated,
+      page: {
+        number: 0,
+        size: 100,
+        totalItems: branchesHasNext ? 101 : branches,
+        totalPages: branchesHasNext ? 2 : 1,
+        hasNext: branchesHasNext,
+        hasPrevious: false,
+      },
     });
   }
 }
@@ -430,12 +443,33 @@ describe('UserApprovalPage: where the request stands (Rulings 7, 12)', () => {
     setup({ permissions: without('membership.view') });
     await show();
 
-    expect(findUserMembership).not.toHaveBeenCalled();
+    expect(getMembership).not.toHaveBeenCalled();
     expect(button('Approve')).toBeNull();
     expect(screen.getByText(NO_MEMBERSHIP_VIEW)).toBeInTheDocument();
+    // The type comes with the user read (BG-09), so the branch check still runs.
     expect(fact(card('Control checks'), 'Has an active branch assignment')).toHaveTextContent(
-      'Checked on approval',
+      'Passed',
     );
+  });
+});
+
+describe('UserApprovalPage: a branch-scoped membership.view (BG-33)', () => {
+  // The platform checks the membership read tenant-wide, so a branch grant would be a 403.
+  it('reads no membership and says the role can’t view it, at the selected branch', async () => {
+    setup({
+      branchOnly: ['membership.view'],
+      selectedBranch: { id: WESTLANDS, name: 'Westlands Branch' },
+    });
+    await show();
+
+    expect(getMembership).not.toHaveBeenCalled();
+    expect(fact(card('Requested access'), 'Primary branch')).toHaveTextContent(
+      MEMBERSHIP_NOT_PERMITTED,
+    );
+    expect(screen.queryByText(READ_FAILED)).toBeNull();
+    // The decisions need it tenant-wide too, so none is offered.
+    expect(button('Approve')).toBeNull();
+    expect(button('Reject & revoke')).toBeNull();
   });
 });
 
@@ -457,7 +491,7 @@ describe('UserApprovalPage: the control checks read the page’s reads (Ruling 7
     expect(button('Approve')).toBeEnabled();
   });
 
-  it('fails the branch check for a staff member only when a complete scan found none', async () => {
+  it('fails the branch check for a staff member only when every branch was seen and none held', async () => {
     setup({ branches: 0 });
     await show();
 
@@ -466,11 +500,8 @@ describe('UserApprovalPage: the control checks read the page’s reads (Ruling 7
     );
   });
 
-  it.each([
-    ['a capped scan', { truncated: true }],
-    ['a branch-scoped view (BG-03)', { branchOnly: ['branch_assignment.view'] }],
-  ])('never proves "none" from %s (rule 9)', async (_case, overrides) => {
-    setup({ branches: 0, ...overrides });
+  it('never proves "none" from a branch-scoped view (BG-03, rule 9)', async () => {
+    setup({ branches: 0, branchOnly: ['branch_assignment.view'] });
     await show();
 
     expect(fact(card('Control checks'), 'Has an active branch assignment')).toHaveTextContent(
@@ -478,21 +509,24 @@ describe('UserApprovalPage: the control checks read the page’s reads (Ruling 7
     );
   });
 
+  // BG-09: the type comes with the user read, so the check needs no membership read.
   it('marks the branch check not required for an auditor', async () => {
-    setup({
-      branches: 0,
-      membership: {
-        id: MEMBERSHIP,
-        userId: ROSE,
-        status: 'PENDING_APPROVAL',
-        type: 'AUDITOR',
-        primaryBranchId: null,
-      },
-    });
+    setup({ branches: 0, membershipType: 'AUDITOR', permissions: without('membership.view') });
     await show();
 
     expect(fact(card('Control checks'), 'Has an active branch assignment')).toHaveTextContent(
       'Not required',
+    );
+    expect(fact(card('Requested access'), 'Membership type')).toHaveTextContent('Auditor');
+  });
+
+  it('says the branches are capped when one page doesn’t hold them all', async () => {
+    setup({ branches: 1, branchesHasNext: true });
+    await show();
+
+    expect(within(card('Requested access')).getByText(BRANCHES_CAPPED)).toBeInTheDocument();
+    expect(fact(card('Control checks'), 'Has an active branch assignment')).toHaveTextContent(
+      'Passed',
     );
   });
 });
@@ -500,7 +534,7 @@ describe('UserApprovalPage: the control checks read the page’s reads (Ruling 7
 // Beyond the plan's Task 7b list: each pins a page-owned wiring that a surviving mutant showed
 // unpinned (a failed scan shown as a pass; a lost session swallowed; a failed lookup shown as a miss).
 describe('UserApprovalPage: a failed read is never a pass, "none" or a miss (rule 9)', () => {
-  it('leaves the branch check to the platform when the scan failed, with Approve on offer', async () => {
+  it('leaves the branch check to the platform when the read failed, with Approve on offer', async () => {
     setup({ branches: new BackendApiError(503, { requestId: 'req-7' }) });
     await show();
 
@@ -513,7 +547,7 @@ describe('UserApprovalPage: a failed read is never a pass, "none" or a miss (rul
   it.each([
     ['membership', { membership: new BackendApiError(401) }],
     ['role', { roles: new BackendApiError(401) }],
-    ['branch scan', { branches: new BackendApiError(401) }],
+    ['branch', { branches: new BackendApiError(401) }],
   ])(
     'redirects, rendering nothing, when the %s read finds a lost session',
     async (_read, overrides) => {
@@ -523,15 +557,17 @@ describe('UserApprovalPage: a failed read is never a pass, "none" or a miss (rul
     },
   );
 
-  it.each([
-    ['missed', null, MEMBERSHIP_MISSING],
-    ['failed', new BackendApiError(503, { requestId: 'req-8' }), MEMBERSHIP_UNAVAILABLE],
-  ])('says the membership lookup %s, and offers no decision', async (_case, membership, note) => {
-    setup({ membership });
+  // BG-09: the decisions act on the id the user read carries, so a failed membership read costs
+  // only the primary branch.
+  it('says a failed membership read failed, keeping the decisions on offer', async () => {
+    setup({ membership: new BackendApiError(503, { requestId: 'req-8' }) });
     await show();
 
-    expect(button('Approve')).toBeNull();
-    expect(button('Reject & revoke')).toBeNull();
-    expect(screen.getByText(note)).toBeInTheDocument();
+    const primary = fact(card('Requested access'), 'Primary branch');
+    expect(primary).toHaveTextContent(READ_FAILED);
+    expect(primary).toHaveTextContent('Reference: req-8');
+    expect(button('Approve')).toBeEnabled();
+    expect(button('Reject & revoke')).toBeEnabled();
+    expect(getMembership).toHaveBeenCalledWith(MEMBERSHIP);
   });
 });

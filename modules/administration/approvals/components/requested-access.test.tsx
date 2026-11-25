@@ -1,15 +1,12 @@
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { screen, within } from '@testing-library/react';
-import {
-  PARTIAL_SCAN_NOTE,
-  SCOPED_ASSIGNMENTS_NOTE,
-} from '@/modules/administration/users/user-rules';
+import { SCOPED_ASSIGNMENTS_NOTE } from '@/modules/administration/users/user-rules';
 import { SCOPED_ROLE_ASSIGNMENTS_NOTE } from '@/modules/administration/roles/role-rules';
 import { renderWithProviders } from '@/test/test-utils';
 import {
+  BRANCHES_CAPPED,
   BRANCHES_NOT_PERMITTED,
-  MEMBERSHIP_NOT_FOUND,
   MEMBERSHIP_NOT_PERMITTED,
   NO_ACTIVE_BRANCH,
   NO_ACTIVE_BRANCH_SEEN,
@@ -58,6 +55,7 @@ type Props = ComponentProps<typeof RequestedAccess>;
 
 const PROPS: Props = {
   userName: 'Rose Atieno',
+  membershipType: 'STAFF',
   membership: {
     ok: true,
     value: {
@@ -66,6 +64,8 @@ const PROPS: Props = {
       status: 'PENDING_APPROVAL',
       type: 'STAFF',
       primaryBranchId: WESTLANDS,
+      createdAt: '2026-11-01T06:00:00Z',
+      updatedAt: '2026-11-01T06:00:00Z',
       createdBy: null,
     },
   },
@@ -85,7 +85,7 @@ const PROPS: Props = {
       page: page(1),
     },
   },
-  scan: {
+  branches: {
     ok: true,
     value: {
       items: [
@@ -95,11 +95,14 @@ const PROPS: Props = {
           branchId: WESTLANDS,
           assignmentType: 'HOME',
           status: 'ACTIVE',
+          branchName: 'Westlands Branch',
+          assignedAt: '2026-11-02T07:30:00Z',
         },
       ],
-      truncated: false,
+      page: page(1),
     },
   },
+  timeZone: 'Africa/Nairobi',
   roleIndex: new Map([
     [TELLER, { name: 'Teller', code: 'TELLER', status: 'ACTIVE', systemRole: false }],
   ]),
@@ -128,7 +131,9 @@ describe('RequestedAccess', () => {
     expect(within(roles).getByText('Teller')).toBeInTheDocument();
     const branches = screen.getByRole('region', { name: 'Branch assignments table' });
     expect(branches).toHaveAttribute('tabindex', '0');
+    // The embedded name and the date, in the organisation's time zone (BG-09).
     expect(within(branches).getByText('Westlands Branch')).toBeInTheDocument();
+    expect(within(branches).getByText('02 Nov 2026 · 10:30')).toBeInTheDocument();
     // Nothing here can be revoked: this page decides the request, it doesn't edit access.
     expect(screen.queryByRole('button', { name: /Revoke/ })).toBeNull();
     // The card and the two scrolling tables are the only regions (each found by its own name above).
@@ -136,9 +141,10 @@ describe('RequestedAccess', () => {
   });
 
   it("says what the holder can't read, never none", () => {
-    show({ membership: null, roles: null, scan: null });
+    show({ membership: null, roles: null, branches: null });
 
-    expect(fact('Membership type')).toHaveTextContent(MEMBERSHIP_NOT_PERMITTED);
+    // The type comes with the user read (BG-09); the primary branch needs the membership.
+    expect(fact('Membership type')).toHaveTextContent('Staff');
     expect(fact('Primary branch')).toHaveTextContent(MEMBERSHIP_NOT_PERMITTED);
     expect(screen.getByText(ROLES_NOT_PERMITTED)).toBeInTheDocument();
     expect(screen.getByText(BRANCHES_NOT_PERMITTED)).toBeInTheDocument();
@@ -150,11 +156,11 @@ describe('RequestedAccess', () => {
     show({
       membership: { ok: false, problem: FAILED },
       roles: { ok: false, problem: { ...FAILED, requestId: 'req-10' } },
-      scan: { ok: false, problem: { ...FAILED, requestId: 'req-11' } },
+      branches: { ok: false, problem: { ...FAILED, requestId: 'req-11' } },
     });
 
-    expect(fact('Membership type')).toHaveTextContent(READ_FAILED);
-    expect(fact('Membership type')).toHaveTextContent('Reference: req-9');
+    expect(fact('Primary branch')).toHaveTextContent(READ_FAILED);
+    expect(fact('Primary branch')).toHaveTextContent('Reference: req-9');
     expect(screen.getByText('Reference: req-10')).toBeInTheDocument();
     expect(screen.getByText('Reference: req-11')).toBeInTheDocument();
     expect(screen.queryByText(NO_ACTIVE_ROLE)).toBeNull();
@@ -181,23 +187,24 @@ describe('RequestedAccess', () => {
     expect(screen.getByRole('note')).toHaveTextContent(ROLES_CAPPED);
   });
 
-  it('says when the branch scan is partial, and when a branch-scoped view narrows it', () => {
-    const scan = PROPS.scan?.ok ? PROPS.scan.value : null;
-    if (!scan) throw new Error('the fixture has a scan');
-    show({ scan: { ok: true, value: { ...scan, truncated: true } }, scopedView: true });
-
-    const notes = screen.getAllByRole('note').map((note) => note.textContent);
-    expect(notes).toEqual([SCOPED_ASSIGNMENTS_NOTE, PARTIAL_SCAN_NOTE]);
-  });
-
-  it('says none when there are none, and a membership it couldn’t find', () => {
+  it('says when the branches are capped, and when a branch-scoped view narrows them', () => {
+    const branches = PROPS.branches?.ok ? PROPS.branches.value : null;
+    if (!branches) throw new Error('the fixture has branches');
     show({
-      membership: { ok: true, value: null },
-      roles: { ok: true, value: { items: [], page: page(0) } },
-      scan: { ok: true, value: { items: [], truncated: false } },
+      branches: { ok: true, value: { ...branches, page: page(101, true) } },
+      scopedView: true,
     });
 
-    expect(fact('Membership type')).toHaveTextContent(MEMBERSHIP_NOT_FOUND);
+    const notes = screen.getAllByRole('note').map((note) => note.textContent);
+    expect(notes).toEqual([SCOPED_ASSIGNMENTS_NOTE, BRANCHES_CAPPED]);
+  });
+
+  it('says none when there are none', () => {
+    show({
+      roles: { ok: true, value: { items: [], page: page(0) } },
+      branches: { ok: true, value: { items: [], page: page(0) } },
+    });
+
     expect(screen.getByText(NO_ACTIVE_ROLE)).toBeInTheDocument();
     expect(screen.getByText(NO_ACTIVE_BRANCH)).toBeInTheDocument();
   });
@@ -215,21 +222,19 @@ describe('RequestedAccess', () => {
     expect(fact('Primary branch')).toHaveTextContent('None');
   });
 
-  it('says the scan is partial for a tenant-wide view, and still lists what it found', () => {
-    const scan = PROPS.scan?.ok ? PROPS.scan.value : null;
-    if (!scan) throw new Error('the fixture has a scan');
-    show({ scan: { ok: true, value: { ...scan, truncated: true } } });
+  it('says the branches are capped for a tenant-wide view, and still lists the page', () => {
+    const branches = PROPS.branches?.ok ? PROPS.branches.value : null;
+    if (!branches) throw new Error('the fixture has branches');
+    show({ branches: { ok: true, value: { ...branches, page: page(101, true) } } });
 
-    expect(screen.getAllByRole('note').map((note) => note.textContent)).toEqual([
-      PARTIAL_SCAN_NOTE,
-    ]);
-    const branches = screen.getByRole('region', { name: 'Branch assignments table' });
-    expect(within(branches).getByText('Westlands Branch')).toBeInTheDocument();
+    expect(screen.getAllByRole('note').map((note) => note.textContent)).toEqual([BRANCHES_CAPPED]);
+    const table = screen.getByRole('region', { name: 'Branch assignments table' });
+    expect(within(table).getByText('Westlands Branch')).toBeInTheDocument();
     expect(screen.queryByText(NO_ACTIVE_BRANCH)).toBeNull();
   });
 
   // BG-03: a search by user lists every branch to a tenant-wide view, the grant's branches else.
-  it('says a branch-scoped view narrows the scan', () => {
+  it('says a branch-scoped view narrows the branches', () => {
     show({ scopedView: true });
 
     expect(screen.getAllByRole('note').map((note) => note.textContent)).toEqual([
@@ -239,11 +244,9 @@ describe('RequestedAccess', () => {
 
   it('labels an institution-wide role, a role that grants nothing, and ids the indexes lack', () => {
     const roles = PROPS.roles?.ok ? PROPS.roles.value : null;
-    const scan = PROPS.scan?.ok ? PROPS.scan.value : null;
-    if (!roles || !scan) throw new Error('the fixture has roles and a scan');
+    if (!roles) throw new Error('the fixture has roles');
     const [first] = roles.items;
-    const [firstScanned] = scan.items;
-    if (!first || !firstScanned) throw new Error('the fixture has a role and a branch assignment');
+    if (!first) throw new Error('the fixture has a role');
     show({
       roles: {
         ok: true,
@@ -263,10 +266,6 @@ describe('RequestedAccess', () => {
       roleIndex: new Map([
         [TELLER, { name: 'Teller', code: 'TELLER', status: 'DISABLED', systemRole: false }],
       ]),
-      scan: {
-        ok: true,
-        value: { ...scan, items: [{ ...firstScanned, branchId: UNKNOWN_BRANCH }] },
-      },
     });
 
     const table = screen.getByRole('region', { name: 'Role assignments' });
@@ -275,8 +274,6 @@ describe('RequestedAccess', () => {
     expect(within(table).getByText('Disabled')).toBeInTheDocument();
     expect(within(table).getByText('97000000')).toBeInTheDocument();
     expect(within(table).getByText('d4000000')).toBeInTheDocument();
-    const branches = screen.getByRole('region', { name: 'Branch assignments table' });
-    expect(within(branches).getByText('d4000000')).toBeInTheDocument();
   });
 
   it('has no Actions column on either table', () => {
@@ -285,13 +282,8 @@ describe('RequestedAccess', () => {
     expect(screen.queryByRole('columnheader', { name: 'Actions' })).toBeNull();
   });
 
-  it('never says none when a branch-scoped view or a partial scan hides rows (rule 9)', () => {
-    const { unmount } = show({ scan: { ok: true, value: { items: [], truncated: true } } });
-    expect(screen.queryByText(NO_ACTIVE_BRANCH)).toBeNull();
-    expect(screen.getByText(NO_ACTIVE_BRANCH_SEEN)).toBeInTheDocument();
-    unmount();
-
-    show({ scan: { ok: true, value: { items: [], truncated: false } }, scopedView: true });
+  it('never says none when a branch-scoped view hides rows (rule 9)', () => {
+    show({ branches: { ok: true, value: { items: [], page: page(0) } }, scopedView: true });
     expect(screen.queryByText(NO_ACTIVE_BRANCH)).toBeNull();
     expect(screen.getByText(NO_ACTIVE_BRANCH_SEEN)).toBeInTheDocument();
   });

@@ -139,6 +139,8 @@ export const branchDraftResultSchema = z
   .object({ branch_id: uuidSchema, status: z.string() })
   .transform((result) => ({ branchId: result.branch_id }));
 
+/** BranchAssignmentSummary. Items embed the branch's name and `assigned_at` (BG-09); they also
+ * carry `username` and `display_name`, which no page reads yet. */
 const branchAssignmentSchema = z
   .object({
     id: uuidSchema,
@@ -146,6 +148,8 @@ const branchAssignmentSchema = z
     branch_id: uuidSchema,
     assignment_type: z.enum(BRANCH_ASSIGNMENT_TYPES),
     status: z.string(),
+    branch_name: z.string(),
+    assigned_at: instantSchema,
   })
   .transform((row) => ({
     id: row.id,
@@ -153,6 +157,8 @@ const branchAssignmentSchema = z
     branchId: row.branch_id,
     assignmentType: row.assignment_type,
     status: row.status,
+    branchName: row.branch_name,
+    assignedAt: row.assigned_at,
   }));
 
 export type BranchAssignment = z.output<typeof branchAssignmentSchema>;

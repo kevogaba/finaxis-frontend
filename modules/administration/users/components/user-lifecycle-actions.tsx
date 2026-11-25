@@ -96,8 +96,8 @@ function copyFor(id: MembershipAction, name: string): ActionCopy {
 }
 
 interface UserLifecycleActionsProps {
-  /** `null` when the membership wasn't found: nothing can be sent, so only the note shows. */
-  membershipId: string | null;
+  /** From the user read, which always carries it (BG-09). */
+  membershipId: string;
   userName: string;
   actions: readonly MembershipAction[];
   /** The offered actions that are contextually blocked, each with the caption that says why. */
@@ -127,14 +127,13 @@ export function UserLifecycleActions({
 }: UserLifecycleActionsProps) {
   const notify = useToast();
   const [open, setOpen] = useState<MembershipAction | null>(null);
-  const offered = membershipId === null ? [] : actions;
   const buttonRefs = useRef(new Map<string, HTMLButtonElement | null>());
   // 08's I3: a successful transition swaps the whole action set (`refresh()`), unmounting the
   // trigger that had focus. `succeededRef` holds which action just succeeded, set only by a real
   // success below, so the effect runs the recovery once per transition. It keys on the set's
   // contents (`actionKey`), not the array: the server hands back a new array on every render.
   const succeededRef = useRef<string | null>(null);
-  const actionKey = offered.join(',');
+  const actionKey = actions.join(',');
 
   useEffect(() => {
     const succeeded = succeededRef.current;
@@ -173,7 +172,7 @@ export function UserLifecycleActions({
   // One caption per distinct reason, then the note: visible text, not a tooltip, because a
   // disabled button can't take focus to reveal one.
   const captions = [
-    ...new Set([...offered.flatMap((id) => blocked[id] ?? []), ...(note ? [note] : [])]),
+    ...new Set([...actions.flatMap((id) => blocked[id] ?? []), ...(note ? [note] : [])]),
   ];
   const captionId = (text: string) => `user-action-blocked-${captions.indexOf(text)}`;
 
@@ -196,12 +195,12 @@ export function UserLifecycleActions({
           '& > *': { flexGrow: { xs: 1, md: 0 } },
         }}
       >
-        {warning && offered.length > 0 && (
+        {warning && actions.length > 0 && (
           <Alert id={WARNING_ID} severity="warning" role="note" sx={{ flexBasis: '100%' }}>
             {warning}
           </Alert>
         )}
-        {offered.map((id, index) => {
+        {actions.map((id, index) => {
           const reason = blocked[id];
           return (
             <Button
@@ -244,53 +243,52 @@ export function UserLifecycleActions({
           </Typography>
         ))}
       </Box>
-      {membershipId !== null &&
-        offered.map((id) => {
-          const copy = copyFor(id, userName);
-          const close = () => {
-            setOpen(null);
-          };
-          const succeed = () => {
-            succeededRef.current = id;
-            setOpen(null);
-            notify(copy.success);
-          };
-          return (
-            <ReasonDialog
-              key={id}
-              open={open === id}
-              title={copy.title}
-              description={copy.description}
-              confirmLabel={copy.label}
-              reason={copy.reason}
-              reasonLabel={copy.reasonLabel}
-              reasonHelperText={copy.reasonHelperText}
-              tone={copy.destructive ? 'error' : 'default'}
-              action={copy.action}
-              contextOrganisationId={contextOrganisationId}
-              onClose={close}
-              onSuccess={succeed}
-              fields={() => (
-                <>
-                  <input type="hidden" name="membershipId" value={membershipId} />
-                  {id === 'reject' && (
-                    // Layer 12, P-3: the action refuses it once the membership moved on (approved
-                    // with a 200, suspended) and, when this page showed a user who was not
-                    // provisioning, once the user is provisioning (a 202 approval keeps the
-                    // membership pending). A membership already revoked goes through, so a
-                    // same-key retry replays.
-                    <>
-                      <input type="hidden" name="expectedStatus" value="PENDING_APPROVAL" />
-                      {userStatus && (
-                        <input type="hidden" name="expectedUserStatus" value={userStatus} />
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-            />
-          );
-        })}
+      {actions.map((id) => {
+        const copy = copyFor(id, userName);
+        const close = () => {
+          setOpen(null);
+        };
+        const succeed = () => {
+          succeededRef.current = id;
+          setOpen(null);
+          notify(copy.success);
+        };
+        return (
+          <ReasonDialog
+            key={id}
+            open={open === id}
+            title={copy.title}
+            description={copy.description}
+            confirmLabel={copy.label}
+            reason={copy.reason}
+            reasonLabel={copy.reasonLabel}
+            reasonHelperText={copy.reasonHelperText}
+            tone={copy.destructive ? 'error' : 'default'}
+            action={copy.action}
+            contextOrganisationId={contextOrganisationId}
+            onClose={close}
+            onSuccess={succeed}
+            fields={() => (
+              <>
+                <input type="hidden" name="membershipId" value={membershipId} />
+                {id === 'reject' && (
+                  // Layer 12, P-3: the action refuses it once the membership moved on (approved
+                  // with a 200, suspended) and, when this page showed a user who was not
+                  // provisioning, once the user is provisioning (a 202 approval keeps the
+                  // membership pending). A membership already revoked goes through, so a
+                  // same-key retry replays.
+                  <>
+                    <input type="hidden" name="expectedStatus" value="PENDING_APPROVAL" />
+                    {userStatus && (
+                      <input type="hidden" name="expectedUserStatus" value={userStatus} />
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          />
+        );
+      })}
     </>
   );
 }

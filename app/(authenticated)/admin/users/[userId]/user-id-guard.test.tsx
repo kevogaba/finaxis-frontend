@@ -15,9 +15,9 @@ const FELIX = '10000000-0000-4000-8000-00000000000d';
 const reads = vi.hoisted(() => ({
   getCurrentContextProfile: vi.fn(),
   getUser: vi.fn(),
-  findUserMembership: vi.fn(),
   getMembership: vi.fn(),
   listUserBranchAssignments: vi.fn(),
+  countUserBranchAssignments: vi.fn(),
   readMakerCheckerSwitch: vi.fn(),
   countUserRoleAssignments: vi.fn(),
   listRoleAssignments: vi.fn(),
@@ -42,10 +42,11 @@ vi.mock('@/auth/context-service', () => ({
 }));
 vi.mock('@/modules/administration/users/user-service', () => ({
   getUser: (...args: unknown[]) => reads.getUser(...args) as unknown,
-  findUserMembership: (...args: unknown[]) => reads.findUserMembership(...args) as unknown,
   getMembership: (...args: unknown[]) => reads.getMembership(...args) as unknown,
   listUserBranchAssignments: (...args: unknown[]) =>
     reads.listUserBranchAssignments(...args) as unknown,
+  countUserBranchAssignments: (...args: unknown[]) =>
+    reads.countUserBranchAssignments(...args) as unknown,
   countUserRoleAssignments: (...args: unknown[]) =>
     reads.countUserRoleAssignments(...args) as unknown,
 }));

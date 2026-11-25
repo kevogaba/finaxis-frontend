@@ -1,11 +1,10 @@
 import 'server-only';
 import type { UserSummary } from './user-contract';
-import { SCAN_CEILING } from './user-rules';
 import { listUsers } from './user-service';
 
 const PAGE_SIZE = 100;
-// ponytail: at most SCAN_CEILING users (5 pages of 100) per check, like 10's membership search.
-const PAGES = SCAN_CEILING / PAGE_SIZE;
+// ponytail: at most 500 users (5 pages of 100) per check (L1's capped scan).
+const PAGES = 5;
 
 /** The first user `GET /tenant/users?q=` lists that `matches` accepts, within the ceiling. Its `q` is
  * a case-insensitive substring over username, email and name with `%` and `_` as wildcards

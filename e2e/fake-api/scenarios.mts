@@ -134,8 +134,9 @@ function assignment(
   userId: string,
   branchId: string,
   type: string,
+  assignedAt = CREATED,
 ): FakeBranchAssignment {
-  return { id, organisationId, userId, branchId, type, status: 'ACTIVE' };
+  return { id, organisationId, userId, branchId, type, status: 'ACTIVE', assignedAt };
 }
 
 function role(
@@ -1067,6 +1068,10 @@ export const USER_SCENARIO_IDS = {
   aminaTeller: '10000000-0000-4000-8000-000000000301',
   felixBranchTeller: '10000000-0000-4000-8000-000000000307',
 } as const;
+
+/** bg-adopt 16 seed IDs (lane rules §5): `users-many-assignments`' outposts end …01–…11, Felix's
+ * assignments there …51–…61. */
+const MANY_ASSIGNMENTS_ID_PREFIX = 'a1600000-0000-4000-8000-0000000000';
 
 /** Real TENANT_ADMIN codes (contract §J), granted only in `users`, so `default` stays the read-only
  * gating scenario for the users record. */
@@ -2292,19 +2297,30 @@ const BUILDERS = {
   'users-read-only': () => withoutPermission(usersScenario(), ...USER_ADMIN_CODES),
   // #342: the same, with Jane IAM_ADMIN-shaped (no user.assign_self) on her own record.
   'users-self': () => withoutPermission(usersScenario(), 'user.assign_self'),
-  // 500 more ACTIVE rows of Felix's appended after the seeds (the fake pages in insertion order):
-  // the scan searches by user (BG-03), his seeded row is on page 0 and page 4 still has more, so the
-  // scan is truncated (Ruling 8's partial marker).
+  // A pagination fixture (BG-09): Felix also works at eleven outposts, each assignment newer than
+  // his Westlands Home, so his twelve fill a page of 10 and spill onto a second, newest first.
   'users-many-assignments': () => {
     const state = usersScenario();
+    const outposts = Array.from({ length: 11 }, (_, n) => {
+      const number = String(n + 1).padStart(2, '0');
+      return branch(
+        `${MANY_ASSIGNMENTS_ID_PREFIX}${number}`,
+        IDS.greenfield,
+        `OUTPOST_${number}`,
+        `Outpost ${number}`,
+        'OPERATIONS',
+      );
+    });
+    state.branches.push(...outposts);
     state.branchAssignments.push(
-      ...Array.from({ length: 500 }, (_, n) =>
+      ...outposts.map((outpost, n) =>
         assignment(
-          `10000000-0000-4000-8000-${String(100000 + n).padStart(12, '0')}`,
+          `${MANY_ASSIGNMENTS_ID_PREFIX}${String(n + 51)}`,
           IDS.greenfield,
           USER_SCENARIO_IDS.felix,
-          IDS.headOffice,
+          outpost.id,
           'OPERATE',
+          `2026-10-${String(n + 1).padStart(2, '0')}T08:00:00Z`,
         ),
       ),
     );

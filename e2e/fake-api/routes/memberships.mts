@@ -7,7 +7,16 @@ import {
 } from '../access.mts';
 import type { AccessContext } from '../access.mts';
 import { recordAuditEvent } from '../audit-log.mts';
-import { objectBody, pageOf, problem, readBody, reasonField, sendJson } from '../http.mts';
+import {
+  instantKey,
+  objectBody,
+  pageOf,
+  problem,
+  readBody,
+  reasonField,
+  sendJson,
+  tenantListOrder,
+} from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
 import { makerCheckerRequired } from './settings.mts';
 import { route } from '../router.mts';
@@ -49,14 +58,29 @@ const inviterWire = (access: AccessContext, membership: FakeMembership) => ({
   created_by: actorRef(access, membership.organisationId, membership.invitedBy),
 });
 
-const summaryWire = (access: AccessContext, membership: FakeMembership) => ({
+/** MembershipSummaryResponse: the member's names, the primary branch's name and `created_at` come
+ * embedded (BG-09). ponytail: no `member_number` yet; entry 19 seeds the numbers. */
+const summaryWire = (access: AccessContext, { membership, user }: Member) => ({
   id: membership.id,
   user_id: membership.userId,
   membership_status: membership.status,
   membership_type: membership.type,
   primary_branch_id: membership.primaryBranchId,
+  username: user.username,
+  email: user.email,
+  display_name: user.displayName,
+  primary_branch_name:
+    access.state.branches.find((branch) => branch.id === membership.primaryBranchId)?.name ?? null,
+  created_at: membership.createdAt,
   ...inviterWire(access, membership),
 });
+
+/** `allowedMembershipSorts`; without `sort_by`, newest first. */
+const MEMBERSHIP_SORTS: Record<string, (member: Member & { id: string }) => string> = {
+  createdAt: ({ membership }) => instantKey(membership.createdAt),
+  membershipStatus: ({ membership }) => membership.status,
+  membershipType: ({ membership }) => membership.type,
+};
 
 const detailWire = (access: AccessContext, { membership, user }: Member) => ({
   id: membership.id,
@@ -261,27 +285,29 @@ export const membershipRoutes: Route[] = [
     const access = tenantAccess(context);
     requirePermission(access, 'membership.view');
     const { query, state } = context;
+    // The sort is checked after the permission (BG-26).
+    const order = tenantListOrder(query, MEMBERSHIP_SORTS, 'createdAt');
     const q = query.get('q');
     const matcher = q ? likeMatcher(q) : null;
     const status = query.get('membership_status');
     const type = query.get('membership_type');
+    const userId = query.get('user_id');
     const rows = state.memberships
       .filter((membership) => membership.organisationId === access.organisation.id)
       .flatMap((membership) => {
         const user = state.users.find((candidate) => candidate.id === membership.userId);
-        return user ? [{ membership, user }] : [];
+        return user ? [{ id: membership.id, membership, user }] : [];
       })
       .filter(
         ({ membership, user }) =>
           (!matcher ||
             [user.username, user.email, user.displayName].some((value) => matcher.test(value))) &&
           (!status || membership.status === status) &&
-          (!type || membership.type === type),
+          (!type || membership.type === type) &&
+          (!userId || membership.userId === userId),
       )
-      // `sort_*` is accepted and ignored (contract §E.3); newest first = reverse seed order, as the
-      // fake's /tenant/users does.
-      .reverse()
-      .map(({ membership }) => summaryWire(access, membership));
+      .sort(order)
+      .map((member) => summaryWire(access, member));
     sendJson(context.res, 200, pageOf(rows, query));
   }),
 

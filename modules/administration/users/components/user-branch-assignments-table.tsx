@@ -10,11 +10,11 @@ import { RevokeAssignmentButton } from '@/modules/administration/branches/compon
 
 export interface UserBranchAssignmentRow {
   assignmentId: string;
-  /** The branch's name from the branch index, or its short id when the index is empty. */
+  /** The branch's name, embedded in the assignment (BG-09). */
   branchName: string;
-  /** From the branch index; null when the branch isn't in it. */
-  branchCode: string | null;
   assignmentType: string;
+  /** Already formatted in the organisation's timezone. */
+  assignedAt: string;
   /** The holder may revoke at this row's branch (`canActAtBranch`, BG-03). */
   revocable: boolean;
 }
@@ -25,6 +25,8 @@ interface UserBranchAssignmentsTableProps {
   /** The signed-in user's own record: each revoke warns first (BG-35), as the role revoke does. */
   self: boolean;
   canRevoke: boolean;
+  /** The organisation's, which the Assigned column names. */
+  timeZone: string;
   /** I2: the organisation the page rendered for; forwarded to each row's revoke confirmation. */
   contextOrganisationId?: string;
 }
@@ -36,6 +38,7 @@ export function UserBranchAssignmentsTable({
   userName,
   self,
   canRevoke,
+  timeZone,
   contextOrganisationId,
 }: UserBranchAssignmentsTableProps) {
   return (
@@ -43,11 +46,12 @@ export function UserBranchAssignmentsTable({
     // Not "Branch assignments": the page's section card is the region of that name, and two
     // landmarks with one name fail axe's landmark-unique.
     <TableContainer tabIndex={0} role="region" aria-label="Branch assignments table">
-      <Table aria-label="Branch assignments" sx={{ minWidth: 560 }}>
+      <Table aria-label="Branch assignments" sx={{ minWidth: 680 }}>
         <TableHead>
           <TableRow>
             <TableCell>Branch</TableCell>
             <TableCell>Assignment type</TableCell>
+            <TableCell>Assigned ({timeZone})</TableCell>
             {canRevoke && <TableCell align="right">Actions</TableCell>}
           </TableRow>
         </TableHead>
@@ -56,18 +60,11 @@ export function UserBranchAssignmentsTable({
             <TableRow key={row.assignmentId}>
               <TableCell>
                 <TruncatedText value={row.branchName} maxWidth={280} />
-                {row.branchCode && (
-                  <TruncatedText
-                    value={row.branchCode}
-                    maxWidth={280}
-                    variant="caption"
-                    color="textSecondary"
-                  />
-                )}
               </TableCell>
               <TableCell>
                 <StatusChip value={row.assignmentType} />
               </TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>{row.assignedAt}</TableCell>
               {canRevoke && (
                 <TableCell align="right">
                   {row.revocable && (

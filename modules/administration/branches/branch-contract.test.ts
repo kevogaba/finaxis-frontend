@@ -111,16 +111,23 @@ describe('branch contract', () => {
           branch_id: WESTLANDS,
           assignment_type: 'HOME',
           status: 'ACTIVE',
+          username: 'felix.omondi',
+          display_name: 'Felix Omondi',
+          branch_name: 'Westlands Branch',
+          assigned_at: '2026-11-02T07:30:00Z',
         },
       ],
       page: PAGE,
     });
+    // BG-09: the branch's name and the assignment date come embedded.
     expect(assignments.items[0]).toEqual({
       id: '08000000-0000-4000-8000-000000000009',
       userId: '08000000-0000-4000-8000-000000000001',
       branchId: WESTLANDS,
       assignmentType: 'HOME',
       status: 'ACTIVE',
+      branchName: 'Westlands Branch',
+      assignedAt: '2026-11-02T07:30:00Z',
     });
   });
 

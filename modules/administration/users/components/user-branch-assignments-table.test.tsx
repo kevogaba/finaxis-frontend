@@ -37,15 +37,15 @@ function expectScoped(root: ParentNode, assignmentId: string) {
 const westlandsHome: UserBranchAssignmentRow = {
   assignmentId: HOME_ASSIGNMENT,
   branchName: 'Westlands Branch',
-  branchCode: 'WESTLANDS',
   assignmentType: 'HOME',
+  assignedAt: '02 Nov 2026 · 10:30',
   revocable: true,
 };
 const headOfficeOperate: UserBranchAssignmentRow = {
   assignmentId: OPERATE_ASSIGNMENT,
   branchName: 'Head Office',
-  branchCode: 'HEAD_OFFICE',
   assignmentType: 'OPERATE',
+  assignedAt: '15 Nov 2026 · 09:05',
   revocable: true,
 };
 
@@ -66,6 +66,7 @@ const renderTable = ({
       userName="Felix Omondi"
       canRevoke={canRevoke}
       self={self}
+      timeZone="Africa/Nairobi"
       contextOrganisationId={ORG}
     />,
   );
@@ -83,7 +84,7 @@ function rowOf(branchName: string): HTMLElement {
 }
 
 describe('UserBranchAssignmentsTable', () => {
-  it('lists each branch with its code and assignment type under their column headers', () => {
+  it('lists each branch with its assignment type and date under their column headers', () => {
     renderTable();
 
     const table = screen.getByRole('table', { name: 'Branch assignments' });
@@ -91,7 +92,7 @@ describe('UserBranchAssignmentsTable', () => {
       within(table)
         .getAllByRole('columnheader')
         .map((header) => header.textContent),
-    ).toEqual(['Branch', 'Assignment type', 'Actions']);
+    ).toEqual(['Branch', 'Assignment type', 'Assigned (Africa/Nairobi)', 'Actions']);
     // Keyboard-scrollable at 375 px even when no row holds a button (07's history-table rule).
     expect(screen.getByRole('region', { name: 'Branch assignments table' })).toHaveAttribute(
       'tabindex',
@@ -100,20 +101,20 @@ describe('UserBranchAssignmentsTable', () => {
     // The page's section card is the region named "Branch assignments": two landmarks with one name
     // fail axe's landmark-unique, so the table's region is named differently.
     expect(screen.queryByRole('region', { name: 'Branch assignments' })).toBeNull();
-    const [westlandsBranch, westlandsType] = within(rowOf('Westlands Branch')).getAllByRole('cell');
-    expect(westlandsBranch).toHaveTextContent('Westlands Branch');
-    expect(westlandsBranch).toHaveTextContent('WESTLANDS');
+    const [westlandsBranch, westlandsType, westlandsAssigned] = within(
+      rowOf('Westlands Branch'),
+    ).getAllByRole('cell');
+    // The embedded name alone (BG-09): assignment items carry no branch code.
+    expect(westlandsBranch).toHaveTextContent(/^Westlands Branch$/);
     // The type is worded, never the raw HOME.
     expect(westlandsType).toHaveTextContent(/^Home$/);
-    const [headOfficeBranch, headOfficeType] = within(rowOf('Head Office')).getAllByRole('cell');
-    expect(headOfficeBranch).toHaveTextContent('HEAD_OFFICE');
+    expect(westlandsAssigned).toHaveTextContent(/^02 Nov 2026 · 10:30$/);
+    const [headOfficeBranch, headOfficeType, headOfficeAssigned] = within(
+      rowOf('Head Office'),
+    ).getAllByRole('cell');
+    expect(headOfficeBranch).toHaveTextContent(/^Head Office$/);
     expect(headOfficeType).toHaveTextContent(/^Operate$/);
-  });
-
-  it('shows the branch name alone when no code is known', () => {
-    renderTable({ rows: [{ ...westlandsHome, branchName: '44444444', branchCode: null }] });
-
-    expect(within(rowOf('44444444')).getAllByRole('cell')[0]).toHaveTextContent(/^44444444$/);
+    expect(headOfficeAssigned).toHaveTextContent(/^15 Nov 2026 · 09:05$/);
   });
 
   it('names each revoke by type and branch', () => {
@@ -277,6 +278,6 @@ describe('UserBranchAssignmentsTable', () => {
     );
     expect(screen.queryByRole('columnheader', { name: 'Actions' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Revoke/ })).toBeNull();
-    expect(within(rowOf('Westlands Branch')).getAllByRole('cell')).toHaveLength(2);
+    expect(within(rowOf('Westlands Branch')).getAllByRole('cell')).toHaveLength(3);
   });
 });
