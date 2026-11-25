@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import { screen } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
+import { permissionScopes } from '@/test/permission-scopes';
 import type { AuditFilters } from '@/modules/administration/audit/components/audit-filters';
 import type { SelectedContextProfile } from '@/auth/context-service';
 
@@ -64,10 +65,14 @@ const EMPTY_PAGE = {
   page: { number: 0, size: 20, totalItems: 0, totalPages: 0, hasNext: false, hasPrevious: false },
 };
 
-function signedInWith(permissions: string[]) {
+/** Every code tenant-wide unless `branchOnly` names some held only at branch scope (BG-33). */
+function signedInWith(permissions: string[], branchOnly: string[] = []) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions },
+    profile: {
+      permissions,
+      permission_scopes: permissionScopes(permissions, branchOnly),
+    },
     context: { organization: { id: 'org-1', name: 'Greenfield' }, branch: null },
   });
 }
@@ -102,6 +107,14 @@ describe('AuditTrailPage: the actor search', () => {
     expect(screen.getByRole('combobox', { name: 'Entity type' })).toBeInTheDocument();
     expect(filters.at(-1)?.actorSearch).toBe(false);
     expect(screen.queryByRole('combobox', { name: 'Actor' })).not.toBeInTheDocument();
+  });
+
+  it('is not offered with user.view held only at branch scope (BG-33)', async () => {
+    signedInWith(['audit.view', 'user.view'], ['user.view']);
+
+    await show();
+
+    expect(filters.at(-1)?.actorSearch).toBe(false);
   });
 
   it('is not offered when the context did not resolve', async () => {

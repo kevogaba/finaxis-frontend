@@ -162,7 +162,12 @@ PR 00 writes them into the register.
     - `GET /tenant/permissions` is tenant-only and needs `permission.view`, which branch roles lack.
     - The composition 400 carries no `violations`.
     - So view requirements need a checked-in map, tested against the platform's catalogue.
-21. `INVITE_CODES` includes `user.assign_branch`, which `POST /tenant/users` no longer checks.
+21. `POST /tenant/users` checks `user.invite` with `membership.view` and `user.view` tenant-wide,
+    and assigns each invited branch through `user.assign_branch` with `branch_assignment.view` at
+    that branch (`UserProvisioningService.createInvitationAssignments` →
+    `BranchProvisioningService.assignUser`). `INVITE_CODES` lacked `membership.view`. (Corrected
+    during 04: an earlier reading said the invite no longer checked `user.assign_branch`; the
+    platform's own tests invite with no branch assignments.)
 22. Platform-scope codes (`grant_scope: PLATFORM`) can be granted to tenant roles without refusal,
     and grant nothing there.
 
@@ -262,7 +267,8 @@ Explain these codes, without echoing `detail`.
   - The fake catalogue mirrors the platform's 86 codes, with `kind`, `grant_scope` and
     `required_view_permissions`.
 - **Gates:** derive them from the map.
-  - Invite needs `user.invite` + `membership.view` + `user.view`; drop `user.assign_branch`.
+  - Invite needs `user.invite` + `membership.view` + `user.view` tenant-wide, and
+    `user.assign_branch` + `branch_assignment.view` for its branches.
   - Assign role and revoke role need `role_assignment.view`.
 - **Permission scopes:** parse `permission_scopes` (zod: `branch_ids` optional) and add
   `canTenantWide(holder, code)`.

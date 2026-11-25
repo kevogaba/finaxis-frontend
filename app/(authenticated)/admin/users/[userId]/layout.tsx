@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { notFound } from 'next/navigation';
 import Paper from '@mui/material/Paper';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can } from '@/auth/permissions';
+import { can, permissionHolder } from '@/auth/permissions';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { RecordHero } from '@/components/data-display/record-hero';
@@ -59,7 +59,7 @@ export default async function UserRecordLayout({ children, params }: UserRecordL
   }
 
   const record = user.value;
-  const holder = { permissions: resolved?.profile.permissions ?? [] };
+  const holder = permissionHolder(resolved?.profile);
   const status = { membershipStatus: record.membershipStatus, userStatus: record.userStatus };
   // Only with membership.view (every transition needs it, BG-31); a failure degrades the hero.
   const membership = can(holder, 'membership.view')

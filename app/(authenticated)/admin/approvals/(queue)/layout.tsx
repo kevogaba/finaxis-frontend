@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { canAll } from '@/auth/permissions';
+import { canAll, permissionHolder } from '@/auth/permissions';
 import { RecordTabs } from '@/components/data-display/record-tabs';
 import { PageHeader } from '@/components/shell/page-header';
 import { load } from '@/lib/api/load';
@@ -9,7 +9,7 @@ import { actionableUserApprovals } from '@/modules/administration/approvals/appr
 import {
   approvalQueueTabs,
   BRANCH_ACTIVATION_CODES,
-  USER_APPROVAL_CODES,
+  canSeeUserApprovals,
 } from '@/modules/administration/approvals/approval-rules';
 import {
   countBranchActivations,
@@ -21,8 +21,9 @@ import {
  * this group, with their own hero. */
 export default async function ApprovalQueueLayout({ children }: { children: ReactNode }) {
   const selected = await getCurrentContextProfile();
-  const holder = { permissions: selected.kind === 'resolved' ? selected.profile.permissions : [] };
-  const users = canAll(holder, USER_APPROVAL_CODES);
+  const holder =
+    selected.kind === 'resolved' ? permissionHolder(selected.profile) : { permissions: [] };
+  const users = canSeeUserApprovals(holder);
   const branches = canAll(holder, BRANCH_ACTIVATION_CODES);
   // Spec §10.6's tab counts are the bell's reads, cached per request, so the pair is read once.
   // load() redirects on a lost session or a stale context; any other failure leaves the label

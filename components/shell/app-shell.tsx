@@ -59,7 +59,7 @@ export function AppShell({
   if (isDesktop && mobileOpen) {
     setMobileOpen(false);
   }
-  const items = visibleNavigationItems(NAVIGATION[context.module.id], user.permissions);
+  const items = visibleNavigationItems(NAVIGATION[context.module.id], user);
 
   return (
     <ApplicationContextProvider value={context}>

@@ -5,6 +5,7 @@ import { refresh } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
+import { requiredViews } from '@/auth/permission-views';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiDelete, apiPatch, apiPost } from '@/lib/api/tenant-api';
@@ -146,16 +147,28 @@ function grantKey(formKey: string, code: string): string {
   ].join('-');
 }
 
+/** The platform's composition 400 (ADR 0030), told apart from the form's own `validation_failed`
+ * by having reached the backend. */
+const COMPOSITION_GRANT =
+  'These permissions need their view permissions granted first. Refresh and try again.';
+const COMPOSITION_REMOVE = 'Another permission on this role needs this one. Remove that one first.';
+
 export async function grantPermissions(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
   const progress = { granted: 0, total: 0 };
-  const result = await runServerAction(grantInput, formData, async (input) => {
+  const refused = await runServerAction(grantInput, formData, async (input) => {
     progress.total = input.permissionCodes.length;
+    // A mutation is refused without its views on the role (ADR 0030), so they go first.
+    const views = new Set(input.permissionCodes.flatMap(requiredViews));
+    const ordered = [
+      ...input.permissionCodes.filter((code) => views.has(code)),
+      ...input.permissionCodes.filter((code) => !views.has(code)),
+    ];
     // ponytail: sequential, ≤ MAX_GRANTS_PER_SUBMIT writes per submit (the write budget is
     // 120/min); a bulk-grant endpoint would make this one call.
-    for (const code of input.permissionCodes) {
+    for (const code of ordered) {
       await apiPost(
         `/api/v1/tenant/roles/${input.roleId}/permissions`,
         { permission_code: code },
@@ -164,6 +177,8 @@ export async function grantPermissions(
       progress.granted += 1;
     }
   });
+  const result =
+    progress.total > 0 ? explain(refused, 'validation_failed', COMPOSITION_GRANT) : refused;
   if (result.ok) return result;
   if (progress.granted > 0) {
     // The grants that landed are real, so show them now. A retry replays them (same derived keys)
@@ -183,13 +198,16 @@ export async function removePermission(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const result = await runServerAction(removeInput, formData, (input) =>
-    apiDelete(
+  const sent = { delete: false };
+  const result = await runServerAction(removeInput, formData, (input) => {
+    sent.delete = true;
+    return apiDelete(
       `/api/v1/tenant/roles/${input.roleId}/permissions/${input.grantId}`,
       input.idempotencyKey,
-    ),
-  );
-  return explain(result, 'conflict', IMMUTABLE);
+    );
+  });
+  const named = sent.delete ? explain(result, 'validation_failed', COMPOSITION_REMOVE) : result;
+  return explain(named, 'conflict', IMMUTABLE);
 }
 
 const assignInput = z

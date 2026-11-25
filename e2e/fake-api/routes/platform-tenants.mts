@@ -249,7 +249,6 @@ function transition(
   return route('POST', `/api/v1/platform/tenants/:tenant_id/${path}`, async (context) => {
     const access = platformAccess(context);
     requirePermission(access, permission);
-    requirePermission(access, 'tenant.view'); // read-back (BG-31)
     const tenant = findTenant(context);
     let body: Record<string, unknown> = {};
     if (options.reason !== 'none') {
@@ -359,7 +358,6 @@ export const platformTenantRoutes: Route[] = [
   route('PATCH', '/api/v1/platform/tenants/:tenant_id', async (context) => {
     const access = platformAccess(context);
     requirePermission(access, 'tenant.update_draft');
-    requirePermission(access, 'tenant.view'); // read-back (BG-31)
     const tenant = findTenant(context);
     const body = objectBody(await readBody(context.req), DRAFT_KEYS);
     const draft = draftFields(body, { amend: true });

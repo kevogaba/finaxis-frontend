@@ -87,7 +87,6 @@ function transition(
   return route('POST', `/api/v1/tenant/memberships/:membership_id/${path}`, async (context) => {
     const access = tenantAccess(context);
     requirePermission(access, permission);
-    requirePermission(access, 'membership.view'); // read-back (BG-31)
     const raw = await readBody(context.req);
     // Reactivate's body is optional; suspend and revoke need a reason (contract §D).
     const body = raw === undefined && !reasonRequired ? {} : objectBody(raw, ['reason']);
@@ -147,7 +146,6 @@ export const membershipRoutes: Route[] = [
   route('POST', '/api/v1/tenant/memberships/:membership_id/activate', async (context) => {
     const access = tenantAccess(context);
     requirePermission(access, 'user.approve');
-    requirePermission(access, 'membership.view'); // read-back (BG-31)
     const raw = await readBody(context.req);
     // The endpoint reads no body: none or `{}`, and any property is refused (ApiJsonCodec).
     const body = raw === undefined ? {} : objectBody(raw, []);

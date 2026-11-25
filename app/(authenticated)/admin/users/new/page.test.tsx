@@ -5,6 +5,7 @@ import { BackendApiError } from '@/auth/backend-api';
 import type { InviteUserWizard } from '@/modules/administration/users/components/invite-user-wizard';
 import { INVITE_CODES, INVITE_FORBIDDEN } from '@/modules/administration/users/invite-rules';
 import { renderWithProviders } from '@/test/test-utils';
+import { permissionScopes } from '@/test/permission-scopes';
 
 const { getCurrentContextProfile, listBranches, listRoles, redirect, wizards } = vi.hoisted(() => ({
   getCurrentContextProfile: vi.fn(),
@@ -47,9 +48,16 @@ const NO_ACTIVE_ROLES =
 const NO_ACTIVE_BRANCHES =
   'There are no active branches to assign. Activate one under Branches first.';
 
-const resolved = (permissions: readonly string[] = INVITE_CODES) => ({
+// Every code tenant-wide unless `branchOnly` names some held only at branch scope (BG-33).
+const resolved = (
+  permissions: readonly string[] = INVITE_CODES,
+  branchOnly: readonly string[] = [],
+) => ({
   kind: 'resolved',
-  profile: { permissions },
+  profile: {
+    permissions,
+    permission_scopes: permissionScopes(permissions, branchOnly),
+  },
   context: { organization: { id: ORG, name: 'Greenfield SACCO' }, branch: null },
 });
 
@@ -143,6 +151,16 @@ describe('InviteUserPage', () => {
     expect(screen.getByText(INVITE_FORBIDDEN)).toBeInTheDocument();
     expect(listRoles).not.toHaveBeenCalled();
     expect(listBranches).not.toHaveBeenCalled();
+    expect(wizards).toHaveLength(0);
+  });
+
+  // The invite and its email check run tenant-wide (BG-33).
+  it('says why, and reads nothing, with user.view held only at branch scope', async () => {
+    getCurrentContextProfile.mockResolvedValue(resolved(INVITE_CODES, ['user.view']));
+    renderWithProviders(await InviteUserPage());
+
+    expect(screen.getByText(INVITE_FORBIDDEN)).toBeInTheDocument();
+    expect(listRoles).not.toHaveBeenCalled();
     expect(wizards).toHaveLength(0);
   });
 

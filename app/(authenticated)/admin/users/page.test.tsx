@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import { BackendApiError } from '@/auth/backend-api';
 import { INVITE_CODES } from '@/modules/administration/users/invite-rules';
+import { USERS_BRANCH_SCOPED } from '@/modules/administration/users/user-rules';
 import { renderWithProviders } from '@/test/test-utils';
+import { permissionScopes } from '@/test/permission-scopes';
 
 const { getCurrentContextProfile, listUsers, redirect } = vi.hoisted(() => ({
   getCurrentContextProfile: vi.fn(),
@@ -31,9 +33,13 @@ vi.mock('@/modules/administration/users/user-service', () => ({
 
 const { default: UsersPage } = await import('./page');
 
-const resolved = (permissions: readonly string[]) => ({
+// Every code tenant-wide unless `branchOnly` names some held only at branch scope (BG-33).
+const resolved = (permissions: readonly string[], branchOnly: readonly string[] = []) => ({
   kind: 'resolved',
-  profile: { permissions },
+  profile: {
+    permissions,
+    permission_scopes: permissionScopes(permissions, branchOnly),
+  },
   context: { organization: { id: 'org-1', name: 'Greenfield SACCO' }, branch: null },
 });
 
@@ -88,6 +94,17 @@ describe('UsersPage: the Invite user entry (Ruling 4)', () => {
     await expect(UsersPage({ searchParams: Promise.resolve({}) })).rejects.toThrow(
       'profile read failed',
     );
+  });
+
+  // GET /tenant/users checks user.view tenant-wide (BG-33): no read, no 403 to explain.
+  it('shows its access-denied state, reading nothing, for a branch-scoped user.view', async () => {
+    getCurrentContextProfile.mockResolvedValue(resolved(INVITE_CODES, ['user.view']));
+    await render();
+    expect(listUsers).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { level: 1, name: 'Users & access' })).toBeInTheDocument();
+    expect(screen.getByText("You don't have permission")).toBeInTheDocument();
+    expect(screen.getByText(USERS_BRANCH_SCOPED)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Invite user' })).toBeNull();
   });
 
   it('stays in the header when the directory read fails', async () => {

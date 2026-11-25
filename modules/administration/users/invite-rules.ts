@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { canAll, type PermissionHolder } from '@/auth/permissions';
+import { canAll, canAllTenantWide, type PermissionHolder } from '@/auth/permissions';
+import { withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import { BRANCH_ASSIGNMENT_TYPES } from '@/modules/administration/branches/branch-contract';
 import { MEMBERSHIP_STATUSES, MEMBERSHIP_TYPES, type MembershipStatus } from './user-contract';
@@ -10,19 +11,19 @@ import type { SelectOption } from './user-rules';
  * wizard, the route handler and the Server Action share it, so every string is defined once.
  */
 
-/** Inviting posts `user.invite` and assigns branches (`user.assign_branch` per branch, contract
- * §E.3); the email check reads the user directory, the pickers the roles and the branches. A holder
- * without any of them gets no half-working wizard (Ruling 4). */
-export const INVITE_CODES = [
-  'user.invite',
-  'user.assign_branch',
-  'user.view',
+/** `POST /tenant/users` checks `user.invite` and the views it implies tenant-wide (ADR 0030,
+ * BG-33), as does the email check's user directory, and assigns each invited branch through
+ * `user.assign_branch` (with `branch_assignment.view`) at that branch; the pickers read the roles and
+ * the branches. A holder without any of them gets no half-working wizard (Ruling 4). */
+const INVITE_WRITE_CODES = withViews(['user.invite']);
+export const INVITE_CODES: readonly string[] = [
+  ...withViews(['user.invite', 'user.assign_branch']),
   'role.view',
   'branch.view',
-] as const;
+];
 
 export function canInviteUsers(holder: PermissionHolder): boolean {
-  return canAll(holder, INVITE_CODES);
+  return canAll(holder, INVITE_CODES) && canAllTenantWide(holder, INVITE_WRITE_CODES);
 }
 
 export const USERS_HREF = '/admin/users';
@@ -77,7 +78,7 @@ export const INVITATION_FIELDS = ['sendIdentityInvite', 'sendApplicationInvite']
 
 // The page's states.
 export const INVITE_FORBIDDEN =
-  'Inviting someone needs permission to invite users and assign branches, and to view users, roles and branches. Ask an administrator if you need access.';
+  'Inviting someone needs permission for the whole institution to invite users and to view users and memberships, and permission to assign branches and to view branch assignments, roles and branches. Ask an administrator if you need access.';
 export const NO_ACTIVE_BRANCHES =
   'There are no active branches to assign. Activate one under Branches first.';
 /** The pickers read one page of 100 by name (AGENTS.md's eighth paging exception, Ruling 10): past

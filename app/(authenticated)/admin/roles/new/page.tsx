@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Paper from '@mui/material/Paper';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { permissionHolder } from '@/auth/permissions';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { PageHeader } from '@/components/shell/page-header';
 import { canCreateRole } from '@/modules/administration/roles/role-rules';
@@ -19,7 +20,7 @@ export default async function NewRolePage() {
     />
   );
 
-  if (!canCreateRole({ permissions: resolved?.profile.permissions ?? [] })) {
+  if (!canCreateRole(permissionHolder(resolved?.profile))) {
     return (
       <>
         {header}

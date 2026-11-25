@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { requireContext, requirePermission, requireTenantContext } from '../access.mts';
 import type { AccessContext } from '../access.mts';
 import { recordAuditEvent } from '../audit-log.mts';
+import { viewsRequiredBy } from '../catalogue.mts';
 import { UUID, objectBody, problem, readBody, stringField } from '../http.mts';
 import type { Violation } from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
@@ -153,14 +154,17 @@ function readInvitation(body: Record<string, unknown>): Invitation {
   return { email, username, displayName, membershipType, primaryBranchId, branches, roles };
 }
 
-/** `user.assign_branch` at each invited branch (contract §E.3 "B"): a TENANT grant, or a BRANCH grant
- * while that branch is the selected one (§E.4). */
+/** `user.assign_branch`, and the `branch_assignment.view` it implies (ADR 0030), at each invited
+ * branch (contract §E.3 "B"): a TENANT grant, or a BRANCH grant while that branch is the selected one
+ * (§E.4). The 403 names the first missing code, as `requirePermission` does. */
 function requireAssignAt(access: AccessContext, branchIds: readonly string[]): void {
   for (const branchId of branchIds) {
-    const held =
-      access.tenantPermissions.has('user.assign_branch') ||
-      (access.claims.branchId === branchId && access.permissions.has('user.assign_branch'));
-    if (!held) throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
+    const missing = ['user.assign_branch', ...viewsRequiredBy('user.assign_branch')].find(
+      (code) =>
+        !access.tenantPermissions.has(code) &&
+        !(access.claims.branchId === branchId && access.permissions.has(code)),
+    );
+    if (missing !== undefined) throw problem(403, 'forbidden', `Missing permission: ${missing}.`);
   }
 }
 
@@ -304,6 +308,7 @@ export const invitationRoutes: Route[] = [
   route('POST', '/api/v1/tenant/users', async (context) => {
     const access = requireContext(context);
     requireTenantContext(access);
+    // user.invite and the views it implies, tenant-wide (ADR 0030).
     requirePermission(access, 'user.invite');
     const body = objectBody(await readBody(context.req), INVITE_KEYS);
     const input = readInvitation(body);

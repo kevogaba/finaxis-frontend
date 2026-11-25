@@ -80,7 +80,9 @@ miscount things today.
    `user.view`; `user.assign_role` needs `role_assignment.view`. `INVITE_CODES` and the assign-role
    gates don't include them, so the action shows and then gets a 403. Role composition refuses a
    mutation granted without its view with 400 `validation_failed`; the grant drawer posts codes in
-   selection order and doesn't map that 400 (BG-31).
+   selection order and doesn't map that 400 (BG-31). **Adopted** (frontend #110): the gates derive
+   each mutation's views from `auth/permission-views.ts`, and the grant drawer adds the views a
+   mutation needs, posts them first and names the 400.
 8. **A revoked member can be re-invited** (platform #304): the invitation reuses the membership,
    sets `created_by` to the re-inviter and audits `membership.reinvite`, not `user.invite`. The
    invite wizard still refuses a revoked member's email, and `getUserInviter` (the `user.invite`
@@ -97,6 +99,8 @@ miscount things today.
     (BG-16).
 11. **`/auth/me` lists only ACTIVE branches and roles, de-duplicated** (platform #240): the
     profile's Contexts table no longer receives SUSPENDED branches or DISABLED roles (BG-23).
+    **Adopted** (frontend #110): the client de-duplication is gone, and the profile lists what
+    `/auth/me` sends.
 12. **Stricter create validation:** `audit_retention_days` is bounded to 2555–36500 days (the draft
     wizard accepts 0–99999), a `base_currency` initial setting must equal `base_currency_code`, and
     a time zone must be an IANA id the platform knows (raw offsets are 422) (BG-12, BG-13, BG-14).
@@ -119,7 +123,7 @@ miscount things today.
 
 ## Summary
 
-19 backend fixed · 8 partly fixed · 0 open · 1 adopted · 7 closed.
+16 backend fixed · 8 partly fixed · 0 open · 1 adopted · 10 closed.
 
 | ID    | Priority | Status        | Gap                                                                                                |
 | ----- | -------- | ------------- | -------------------------------------------------------------------------------------------------- |
@@ -145,7 +149,7 @@ miscount things today.
 | BG-20 | P2       | Partly fixed  | No export endpoints                                                                                |
 | BG-21 | P2       | Backend fixed | No close-of-business readiness checks exposed                                                      |
 | BG-22 | P2       | Partly fixed  | No notifications endpoint                                                                          |
-| BG-23 | P2       | Backend fixed | Context discovery inconsistencies (`total_items` overcount, duplicate branch IDs)                  |
+| BG-23 | P2       | Closed        | Context discovery inconsistencies (`total_items` overcount, duplicate branch IDs)                  |
 | BG-24 | P2       | Closed        | Bootstrap status can flip COMPLETED → FAILED from unrelated invitee failures                       |
 | BG-25 | P2       | Partly fixed  | Identity and email delivery defaults (Keycloak admin off, email off, no password step)             |
 | BG-26 | P2       | Closed        | Ignored or dangerous sort parameters                                                               |
@@ -153,9 +157,9 @@ miscount things today.
 | BG-28 | P2       | Partly fixed  | Terminal states without recovery (rejected tenant code stays taken; revoked member can't return)   |
 | BG-29 | P2       | Closed        | PLATFORM organisation included in tenant search results                                            |
 | BG-30 | P2       | Closed        | Wrong-context 403s put a sentence in `code`; invalid JWT 401 has no body                           |
-| BG-31 | P2       | Backend fixed | Mutations silently require the matching `.view` permission                                         |
+| BG-31 | P2       | Closed        | Mutations silently require the matching `.view` permission                                         |
 | BG-32 | P2       | Closed        | Documentation drift in the platform repository                                                     |
-| BG-33 | P2       | Backend fixed | Permission codes in /auth/me carry no scope                                                        |
+| BG-33 | P2       | Closed        | Permission codes in /auth/me carry no scope                                                        |
 | BG-34 | P2       | Backend fixed | Role update accepts a blank name; an empty description clears it                                   |
 | BG-35 | P2       | Closed        | No documented self-lockout guard: a user may suspend, revoke or deactivate themselves              |
 
@@ -813,7 +817,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-23 — Context discovery inconsistencies · P2
 
-- **Status:** Backend fixed. Platform #170.
+- **Status:** Closed (frontend #110). Platform #170.
 - **Gap:** `/auth/organisations` filters after paging, so `total_items` can overcount
   (`AuthSelectionService.kt:103-115`). The assigned-branch lookup has no DISTINCT
   (`IamRepositories.kt:248-266`): a user holding HOME and OPERATE at one branch gets duplicate
@@ -826,8 +830,10 @@ the same bullets): the first is the gap as found, the second what the UI still d
   distinct; `/auth/me` lists distinct, ACTIVE branches and roles only.
 - **Still open:** `/auth/organisations` still filters after paging; the platform left it because
   the counts diverge only on a stale permission cache.
-- **To adopt:** drop the client de-duplication (`uniqueBy` in `auth/context-contract.ts`). The
-  profile's Contexts table no longer receives SUSPENDED branches or DISABLED roles.
+- **To adopt:** done in frontend #110: `auth/context-contract.ts` no longer de-duplicates
+  (`uniqueBy` and the assigned-id `Set` are gone), and the profile's Contexts and Roles tables list
+  what `/auth/me` sends, ACTIVE rows only. The e2e fake API's `/auth/*` routes list distinct,
+  ACTIVE branches and roles, so a member with two assignment types at one branch is auto-selected.
 
 ### BG-24 — Bootstrap status overwritten by unrelated failures · P2
 
@@ -966,8 +972,8 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-31 — Hidden `.view` requirement on mutations · P2
 
-- **Status:** Backend fixed. Platform #174, by naming the requirement rather than removing it (ADR
-  0030 decision 4).
+- **Status:** Closed (frontend #110). Platform #174, by naming the requirement rather than removing
+  it (ADR 0030 decision 4).
 - **Gap:** role, membership, branch, branch-assignment, role-assignment revoke, and platform tenant
   mutations read their result back in the same transaction and need the matching `.view`
   permission; without it they return 403 and roll back.
@@ -978,17 +984,27 @@ the same bullets): the first is the gap as found, the second what the UI still d
   `grant_scope` and `required_view_permissions`, and roles report `missing_view_permissions`. Role
   composition refuses a mutation without its view, or removing a view a held mutation needs, with
   400 `validation_failed`.
-- **Still open:** the requirement stays, and pairs more codes than the UI gates on: `user.invite`
-  needs `membership.view` and `user.view`; `user.assign_role` and `user.revoke_role` need
-  `role_assignment.view`; `settings.update`, the `business_date.*` mutations, `branch.create` and
-  `tenant.create` need their views.
+- **Still open:** nothing. The requirement itself stays by design (ADR 0030 decision 4), and the
+  frontend now gates on every pair it uses.
 - **Verified 2026-11-24:** the catalogue route is tenant-only and needs `permission.view`, which the
   branch roles lack, and the composition 400 carries no `violations`, so the gates need a checked-in
-  map of the pairs, tested against the catalogue. `INVITE_CODES` also includes `user.assign_branch`,
-  which `POST /tenant/users` no longer checks. Platform-scope codes (`grant_scope: PLATFORM`) can be
-  granted to tenant roles without refusal and grant nothing there.
-- **To adopt:** derive the gates from `required_view_permissions` instead of hand-kept pairs; grant a
-  view before or with its mutation, and map the composition 400.
+  map of the pairs, tested against the catalogue. `INVITE_CODES` lacked `membership.view`; the invite
+  still checks `user.assign_branch`, with `branch_assignment.view`, at each invited branch
+  (`BranchProvisioningService.assignUser`; corrected during frontend #110, which first read it as
+  dropped). Platform-scope codes (`grant_scope: PLATFORM`) can be granted to tenant roles without
+  refusal and grant nothing there.
+- **To adopt:** done in frontend #110. The gates come from `auth/permission-views.ts`, the
+  platform's `permission_view_requirement` pairs (V22, V32-V34, V39), kept in step with the platform
+  migrations and pinned against the e2e fake API's 86-code catalogue (`withViews`): Invite needs
+  `user.invite`, `membership.view` and `user.view`, and `user.assign_branch` with
+  `branch_assignment.view` for its branches; assigning and revoking a role need
+  `role_assignment.view`; every other mutation gate adds its view the same way. The grant drawer leaves out PLATFORM-scope codes,
+  adds the views a selected mutation needs ("Also grants …"), posts views first and names the
+  composition 400; Remove is disabled ("Needed by …") on a view a granted ACTIVE mutation needs. The
+  catalogue's `kind`, `grant_scope` and `required_view_permissions` and the roles'
+  `missing_view_permissions` are parsed. The fake API pairs each mutation with its views at the same
+  scope (403 `forbidden`, naming the first missing code) and refuses role composition with 400
+  `validation_failed`.
 
 ### BG-32 — Documentation drift (platform repository) · P2
 
@@ -1021,7 +1037,7 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-33 — Permission codes in `/auth/me` carry no scope · P2
 
-- **Status:** Backend fixed. Platform #175.
+- **Status:** Closed (frontend #110). Platform #175.
 - **Gap:** `/auth/me` returns only the flattened effective permission codes, so tenant-scoped gates
   can't be told apart from branch-scoped ones. Some routes check their permission at tenant scope:
   `GET /branches` (`branch.view`), and the user search and branch assignment behind the assign
@@ -1040,12 +1056,33 @@ the same bullets): the first is the gap as found, the second what the UI still d
   covers every ACTIVE branch, not just the selected one. The flat `permissions` list is unchanged,
   so the change is additive. Since the gap was written, `GET /branches` became target-aware and
   assign-branch checks the target branch; `GET /tenant/users` still needs tenant-scope `user.view`.
-- **Still open:** nothing.
+- **Still open:** nothing on the platform. In the frontend, a few read gates still use the
+  effective set, so a branch-scoped holder gets their failure state from the platform's 403 instead
+  of no offer: the record pages' Audit tabs and maker lookups and the profile's Activity tab
+  (`audit.view`), the user record's and approval page's membership lookup (`membership.view`), and
+  the per-user name lookups (`getTenantUser`, `user.view`), which show the short id.
 - **Verified 2026-11-24:** `branch_ids` is absent (not null) on TENANT entries; a code held at
   both scopes is reported once, as TENANT. `/auth/me` lists only ACTIVE roles, so it can't show that
   the caller holds a DISABLED one (which matters for re-enabling a held role, platform #342).
-- **To adopt:** parse `permission_scopes` in `auth/context-contract.ts` and gate the tenant-scope
-  routes (the users directory, the invite wizard's email check) on a TENANT entry.
+- **To adopt:** done in frontend #110: `auth/context-contract.ts` parses `permission_scopes`
+  (`branch_ids` optional), and `permissionHolder(profile)` carries the TENANT codes as
+  `tenantPermissions`. `canTenantWide` gates what the platform checks tenant-wide
+  (`requireTenantPermission`, or `requirePermission` without a branch), with each mutation's views:
+  - the user directory's reads (`user.view`): the Users & access item and page (its access-denied
+    state, with no read), the user pickers, the approval queue's User onboarding tab, its user
+    approval page, the bell's and the overview's pending-user counts, the overview's actor names
+    and the readiness links to Users & access and User onboarding;
+  - the invite (`user.invite`; each invited branch still needs `user.assign_branch` at that branch),
+    the membership decisions (`user.approve`, `membership.suspend`, `.reactivate`, `.revoke`), the
+    role mutations and the grant drawer's catalogue (`permission.view`), `settings.update` and the
+    business date actions;
+  - the navigation items of Roles & permissions, Settings, Business date and the Audit trail, the
+    readiness reads (all but the branch counts) and their links, the overview's business date and
+    activity cards, and the app bar's date chip.
+
+  Target-branch checks (`branch.*`, `user.assign_branch`, `user.revoke_branch`, a BRANCH-scope role
+  assignment, revoking a role assignment, `GET /branches`) stay on the effective set. The e2e fake
+  API's `/auth/me` reports the scopes over every ACTIVE branch.
 
 ### BG-34 — Role update accepts a blank name; an empty description clears it · P2
 

@@ -24,7 +24,7 @@ export interface ProfileUser extends FinaxisUser {
   organization: OrganizationSummary & { code: string; status: string };
   branches: readonly ProfileBranch[];
   membershipStatus: string;
-  /** Per ACTIVE role assignment at any scope, de-duplicated; may include DISABLED roles. */
+  /** Each ACTIVE role held through an ACTIVE assignment at any scope, once (BG-23). */
   assignedRoles: readonly ProfileRole[];
 }
 

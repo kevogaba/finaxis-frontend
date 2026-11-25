@@ -29,6 +29,7 @@ const DETAIL = {
   description: 'Front-desk cash and member service.',
   system_role: false,
   status: 'ACTIVE',
+  missing_view_permissions: ['role_assignment.view'],
   created_at: '2026-08-01T08:00:00Z',
   updated_at: '2026-08-02T08:00:00Z',
 };
@@ -42,6 +43,7 @@ describe('role contract', () => {
       description: 'Front-desk cash and member service.',
       systemRole: false,
       status: 'ACTIVE',
+      missingViewPermissions: ['role_assignment.view'],
       createdAt: '2026-08-01T08:00:00Z',
       updatedAt: '2026-08-02T08:00:00Z',
     });
@@ -76,6 +78,9 @@ describe('role contract', () => {
             module_code: 'settings',
             risk_level: 'SEVERE',
             status: 'ACTIVE',
+            kind: 'MUTATION',
+            grant_scope: 'TENANT',
+            required_view_permissions: ['business_date.view'],
           },
         ],
         page: PAGE,
@@ -93,6 +98,7 @@ describe('role contract', () => {
             role_name: 'Teller',
             system_role: false,
             status: 'DISABLED',
+            missing_view_permissions: [],
           },
         ],
         page: PAGE,
@@ -103,6 +109,7 @@ describe('role contract', () => {
       roleName: 'Teller',
       systemRole: false,
       status: 'DISABLED',
+      missingViewPermissions: [],
     });
     expect(
       rolePermissionPageSchema.parse({
@@ -150,6 +157,9 @@ describe('role contract', () => {
             module_code: 'settings',
             risk_level: 'CRITICAL',
             status: 'DEPRECATED',
+            kind: 'MUTATION',
+            grant_scope: 'TENANT',
+            required_view_permissions: ['business_date.view'],
           },
         ],
         page: PAGE,
@@ -161,6 +171,9 @@ describe('role contract', () => {
       module: 'settings',
       risk: 'CRITICAL',
       status: 'DEPRECATED',
+      kind: 'MUTATION',
+      grantScope: 'TENANT',
+      requiredViewPermissions: ['business_date.view'],
     });
   });
 

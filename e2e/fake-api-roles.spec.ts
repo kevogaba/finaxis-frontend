@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { PERMISSION_VIEWS, requiredViews } from '../auth/permission-views';
 import { IDS, ROLE_SCENARIO_IDS } from './fake-api/scenarios.mts';
 import { api, contextFor } from './support/fake-api';
 
@@ -113,6 +114,45 @@ test.describe('fake API roles (contract §E.3)', () => {
     expect(await removed.json()).toMatchObject({ page: { total_items: 2 } });
   });
 
+  test("composes a role only with each mutation's views (ADR 0030)", async ({ request }) => {
+    const headers = await contextFor(request, 'roles', null);
+    const path = `/tenant/roles/${ROLE_SCENARIO_IDS.teller}/permissions`;
+    const grant = (code: string) =>
+      request.post(api(path), { headers, data: { permission_code: code } });
+
+    // Teller holds business_date.view and branch.view, but not role_assignment.view.
+    const refused = await grant('user.assign_role');
+    expect(refused.status()).toBe(400);
+    expect(await refused.json()).toMatchObject({ code: 'validation_failed', violations: null });
+    expect((await grant('role_assignment.view')).status()).toBe(201);
+    expect((await grant('user.assign_role')).status()).toBe(201);
+
+    // A view a held mutation needs can't be removed; re-granting is a no-op.
+    const grants = (await (await request.get(api(path), { headers })).json()) as {
+      items: { id: string; permission_code: string }[];
+    };
+    const view = grants.items.find((row) => row.permission_code === 'role_assignment.view');
+    const removal = await request.delete(api(`${path}/${view?.id ?? ''}`), { headers });
+    expect(removal.status()).toBe(400);
+    expect(await removal.json()).toMatchObject({ code: 'validation_failed', violations: null });
+    expect((await grant('user.assign_role')).status()).toBe(201);
+
+    // The role reads report a legacy violator's missing views: BRANCH_MANAGER holds
+    // user.assign_branch without branch_assignment.view.
+    const manager = await request.get(api(`/tenant/roles/${ROLE_SCENARIO_IDS.branchManager}`), {
+      headers,
+    });
+    expect(await manager.json()).toMatchObject({
+      missing_view_permissions: ['branch_assignment.view'],
+    });
+    const list = (await (await request.get(api('/tenant/roles?size=100'), { headers })).json()) as {
+      items: { role_code: string; missing_view_permissions: string[] }[];
+    };
+    expect(list.items.find((row) => row.role_code === 'TELLER')?.missing_view_permissions).toEqual(
+      [],
+    );
+  });
+
   test('scopes role assignments like the backend', async ({ request }) => {
     const institution = await contextFor(request, 'roles', null);
     const assign = (headers: Record<string, string>, data: Record<string, unknown>) =>
@@ -211,7 +251,42 @@ test.describe('fake API roles (contract §E.3)', () => {
     const critical = await request.get(api('/tenant/permissions?risk_level=CRITICAL&size=100'), {
       headers,
     });
-    expect(await critical.json()).toMatchObject({ page: { total_items: 9 } });
+    expect(await critical.json()).toMatchObject({ page: { total_items: 16 } });
+    // The platform's 86 codes; V21 deprecated branch.activate.
+    const all = await request.get(api('/tenant/permissions?size=100'), { headers });
+    expect(await all.json()).toMatchObject({ page: { total_items: 86 } });
+    const active = await request.get(api('/tenant/permissions?status=ACTIVE&size=100'), {
+      headers,
+    });
+    expect(await active.json()).toMatchObject({ page: { total_items: 85 } });
+    const invite = await request.get(api('/tenant/permissions?q=user.invite'), { headers });
+    expect(await invite.json()).toMatchObject({
+      items: [
+        {
+          permission_code: 'user.invite',
+          status: 'ACTIVE',
+          kind: 'MUTATION',
+          grant_scope: 'TENANT',
+          required_view_permissions: ['membership.view', 'user.view'],
+        },
+      ],
+    });
+  });
+
+  test("pins the app's view pairs to the catalogue (ADR 0030)", async ({ request }) => {
+    const headers = await contextFor(request, 'roles', null);
+    const catalogue = (await (
+      await request.get(api('/tenant/permissions?size=100'), { headers })
+    ).json()) as {
+      items: { permission_code: string; kind: string; required_view_permissions: string[] }[];
+    };
+    const mutations = catalogue.items.filter((item) => item.kind === 'MUTATION');
+    expect(mutations).toHaveLength(Object.keys(PERMISSION_VIEWS).length);
+    for (const item of catalogue.items) {
+      expect(item.required_view_permissions, item.permission_code).toEqual(
+        [...requiredViews(item.permission_code)].sort(),
+      );
+    }
   });
 
   test('roles-limited drops only update, activate, assignment-view and audit', async ({

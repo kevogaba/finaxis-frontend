@@ -16,9 +16,7 @@ async function signIn(request: APIRequestContext, scenario: string, organisation
 }
 
 test.describe('fake API profile scenarios (layer 15)', () => {
-  test('/auth/me lists a role per assignment, including a DISABLED role that grants nothing', async ({
-    request,
-  }) => {
+  test('/auth/me lists each ACTIVE role once (BG-23)', async ({ request }) => {
     const headers = await signIn(request, 'profile-roles', IDS.greenfield);
 
     const me = await request.get(`${FAKE_API_URL}/api/v1/auth/me`, { headers });
@@ -27,12 +25,39 @@ test.describe('fake API profile scenarios (layer 15)', () => {
       permissions: string[];
     };
 
-    // Contract §C: one row per ACTIVE assignment at any scope — the frontend de-duplicates.
-    expect(body.roles.filter((candidate) => candidate.code === 'TENANT_ADMIN')).toHaveLength(2);
-    expect(body.roles).toContainEqual(
-      expect.objectContaining({ code: 'LEGACY_TELLER', status: 'DISABLED' }),
-    );
+    // TENANT_ADMIN is held at TENANT and at Head Office; LEGACY_TELLER is DISABLED.
+    expect(body.roles.map((candidate) => candidate.code)).toEqual(['TENANT_ADMIN']);
     expect(body.permissions).not.toContain('user.suspend');
+  });
+
+  test('/auth/me reports where each code is held, over every ACTIVE branch (BG-33)', async ({
+    request,
+  }) => {
+    // Jane holds branch.view and branch.approve only at Head Office; the rest tenant-wide.
+    const headers = await signIn(request, 'overview-branch-scoped', IDS.greenfield);
+
+    const me = await request.get(`${FAKE_API_URL}/api/v1/auth/me`, { headers });
+    const body = (await me.json()) as {
+      permissions: string[];
+      permission_scopes: { code: string; scope: string; branch_ids?: string[] }[];
+    };
+
+    const scopes = body.permission_scopes;
+    expect(scopes.map((entry) => entry.code)).toEqual(
+      [...scopes.map((entry) => entry.code)].sort(),
+    );
+    // Institution level: the BRANCH grant isn't effective here, yet its scope is reported.
+    expect(body.permissions).not.toContain('branch.view');
+    expect(scopes).toContainEqual({
+      code: 'branch.view',
+      scope: 'BRANCH',
+      branch_ids: [IDS.headOffice],
+    });
+    // A TENANT entry carries no branch_ids at all (not null).
+    expect(scopes.find((entry) => entry.code === 'user.view')).toStrictEqual({
+      code: 'user.view',
+      scope: 'TENANT',
+    });
   });
 
   test('a platform operator holding audit.view still cannot read the tenant audit trail', async ({

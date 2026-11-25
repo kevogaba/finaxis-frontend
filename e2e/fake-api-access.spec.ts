@@ -11,8 +11,8 @@ import type { RunState } from './fake-api/state.mts';
 const BRANCH_ROLE = '07b00000-0000-4000-8000-000000000001';
 const BRANCH_GRANT = '07b00000-0000-4000-8000-000000000002';
 // Synthetic, so no seed ever holds it: any layer may add real TENANT_ADMIN codes to
-// TENANT_ADMIN_PERMISSIONS (lane rules §5), which would make a real code a TENANT grant here. The
-// fake API never checks codes against a catalogue.
+// TENANT_ADMIN_PERMISSIONS (lane rules §5), which would make a real code a TENANT grant here. A
+// code outside the fake's catalogue counts as ACTIVE and pairs with no view.
 const BRANCH_ONLY = '07b.branch_only';
 
 function withBranchGrantAtHeadOffice(): RunState {
@@ -71,16 +71,53 @@ test.describe('fake API permission scopes (contract §E.4)', () => {
     }).not.toThrow();
     expect(() => {
       requirePermission(headOffice, BRANCH_ONLY);
-    }).toThrow('not permitted');
+    }).toThrow(`Missing permission: ${BRANCH_ONLY}.`);
     expect(() => {
       requirePermission(westlands, BRANCH_ONLY, 'branch');
-    }).toThrow('not permitted');
+    }).toThrow(`Missing permission: ${BRANCH_ONLY}.`);
     expect(() => {
       requirePermission(institution, BRANCH_ONLY, 'branch');
-    }).toThrow('not permitted');
+    }).toThrow(`Missing permission: ${BRANCH_ONLY}.`);
     // /auth/me reports the context's effective codes, BRANCH grants at the selected branch included.
     expect(headOffice.permissions.has(BRANCH_ONLY)).toBe(true);
     expect(institution.permissions.has(BRANCH_ONLY)).toBe(false);
+  });
+
+  // ADR 0030: a mutation also needs each view it implies, at the same scope, and the refusal names
+  // the first missing code.
+  test('pairs a mutation with its views at the same scope', () => {
+    const state = withBranchGrantAtHeadOffice();
+    const role = state.roles.find((candidate) => candidate.id === BRANCH_ROLE);
+    role?.permissions.push('gl_account.create');
+    const headOffice = requireContext(contextAt(state, IDS.headOffice));
+    expect(() => {
+      requirePermission(headOffice, 'gl_account.create', 'branch');
+    }).toThrow('Missing permission: gl_account.view.');
+    role?.permissions.push('gl_account.view');
+    expect(() => {
+      requirePermission(
+        requireContext(contextAt(state, IDS.headOffice)),
+        'gl_account.create',
+        'branch',
+      );
+    }).not.toThrow();
+  });
+
+  test('refuses a tenant-scope mutation whose view is held only at branch scope', () => {
+    const state = withBranchGrantAtHeadOffice();
+    state.roles
+      .find((candidate) => candidate.id === BRANCH_ROLE)
+      ?.permissions.push('gl_account.view');
+    state.roles
+      .find((candidate) => candidate.id === IDS.tenantAdminRole)
+      ?.permissions.push('gl_account.create');
+    const headOffice = requireContext(contextAt(state, IDS.headOffice));
+    expect(() => {
+      requirePermission(headOffice, 'gl_account.create');
+    }).toThrow('Missing permission: gl_account.view.');
+    expect(() => {
+      requirePermission(headOffice, 'gl_account.create', 'branch');
+    }).not.toThrow();
   });
 
   test('a TENANT grant satisfies both scopes, at a branch and at institution level', () => {

@@ -7,6 +7,7 @@ import {
 import {
   branchesItem,
   businessDateItem,
+  canCheckReadiness,
   institutionItem,
   NOT_PERMITTED,
   onboardingItem,
@@ -222,19 +223,19 @@ describe('the whole card', () => {
     businessDate: ok({ date: '07-09-2026', status: 'OPEN' as const }),
   };
 
-  const EVERY_CODE = {
-    permissions: [
-      'settings.view',
-      'branch.view',
-      'membership.view',
-      'user.view',
-      'user.approve',
-      'business_date.view',
-    ],
+  const CODES = [
+    'settings.view',
+    'branch.view',
+    'membership.view',
+    'user.view',
+    'user.approve',
+    'business_date.view',
+  ];
+  const EVERY_CODE = { permissions: CODES, tenantPermissions: CODES };
+  const without = (code: string) => {
+    const held = CODES.filter((candidate) => candidate !== code);
+    return { permissions: held, tenantPermissions: held };
   };
-  const without = (code: string) => ({
-    permissions: EVERY_CODE.permissions.filter((held) => held !== code),
-  });
 
   it('lists the five items in spec order, all ready, with a full bar', () => {
     const view = operationalReadiness(READY, EVERY_CODE);
@@ -295,6 +296,33 @@ describe('the whole card', () => {
     expect(view.items.filter((entry) => entry.link === null)).toHaveLength(
       code === 'user.view' ? 2 : 1,
     );
+  });
+
+  // Users & access and the onboarding tab read GET /tenant/users, which checks user.view
+  // tenant-wide (BG-33), and so does the onboarding count.
+  it('offers neither user link, and reads no onboarding count, for a branch-scoped user.view', () => {
+    const holder = { permissions: CODES, tenantPermissions: without('user.view').permissions };
+    const view = operationalReadiness(READY, holder);
+    expect(view.items.filter((entry) => entry.link === null).map((entry) => entry.label)).toEqual([
+      'People',
+      'Onboarding',
+    ]);
+    expect(canCheckReadiness(holder, 'onboarding')).toBe(false);
+    expect(canCheckReadiness(holder, 'people')).toBe(true);
+    expect(canCheckReadiness(EVERY_CODE, 'onboarding')).toBe(true);
+  });
+
+  it('checks every read but the branch counts, and links every page but Branches, tenant-wide', () => {
+    const holder = { permissions: CODES, tenantPermissions: [] };
+    expect(
+      operationalReadiness(READY, holder).items.flatMap((entry) =>
+        entry.link ? [entry.label] : [],
+      ),
+    ).toEqual(['Branches']);
+    expect(canCheckReadiness(holder, 'branches')).toBe(true);
+    for (const id of ['institution', 'people', 'onboarding', 'businessDate'] as const) {
+      expect(canCheckReadiness(holder, id), id).toBe(false);
+    }
   });
 
   it.each([

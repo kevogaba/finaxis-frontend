@@ -8,6 +8,7 @@ import {
 } from '@/modules/administration/approvals/approval-copy';
 import { USER_QUEUE_LABEL } from '@/modules/administration/approvals/approval-rules';
 import { renderWithProviders } from '@/test/test-utils';
+import { permissionScopes } from '@/test/permission-scopes';
 
 const { getCurrentContextProfile, listUserApprovals, redirect } = vi.hoisted(() => ({
   getCurrentContextProfile: vi.fn(),
@@ -82,7 +83,7 @@ function users(totalItems: number, number = 0) {
 function setup(permissions = CODES) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { permissions },
+    profile: { permissions, permission_scopes: permissionScopes(permissions) },
     context: { organization: { id: 'org-1', name: 'Greenfield' }, branch: null },
   });
 }

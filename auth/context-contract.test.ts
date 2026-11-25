@@ -22,23 +22,26 @@ const profile = {
   organisation: { id: 'o-1', code: 'umoja', name: 'Umoja SACCO', status: 'ACTIVE' },
   membership: { id: 'm-1', status: 'ACTIVE' },
   selected_branch: null,
-  branches: [
-    { id: 'b-1', code: 'HQ', name: 'Head Office', status: 'ACTIVE' },
-    { id: 'b-1', code: 'HQ', name: 'Head Office', status: 'ACTIVE' },
+  branches: [{ id: 'b-1', code: 'HQ', name: 'Head Office', status: 'ACTIVE' }],
+  roles: [{ id: 'r-1', code: 'TENANT_ADMIN', name: 'Tenant admin', status: 'ACTIVE' }],
+  permissions: ['branch.view', 'user.view'],
+  // BG-33: `branch_ids` is absent, not null, on a TENANT entry.
+  permission_scopes: [
+    { code: 'branch.view', scope: 'TENANT' },
+    { code: 'user.view', scope: 'BRANCH', branch_ids: ['b-1', 'b-2'] },
   ],
-  roles: [
-    { id: 'r-1', code: 'TENANT_ADMIN', name: 'Tenant admin', status: 'ACTIVE' },
-    { id: 'r-1', code: 'TENANT_ADMIN', name: 'Tenant admin', status: 'ACTIVE' },
-  ],
-  permissions: ['user.view'],
 };
 
 describe('auth context contract', () => {
-  it('de-duplicates branches and roles in the profile (one row per assignment upstream)', () => {
+  it('parses the permission scopes, with branch ids on BRANCH entries only', () => {
     const parsed = profileSchema.parse(profile);
-    expect(parsed.branches).toHaveLength(1);
-    expect(parsed.roles).toHaveLength(1);
+    expect(parsed.permission_scopes).toEqual(profile.permission_scopes);
     expect(parsed.selected_branch).toBeNull();
+  });
+
+  it('rejects an unknown scope', () => {
+    const entry = { code: 'user.view', scope: 'ORGANISATION' };
+    expect(profileSchema.safeParse({ ...profile, permission_scopes: [entry] }).success).toBe(false);
   });
 
   it('ignores unknown extra fields', () => {
@@ -50,7 +53,8 @@ describe('auth context contract', () => {
     expect(profileSchema.safeParse(withoutId).success).toBe(false);
   });
 
-  it('de-duplicates assigned branch ids and branch page rows', () => {
+  // BG-23: the platform lists distinct, ACTIVE rows, so they pass through as sent.
+  it('keeps assigned branch ids and branch page rows as the platform sends them', () => {
     const selection = selectOrganisationResponseSchema.parse({
       organisation_id: 'o-1',
       membership_id: 'm-1',
@@ -58,9 +62,9 @@ describe('auth context contract', () => {
       context_header: 'X-Active-Organisation-Context',
       branch_id: null,
       requires_branch_selection: true,
-      assigned_branch_ids: ['b-1', 'b-1'],
+      assigned_branch_ids: ['b-1', 'b-2'],
     });
-    expect(selection.assigned_branch_ids).toEqual(['b-1']);
+    expect(selection.assigned_branch_ids).toEqual(['b-1', 'b-2']);
 
     const branches = branchPageSchema.parse({
       items: [
@@ -71,14 +75,14 @@ describe('auth context contract', () => {
           branch_status: 'ACTIVE',
         },
         {
-          branch_id: 'b-1',
-          branch_code: 'HQ',
-          branch_name: 'Head Office',
+          branch_id: 'b-2',
+          branch_code: 'WL',
+          branch_name: 'Westlands',
           branch_status: 'ACTIVE',
         },
       ],
       page,
     });
-    expect(branches.items).toHaveLength(1);
+    expect(branches.items.map((item) => item.branch_id)).toEqual(['b-1', 'b-2']);
   });
 });

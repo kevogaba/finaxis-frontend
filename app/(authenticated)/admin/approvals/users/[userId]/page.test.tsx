@@ -18,6 +18,7 @@ import {
   USER_MAKER_CHECKER_BLOCKED,
 } from '@/modules/administration/users/user-rules';
 import { renderWithProviders } from '@/test/test-utils';
+import { permissionScopes } from '@/test/permission-scopes';
 
 const {
   findUserMembership,
@@ -140,7 +141,12 @@ function setup({
 }: Setup = {}) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { user_id: ME, permissions, branches: [] },
+    profile: {
+      user_id: ME,
+      permissions,
+      permission_scopes: permissionScopes(permissions),
+      branches: [],
+    },
     context: {
       organization: { id: 'org-1', name: 'Greenfield Teachers SACCO' },
       branch: selectedBranch,

@@ -123,6 +123,44 @@ test.describe('roles', () => {
     await expect(rowsOf(page, 'Granted permissions')).toHaveCount(3);
   });
 
+  // ADR 0030: the platform refuses a mutation without its view on the role, and removing a view a
+  // held mutation needs.
+  test('grants a mutation with the view it needs, and keeps that view while the mutation stays', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'roles');
+    await openDirectory(page);
+    await openRecord(page, 'Roles', 'Teller');
+    await openTab(page, 'Permissions');
+    await expect(rowsOf(page, 'Granted permissions')).toHaveCount(3); // header + 2
+
+    await page.getByRole('button', { name: 'Grant permissions' }).click();
+    const drawer = page.getByRole('dialog', { name: 'Grant permissions' });
+    // Teller already holds branch.view, so it isn't offered again.
+    await expect(drawer.getByRole('checkbox', { name: /^View branch branch\.view/ })).toHaveCount(
+      0,
+    );
+    // A platform-scope code grants a tenant role nothing, so it isn't offered (V22).
+    await expect(page.getByRole('checkbox', { name: /^Create organisation/ })).toHaveCount(0);
+    await drawer.getByRole('checkbox', { name: /^Assign user role/ }).check();
+    const view = drawer.getByRole('checkbox', { name: /^View role assignments/ });
+    await expect(view).toBeChecked();
+    await expect(view).toBeDisabled();
+    await expect(
+      drawer.getByText('Also grants View role assignments, which Assign user role needs.'),
+    ).toBeVisible();
+    await expect(drawer.getByRole('status')).toHaveText('2 selected');
+    await drawer.getByRole('button', { name: 'Grant permissions' }).click();
+    await expect(drawer).toBeHidden();
+    await expect(page.getByRole('alert').filter({ hasText: 'Permissions granted' })).toBeVisible();
+    await expect(rowsOf(page, 'Granted permissions')).toHaveCount(5);
+
+    const remove = page.getByRole('button', { name: 'Remove View role assignments' });
+    await expect(remove).toBeDisabled();
+    await expect(mainText(page, 'Needed by Assign user role')).toBeVisible();
+  });
+
   test('keeps keyboard focus clear of the grant drawer footer (WCAG 2.4.11)', async ({
     context,
     page,

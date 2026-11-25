@@ -8,88 +8,8 @@ import { sendIdempotent } from '../idempotency.mts';
 import { route } from '../router.mts';
 import type { Route, RouteContext } from '../router.mts';
 import type { FakeRole, FakeRoleAssignment } from '../state.mts';
-
-type CatalogueRow = readonly [code: string, name: string, module: string, risk: string];
-
-/**
- * The 54 foundation codes (contract §J), with the backend's V2 seed names, modules and risks
- * (source f74e44b). The 26 accounting codes aren't surfaced yet.
- */
-const CATALOGUE: readonly CatalogueRow[] = [
-  ['tenant.create', 'Create organisation', 'tenant', 'HIGH'],
-  ['tenant.submit_for_approval', 'Submit organisation for approval', 'tenant', 'HIGH'],
-  ['tenant.approve', 'Approve organisation', 'tenant', 'CRITICAL'],
-  ['tenant.activate', 'Activate organisation', 'tenant', 'CRITICAL'],
-  ['tenant.suspend', 'Suspend organisation', 'tenant', 'CRITICAL'],
-  ['tenant.deprovision', 'Deprovision organisation', 'tenant', 'CRITICAL'],
-  ['tenant.view', 'View organisation', 'tenant', 'MEDIUM'],
-  ['tenant.update_draft', 'Update organisation draft', 'tenant', 'HIGH'],
-  ['tenant.reject', 'Reject organisation draft', 'tenant', 'HIGH'],
-  ['tenant.reactivate', 'Reactivate organisation', 'tenant', 'CRITICAL'],
-  ['tenant.bootstrap_retry', 'Retry administrator bootstrap', 'tenant', 'HIGH'],
-  ['branch.create', 'Create branch', 'branch', 'HIGH'],
-  ['branch.approve', 'Approve branch', 'branch', 'HIGH'],
-  ['branch.activate', 'Activate branch', 'branch', 'HIGH'],
-  ['branch.suspend', 'Suspend branch', 'branch', 'HIGH'],
-  ['branch.close', 'Close branch', 'branch', 'HIGH'],
-  ['branch.view', 'View branch', 'branch', 'LOW'],
-  ['branch.reactivate', 'Reactivate branch', 'branch', 'HIGH'],
-  ['user.invite', 'Invite user', 'iam', 'HIGH'],
-  ['user.approve', 'Approve user', 'iam', 'HIGH'],
-  ['user.activate', 'Activate user', 'iam', 'HIGH'],
-  ['user.suspend', 'Suspend user', 'iam', 'HIGH'],
-  ['user.deactivate', 'Deactivate user', 'iam', 'HIGH'],
-  ['user.assign_branch', 'Assign user branch', 'iam', 'HIGH'],
-  ['user.assign_role', 'Assign user role', 'iam', 'HIGH'],
-  ['user.revoke_branch', 'Revoke branch assignment', 'iam', 'HIGH'],
-  ['user.revoke_role', 'Revoke role assignment', 'iam', 'HIGH'],
-  ['user.view', 'View users', 'iam', 'LOW'],
-  ['role.create', 'Create role', 'iam', 'HIGH'],
-  ['role.update', 'Update role', 'iam', 'HIGH'],
-  ['role.activate', 'Activate role', 'iam', 'HIGH'],
-  ['role.deactivate', 'Deactivate role', 'iam', 'HIGH'],
-  ['role.assign_permission', 'Assign permission to role', 'iam', 'CRITICAL'],
-  ['role.remove_permission', 'Remove role permission', 'iam', 'CRITICAL'],
-  ['role.view', 'View roles', 'iam', 'LOW'],
-  ['membership.view', 'View memberships', 'iam', 'LOW'],
-  ['membership.suspend', 'Suspend membership', 'iam', 'HIGH'],
-  ['membership.reactivate', 'Reactivate membership', 'iam', 'HIGH'],
-  ['membership.revoke', 'Revoke membership', 'iam', 'HIGH'],
-  ['iam.profile.read', 'View own profile', 'iam', 'LOW'],
-  ['auth.select_organisation', 'Select organisation', 'iam', 'LOW'],
-  ['auth.select_branch', 'Select branch', 'iam', 'LOW'],
-  ['branch_assignment.view', 'View branch assignments', 'iam', 'LOW'],
-  ['role_assignment.view', 'View role assignments', 'iam', 'LOW'],
-  ['permission.view', 'View permissions', 'iam', 'LOW'],
-  ['audit.view', 'View audit log', 'audit', 'MEDIUM'],
-  ['settings.view', 'View settings', 'settings', 'LOW'],
-  ['settings.update', 'Update settings', 'settings', 'HIGH'],
-  ['tenant_setting.manage_platform', 'Manage platform-only settings', 'settings', 'HIGH'],
-  ['business_date.view', 'View business date', 'settings', 'LOW'],
-  ['business_date.advance', 'Advance business date', 'settings', 'CRITICAL'],
-  ['business_date.reopen', 'Reopen business date', 'settings', 'CRITICAL'],
-  ['cob.start', 'Start close of business', 'settings', 'HIGH'],
-  ['cob.complete', 'Complete close of business', 'settings', 'HIGH'],
-];
-
-interface CatalogueEntry {
-  id: string;
-  code: string;
-  name: string;
-  module: string;
-  risk: string;
-}
-
-// Layer 09 seed ids (lane rules §5), numbered from …0100 so they never meet the scenario counter.
-const PERMISSIONS: readonly CatalogueEntry[] = CATALOGUE.map(
-  ([code, name, module, risk], index) => ({
-    id: `09000000-0000-4000-8000-${(0x100 + index).toString(16).padStart(12, '0')}`,
-    code,
-    name,
-    module,
-    risk,
-  }),
-);
+import { isActivePermission, PERMISSIONS, viewsRequiredBy } from '../catalogue.mts';
+import type { CatalogueEntry } from '../catalogue.mts';
 
 const ROLE_CODE = /^[A-Z0-9_-]{2,20}$/;
 
@@ -124,12 +44,23 @@ function findRole(access: AccessContext, roleId: string): FakeRole {
   return role;
 }
 
+/** The views its held ACTIVE mutations need and it lacks, sorted (ADR 0030): reported only. */
+function missingViews(role: FakeRole): string[] {
+  const held = role.permissions.filter(isActivePermission);
+  const needed = held.flatMap(viewsRequiredBy).filter((view) => !held.includes(view));
+  return [...new Set(needed)].sort();
+}
+
+/** RoleCompositionGuard: 400 `validation_failed`, with no `violations`. */
+const compositionRefused = (detail: string) => problem(400, 'validation_failed', detail);
+
 const summaryWire = (role: FakeRole) => ({
   id: role.id,
   role_code: role.code,
   role_name: role.name,
   system_role: role.systemRole,
   status: role.status,
+  missing_view_permissions: missingViews(role),
 });
 
 const detailWire = (role: FakeRole) => ({
@@ -140,6 +71,7 @@ const detailWire = (role: FakeRole) => ({
   description: role.description,
   system_role: role.systemRole,
   status: role.status,
+  missing_view_permissions: missingViews(role),
   created_at: role.createdAt,
   updated_at: role.updatedAt,
 });
@@ -150,7 +82,10 @@ const permissionWire = (entry: CatalogueEntry) => ({
   permission_name: entry.name,
   module_code: entry.module,
   risk_level: entry.risk,
-  status: 'ACTIVE',
+  status: entry.status,
+  kind: entry.kind,
+  grant_scope: entry.grantScope,
+  required_view_permissions: entry.requiredViews,
 });
 
 const assignmentWire = (row: FakeRoleAssignment) => ({
@@ -203,8 +138,8 @@ const PERMISSION_SORTS: Partial<Record<string, (entry: CatalogueEntry) => string
   permissionCode: (entry) => entry.code,
   permissionName: (entry) => entry.name,
   riskLevel: (entry) => entry.risk,
-  // Every fake entry is ACTIVE and has no creation time, so these sort as ties.
-  status: () => '',
+  status: (entry) => entry.status,
+  // The fake keeps no creation time, so this sorts as ties.
   createdAt: () => '',
 };
 
@@ -221,7 +156,6 @@ function statusRoute(path: 'activate' | 'deactivate', status: 'ACTIVE' | 'DISABL
   return route('POST', `/api/v1/tenant/roles/:role_id/${path}`, (context) => {
     const access = tenantAccess(context);
     requirePermission(access, `role.${path}`);
-    requirePermission(access, 'role.view'); // read-back (BG-31)
     const role = findRole(access, context.params.role_id ?? '');
     // The endpoint takes no input (contract §E.3), so every request fingerprints as `{}`.
     sendIdempotent(context, {}, () => {
@@ -261,7 +195,6 @@ export const roleRoutes: Route[] = [
   route('POST', '/api/v1/tenant/roles', async (context) => {
     const access = tenantAccess(context);
     requirePermission(access, 'role.create');
-    requirePermission(access, 'role.view'); // read-back (BG-31)
     const body = objectBody(await readBody(context.req), ['role_code', 'role_name', 'description']);
     const code = stringField(body, 'role_code', { required: true }) ?? '';
     const name = stringField(body, 'role_name', { required: true }) ?? '';
@@ -323,7 +256,6 @@ export const roleRoutes: Route[] = [
   route('PATCH', '/api/v1/tenant/roles/:role_id', async (context) => {
     const access = tenantAccess(context);
     requirePermission(access, 'role.update');
-    requirePermission(access, 'role.view');
     const role = findRole(access, context.params.role_id ?? '');
     // The body is required (contract §D). As in the backend (BG-34), a non-null field replaces
     // the stored one, blank included; the UI pre-validates the name.
@@ -358,7 +290,6 @@ export const roleRoutes: Route[] = [
   route('POST', '/api/v1/tenant/roles/:role_id/permissions', async (context) => {
     const access = tenantAccess(context);
     requirePermission(access, 'role.assign_permission');
-    requirePermission(access, 'role.view');
     const role = findRole(access, context.params.role_id ?? '');
     const body = objectBody(await readBody(context.req), ['permission_code']);
     const code = stringField(body, 'permission_code', { required: true }) ?? '';
@@ -369,6 +300,15 @@ export const roleRoutes: Route[] = [
         if (role.systemRole) throw immutable();
         if (!PERMISSIONS.some((entry) => entry.code === code)) {
           throw problem(404, 'resource_not_found', 'Permission not found.');
+        }
+        // A new ACTIVE mutation needs each of its views already on the role; re-granting is a
+        // no-op, and a code that isn't ACTIVE is written unchecked (RoleCompositionGuard).
+        const held = role.permissions.filter(isActivePermission);
+        const missing = viewsRequiredBy(code).filter((view) => !held.includes(view));
+        if (!held.includes(code) && isActivePermission(code) && missing.length > 0) {
+          throw compositionRefused(
+            `Missing view permissions: ${missing.map((view) => `${view} (required by ${code})`).join('; ')}.`,
+          );
         }
         // Idempotent like the backend's grantPermission: a repeat returns the existing grant.
         if (!role.permissions.includes(code)) {
@@ -390,7 +330,6 @@ export const roleRoutes: Route[] = [
   route('DELETE', '/api/v1/tenant/roles/:role_id/permissions/:grant_id', (context) => {
     const access = tenantAccess(context);
     requirePermission(access, 'role.remove_permission');
-    requirePermission(access, 'role.view');
     const role = findRole(access, context.params.role_id ?? '');
     // The lookup runs inside `produce`, so a replay of a landed removal answers from the store
     // instead of missing the grant it already removed.
@@ -398,6 +337,16 @@ export const roleRoutes: Route[] = [
       const grant = grantsOf(role).find((candidate) => candidate.id === context.params.grant_id);
       if (!grant) throw problem(404, 'resource_not_found', 'Role permission not found');
       if (role.systemRole) throw immutable();
+      // A view a held ACTIVE mutation needs stays (RoleCompositionGuard).
+      const held = role.permissions.filter(isActivePermission);
+      const dependants = held.filter((code) =>
+        viewsRequiredBy(code).includes(grant.permission_code),
+      );
+      if (held.includes(grant.permission_code) && dependants.length > 0) {
+        throw compositionRefused(
+          `Permission ${grant.permission_code} is required by held permissions: ${dependants.join(', ')}.`,
+        );
+      }
       role.permissions = role.permissions.filter((code) => code !== grant.permission_code);
       recordAuditEvent(context.state, access, {
         entityType: 'ROLE',
@@ -421,7 +370,7 @@ export const roleRoutes: Route[] = [
       (entry) =>
         (!q || entry.code.includes(q) || entry.name.toLowerCase().includes(q)) &&
         (!risk || entry.risk === risk) &&
-        (!status || status === 'ACTIVE'),
+        (!status || entry.status === status),
     );
     const ordered = orderBy(rows, PERMISSION_SORTS, query, { by: 'permissionCode', dir: 'ASC' });
     sendJson(context.res, 200, pageOf(ordered.map(permissionWire), query));

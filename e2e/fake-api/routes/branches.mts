@@ -149,7 +149,6 @@ function transition(
     const access = tenantAccess(context);
     const branch = reachableBranch(access, context.params.branch_id ?? '');
     requirePermission(access, permission, 'branch');
-    requirePermission(access, 'branch.view', 'branch'); // read-back (BG-31)
     const raw = await readBody(context.req);
     // Submit/Activate/Reactivate bodies are optional; Suspend/Close need a reason (contract §D).
     const body = raw === undefined && !reasonRequired ? {} : objectBody(raw, ['reason']);
@@ -285,7 +284,6 @@ export const branchRoutes: Route[] = [
   route('POST', '/api/v1/tenant/branch-assignments', async (context) => {
     const access = tenantAccess(context);
     requirePermission(access, 'user.assign_branch');
-    requirePermission(access, 'branch_assignment.view', 'branch');
     const body = objectBody(await readBody(context.req), [
       'user_id',
       'branch_id',
@@ -349,7 +347,6 @@ export const branchRoutes: Route[] = [
   route('DELETE', '/api/v1/tenant/branch-assignments/:assignment_id', (context) => {
     const access = tenantAccess(context);
     requirePermission(access, 'user.revoke_branch');
-    requirePermission(access, 'branch_assignment.view', 'branch');
     const { state } = context;
     const row = state.branchAssignments.find(
       (candidate) =>

@@ -35,11 +35,23 @@ const permission = (
   name: string,
   module: string,
   risk: Permission['risk'],
-): Permission => ({ id: code, code, name, module, risk, status: 'ACTIVE' });
+  requiredViewPermissions: string[] = [],
+): Permission => ({
+  id: code,
+  code,
+  name,
+  module,
+  risk,
+  status: 'ACTIVE',
+  kind: requiredViewPermissions.length > 0 ? 'MUTATION' : 'VIEW',
+  grantScope: 'TENANT',
+  requiredViewPermissions,
+});
+const NEEDS_DATE = ['business_date.view'];
 const CATALOGUE = [
   permission('business_date.view', 'View business date', 'settings', 'LOW'),
-  permission('business_date.advance', 'Advance business date', 'settings', 'CRITICAL'),
-  permission('cob.start', 'Start close of business', 'settings', 'HIGH'),
+  permission('business_date.advance', 'Advance business date', 'settings', 'CRITICAL', NEEDS_DATE),
+  permission('cob.start', 'Start close of business', 'settings', 'HIGH', NEEDS_DATE),
   permission('role.view', 'View roles', 'iam', 'LOW'),
 ];
 const codesField = () => document.querySelector<HTMLInputElement>('input[name="permissionCodes"]');
@@ -63,15 +75,84 @@ describe('PermissionChecklist', () => {
     await user.click(screen.getByRole('checkbox', { name: /^Advance business date/ }));
     await user.clear(search);
     await user.click(screen.getByRole('checkbox', { name: /^View roles/ }));
-    expect(codesField()?.value).toBe('business_date.advance,role.view');
-    expect(screen.getByRole('status')).toHaveTextContent('2 selected');
+    // Advance business date brings its view along (ADR 0030), in catalogue order.
+    expect(codesField()?.value).toBe('business_date.view,business_date.advance,role.view');
+    expect(screen.getByRole('status')).toHaveTextContent('3 selected');
 
     await user.click(screen.getByRole('combobox', { name: 'Risk' }));
     await user.click(screen.getByRole('option', { name: 'High' }));
     expect(screen.getAllByRole('checkbox')).toHaveLength(1);
     expect(screen.getByRole('checkbox', { name: /^Start close of business/ })).not.toBeChecked();
     // Filtered-out rows keep their selection.
-    expect(codesField()?.value).toBe('business_date.advance,role.view');
+    expect(codesField()?.value).toBe('business_date.view,business_date.advance,role.view');
+  });
+
+  it('adds the views a mutation needs, says so, and holds them while it is selected', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <form>
+        <PermissionChecklist permissions={CATALOGUE} truncated={false} />
+      </form>,
+    );
+
+    const view = screen.getByRole('checkbox', { name: /^View business date/ });
+    const advance = screen.getByRole('checkbox', { name: /^Advance business date/ });
+    await user.click(advance);
+
+    expect(view).toBeChecked();
+    expect(view).toBeDisabled();
+    expect(view).toHaveAccessibleDescription('Needed by Advance business date');
+    expect(advance).toHaveAccessibleDescription(
+      'Also grants View business date, which Advance business date needs.',
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: /^Start close of business/ }));
+    expect(view).toHaveAccessibleDescription(
+      'Needed by Advance business date and Start close of business',
+    );
+
+    // Unticking every mutation that needs it releases the view.
+    await user.click(advance);
+    await user.click(screen.getByRole('checkbox', { name: /^Start close of business/ }));
+    expect(view).not.toBeChecked();
+    expect(view).toBeEnabled();
+    expect(codesField()?.value).toBe('');
+  });
+
+  it('keeps a view the user picked after the mutation that needed it is unticked', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <form>
+        <PermissionChecklist permissions={CATALOGUE} truncated={false} />
+      </form>,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: /^View business date/ }));
+    const advance = screen.getByRole('checkbox', { name: /^Advance business date/ });
+    await user.click(advance);
+    // The view is already on its way, so nothing is "also" granted.
+    expect(advance).not.toHaveAccessibleDescription();
+    await user.click(advance);
+
+    expect(screen.getByRole('checkbox', { name: /^View business date/ })).toBeChecked();
+    expect(codesField()?.value).toBe('business_date.view');
+  });
+
+  it('says nothing of a view the role already holds', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <form>
+        <PermissionChecklist
+          permissions={CATALOGUE.filter((entry) => entry.code !== 'business_date.view')}
+          truncated={false}
+        />
+      </form>,
+    );
+
+    const advance = screen.getByRole('checkbox', { name: /^Advance business date/ });
+    await user.click(advance);
+    expect(advance).not.toHaveAccessibleDescription();
+    expect(codesField()?.value).toBe('business_date.advance');
   });
 
   it('mutes the low-risk labels and keeps the high-risk ones in the error colour', () => {
@@ -113,6 +194,26 @@ describe('PermissionChecklist', () => {
     expect(screen.getByRole('status')).toHaveTextContent('25 selected — up to 25 at a time');
     expect(screen.getByText('Only the first 100 catalogue permissions are listed.')).toBeVisible();
   });
+
+  it('offers no mutation whose views would take the selection past 25', async () => {
+    const user = userEvent.setup();
+    const views = Array.from({ length: MAX_GRANTS_PER_SUBMIT - 1 }, (_, index) => {
+      const n = String(index).padStart(2, '0');
+      return permission(`code.n${n}`, `Permission ${n}`, 'iam', 'LOW');
+    });
+    renderWithProviders(
+      <form>
+        <PermissionChecklist permissions={[...views, ...CATALOGUE]} truncated={false} />
+      </form>,
+    );
+
+    for (const box of screen.getAllByRole('checkbox').slice(0, MAX_GRANTS_PER_SUBMIT - 1)) {
+      await user.click(box);
+    }
+    // 24 selected: View roles fits, Advance business date and its view don't.
+    expect(screen.getByRole('checkbox', { name: /^View roles/ })).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: /^Advance business date/ })).toBeDisabled();
+  });
 });
 
 describe('GrantPermissionsButton', () => {
@@ -139,7 +240,7 @@ describe('GrantPermissionsButton', () => {
     });
     const formData = grantPermissions.mock.calls[0]?.[1] as FormData;
     expect(formData.get('roleId')).toBe(ROLE);
-    expect(formData.get('permissionCodes')).toBe('cob.start');
+    expect(formData.get('permissionCodes')).toBe('business_date.view,cob.start');
     expect(formData.get('contextOrganisationId')).toBe(ORG);
     expect(await screen.findByRole('alert')).toHaveTextContent('Permissions granted');
   });
@@ -226,7 +327,7 @@ describe('GrantPermissionsButton', () => {
       expect(grantPermissions).toHaveBeenCalledTimes(2);
     });
     const retry = grantPermissions.mock.calls[1]?.[1] as FormData;
-    expect(retry.get('permissionCodes')).toBe('cob.start,role.view');
+    expect(retry.get('permissionCodes')).toBe('business_date.view,cob.start,role.view');
     expect(retry.get('idempotencyKey')).toBe(key);
   });
 
@@ -289,7 +390,7 @@ describe('GrantPermissionsButton', () => {
     expect(
       within(drawer).getByRole('checkbox', { name: /^Start close of business/ }),
     ).toBeChecked();
-    expect(codesField()?.value).toBe('cob.start');
+    expect(codesField()?.value).toBe('business_date.view,cob.start');
   });
 });
 
@@ -335,6 +436,25 @@ describe('RemovePermissionButton', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Operations supervisor' })).toHaveFocus();
     });
+  });
+
+  // ADR 0030: the platform refuses removing a view a held mutation needs (400).
+  it('is disabled, saying which granted permissions need it', () => {
+    renderWithProviders(
+      <RemovePermissionButton
+        roleId={ROLE}
+        grantId={GRANT}
+        label="View business date"
+        critical={false}
+        neededBy={['Advance business date', 'Start close of business']}
+      />,
+    );
+
+    const remove = screen.getByRole('button', { name: 'Remove View business date' });
+    expect(remove).toBeDisabled();
+    expect(remove).toHaveAccessibleDescription(
+      'Needed by Advance business date and Start close of business',
+    );
   });
 
   it('confirms a non-critical removal as a plain dialog', async () => {

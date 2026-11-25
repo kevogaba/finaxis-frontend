@@ -1,4 +1,5 @@
-import { can, canAll, canAny, type PermissionHolder } from '@/auth/permissions';
+import { can, canAll, canAllTenantWide, canAny, type PermissionHolder } from '@/auth/permissions';
+import { withViews } from '@/auth/permission-views';
 import { humanizeEnum, type StatusTone } from '@/components/data-display/status-chip';
 import { UUID_PATTERN, type Page } from '@/lib/api/wire';
 import type { MembershipStatus, UserStatus } from './user-contract';
@@ -177,8 +178,10 @@ export interface MembershipSubject {
 }
 
 /** The hero's actions, in display order. Every transition reads the membership back, so the
- * `membership.view` gate runs first (BG-31); then the status; then each action's own code. Approve
- * is withheld once approval ran (re-approving a PROVISIONING_IDP user only requeues it, BG-11). */
+ * `membership.view` gate runs first (BG-31); then the status; then each action's own code with the
+ * views it implies, all tenant-wide, as UserProvisioningService checks them (ADR 0030, BG-33).
+ * Approve is withheld once approval ran (re-approving a PROVISIONING_IDP user only requeues it,
+ * BG-11). */
 export function availableMembershipActions(
   status: Pick<MembershipSubject, 'membershipStatus' | 'userStatus'>,
   holder: PermissionHolder,
@@ -186,11 +189,15 @@ export function availableMembershipActions(
   if (!can(holder, 'membership.view')) return [];
   return ACTIONS_BY_STATUS[status.membershipStatus].filter(
     (action) =>
-      can(holder, PERMISSION[action]) &&
+      canAllTenantWide(holder, withViews([PERMISSION[action]])) &&
       !(action === 'approve' && status.userStatus === 'PROVISIONING_IDP'),
   );
 }
 
+/** `user.view` held only at branch scope: the directory and its pickers need it tenant-wide
+ * (BG-33). */
+export const USERS_BRANCH_SCOPED =
+  'Your role lets you view users at a branch only. Seeing everyone in this institution needs that permission for the whole institution. Ask an administrator if you need access.';
 export const NO_MEMBERSHIP_VIEW =
   "Membership actions need permission to view memberships, which your role doesn't include.";
 export const MEMBERSHIP_MISSING =
@@ -253,17 +260,16 @@ export function membershipActionsNote(
   return lookup === 'failed' ? MEMBERSHIP_UNAVAILABLE : null;
 }
 
-/** A REVOKED membership takes no assignment (409). The role select reads the role index, which
- * needs `role.view`. */
+/** A REVOKED membership takes no assignment (409). The write needs its views (ADR 0030); the
+ * role select reads the role index, which needs `role.view`. */
 export function canAssignUserRole(status: MembershipStatus, holder: PermissionHolder): boolean {
-  return status !== 'REVOKED' && canAll(holder, ['user.assign_role', 'role.view']);
+  return status !== 'REVOKED' && canAll(holder, [...withViews(['user.assign_role']), 'role.view']);
 }
 
-/** The write reads back `branch_assignment.view` (BG-31); the branch select needs `branch.view`. */
+/** The write needs its views (ADR 0030); the branch select needs `branch.view`. */
 export function canAssignUserBranch(status: MembershipStatus, holder: PermissionHolder): boolean {
   return (
-    status !== 'REVOKED' &&
-    canAll(holder, ['user.assign_branch', 'branch_assignment.view', 'branch.view'])
+    status !== 'REVOKED' && canAll(holder, [...withViews(['user.assign_branch']), 'branch.view'])
   );
 }
 

@@ -4,6 +4,7 @@ import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { permissionHolder } from '@/auth/permissions';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -38,7 +39,7 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
   const params = toSearchParams(await searchParams);
   const query = parseRoleListQuery(params);
   const [roles, selected] = await Promise.all([load(listRoles(query)), getCurrentContextProfile()]);
-  const permissions = selected.kind === 'resolved' ? selected.profile.permissions : [];
+  const holder = permissionHolder(selected.kind === 'resolved' ? selected.profile : undefined);
 
   const header = (
     <PageHeader
@@ -46,7 +47,7 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
       title="Roles & permissions"
       description="Reusable permission bundles, and who holds them institution-wide or at one branch."
       actions={
-        canCreateRole({ permissions }) ? (
+        canCreateRole(holder) ? (
           <Button
             component={NextLink}
             href={`${PATH}/new`}

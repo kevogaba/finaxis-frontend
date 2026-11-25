@@ -73,8 +73,17 @@ function settled() {
   reads.getBusinessDate.mockResolvedValue({ date: '07-09-2026', status: 'OPEN' });
 }
 
-async function show(permissions: string[] = EVERY_CODE, organisationStatus = 'ACTIVE') {
-  return renderWithProviders(<>{await ReadinessSection({ permissions, organisationStatus })}</>);
+/** Every code tenant-wide unless `branchOnly` names some held only at branch scope (BG-33). */
+async function show(
+  permissions: string[] = EVERY_CODE,
+  organisationStatus = 'ACTIVE',
+  branchOnly: string[] = [],
+) {
+  const holder = {
+    permissions,
+    tenantPermissions: permissions.filter((code) => !branchOnly.includes(code)),
+  };
+  return renderWithProviders(<>{await ReadinessSection({ holder, organisationStatus })}</>);
 }
 
 /** The item whose h3 is `label`, as a list item. */
@@ -159,6 +168,16 @@ describe('ReadinessSection', () => {
     );
   });
 
+  // GET /tenant/users checks user.view tenant-wide (BG-33).
+  it('reads no onboarding count while user.view is held only at branch scope', async () => {
+    settled();
+    await show(EVERY_CODE, 'ACTIVE', ['user.view']);
+
+    expect(reads.countUserApprovals).not.toHaveBeenCalled();
+    expect(itemOf('Onboarding')).toHaveTextContent(NOT_PERMITTED);
+    expect(within(itemOf('People')).queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('reads no branch count without branch.view', async () => {
     settled();
     await show(['membership.view']);
@@ -209,7 +228,10 @@ describe('ReadinessSection', () => {
     settled();
     reads.listSettings.mockRejectedValue(error);
     await expect(
-      ReadinessSection({ permissions: EVERY_CODE, organisationStatus: 'ACTIVE' }),
+      ReadinessSection({
+        holder: { permissions: EVERY_CODE, tenantPermissions: EVERY_CODE },
+        organisationStatus: 'ACTIVE',
+      }),
     ).rejects.toMatchObject({ digest: expect.stringContaining(digest) as unknown });
   });
 

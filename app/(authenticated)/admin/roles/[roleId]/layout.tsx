@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import Paper from '@mui/material/Paper';
 import VerifiedUserOutlined from '@mui/icons-material/VerifiedUserOutlined';
 import { getCurrentContextProfile } from '@/auth/context-service';
-import { can } from '@/auth/permissions';
+import { can, permissionHolder } from '@/auth/permissions';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { RecordHero } from '@/components/data-display/record-hero';
@@ -56,7 +56,7 @@ export default async function RoleRecordLayout({ children, params }: RoleRecordL
   }
 
   const record = role.value;
-  const holder = { permissions: resolved?.profile.permissions ?? [] };
+  const holder = permissionHolder(resolved?.profile);
   const action = roleStatusAction(record, holder);
   const editable = canEditRole(record, holder);
   const base = `/admin/roles/${roleId}`;

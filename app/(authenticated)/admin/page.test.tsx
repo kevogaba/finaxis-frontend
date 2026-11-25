@@ -15,6 +15,7 @@ import {
 } from '@/modules/administration/overview/overview-rules';
 import { READINESS_DESCRIPTION } from '@/modules/administration/overview/readiness-rules';
 import { renderWithProviders } from '@/test/test-utils';
+import { permissionScopes } from '@/test/permission-scopes';
 
 const { getCurrentContextProfile } = vi.hoisted(() => ({
   getCurrentContextProfile: vi.fn<() => Promise<SelectedContextProfile>>(),
@@ -73,6 +74,7 @@ const PROFILE: BackendProfile = {
   branches: [],
   roles: [],
   permissions: [],
+  permission_scopes: [],
 };
 
 function resolved(
@@ -83,7 +85,12 @@ function resolved(
 ) {
   getCurrentContextProfile.mockResolvedValue({
     kind: 'resolved',
-    profile: { ...PROFILE, permissions, organisation },
+    profile: {
+      ...PROFILE,
+      permissions,
+      permission_scopes: permissionScopes(permissions),
+      organisation,
+    },
     context: {
       module,
       organization: { id: '14e10000-0000-4000-8000-0000000000bb', name: 'Greenfield SACCO' },
@@ -142,7 +149,7 @@ describe('AdminOverviewPage', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        `Readiness card ${JSON.stringify({ permissions: EVERY_CODE, organisationStatus: 'ACTIVE' })}`,
+        `Readiness card ${JSON.stringify({ holder: { permissions: EVERY_CODE, tenantPermissions: EVERY_CODE }, organisationStatus: 'ACTIVE' })}`,
       ),
     ).toBeInTheDocument();
     expect(
@@ -204,7 +211,7 @@ describe('AdminOverviewPage', () => {
 
     expect(
       screen.getByText(
-        `Readiness card ${JSON.stringify({ permissions: EVERY_CODE, organisationStatus: 'SUSPENDED' })}`,
+        `Readiness card ${JSON.stringify({ holder: { permissions: EVERY_CODE, tenantPermissions: EVERY_CODE }, organisationStatus: 'SUSPENDED' })}`,
       ),
     ).toBeInTheDocument();
   });
@@ -227,6 +234,7 @@ describe('AdminOverviewPage', () => {
       profile: {
         ...PROFILE,
         permissions: EVERY_CODE,
+        permission_scopes: permissionScopes(EVERY_CODE),
         branches: [
           {
             id: '14e10000-0000-4000-8000-0000000000dd',

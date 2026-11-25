@@ -76,6 +76,15 @@ export interface BackendProfileRole {
   status: string;
 }
 
+/** Where a code is held (BG-33): TENANT is every branch; BRANCH only `branch_ids`, every ACTIVE
+ * branch the grant covers. A code held at both is reported once, as TENANT. */
+export interface BackendPermissionScope {
+  code: string;
+  scope: 'TENANT' | 'BRANCH';
+  /** Absent on a TENANT entry. */
+  branch_ids?: readonly string[];
+}
+
 export interface BackendUserProfile {
   user_id: string;
   keycloak_subject: string;
@@ -87,6 +96,7 @@ export interface BackendUserProfile {
   branches: readonly BackendProfileBranch[];
   roles: readonly BackendProfileRole[];
   permissions: readonly string[];
+  permission_scopes: readonly BackendPermissionScope[];
 }
 
 export type BackendProfile = BackendUserProfile;

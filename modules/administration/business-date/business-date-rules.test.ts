@@ -9,21 +9,35 @@ const ALL = [
   'cob.complete',
 ];
 
+/** Every code held tenant-wide. */
+const wide = (permissions: readonly string[]) => ({ permissions, tenantPermissions: permissions });
+
 describe('business date rules', () => {
   it.each([
     ['OPEN', ['cob.start', 'business_date.advance']],
     ['CLOSING', ['cob.complete']],
     ['CLOSED', ['business_date.reopen']],
   ] as const)('offers the %s transitions', (status, expected) => {
-    expect(availableBusinessDateActions(status, { permissions: ALL })).toEqual(expected);
+    expect(availableBusinessDateActions(status, wide(ALL))).toEqual(expected);
   });
 
   it('needs each action permission and business_date.view (BG-31)', () => {
+    expect(availableBusinessDateActions('OPEN', wide(['business_date.view', 'cob.start']))).toEqual(
+      ['cob.start'],
+    );
     expect(
-      availableBusinessDateActions('OPEN', { permissions: ['business_date.view', 'cob.start'] }),
-    ).toEqual(['cob.start']);
+      availableBusinessDateActions('OPEN', wide(['cob.start', 'business_date.advance'])),
+    ).toEqual([]);
+  });
+
+  // Review Focus 3: BusinessDateService checks each action and business_date.view tenant-wide.
+  it('offers nothing held, or whose view is held, only at branch scope', () => {
+    const held = (tenantWide: string[]) => ({ permissions: ALL, tenantPermissions: tenantWide });
+    expect(availableBusinessDateActions('OPEN', held(['business_date.view', 'cob.start']))).toEqual(
+      ['cob.start'],
+    );
     expect(
-      availableBusinessDateActions('OPEN', { permissions: ['cob.start', 'business_date.advance'] }),
+      availableBusinessDateActions('OPEN', held(['cob.start', 'business_date.advance'])),
     ).toEqual([]);
   });
 

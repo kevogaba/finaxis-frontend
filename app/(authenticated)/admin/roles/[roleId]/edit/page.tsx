@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { permissionHolder } from '@/auth/permissions';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
 import { SectionCard } from '@/components/data-display/section-card';
 import { load } from '@/lib/api/load';
@@ -21,7 +22,7 @@ export default async function EditRolePage({ params }: EditRolePageProps) {
 
   const record = role.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
-  if (!canEditRole(record, { permissions: resolved?.profile.permissions ?? [] })) {
+  if (!canEditRole(record, permissionHolder(resolved?.profile))) {
     return (
       <SectionCard title="Edit role">
         <ForbiddenState description={record.systemRole ? SYSTEM_ROLE_NOTE : undefined} />

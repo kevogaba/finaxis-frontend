@@ -8,7 +8,7 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Tooltip from '@mui/material/Tooltip';
 import NextLink from '@/components/navigation/next-link';
-import { canAny } from '@/auth/permissions';
+import { canAny, canTenantWide, type PermissionHolder } from '@/auth/permissions';
 
 export interface WorkspaceNavigationItem {
   href: string;
@@ -16,6 +16,8 @@ export interface WorkspaceNavigationItem {
   icon: ElementType;
   /** Shown when the user holds any of these permission codes; omit for always-visible items. */
   requiresAny?: readonly string[];
+  /** The page's read is checked tenant-wide, so only a tenant-wide grant counts (BG-33). */
+  tenantWide?: boolean;
 }
 
 /**
@@ -25,9 +27,15 @@ export interface WorkspaceNavigationItem {
  */
 export function visibleNavigationItems(
   items: readonly WorkspaceNavigationItem[],
-  permissions: readonly string[],
+  holder: PermissionHolder,
 ): WorkspaceNavigationItem[] {
-  return items.filter((item) => !item.requiresAny || canAny({ permissions }, item.requiresAny));
+  return items.filter(
+    ({ requiresAny, tenantWide }) =>
+      !requiresAny ||
+      (tenantWide
+        ? requiresAny.some((code) => canTenantWide(holder, code))
+        : canAny(holder, requiresAny)),
+  );
 }
 
 export function isNavigationItemActive(pathname: string, href: string): boolean {

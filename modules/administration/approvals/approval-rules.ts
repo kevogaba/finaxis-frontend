@@ -1,4 +1,11 @@
-import { can, canAll, type PermissionHolder } from '@/auth/permissions';
+import {
+  can,
+  canAll,
+  canAllTenantWide,
+  canTenantWide,
+  type PermissionHolder,
+} from '@/auth/permissions';
+import { withViews } from '@/auth/permission-views';
 import { humanizeEnum } from '@/components/data-display/status-chip';
 import type { BranchStatus } from '@/modules/administration/branches/branch-contract';
 import { MAKER_CHECKER_BLOCKED } from '@/modules/administration/branches/branch-rules';
@@ -22,6 +29,12 @@ import {
  * decides. The decision also reads the membership back (`membership.view`, BG-31): the detail page
  * says so when it is missing. */
 export const USER_APPROVAL_CODES = ['user.approve', 'user.view'] as const;
+
+/** `GET /tenant/users` checks `user.view` tenant-wide (BG-33), so a branch-scoped grant reads no
+ * pending users. */
+export function canSeeUserApprovals(holder: PermissionHolder): boolean {
+  return can(holder, 'user.approve') && canTenantWide(holder, 'user.view');
+}
 /** The Branch activation tab and the bell's branch count: activate reads the branch back (BG-31). */
 export const BRANCH_ACTIVATION_CODES = ['branch.approve', 'branch.view'] as const;
 
@@ -63,7 +76,7 @@ export function approvalQueueTabs(
   const label = (text: string, count: number | null) =>
     count === null ? text : `${text} (${count})`;
   const tabs: ApprovalQueueTab[] = [];
-  if (canAll(holder, USER_APPROVAL_CODES)) {
+  if (canSeeUserApprovals(holder)) {
     tabs.push({ href: USER_QUEUE_HREF, label: label(USER_QUEUE_LABEL, counts.users) });
   }
   if (canAll(holder, BRANCH_ACTIVATION_CODES)) {
@@ -110,8 +123,9 @@ export function availableUserDecisions(
 ): ApprovalDecision[] {
   if (!can(holder, 'membership.view') || (state !== 'awaiting' && state !== 'blocked')) return [];
   const decisions: ApprovalDecision[] = [];
-  if (can(holder, 'user.approve')) decisions.push('approve');
-  if (can(holder, 'membership.revoke')) decisions.push('reject');
+  // Each checked with membership.view, tenant-wide (ADR 0030, BG-33).
+  if (canAllTenantWide(holder, withViews(['user.approve']))) decisions.push('approve');
+  if (canAllTenantWide(holder, withViews(['membership.revoke']))) decisions.push('reject');
   return decisions;
 }
 

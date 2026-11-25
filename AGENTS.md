@@ -175,6 +175,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   `docs/backend-gaps.md` records a gap as fixed, its **Backend resolution**.
 - `/auth/*` responses are parsed by the zod schemas in `auth/context-contract.ts` — never trust an
   unparsed backend body.
+- Gate a mutation on its code and the views the platform pairs with it (`withViews` from
+  `auth/permission-views.ts`, ADR 0030). Gate what the platform checks tenant-wide
+  (`requireTenantPermission`, or `requirePermission` without a branch) with `canTenantWide` /
+  `canAllTenantWide` on `permissionHolder(profile)` (BG-33); a target-branch check stays on `can`.
+  A permission migration that adds a mutation adds its pair to that map;
+  `e2e/fake-api-roles.spec.ts` pins it to the fake catalogue.
 - `ApplicationContext.branch` is nullable: `null` means All branches (institution level), not "no
   branch selected yet." Render it as `branch?.name ?? 'All branches'`, never assume a branch exists.
 

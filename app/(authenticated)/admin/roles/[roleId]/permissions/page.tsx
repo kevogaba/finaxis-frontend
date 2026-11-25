@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { getCurrentContextProfile } from '@/auth/context-service';
+import { permissionHolder } from '@/auth/permissions';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ErrorState } from '@/components/data-display/error-state';
 import { ForbiddenState } from '@/components/data-display/forbidden-state';
@@ -15,6 +16,8 @@ import { formatInstant } from '@/lib/format';
 import {
   canGrantPermissions,
   canRemovePermissions,
+  grantableOptions,
+  neededByNames,
 } from '@/modules/administration/roles/role-rules';
 import {
   getPermissionCatalogue,
@@ -50,12 +53,14 @@ export default async function RolePermissionsPage({
 
   const record = role.value;
   const resolved = selected.kind === 'resolved' ? selected : null;
-  const holder = { permissions: resolved?.profile.permissions ?? [] };
+  const holder = permissionHolder(resolved?.profile);
   // I2: the organisation this page rendered with, carried by every mutation surface below.
   const contextOrganisationId = resolved?.context.organization.id;
-  // One bounded read, only when the drawer is on offer (Ruling 6).
-  const granted =
-    catalogue && canGrantPermissions(record, holder) ? await listGrantedCodes(roleId) : null;
+  const canGrant = catalogue !== null && canGrantPermissions(record, holder);
+  const canRemove = canRemovePermissions(record, holder);
+  // One bounded read, only when the drawer or Remove is on offer (Ruling 6): Remove needs it to
+  // know which views a granted mutation still needs.
+  const granted = canGrant || canRemove ? await listGrantedCodes(roleId) : null;
 
   const card = (content: ReactNode) => (
     <SectionCard
@@ -66,13 +71,11 @@ export default async function RolePermissionsPage({
           : 'Granted permissions take effect immediately for everyone holding this role.'
       }
       actions={
-        catalogue && granted ? (
+        canGrant && granted ? (
           <GrantPermissionsButton
             roleId={roleId}
             roleName={record.roleName}
-            available={catalogue.items.filter(
-              (permission) => permission.status === 'ACTIVE' && !granted.has(permission.code),
-            )}
+            available={grantableOptions(catalogue.items, granted)}
             truncated={catalogue.page.hasNext}
             contextOrganisationId={contextOrganisationId}
           />
@@ -114,6 +117,7 @@ export default async function RolePermissionsPage({
       module: permission?.module ?? null,
       risk: permission?.risk ?? null,
       grantedAt: `${when.date} · ${when.time}`,
+      neededBy: neededByNames(grant.permissionCode, granted ?? [], byCode),
     };
   });
 
@@ -132,7 +136,7 @@ export default async function RolePermissionsPage({
         <RolePermissionsTable
           rows={rows}
           roleId={roleId}
-          canRemove={canRemovePermissions(record, holder)}
+          canRemove={canRemove}
           timeZone={timeZone}
           contextOrganisationId={contextOrganisationId}
         />

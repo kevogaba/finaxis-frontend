@@ -1,3 +1,5 @@
+import { canAllTenantWide, type PermissionHolder } from '@/auth/permissions';
+import { withViews } from '@/auth/permission-views';
 import type { ActionResult } from '@/lib/api/action-result';
 import type { TenantSetting } from './settings-contract';
 
@@ -134,6 +136,12 @@ export interface AllowedSettingActions {
   value: string | null;
   /** Both editable keys default to null, so a value means one is stored (no is_default: BG-12). */
   reset: boolean;
+}
+
+/** TenantSettingsService checks `settings.update`, and the `settings.view` it implies, tenant-wide
+ * (ADR 0030, BG-33). */
+export function canUpdateSettings(holder: PermissionHolder): boolean {
+  return canAllTenantWide(holder, withViews(['settings.update']));
 }
 
 /** Editable keys only, with `settings.update`, never on a masked or platform-only value. */

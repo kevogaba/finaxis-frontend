@@ -60,16 +60,22 @@ describe('branch rules', () => {
   });
 
   it('assigns only to an ACTIVE branch, with all three codes', () => {
-    const holder = { permissions: ['user.assign_branch', 'branch_assignment.view', 'user.view'] };
+    const codes = ['user.assign_branch', 'branch_assignment.view', 'user.view'];
+    const holder = { permissions: codes, tenantPermissions: ['user.view'] };
     expect(canAssignUsers('ACTIVE', holder)).toBe(true);
     expect(canAssignUsers('SUSPENDED', holder)).toBe(false);
-    expect(canAssignUsers('ACTIVE', { permissions: ['user.assign_branch', 'user.view'] })).toBe(
-      false,
-    );
-    // The drawer's user search (GET /tenant/users) needs user.view.
+    // Review Focus 3: the mutation without its view (ADR 0030).
+    expect(
+      canAssignUsers('ACTIVE', {
+        permissions: ['user.assign_branch', 'user.view'],
+        tenantPermissions: ['user.view'],
+      }),
+    ).toBe(false);
+    // The drawer's user search (GET /tenant/users) needs user.view tenant-wide (BG-33).
     expect(
       canAssignUsers('ACTIVE', { permissions: ['user.assign_branch', 'branch_assignment.view'] }),
     ).toBe(false);
+    expect(canAssignUsers('ACTIVE', { permissions: codes, tenantPermissions: [] })).toBe(false);
     expect(
       canRevokeAssignments({ permissions: ['user.revoke_branch', 'branch_assignment.view'] }),
     ).toBe(true);

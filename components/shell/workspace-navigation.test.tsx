@@ -27,11 +27,12 @@ const ITEMS: WorkspaceNavigationItem[] = [
 
 describe('visibleNavigationItems', () => {
   it('keeps ungated items and items whose permission the user holds', () => {
-    expect(visibleNavigationItems(ITEMS, ['tenant.view']).map((item) => item.label)).toEqual([
+    expect(
+      visibleNavigationItems(ITEMS, { permissions: ['tenant.view'] }).map((item) => item.label),
+    ).toEqual(['Overview', 'SACCO institutions']);
+    expect(visibleNavigationItems(ITEMS, { permissions: [] }).map((item) => item.label)).toEqual([
       'Overview',
-      'SACCO institutions',
     ]);
-    expect(visibleNavigationItems(ITEMS, []).map((item) => item.label)).toEqual(['Overview']);
   });
 
   it('hides an item whose requiresAny is empty, regardless of permissions held', () => {
@@ -43,8 +44,18 @@ describe('visibleNavigationItems', () => {
     };
 
     expect(
-      visibleNavigationItems([...ITEMS, unreachable], ['tenant.view']).map((item) => item.label),
+      visibleNavigationItems([...ITEMS, unreachable], { permissions: ['tenant.view'] }).map(
+        (item) => item.label,
+      ),
     ).toEqual(['Overview', 'SACCO institutions']);
+  });
+
+  it('shows a tenantWide item only to a tenant-wide holder (BG-33)', () => {
+    const wide = [{ ...ITEMS[1], tenantWide: true }] as WorkspaceNavigationItem[];
+    const shown = (tenantPermissions: string[]) =>
+      visibleNavigationItems(wide, { permissions: ['tenant.view'], tenantPermissions }).length;
+    expect(shown([])).toBe(0);
+    expect(shown(['tenant.view'])).toBe(1);
   });
 });
 

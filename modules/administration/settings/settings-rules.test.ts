@@ -4,6 +4,7 @@ import type { TenantSetting } from './settings-contract';
 import {
   SETTING_GROUPS,
   otherSettings,
+  canUpdateSettings,
   settingActions,
   settingOptions,
   settingValueLabel,
@@ -19,6 +20,18 @@ function setting(
 }
 
 describe('settings rules', () => {
+  // TenantSettingsService checks settings.update and settings.view tenant-wide (BG-33).
+  it('updates only with settings.update and settings.view tenant-wide', () => {
+    const codes = ['settings.view', 'settings.update'];
+    expect(canUpdateSettings({ permissions: codes, tenantPermissions: codes })).toBe(true);
+    expect(canUpdateSettings({ permissions: codes, tenantPermissions: ['settings.update'] })).toBe(
+      false,
+    );
+    expect(canUpdateSettings({ permissions: codes, tenantPermissions: ['settings.view'] })).toBe(
+      false,
+    );
+  });
+
   it('groups exactly the six catalogue keys (contract §H); anything else is an extra', () => {
     expect(
       SETTING_GROUPS.flatMap((group) => group.entries.map((entry) => entry.key)).sort(),

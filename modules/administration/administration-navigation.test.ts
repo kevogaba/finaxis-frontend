@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { visibleNavigationItems } from '@/components/shell/workspace-navigation';
 import { administrationNavigationItems } from './administration-navigation';
 
-const labels = (permissions: string[]) =>
-  visibleNavigationItems(administrationNavigationItems, permissions).map((item) => item.label);
+// Every code tenant-wide unless a case says otherwise.
+const labels = (permissions: string[], tenantPermissions: string[] = permissions) =>
+  visibleNavigationItems(administrationNavigationItems, { permissions, tenantPermissions }).map(
+    (item) => item.label,
+  );
 
 describe('administrationNavigationItems', () => {
   it('lists the Approval queue right after Overview, then Users & access (spec §8)', () => {
@@ -19,6 +22,16 @@ describe('administrationNavigationItems', () => {
     const users = administrationNavigationItems[2];
     expect(users?.label).toBe('Users & access');
     expect(users?.requiresAny).toEqual(['user.view']);
+    expect(users?.tenantWide).toBe(true);
+  });
+
+  // GET /tenant/users checks user.view tenant-wide (BG-33).
+  it('hides a page whose read is held only at branch scope, except the target-aware Branches', () => {
+    expect(labels(['user.view'], [])).toEqual(['Overview']);
+    expect(labels(['role.view', 'settings.view', 'business_date.view', 'audit.view'], [])).toEqual([
+      'Overview',
+    ]);
+    expect(labels(['branch.view'], [])).toEqual(['Overview', 'Branches']);
   });
 
   it('shows the Approval queue to a holder of either decision, and only then', () => {
