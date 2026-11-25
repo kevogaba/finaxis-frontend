@@ -1,8 +1,8 @@
 /**
  * List sort state in the URL (`sortBy`, `sortDir`) → the backend's `sort_by`/`sort_dir` (spec
  * §6.2). `sort_by` values are camelCase and endpoint-specific; anything outside the caller's
- * allow-list is dropped before the request — the backend answers an unknown value with a 500.
- * Import-free (like paging.ts) so a client sort control can use it.
+ * allow-list is dropped before the request — the backend answers an unknown value with a 400
+ * (BG-26). Import-free (like paging.ts) so a client sort control can use it.
  */
 export type SortDir = 'ASC' | 'DESC';
 

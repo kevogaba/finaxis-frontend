@@ -7,7 +7,14 @@ import { explain } from '@/lib/api/explain-action-result';
 import { apiPost } from '@/lib/api/tenant-api';
 import { uuidSchema } from '@/lib/api/wire';
 import { MEMBERSHIP_STATUSES, USER_STATUSES } from './user-contract';
-import { MEMBERSHIP_CHANGED, MEMBERSHIP_CHANGED_CODE } from './user-rules';
+import {
+  APPROVE_CONFLICT,
+  APPROVE_FORBIDDEN,
+  APPROVE_NOT_FOUND,
+  MEMBERSHIP_CHANGED,
+  MEMBERSHIP_CHANGED_CODE,
+  REVOKE_CONFLICT,
+} from './user-rules';
 import { getMembership, getUser } from './user-service';
 
 const idempotencyKey = z.uuid();
@@ -25,15 +32,6 @@ const optionalReason = z
   .max(500, 'Keep the reason under 500 characters.')
   .optional();
 
-// BG-08: a maker-checker refusal is the same 403 as a missing permission — never assert which.
-const APPROVE_FORBIDDEN =
-  "You can't approve this user. Your role may not allow it, or you invited them — a different administrator must approve them.";
-// BG-07: missing prerequisites, a membership that is no longer pending and a re-approval are 500s.
-const APPROVE_FAILED =
-  "The approval couldn't complete. They may still need an active role and, for staff and admin members, an active branch assignment, or approval may already have run. Refresh and check.";
-const REVOKE_FAILED =
-  "This membership couldn't be revoked. It may already be revoked — refresh and check.";
-
 function transition(
   path: 'activate' | 'suspend' | 'reactivate',
   schema: z.ZodType<{ idempotencyKey: string; membershipId: string; reason?: string }>,
@@ -49,13 +47,19 @@ function transition(
 }
 
 /** The activate endpoint reads no body (contract §E.3): `{}` is sent. 200 = ACTIVE, 202 =
- * identity provisioning queued; the refreshed record shows which (Ruling 9). 12 reuses it. */
+ * identity provisioning queued; the refreshed record shows which (Ruling 9). 12 reuses it. The
+ * maker-checker refusals keep their own codes' words (`describeProblem`, BG-08). */
 export async function approveMembership(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
   const result = await transition('activate', membershipInput, formData);
-  return explain(explain(result, 'forbidden', APPROVE_FORBIDDEN), 'internal_error', APPROVE_FAILED);
+  const refused = explain(result, 'forbidden', APPROVE_FORBIDDEN);
+  return explain(
+    explain(refused, 'resource_not_found', APPROVE_NOT_FOUND),
+    'conflict',
+    APPROVE_CONFLICT,
+  );
 }
 
 export async function suspendMembership(
@@ -88,7 +92,7 @@ const revokeInput = membershipInput.extend({
  * provisioning (a 202) when the page showed a user who was not provisioning: a stale Reject never
  * revokes an approved member. A record the page showed as provisioning stays revocable (10 offers
  * it), and a membership already REVOKED goes through to the backend, which replays this key's
- * earlier success (anyone else's revoke answers 500: REVOKE_FAILED). Every guard read failure
+ * earlier success (anyone else's revoke answers 409: REVOKE_CONFLICT). Every guard read failure
  * rejects, so a lost session or a stale context redirects and any other failure fails closed. */
 export async function revokeMembership(
   _previous: ActionResult | null,
@@ -105,7 +109,7 @@ export async function revokeMembership(
         input.expectedUserStatus !== 'PROVISIONING_IDP' &&
         (await getUser(current.userId)).userStatus === 'PROVISIONING_IDP';
       // REVOKED is the revoke's own end state: maybe this key's earlier revoke whose response was
-      // lost, which the backend replays; anyone else's revoke answers 500 (REVOKE_FAILED).
+      // lost, which the backend replays; anyone else's revoke answers 409 (REVOKE_CONFLICT).
       if (
         (current.status !== input.expectedStatus && current.status !== 'REVOKED') ||
         approvedMeanwhile
@@ -121,7 +125,7 @@ export async function revokeMembership(
   });
   return explain(
     explain(result, MEMBERSHIP_CHANGED_CODE, MEMBERSHIP_CHANGED),
-    'internal_error',
-    REVOKE_FAILED,
+    'conflict',
+    REVOKE_CONFLICT,
   );
 }

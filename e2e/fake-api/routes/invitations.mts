@@ -30,8 +30,23 @@ const E164 = /^\+[1-9]\d{1,14}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const invalidJson = () => problem(400, 'invalid_json', 'Malformed request body.');
-// BG-07: every invite rule failure falls through to the generic handler as a 500.
-const internalError = () => problem(500, 'internal_error', 'An unexpected error occurred.');
+// BG-07 (UserProvisioningValidation, InviteeResolution): each rule answers its own status, and the
+// detail is the only thing that tells two of the same status apart.
+/** A service-level 400: no `violations`. */
+const malformed = (detail: string) => problem(400, 'validation_failed', detail);
+const unusableRole = () =>
+  problem(
+    422,
+    'invalid_operation',
+    'A role in the request was not found or is not active in the organisation.',
+  );
+const unusableBranch = () =>
+  problem(
+    422,
+    'invalid_operation',
+    'A branch in the request was not found or is not active in the organisation.',
+  );
+const conflict = (detail: string) => problem(409, 'conflict', detail);
 const NEED_A_BRANCH = ['STAFF', 'ADMIN'];
 
 interface BranchAssignmentInput {
@@ -123,6 +138,15 @@ function readInvitation(body: Record<string, unknown>): Invitation {
     'size must be between 2 and 100',
   );
   check(phone === null || E164.test(phone), 'phone_e164', 'Pattern', 'must be E.164');
+  // @BranchScopeRequiresBranch on each role row, attributed to its branch_id.
+  roles.forEach((row, index) => {
+    check(
+      row.scopeType !== 'BRANCH' || row.branchId !== null,
+      `role_assignments[${index}].branch_id`,
+      'BranchScopeRequiresBranch',
+      'A branch is required when the scope type is BRANCH.',
+    );
+  });
   if (violations.length > 0) {
     throw problem(400, 'validation_failed', 'Validation failed.', violations);
   }
@@ -143,11 +167,13 @@ function requireAssignAt(access: AccessContext, branchIds: readonly string[]): v
 const sameText = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /**
- * Mirrors UserProvisioningService's invite rules (BG-07: each is a 500; contract §D, §E.3, §F):
- * STAFF and ADMIN need a branch; at least one role; every role ACTIVE; every branch (assigned and
- * primary) ACTIVE; TENANT scope without a branch, BRANCH scope with one of the assigned branches; no
- * membership of the email in this organisation, in any status (BG-28); a username taken by another
- * email. Runs inside `produce`, so a refusal stores nothing.
+ * Mirrors UserProvisioningService's invite rules in its order (BG-07; contract §D, §E.3, §F):
+ * every branch (primary, then assigned) ACTIVE, else 422; every role ACTIVE here, else 422, and
+ * TENANT scope without a branch, else 422 (a BRANCH row's branch only has to be ACTIVE: it needn't
+ * be one of the assigned ones); STAFF and ADMIN need a branch, and everyone a role, else 400; no
+ * membership of the email in this organisation, else 409 (a REVOKED one too, until 18 adopts the
+ * re-invite, BG-28); a username taken by another email, 409. Runs inside `produce`, so a refusal
+ * stores nothing. The organisation is ACTIVE: `requireContext` saw to it.
  */
 function checkInviteRules(
   state: RunState,
@@ -165,21 +191,26 @@ function checkInviteRules(
       (role) =>
         role.id === id && role.organisationId === organisationId && role.status === 'ACTIVE',
     );
-  const assigned = new Set(input.branches.map((row) => row.branchId));
-  if (input.roles.length === 0) throw internalError();
-  if (NEED_A_BRANCH.includes(input.membershipType) && input.branches.length === 0) {
-    throw internalError();
+  if (input.primaryBranchId !== null && !activeBranch(input.primaryBranchId)) {
+    throw unusableBranch();
   }
-  if (input.branches.some((row) => !activeBranch(row.branchId))) throw internalError();
-  if (input.primaryBranchId !== null && !activeBranch(input.primaryBranchId)) throw internalError();
+  if (input.branches.some((row) => !activeBranch(row.branchId))) throw unusableBranch();
   for (const row of input.roles) {
-    if (!activeRole(row.roleId)) throw internalError();
-    const scopeMatches =
-      row.scopeType === 'TENANT'
-        ? row.branchId === null
-        : row.branchId !== null && assigned.has(row.branchId);
-    if (!scopeMatches) throw internalError();
+    if (!activeRole(row.roleId)) throw unusableRole();
+    if (row.scopeType === 'TENANT' && row.branchId !== null) {
+      throw problem(
+        422,
+        'invalid_operation',
+        'The request cannot be processed in its current state.',
+      );
+    }
+    // BRANCH rows carry a branch (readInvitation's 400 saw to it).
+    if (row.branchId !== null && !activeBranch(row.branchId)) throw unusableBranch();
   }
+  if (NEED_A_BRANCH.includes(input.membershipType) && input.branches.length === 0) {
+    throw malformed('At least one branch assignment is required.');
+  }
+  if (input.roles.length === 0) throw malformed('At least one role assignment is required.');
   if (
     existing &&
     state.memberships.some(
@@ -187,10 +218,10 @@ function checkInviteRules(
         membership.userId === existing.id && membership.organisationId === organisationId,
     )
   ) {
-    throw internalError();
+    throw conflict('This user already has a membership in the selected organisation.');
   }
   if (!existing && state.users.some((user) => sameText(user.username, input.username))) {
-    throw internalError();
+    throw conflict('That username is already in use.');
   }
 }
 

@@ -989,9 +989,9 @@ function userAuditEvent(
  * administrator and the inviter of Amina, Brian, Daniel and Felix; Jane invited Carol, so Jane's
  * approval of her is a 403 (maker-checker, BG-08). Amina, Carol and Daniel have no identity link,
  * so an approval queues identity provisioning (a 202) unless it is refused first: Daniel's already
- * ran, so approving him again is a 500 (BG-07, BG-11). Brian has one (a 200). Ann's email sits
- * inside Joann's, and Wanjiru's name is the 100-character maximum. The fake lists newest first, so
- * the directory reads Joann … Victor, then Jane.
+ * ran, so approving him again requeues it, another 202 (BG-07, BG-11). Brian has one (a 200).
+ * Ann's email sits inside Joann's, and Wanjiru's name is the 100-character maximum. The fake lists
+ * newest first, so the directory reads Joann … Victor, then Jane.
  */
 function usersScenario(): RunState {
   const state = greenfieldTenant();
@@ -1445,10 +1445,11 @@ export const APPROVAL_SCENARIO_TEXT = {
 /**
  * Layer 12: a copy of `users` (Amina's approval is a 202, Brian's a 200, Jane invited Carol, and
  * Daniel's identity is still provisioning) plus five more pending members, all invited by Victor:
- * Rose holds no role and Samuel no branch (each approval is a 500, BG-07), Tabitha is an auditor
+ * Rose holds no role and Samuel no branch (each approval is a 409, BG-07), Tabitha is an auditor
  * (branch-exempt, a 200), Zawadi carries the 100-character name and the unbreakable email (a 202),
- * and Usha's account is suspended. Three branches wait for activation (Victor drafted Kericho and
- * Lamu, Jane drafted Naivasha) and Voi is still a draft. Jane gains `branch.approve`.
+ * and Usha's account is suspended (her approval is a 409). Three branches wait for activation
+ * (Victor drafted Kericho and Lamu, Jane drafted Naivasha) and Voi is still a draft. Jane gains
+ * `branch.approve`.
  */
 function approvalsScenario(): RunState {
   const state = usersScenario();
@@ -1590,7 +1591,7 @@ export const INVITE_SCENARIO_TEXT = {
  * Layer 11: a copy of `users` (a member in every onboarding state; ACTIVE roles and the DISABLED
  * Loans officer) plus `user.invite` on Jane's role, a PENDING_APPROVAL branch the wizard must not
  * offer, and two accounts in another institution: Rehema, whose email an invite reuses (her own
- * name stays), and Otieno, whose username is taken for any other email (a 500 the wizard can't
+ * name stays), and Otieno, whose username is taken for any other email (a 409 the wizard can't
  * check, BG-07).
  */
 function usersInviteScenario(): RunState {

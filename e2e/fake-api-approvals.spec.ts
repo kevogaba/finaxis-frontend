@@ -157,20 +157,38 @@ test.describe('fake API: the approvals scenarios (layer 12)', () => {
       );
     });
 
-    test('a member with no role, or a staff member with no branch: 500 (BG-07)', async ({
+    test('a member with no role, or a staff member with no branch: 409 (BG-07)', async ({
       request,
     }) => {
       const { post } = await signIn(request);
       for (const membership of [APPROVALS.roseMembership, APPROVALS.samuelMembership]) {
-        expect((await post(`/tenant/memberships/${membership}/activate`)).status()).toBe(500);
+        const response = await post(`/tenant/memberships/${membership}/activate`);
+        expect(response.status()).toBe(409);
+        expect(await read(response)).toMatchObject({ code: 'conflict' });
       }
     });
 
-    test('the inviter: 403 (BG-08)', async ({ request }) => {
+    test('a member whose account is suspended: 409, and nothing changes (BG-07)', async ({
+      request,
+    }) => {
+      const { get, post } = await signIn(request);
+      // Usha holds a branch and a role, so only her SUSPENDED account blocks the approval
+      // (UserProvisioningService's activateMembershipIfPossible): it is never reactivated by it.
+      const response = await post(`/tenant/memberships/${APPROVALS.ushaMembership}/activate`);
+      expect(response.status()).toBe(409);
+      expect(await read(response)).toMatchObject({ code: 'conflict' });
+      expect(
+        await read<MembershipEcho>(await get(`/tenant/memberships/${APPROVALS.ushaMembership}`)),
+      ).toMatchObject({ membership_status: 'PENDING_APPROVAL', user_status: 'SUSPENDED' });
+    });
+
+    test('the inviter: 403 by name (BG-08)', async ({ request }) => {
       const { post } = await signIn(request);
-      expect((await post(`/tenant/memberships/${USERS.carolMembership}/activate`)).status()).toBe(
-        403,
-      );
+      const response = await post(`/tenant/memberships/${USERS.carolMembership}/activate`);
+      expect(response.status()).toBe(403);
+      expect(await read(response)).toMatchObject({
+        code: 'lifecycle.approver_is_membership_maker',
+      });
     });
   });
 
@@ -184,9 +202,11 @@ test.describe('fake API: the approvals scenarios (layer 12)', () => {
       expect(await read<{ status: string }>(response)).toMatchObject({ status: 'ACTIVE' });
     });
 
-    test('its drafter: 403 (BG-08)', async ({ request }) => {
+    test('its drafter: 403 by name (BG-08)', async ({ request }) => {
       const { post } = await signIn(request);
-      expect((await post(`/branches/${APPROVALS.naivasha}/activate`)).status()).toBe(403);
+      const response = await post(`/branches/${APPROVALS.naivasha}/activate`);
+      expect(response.status()).toBe(403);
+      expect(await read(response)).toMatchObject({ code: 'lifecycle.approver_is_branch_maker' });
     });
 
     test('a branch context can’t reach a pending branch: 404 (BG-03)', async ({ request }) => {

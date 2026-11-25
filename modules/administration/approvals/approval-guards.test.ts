@@ -42,10 +42,8 @@ describe('postFromEndState', () => {
 
   it.each([
     ['a 403', new BackendApiError(403, { code: 'forbidden' })],
-    [
-      'a 403 with another code',
-      new BackendApiError(403, { code: 'Active tenant context is required for this route.' }),
-    ],
+    // A named maker-checker refusal keeps its own code, so describeProblem explains it (BG-08).
+    ['a named 403', new BackendApiError(403, { code: 'lifecycle.approver_is_membership_maker' })],
     ['a 401', new BackendApiError(401)],
     ['a stale context', new BackendApiError(403, { code: 'invalid_active_tenant_context' })],
     ['a plain Error', new Error('network down')],

@@ -1,5 +1,5 @@
 import { requireContext, requirePermission, requireTenantContext } from '../access.mts';
-import { pageOf, problem, sendJson } from '../http.mts';
+import { pageOf, problem, sendJson, sortKey } from '../http.mts';
 import { route } from '../router.mts';
 import type { Route } from '../router.mts';
 import type { FakeBranch, FakeMembership, FakeUser, RunState } from '../state.mts';
@@ -12,19 +12,21 @@ const BRANCH_SORTS: Record<string, (branch: FakeBranch) => string> = {
   createdAt: (branch) => branch.createdAt,
 };
 
-/** `/branches` and its platform twin (contract §E.2 "sort as /branches"): filter, sort, page. An
- * off-list `sort_by` is a 500 (BG-07); `Object.hasOwn` keeps `toString` out of the allow-list. */
-export function branchPage(state: RunState, organisationId: string, query: URLSearchParams) {
+/** The branch lists' sort: an off-list `sort_by` or `sort_dir` is a 400 (`sortKey`, BG-26). */
+const branchSort = (query: URLSearchParams) =>
+  sortKey(query, BRANCH_SORTS, { by: 'createdAt', dir: 'DESC' });
+
+/** `/branches` and its platform twin (contract §E.2 "sort as /branches"): filter, sort, page. A
+ * caller that validates the sort earlier passes it in. */
+export function branchPage(
+  state: RunState,
+  organisationId: string,
+  query: URLSearchParams,
+  { key, descending } = branchSort(query),
+) {
   const q = query.get('q')?.toLowerCase();
   const status = query.get('status');
   const type = query.get('type');
-  const sortBy = query.get('sort_by') ?? 'createdAt';
-  const direction = (query.get('sort_dir') ?? 'DESC').toUpperCase();
-  // `sort_by` is user-controlled: `toString` must not resolve to an `Object.prototype` member.
-  const key = Object.hasOwn(BRANCH_SORTS, sortBy) ? BRANCH_SORTS[sortBy] : undefined;
-  if (!key || (direction !== 'ASC' && direction !== 'DESC')) {
-    throw problem(500, 'internal_error', 'An unexpected error occurred.');
-  }
   const branches = state.branches
     .filter(
       (branch) =>
@@ -34,7 +36,7 @@ export function branchPage(state: RunState, organisationId: string, query: URLSe
         (!type || branch.type === type),
     )
     .sort((a, b) => key(a).localeCompare(key(b)));
-  const ordered = direction === 'DESC' ? branches.reverse() : branches;
+  const ordered = descending ? branches.reverse() : branches;
   return pageOf(
     ordered.map((branch) => ({
       id: branch.id,
@@ -132,8 +134,15 @@ export const tenantReadRoutes: Route[] = [
   route('GET', '/api/v1/branches', (context) => {
     const access = requireContext(context);
     requireTenantContext(access);
+    // No endpoint gate here (ADR 0030 point 5), and FoundationQueryService.searchBranches checks
+    // the sort before branch.view, so a bad sort is a 400 even for a caller who can't list.
+    const sort = branchSort(context.query);
     requirePermission(access, 'branch.view');
-    sendJson(context.res, 200, branchPage(context.state, access.organisation.id, context.query));
+    sendJson(
+      context.res,
+      200,
+      branchPage(context.state, access.organisation.id, context.query, sort),
+    );
   }),
 
   route('GET', '/api/v1/tenant/users', (context) => {

@@ -51,7 +51,7 @@ export function onboardingState(membership: MembershipStatus, user: UserStatus):
       return { key: 'SUSPENDED', label: 'Suspended', tone: 'error' };
     case 'PENDING_APPROVAL':
       // Approval already ran for a PROVISIONING_IDP user (BG-11); a blocked account can't be
-      // approved (a 500); any other account waits.
+      // approved (a 409, BG-07); any other account waits.
       if (user === 'PROVISIONING_IDP') {
         return { key: 'PROVISIONING_IDENTITY', label: 'Provisioning identity', tone: 'warning' };
       }
@@ -178,7 +178,7 @@ export interface MembershipSubject {
 
 /** The hero's actions, in display order. Every transition reads the membership back, so the
  * `membership.view` gate runs first (BG-31); then the status; then each action's own code. Approve
- * is withheld once approval ran (re-approving a PROVISIONING_IDP user is a 500, BG-07). */
+ * is withheld once approval ran (re-approving a PROVISIONING_IDP user only requeues it, BG-11). */
 export function availableMembershipActions(
   status: Pick<MembershipSubject, 'membershipStatus' | 'userStatus'>,
   holder: PermissionHolder,
@@ -201,6 +201,15 @@ export const OWN_MEMBERSHIP =
   "You can't suspend or revoke your own membership. Ask another administrator.";
 export const USER_MAKER_CHECKER_BLOCKED =
   'You invited this user, so another administrator must approve them.';
+/** Approve's refusals (the user record and the approval page): a missing permission only, since
+ * the inviter and the member have their own codes (BG-08); an unknown membership, a 404; one
+ * already decided or still lacking a role or branch, a 409 (BG-07). */
+export const APPROVE_FORBIDDEN = "You can't approve this user. Your role doesn't allow it.";
+export const APPROVE_NOT_FOUND = 'This request no longer exists. Refresh the page.';
+export const APPROVE_CONFLICT =
+  'This request was already decided, or the person has no active role or branch yet. Refresh and check.';
+/** Revoke and Reject & revoke: refused with a 409 only once the membership is revoked (BG-07). */
+export const REVOKE_CONFLICT = 'This membership was already revoked. Refresh and check.';
 /** Layer 12, P-3: a frontend-only code; `revokeMembership` refuses a stale Reject & revoke. */
 export const MEMBERSHIP_CHANGED_CODE = 'membership_changed';
 export const MEMBERSHIP_CHANGED =
@@ -219,7 +228,7 @@ export function blockedMembershipActions(
   const blocked: Partial<Record<MembershipAction, string>> = {};
   for (const action of actions) {
     if (action === 'approve' && BLOCKED.includes(subject.userStatus)) {
-      blocked.approve = accountBlockedNote(subject.userStatus); // contract §F, else a 500
+      blocked.approve = accountBlockedNote(subject.userStatus); // contract §F, else a 409 (BG-07)
     } else if (action === 'approve' && subject.invitedByMe) {
       blocked.approve = USER_MAKER_CHECKER_BLOCKED; // maker-checker (BG-08)
     } else if ((action === 'suspend' || action === 'revoke') && subject.self) {

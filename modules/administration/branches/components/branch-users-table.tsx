@@ -13,6 +13,9 @@ export interface BranchUserRow {
   name: string;
   email: string | null;
   assignmentType: string;
+  /** The signed-in user's own assignment: its revoke warns first (BG-35), as the user record's
+   * does. */
+  self: boolean;
 }
 
 interface BranchUsersTableProps {
@@ -60,6 +63,7 @@ export function BranchUsersTable({
                     assignmentId={row.assignmentId}
                     userLabel={row.name}
                     typeLabel={humanizeEnum(row.assignmentType)}
+                    self={row.self}
                     contextOrganisationId={contextOrganisationId}
                   />
                 </TableCell>

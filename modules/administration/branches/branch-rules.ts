@@ -41,6 +41,9 @@ export function canCreateBranch(holder: PermissionHolder): boolean {
 
 export const MAKER_CHECKER_BLOCKED =
   'You drafted this branch, so another administrator must activate it.';
+/** Activate's `forbidden`: a missing permission only, since the drafter and the editors have
+ * their own codes (BG-08). The branch record and the approval page share it. */
+export const ACTIVATE_FORBIDDEN = "You can't activate this branch. Your role doesn't allow it.";
 
 /** BG-08: the drafter comes from the audit log. An unknown drafter never blocks — the backend
  * decides, and a 403 is explained then. */

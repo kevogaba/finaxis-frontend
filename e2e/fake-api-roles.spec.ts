@@ -4,7 +4,7 @@ import { IDS, ROLE_SCENARIO_IDS } from './fake-api/scenarios.mts';
 import { api, contextFor } from './support/fake-api';
 
 test.describe('fake API roles (contract §E.3)', () => {
-  test('lists, filters, and sorts roles; an off-list sort is a 500', async ({ request }) => {
+  test('lists, filters, and sorts roles; an off-list sort is a 400', async ({ request }) => {
     const headers = await contextFor(request, 'roles', null);
     const all = (await (await request.get(api('/tenant/roles'), { headers })).json()) as {
       items: { role_code: string }[];
@@ -22,21 +22,42 @@ test.describe('fake API roles (contract §E.3)', () => {
       items: [{ role_code: 'BRANCH_MANAGER' }, { role_code: 'TENANT_ADMIN' }],
       page: { total_items: 2 },
     });
-    expect((await request.get(api('/tenant/roles?sort_by=role_name'), { headers })).status()).toBe(
-      500,
-    );
+    const refused = await request.get(api('/tenant/roles?sort_by=role_name'), { headers });
+    expect(refused.status()).toBe(400);
+    // BG-26: one violation on the field, naming the allowed keys and never the value.
+    expect(await refused.json()).toMatchObject({
+      code: 'invalid_parameter',
+      violations: [
+        {
+          field: 'sort_by',
+          code: 'invalid_parameter',
+          message: 'Sort field must be one of: createdAt, roleCode, roleName, status.',
+        },
+      ],
+    });
   });
 
-  test('answers an off-list sort_by as a 500, including names every object inherits', async ({
+  test('answers an off-list sort_by or sort_dir as a 400, including names every object inherits', async ({
     request,
   }) => {
     const headers = await contextFor(request, 'roles', null);
-    // BG-07: a name from Object.prototype is no sort key, on the roles list and the catalogue.
+    // BG-26: a name from Object.prototype is no sort key, on the roles list and the catalogue.
     for (const path of ['/tenant/roles', '/tenant/permissions']) {
       for (const sortBy of ['toString', 'constructor', '__proto__']) {
         const refused = await request.get(api(`${path}?sort_by=${sortBy}`), { headers });
-        expect(refused.status(), `${path} ${sortBy}`).toBe(500);
+        expect(refused.status(), `${path} ${sortBy}`).toBe(400);
+        expect(await refused.json()).toMatchObject({ violations: [{ field: 'sort_by' }] });
       }
+      const sideways = await request.get(api(`${path}?sort_dir=SIDEWAYS`), { headers });
+      expect(sideways.status(), path).toBe(400);
+      expect(await sideways.json()).toMatchObject({
+        code: 'invalid_parameter',
+        violations: [{ field: 'sort_dir', message: 'Sort direction must be ASC or DESC.' }],
+      });
+      // The direction is read in any case.
+      expect((await request.get(api(`${path}?sort_dir=asc`), { headers })).status(), path).toBe(
+        200,
+      );
     }
   });
 
@@ -114,10 +135,22 @@ test.describe('fake API roles (contract §E.3)', () => {
         await assign(institution, { ...tom, scope_type: 'TENANT', branch_id: IDS.headOffice })
       ).status(),
     ).toBe(422);
-    // Source f74e44b: requireNotNull before the service's check — BG-07's 500.
-    expect(
-      (await assign(institution, { ...tom, scope_type: 'BRANCH', branch_id: null })).status(),
-    ).toBe(500);
+    // BG-07: the request's own 400, naming branch_id.
+    const noBranch = await assign(institution, { ...tom, scope_type: 'BRANCH', branch_id: null });
+    expect(noBranch.status()).toBe(400);
+    expect(await noBranch.json()).toMatchObject({
+      code: 'validation_failed',
+      violations: [{ field: 'branch_id', code: 'BranchScopeRequiresBranch' }],
+    });
+    // BG-27: a role that isn't ACTIVE can't be newly assigned.
+    const disabled = await assign(institution, {
+      user_id: ROLE_SCENARIO_IDS.tom,
+      role_id: ROLE_SCENARIO_IDS.loansOfficer,
+      scope_type: 'TENANT',
+      branch_id: null,
+    });
+    expect(disabled.status()).toBe(422);
+    expect(await disabled.json()).toMatchObject({ code: 'invalid_operation' });
 
     const atHeadOffice = await contextFor(request, 'roles', IDS.headOffice);
     expect(

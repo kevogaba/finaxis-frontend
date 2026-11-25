@@ -41,8 +41,8 @@ const USER_MAKER_CHECKER_BLOCKED =
 const MAKER_CHECKER_BLOCKED = 'You drafted this branch, so another administrator must activate it.';
 const ACCOUNT_SUSPENDED =
   "Their account is suspended on the platform, so this membership can't be approved.";
-const APPROVE_FAILED =
-  "The approval couldn't complete. They may still need an active role and, for staff and admin members, an active branch assignment. Refresh and check.";
+const APPROVE_CONFLICT =
+  'This request was already decided, or the person has no active role or branch yet. Refresh and check.';
 const APPROVAL_CHANGED =
   'This approval changed since the page loaded. Refresh to see where it stands.';
 const MEMBERSHIP_CHANGED =
@@ -409,7 +409,7 @@ test.describe('approvals: user onboarding decisions', () => {
       'Not met',
     );
     const dialog = await decide(page, 'Approve');
-    await expect(dialog.getByRole('alert')).toContainText(APPROVE_FAILED);
+    await expect(dialog.getByRole('alert')).toContainText(APPROVE_CONFLICT);
     await expect(dialog.getByRole('alert')).toContainText('Reference:');
     await expect(dialog.getByRole('button', { name: 'Approve', exact: true })).toBeFocused();
   });
@@ -627,7 +627,7 @@ const SURFACES = [
     heading: 'Rose Atieno',
     open: async (page: Page) => {
       const dialog = await decide(page, 'Approve');
-      await expect(dialog.getByRole('alert')).toContainText(APPROVE_FAILED);
+      await expect(dialog.getByRole('alert')).toContainText(APPROVE_CONFLICT);
       await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1');
     },
   },

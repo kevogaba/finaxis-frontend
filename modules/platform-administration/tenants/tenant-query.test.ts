@@ -26,7 +26,7 @@ describe('tenant directory query', () => {
     });
   });
 
-  it('drops what the backend would answer with a 500 or an empty page (review focus 5)', () => {
+  it('drops what the backend would answer with a 400 or an empty page (review focus 5)', () => {
     expect(
       parse(
         'status=PAUSED&country=Kenya&createdFrom=2026-07-01&createdTo=yesterday' +

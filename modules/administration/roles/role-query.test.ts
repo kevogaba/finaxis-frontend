@@ -17,7 +17,7 @@ describe('role list query', () => {
     });
   });
 
-  it('drops anything the backend would reject or answer with a 500', () => {
+  it('drops anything the backend would reject with a 400', () => {
     expect(parse('status=PAUSED&type=both&sortBy=role_code&size=7&page=-1')).toEqual({
       sort: { by: 'createdAt', dir: 'DESC' },
       page: 0,

@@ -23,8 +23,8 @@ const REVOKED_EMAIL =
   "This email's membership here was revoked, so it can't be invited to this institution again.";
 const NEEDS_A_BRANCH = 'Add a branch: staff and admin members need at least one.';
 const ROLE_BRANCH_UNASSIGNED = 'Assign them to this branch under Branch assignments first.';
-const INVITE_FAILED =
-  "The platform couldn't create this invitation. The username may already belong to another account, here or in another institution, or a role or branch may have changed since this page loaded. Check them, then try again.";
+const INVITE_CONFLICT =
+  "This invitation conflicts with an existing member or username, or the institution isn't active. Check the email and username, then try again.";
 const REVIEW_NOTE =
   'Sending creates the invitation now. A different administrator must approve it before they can use this institution. If this email already has a Finaxis account, that account is reused: its name, username and phone stay as they are.';
 const USER_MAKER_CHECKER_BLOCKED =
@@ -223,7 +223,7 @@ test.describe('users invite: entry and identity', () => {
 });
 
 test.describe('users invite: sending', () => {
-  test('refuses what the platform would answer with a 500, before sending (BG-07)', async ({
+  test('refuses what the platform would refuse, before sending (BG-07)', async ({
     context,
     page,
   }, testInfo) => {
@@ -335,7 +335,8 @@ test.describe('users invite: sending', () => {
   }, testInfo) => {
     await authenticate(context, testInfo, 'users-invite');
     await openWizard(page);
-    // Otieno's username belongs to an account in another institution (a 500, BG-07).
+    // Otieno's username belongs to an account in another institution (a 409, BG-07): no member
+    // here holds it, so the refusal names every cause a 409 can have.
     await fillIdentity(page, { ...NEEMA, username: TEXT.takenUsername });
     await next(page, 'Access');
     await fillAccess(page);
@@ -343,7 +344,7 @@ test.describe('users invite: sending', () => {
     await next(page, 'Review');
     await sendInvitation(page);
 
-    await expect(mainText(page, INVITE_FAILED)).toBeVisible();
+    await expect(mainText(page, INVITE_CONFLICT)).toBeVisible();
     await expect(mainText(page, /Reference: [0-9a-f-]{36}/)).toBeVisible();
     await expect(page.getByRole('region', { name: 'Access', exact: true })).toContainText(
       'Teller (TELLER) · Institution (all branches)',
@@ -367,7 +368,7 @@ test.describe('users invite: sending', () => {
     await authenticate(context, testInfo, 'users-invite');
     await openWizard(page);
     // Esther, a member here, holds esther.njoki: the platform answers a new email with her
-    // username with a 500 (BG-07), and the action then finds her and names the username.
+    // username with a 409 (BG-07), and the action then finds her and names the username.
     await fillIdentity(page, { ...NEEMA, username: 'esther.njoki' });
     await next(page, 'Access');
     await fillAccess(page);
@@ -659,7 +660,7 @@ const SURFACES: readonly Surface[] = [
       await next(page, 'Invitation');
       await next(page, 'Review');
       await sendInvitation(page);
-      await expect(mainText(page, INVITE_FAILED)).toBeVisible();
+      await expect(mainText(page, INVITE_CONFLICT)).toBeVisible();
     },
   },
   {

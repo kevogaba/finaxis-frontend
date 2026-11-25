@@ -50,20 +50,26 @@ const headOfficeOperate: UserBranchAssignmentRow = {
 interface Overrides {
   rows?: readonly UserBranchAssignmentRow[];
   canRevoke?: boolean;
+  self?: boolean;
 }
 
 const renderTable = ({
   rows = [westlandsHome, headOfficeOperate],
   canRevoke = true,
+  self = false,
 }: Overrides = {}) =>
   renderWithProviders(
     <UserBranchAssignmentsTable
       rows={rows}
       userName="Felix Omondi"
       canRevoke={canRevoke}
+      self={self}
       contextOrganisationId={ORG}
     />,
   );
+
+const SELF_WARNING =
+  "This is your own access. If Westlands Branch is your selected branch, you'll be asked to choose your context again.";
 
 /** The data row whose Branch cell names `branchName`. */
 function rowOf(branchName: string): HTMLElement {
@@ -152,6 +158,39 @@ describe('UserBranchAssignmentsTable', () => {
     expect(sent.get('assignmentId')).toBe(HOME_ASSIGNMENT);
     expect(sent.get('contextOrganisationId')).toBe(ORG);
     expect(sent.get('idempotencyKey')).toMatch(UUID);
+  });
+
+  it('warns before you revoke your own branch assignment (BG-35)', async () => {
+    const user = userEvent.setup();
+    renderTable({ self: true });
+
+    await user.click(
+      screen.getByRole('button', {
+        name: "Revoke Felix Omondi's Home assignment at Westlands Branch",
+      }),
+    );
+    const dialog = screen.getByRole('alertdialog', {
+      name: 'Revoke your own Westlands Branch assignment?',
+    });
+    // A warning, not the failure alert: it shows before anything is sent.
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(SELF_WARNING);
+    expectScoped(dialog, HOME_ASSIGNMENT);
+  });
+
+  it("doesn't warn on someone else's assignment", async () => {
+    const user = userEvent.setup();
+    renderTable();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: "Revoke Felix Omondi's Home assignment at Westlands Branch",
+      }),
+    );
+    const dialog = screen.getByRole('alertdialog', {
+      name: "Revoke Felix Omondi's assignment at Westlands Branch?",
+    });
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(dialog).not.toHaveTextContent('This is your own access.');
   });
 
   it("carries the other row's own assignment, not the first row's", async () => {

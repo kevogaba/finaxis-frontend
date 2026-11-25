@@ -13,7 +13,15 @@ import type { Route, RouteContext } from '../router.mts';
 import type { FakeMembership, FakeUser } from '../state.mts';
 
 const NEED_A_BRANCH = ['STAFF', 'ADMIN'];
-const internalError = () => problem(500, 'internal_error', 'An unexpected error occurred.');
+const membershipNotFound = () => problem(404, 'resource_not_found', 'Membership not found.');
+const conflict = (detail: string) => problem(409, 'conflict', detail);
+/** BG-35: a refusal of your own membership, after the permission check and the lookup. */
+const selfChange = () =>
+  problem(
+    403,
+    'lifecycle.self_membership_change',
+    'A member cannot suspend or revoke their own membership.',
+  );
 
 interface Member {
   membership: FakeMembership;
@@ -91,7 +99,7 @@ function transition(
     }
     sendIdempotent(context, body, () => {
       const member = memberOf(context, access);
-      if (!member) throw internalError(); // an unknown membership is a 500 (BG-07)
+      if (!member) throw membershipNotFound(); // BG-07: once a 500
       apply(access, member, reason);
       member.membership.updatedAt = new Date().toISOString();
       return detailWire(member);
@@ -132,7 +140,7 @@ export const membershipRoutes: Route[] = [
     const access = tenantAccess(context);
     requirePermission(access, 'membership.view');
     const member = memberOf(context, access);
-    if (!member) throw problem(404, 'resource_not_found', 'Membership not found.');
+    if (!member) throw membershipNotFound();
     sendJson(context.res, 200, detailWire(member));
   }),
 
@@ -144,21 +152,36 @@ export const membershipRoutes: Route[] = [
     // The endpoint reads no body: none or `{}`, and any property is refused (ApiJsonCodec).
     const body = raw === undefined ? {} : objectBody(raw, []);
     const target = memberOf(context, access);
-    // Decided from the state before the change, so a replay answers with the stored status.
-    const status = target?.user.identityLinked === false ? 202 : 200;
+    // Decided from the state before the change, so a replay answers with the stored status: a 202
+    // whenever provisioning is (re)queued, for a user with no identity link or one still
+    // provisioning.
+    const queues =
+      target?.user.identityLinked === false || target?.user.status === 'PROVISIONING_IDP';
+    const status = queues ? 202 : 200;
     sendIdempotent(
       context,
       body,
       () => {
-        if (!target) throw internalError();
+        if (!target) throw membershipNotFound();
         const { membership, user } = target;
-        // Not pending, or a re-approval of a provisioning user: 500 (BG-07, BG-11).
-        if (membership.status !== 'PENDING_APPROVAL' || user.status === 'PROVISIONING_IDP') {
-          throw internalError();
-        }
-        // Maker-checker (BG-08): inside `produce`, so the key rolls back.
+        // Maker-checker (BG-08, UserProvisioningService.approve): before the state check, inside
+        // `produce`, so the key rolls back. The inviter first, then the member themself.
         if (membership.invitedBy === access.claims.userId) {
-          throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
+          throw problem(
+            403,
+            'lifecycle.approver_is_membership_maker',
+            "The approver cannot be the member's inviter.",
+          );
+        }
+        if (membership.userId === access.claims.userId) {
+          throw problem(
+            403,
+            'lifecycle.approver_is_membership_beneficiary',
+            'The approver cannot be the invited user.',
+          );
+        }
+        if (membership.status !== 'PENDING_APPROVAL') {
+          throw conflict('The request conflicts with the current resource state.');
         }
         const organisationId = access.organisation.id;
         const hasRole = context.state.roleAssignments.some(
@@ -168,15 +191,39 @@ export const membershipRoutes: Route[] = [
             row.status === 'ACTIVE',
         );
         const hasBranch = activeAssignmentRows(context.state, user.id, organisationId).length > 0;
-        // Missing prerequisites are a 500 too (contract §F, BG-07).
-        if (!hasRole || (NEED_A_BRANCH.includes(membership.type) && !hasBranch)) {
-          throw internalError();
+        // Missing prerequisites are a 409 (contract §F, BG-07): the branch first, then the role.
+        if (NEED_A_BRANCH.includes(membership.type) && !hasBranch) {
+          throw conflict(
+            'The membership cannot be approved until the user has an active branch assignment.',
+          );
         }
-        if (user.identityLinked === false) {
-          user.status = 'PROVISIONING_IDP'; // the membership stays PENDING_APPROVAL (202)
-        } else {
-          membership.status = 'ACTIVE';
-          if (user.status === 'DRAFT') user.status = 'INVITED';
+        if (!hasRole) {
+          throw conflict(
+            'The membership cannot be approved until the user has an active role assignment.',
+          );
+        }
+        // The account's state, last (UserProvisioningService's requestKeycloakProvisioningIfNeeded,
+        // then activateMembershipIfPossible). A repeat while provisioning requeues it, another 202
+        // that changes nothing (BG-11): the membership stays PENDING_APPROVAL.
+        if (user.status !== 'PROVISIONING_IDP') {
+          if (user.identityLinked === false) {
+            // No identity yet: only a DRAFT or PENDING_APPROVAL account may be provisioned.
+            if (!['DRAFT', 'PENDING_APPROVAL'].includes(user.status)) {
+              throw conflict(
+                'The user account is not in a state that allows identity provisioning.',
+              );
+            }
+            user.status = 'PROVISIONING_IDP';
+          } else {
+            // Linked: only an ACTIVE or INVITED account's membership may be activated, so a
+            // suspended or deactivated account blocks the approval.
+            if (!['ACTIVE', 'INVITED'].includes(user.status)) {
+              throw conflict(
+                'The user account is not in a state that allows the membership to be activated.',
+              );
+            }
+            membership.status = 'ACTIVE';
+          }
         }
         membership.updatedAt = new Date().toISOString();
         recordAuditEvent(context.state, access, {
@@ -192,6 +239,7 @@ export const membershipRoutes: Route[] = [
   }),
 
   transition('suspend', 'membership.suspend', true, (access, { membership, user }, reason) => {
+    if (user.id === access.claims.userId) throw selfChange();
     if (membership.status !== 'ACTIVE') {
       throw problem(409, 'conflict', 'The membership must be ACTIVE.');
     }
@@ -224,7 +272,8 @@ export const membershipRoutes: Route[] = [
   ),
 
   transition('revoke', 'membership.revoke', true, (access, { membership, user }, reason) => {
-    if (membership.status === 'REVOKED') throw internalError(); // already revoked (BG-07)
+    if (user.id === access.claims.userId) throw selfChange();
+    if (membership.status === 'REVOKED') throw conflict('The membership is already REVOKED.');
     membership.status = 'REVOKED';
     // Terminal, and every assignment goes with it (contract §E.3).
     const mine = (row: { userId: string; organisationId: string; status: string }) =>

@@ -39,8 +39,63 @@ const GENERIC = {
   message: "The platform didn't respond as expected. Try again in a moment.",
 };
 
-/** Codes whose remedy differs from their status's generic advice (contract §I). */
+const CHECKER = 'Someone else must decide';
+const OWN_ACCESS = 'Not allowed on your own access';
+const WRONG_WORKSPACE = 'Wrong workspace';
+
+/** Codes whose remedy differs from their status's generic advice (contract §I), including the
+ * platform's named refusals: maker-checker (BG-08), your own access (BG-35) and the wrong
+ * workspace (BG-30). A missing permission stays `forbidden`, explained by the status. */
 const BY_CODE: Record<string, Pick<ProblemView, 'title' | 'message'>> = {
+  'lifecycle.approver_is_membership_maker': {
+    title: 'Someone else must approve',
+    message: 'You invited this person, so someone else must approve them.',
+  },
+  'lifecycle.approver_is_membership_beneficiary': {
+    title: CHECKER,
+    message: "You can't approve your own membership.",
+  },
+  'lifecycle.approver_is_branch_maker': {
+    title: CHECKER,
+    message: 'You drafted or submitted this branch, so someone else must activate it.',
+  },
+  'lifecycle.approver_is_branch_modifier': {
+    title: CHECKER,
+    message: 'You edited this branch, so someone else must activate it.',
+  },
+  'lifecycle.approver_is_tenant_maker': {
+    title: CHECKER,
+    message:
+      'You requested or submitted this institution, so another platform administrator must decide it.',
+  },
+  'lifecycle.approver_is_tenant_modifier': {
+    title: CHECKER,
+    message: 'You amended this draft, so another platform administrator must decide it.',
+  },
+  'lifecycle.approver_is_initial_administrator': {
+    title: CHECKER,
+    message: "You're named as this institution's first administrator, so you can't approve it.",
+  },
+  'lifecycle.platform_checker_closed': {
+    title: CHECKER,
+    message: 'This institution now has its own approvers. The platform can no longer approve here.',
+  },
+  'lifecycle.self_membership_change': {
+    title: OWN_ACCESS,
+    message: "You can't suspend or revoke your own membership.",
+  },
+  'lifecycle.self_account_change': {
+    title: OWN_ACCESS,
+    message: "You can't suspend or deactivate your own account.",
+  },
+  platform_context_required: {
+    title: WRONG_WORKSPACE,
+    message: 'This page belongs to the platform workspace. Switch workspace to open it.',
+  },
+  tenant_context_required: {
+    title: WRONG_WORKSPACE,
+    message: 'This page belongs to an institution workspace. Switch workspace to open it.',
+  },
   'lifecycle.business_date_lock_timeout': {
     title: 'Busy — try again',
     message: 'Another business date change is in progress. Try again in a moment.',

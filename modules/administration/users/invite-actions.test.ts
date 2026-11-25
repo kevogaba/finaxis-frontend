@@ -3,9 +3,11 @@ import type { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
 import {
   EMAIL_TAKEN,
-  INVITE_FAILED,
+  INVITE_CONFLICT,
   INVITE_MAY_BE_SENT,
   INVITE_REFUSED,
+  INVITE_REJECTED,
+  INVITE_STALE_ACCESS,
   NEEDS_A_ROLE,
   ROLE_BRANCH_UNASSIGNED,
   USERNAME_IN_USE,
@@ -78,7 +80,8 @@ function form(fields: Record<string, string>): FormData {
 }
 
 const invite = (fields: Record<string, string> = FIELDS) => inviteUser(null, form(fields));
-const ruleFailure = () => new BackendApiError(500, { code: 'internal_error', requestId: 'req-7' });
+// BG-07: a taken email or username, or an institution that isn't active, is a 409 `conflict`.
+const conflict = () => new BackendApiError(409, { code: 'conflict', requestId: 'req-7' });
 
 describe('inviteUser', () => {
   beforeEach(() => {
@@ -192,9 +195,9 @@ describe('inviteUser', () => {
       "This email's membership here was revoked, so it can't be invited to this institution again.",
     ],
   ])(
-    'names a %s member on the email after the invite failed (BG-07), and only then',
+    'names a %s member on the email after the invite’s 409 (BG-07), and only then',
     async (status, message) => {
-      apiPost.mockRejectedValueOnce(ruleFailure());
+      apiPost.mockRejectedValueOnce(conflict());
       findMemberByEmail.mockResolvedValueOnce({ membershipStatus: status });
 
       expect(await invite()).toEqual({
@@ -215,7 +218,7 @@ describe('inviteUser', () => {
   );
 
   it('names a username a member here holds once the email is free, with the reference (Ruling 15)', async () => {
-    apiPost.mockRejectedValueOnce(ruleFailure());
+    apiPost.mockRejectedValueOnce(conflict());
     findMemberByUsername.mockResolvedValueOnce({ id: ESTHER, username: 'Neema.Wanjiku' });
 
     expect(await invite()).toEqual({
@@ -232,33 +235,80 @@ describe('inviteUser', () => {
   });
 
   it('names the causes it can’t check, with the reference, when no member has the email or username', async () => {
-    apiPost.mockRejectedValueOnce(ruleFailure());
+    apiPost.mockRejectedValueOnce(conflict());
     expect(await invite()).toMatchObject({
       ok: false,
-      formError: INVITE_FAILED,
+      formError: INVITE_CONFLICT,
       fieldErrors: {},
-      code: 'internal_error',
+      code: 'conflict',
       requestId: 'req-7',
     });
     expect(findMemberByUsername).toHaveBeenCalledWith('neema.wanjiku');
   });
 
   it('keeps the original failure when the lookups themselves fail', async () => {
-    apiPost.mockRejectedValueOnce(ruleFailure());
+    apiPost.mockRejectedValueOnce(conflict());
     findMemberByEmail.mockRejectedValueOnce(new BackendApiError(503));
     findMemberByUsername.mockRejectedValueOnce(new BackendApiError(503));
     expect(await invite()).toMatchObject({
-      formError: INVITE_FAILED,
-      code: 'internal_error',
+      formError: INVITE_CONFLICT,
+      code: 'conflict',
       requestId: 'req-7',
     });
   });
 
-  it('looks nothing up after a failure that is no rule failure', async () => {
-    apiPost.mockRejectedValueOnce(new BackendApiError(502, { requestId: 'req-8' }));
-    expect(await invite()).toMatchObject({ formError: 'generic', requestId: 'req-8' });
+  it.each([
+    ['a 502', new BackendApiError(502, { requestId: 'req-8' })],
+    // No invite rule is a 500 any more (BG-07): a 500 is a fault, explained generically.
+    ['a 500', new BackendApiError(500, { code: 'internal_error', requestId: 'req-8' })],
+    [
+      'a reused key',
+      new BackendApiError(409, { code: 'IDEMPOTENCY_KEY_REUSED', requestId: 'req-8' }),
+    ],
+  ])('looks nothing up after %s, which is no conflict', async (_case, error) => {
+    apiPost.mockRejectedValueOnce(error);
+    expect(await invite()).toMatchObject({ ok: false, requestId: 'req-8' });
     expect(findMemberByEmail).not.toHaveBeenCalled();
     expect(findMemberByUsername).not.toHaveBeenCalled();
+  });
+
+  it('keeps the generic message for a 500, never the retired rule copy', async () => {
+    apiPost.mockRejectedValueOnce(
+      new BackendApiError(500, { code: 'internal_error', requestId: 'req-8' }),
+    );
+    expect(await invite()).toMatchObject({ formError: 'generic', code: 'internal_error' });
+  });
+
+  it('says a picked role or branch went stale on a 422 (BG-07), looking nothing up', async () => {
+    apiPost.mockRejectedValueOnce(
+      new BackendApiError(422, { code: 'invalid_operation', requestId: 'req-6' }),
+    );
+    expect(await invite()).toEqual({
+      ok: false,
+      formError: INVITE_STALE_ACCESS,
+      fieldErrors: {},
+      code: 'invalid_operation',
+      requestId: 'req-6',
+    });
+    expect(findMemberByEmail).not.toHaveBeenCalled();
+  });
+
+  it('names the platform’s own 400 apart from a field this form flagged (BG-07)', async () => {
+    apiPost.mockRejectedValueOnce(
+      new BackendApiError(400, { code: 'validation_failed', requestId: 'req-4' }),
+    );
+    expect(await invite()).toMatchObject({
+      ok: false,
+      formError: INVITE_REJECTED,
+      fieldErrors: {},
+      requestId: 'req-4',
+    });
+    expect(findMemberByEmail).not.toHaveBeenCalled();
+    // The form's own refusal keeps its fields and its words.
+    expect(await invite({ ...FIELDS, roleAssignments: '[]' })).toMatchObject({
+      formError: 'Check the highlighted fields and try again.',
+      fieldErrors: { roleAssignments: NEEDS_A_ROLE },
+    });
   });
 
   it('explains a 403: the role, or one of the branches (contract §E.3)', async () => {

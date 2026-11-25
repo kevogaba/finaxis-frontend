@@ -198,6 +198,7 @@ export default async function UserBranchesPage({ params, searchParams }: UserBra
       ) : (
         <UserBranchAssignmentsTable
           userName={record.displayName}
+          self={record.id === resolved?.profile.user_id}
           canRevoke={canRevokeAssignments(holder)}
           contextOrganisationId={contextOrganisationId}
           rows={paged.items}

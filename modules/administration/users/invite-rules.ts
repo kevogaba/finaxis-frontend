@@ -143,9 +143,18 @@ export const USERNAME_TAKEN =
 export const USERNAME_IN_USE = 'This username belongs to someone in this institution.';
 export const INVITE_REFUSED =
   "You can't send this invitation. Your role may not allow inviting users, or assigning one of these branches.";
-/** BG-07: every invite rule failure is a 500. The ones the wizard can't check are named here. */
-export const INVITE_FAILED =
-  "The platform couldn't create this invitation. The username may already belong to another account, here or in another institution, or a role or branch may have changed since this page loaded. Check them, then try again.";
+/** BG-07: a 409 `conflict` the email and username lookups couldn't name (an account in another
+ * institution holds the username, or the institution isn't active). */
+export const INVITE_CONFLICT =
+  "This invitation conflicts with an existing member or username, or the institution isn't active. Check the email and username, then try again.";
+/** BG-07: a 422 `invalid_operation`: a role or branch picked is unknown or no longer ACTIVE. */
+export const INVITE_STALE_ACCESS =
+  'A role or branch you picked is no longer active. Go back to Access and choose again.';
+/** A frontend-only problem code: the platform's own 400 `validation_failed` (BG-07: no
+ * `violations`), told apart from the fields this form flagged before sending. */
+export const INVITE_REJECTED_CODE = 'invite_rejected';
+export const INVITE_REJECTED =
+  "The platform didn't accept these details. Check each step, then try again.";
 /** A 409 IDEMPOTENCY_KEY_REUSED: this wizard's key already sent different answers, so an earlier
  * send may have succeeded with its response lost (Ruling 16). */
 export const INVITE_MAY_BE_SENT =

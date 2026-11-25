@@ -15,6 +15,9 @@ export interface Problem {
   code: string;
   detail: string;
   violations?: Violation[] | null;
+  /** A 401's RFC 6750 challenge parameters (`error`, `error_description`, `error_uri`), without
+   * the scheme; `sendProblem` adds `resource_metadata` as the platform does. */
+  challenge?: string;
 }
 
 /** Thrown by handlers; rendered as problem+json by the server (mirrors ApiExceptionHandler). */
@@ -67,11 +70,27 @@ export function sendNoContent(res: ServerResponse, headers: Record<string, strin
   res.end();
 }
 
-export function sendProblem(res: ServerResponse, instance: string, value: Problem): void {
+/** Spring Security's `BearerTokenAuthenticationEntryPoint` challenge: the error's parameters, if
+ * any, then the RFC 9728 `resource_metadata` URL on the request's own origin, so a missing token
+ * gets a bare `Bearer resource_metadata="…"` (the platform's ApiAuthenticationEntryPoint). */
+function bearerChallenge(parameters: string | undefined, origin: string): string {
+  const metadata = `resource_metadata="${origin}/.well-known/oauth-protected-resource"`;
+  return `Bearer ${parameters ? `${parameters}, ${metadata}` : metadata}`;
+}
+
+export function sendProblem(
+  res: ServerResponse,
+  instance: string,
+  value: Problem,
+  origin: string,
+): void {
   const requestId = randomUUID();
   res.writeHead(value.status, {
     'Content-Type': 'application/problem+json;charset=UTF-8',
     'X-Request-Id': requestId,
+    ...(value.status === 401 && {
+      'WWW-Authenticate': bearerChallenge(value.challenge, origin),
+    }),
   });
   res.end(
     JSON.stringify({
@@ -190,6 +209,33 @@ export function parseInstantParam(query: URLSearchParams, name: string): number 
   return time;
 }
 
+/**
+ * Mirrors `requireValidSort` (BG-26): an off-list `sort_by`, or a `sort_dir` other than ASC or DESC
+ * in any case, is a 400 `invalid_parameter` with one violation on the field, never echoing the
+ * value. `sort_by` is user-controlled, so the allow-list is read with `Object.hasOwn`: `toString`
+ * must not resolve to an `Object.prototype` member.
+ */
+export function sortKey<T>(
+  query: URLSearchParams,
+  keys: Partial<Record<string, (row: T) => string>>,
+  fallback: { by: string; dir: 'ASC' | 'DESC' },
+): { key: (row: T) => string; descending: boolean } {
+  const refuse = (field: string, message: string) =>
+    problem(400, 'invalid_parameter', 'One or more request parameters are invalid.', [
+      { field, code: 'invalid_parameter', message },
+    ]);
+  const sortBy = query.get('sort_by') ?? fallback.by;
+  const key = Object.hasOwn(keys, sortBy) ? keys[sortBy] : undefined;
+  if (!key) {
+    throw refuse('sort_by', `Sort field must be one of: ${Object.keys(keys).sort().join(', ')}.`);
+  }
+  const direction = (query.get('sort_dir') ?? fallback.dir).toUpperCase();
+  if (direction !== 'ASC' && direction !== 'DESC') {
+    throw refuse('sort_dir', 'Sort direction must be ASC or DESC.');
+  }
+  return { key, descending: direction === 'DESC' };
+}
+
 export function pageOf<T>(items: readonly T[], query: URLSearchParams) {
   const number = intParam(query, 'page', 0, 0, Number.MAX_SAFE_INTEGER);
   const size = intParam(query, 'size', 25, 1, 100);
@@ -211,28 +257,28 @@ export function pageOf<T>(items: readonly T[], query: URLSearchParams) {
  * Renders a caught error as the fake API's response. Checks `headersSent` first: a handler that
  * already wrote its response and then threw must not write headers again — that would throw
  * ERR_HTTP_HEADERS_SENT and, left unhandled, crash the whole run (every branch below writes
- * headers, so this has to run before any of them, including the `invalid_token` one).
+ * headers, so this has to run before any of them).
  */
-export function respondToError(res: ServerResponse, instance: string, error: unknown): void {
+export function respondToError(
+  res: ServerResponse,
+  instance: string,
+  error: unknown,
+  origin: string,
+): void {
   if (res.headersSent) {
     console.error(error);
     res.end();
     return;
   }
   if (error instanceof ProblemError) {
-    if (error.problem.code === 'invalid_token') {
-      // Invalid/expired JWT: empty 401 body, like the real resource server.
-      res.writeHead(401, { 'WWW-Authenticate': 'Bearer error="invalid_token"' });
-      res.end();
-      return;
-    }
-    sendProblem(res, instance, error.problem);
+    sendProblem(res, instance, error.problem, origin);
     return;
   }
   console.error(error);
-  sendProblem(res, instance, {
-    status: 500,
-    code: 'internal_error',
-    detail: 'An unexpected error occurred.',
-  });
+  sendProblem(
+    res,
+    instance,
+    { status: 500, code: 'internal_error', detail: 'An unexpected error occurred.' },
+    origin,
+  );
 }

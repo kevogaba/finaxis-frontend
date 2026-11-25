@@ -183,7 +183,7 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
     await expectProblem(await get(membershipPath(randomUUID())), 404, 'resource_not_found');
   });
 
-  test("approves: 202 queues identity provisioning, a replay returns the stored 202, and a new key's re-approval is a 500", async ({
+  test("approves: 202 queues identity provisioning, a replay returns the stored 202, and a new key's re-approval requeues it", async ({
     request,
   }) => {
     const { get, post } = await signIn(request);
@@ -208,16 +208,23 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       user_status: 'PROVISIONING_IDP',
     });
 
-    // A new key is a new request: the user is now provisioning, so approving again is a 500.
-    await expectProblem(await post(activate, {}), 500, 'internal_error');
+    // A new key is a new request: the user is still provisioning, so approving again requeues it
+    // (BG-07, BG-11), another 202 that changes nothing.
+    const requeued = await post(activate, {});
+    expect(requeued.status()).toBe(202);
+    expect(requeued.headers()['idempotency-replayed']).toBeUndefined();
+    expect(await read(requeued)).toMatchObject({
+      membership_status: 'PENDING_APPROVAL',
+      user_status: 'PROVISIONING_IDP',
+    });
 
-    // One approval, one audit row: the replay and the refusal wrote none.
+    // Two approvals, two audit rows: the replay wrote none.
     const approvals = await read<Paged<AuditRow>>(
       await get(
         `/tenant/audit-events?entity_type=USER&entity_id=${USERS.amina}&action=user.approve`,
       ),
     );
-    expect(approvals.page.total_items).toBe(1);
+    expect(approvals.page.total_items).toBe(2);
   });
 
   test('approves an account with an identity link straight to ACTIVE (200)', async ({
@@ -236,65 +243,85 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
     });
   });
 
-  test('refuses the inviter (403) and rolls the key back', async ({ request }) => {
+  test('refuses the inviter and the member themself by name (403), before the state, rolling the key back', async ({
+    request,
+  }) => {
     const { get, post } = await signIn(request);
     const activate = `${membershipPath(USERS.carolMembership)}/activate`;
     const key = randomUUID();
 
-    // Jane invited Carol, and Jane is the signed-in approver (BG-08): `forbidden`, like a missing
-    // permission.
-    await expectProblem(await post(activate, {}, key), 403, 'forbidden');
+    // Jane invited Carol, and Jane is the signed-in approver (BG-08): its own code, not
+    // `forbidden`.
+    const maker = 'lifecycle.approver_is_membership_maker';
+    await expectProblem(await post(activate, {}, key), 403, maker);
     // The failed request stored nothing, so the same key is judged afresh, not replayed.
     const again = await post(activate, {}, key);
-    await expectProblem(again, 403, 'forbidden');
+    await expectProblem(again, 403, maker);
     expect(again.headers()['idempotency-replayed']).toBeUndefined();
 
     expect(await read(await get(membershipPath(USERS.carolMembership)))).toMatchObject({
       membership_status: 'PENDING_APPROVAL',
       user_status: 'DRAFT',
     });
+
+    // Jane's own membership is ACTIVE, which alone would be a 409: the beneficiary answers first.
+    await expectProblem(
+      await post(`${membershipPath(IDS.greenfieldMembership)}/activate`, {}),
+      403,
+      'lifecycle.approver_is_membership_beneficiary',
+    );
   });
 
-  test('answers a non-pending or unknown membership, or missing prerequisites, with a 500 (BG-07)', async ({
+  test('answers an unknown membership with a 404, and a non-pending one or missing prerequisites with a 409 (BG-07)', async ({
     request,
   }) => {
     const { post, remove } = await signIn(request);
-    const refusedApproval = async (membershipId: string) =>
-      expectProblem(
-        await post(`${membershipPath(membershipId)}/activate`, {}),
-        500,
-        'internal_error',
-      );
+    const approve = async (membershipId: string) =>
+      post(`${membershipPath(membershipId)}/activate`, {});
 
-    await refusedApproval(USERS.estherMembership); // already ACTIVE
-    await refusedApproval(randomUUID()); // unknown
+    await expectProblem(await approve(USERS.estherMembership), 409, 'conflict'); // already ACTIVE
+    await expectProblem(await approve(randomUUID()), 404, 'resource_not_found');
     // No ACTIVE role assignment: Amina's only one is her institution-wide Teller. The approval test
     // above is the control, since without this removal Amina approves.
     expect((await remove(`/tenant/role-assignments/${USERS.aminaTeller}`)).status()).toBe(200);
-    await refusedApproval(USERS.aminaMembership);
+    await expectProblem(await approve(USERS.aminaMembership), 409, 'conflict');
 
-    // Suspend, reactivate and revoke of an unknown membership are 500s as well.
+    // Suspend, reactivate and revoke of an unknown membership are 404s as well.
     const unknown = membershipPath(randomUUID());
     await expectProblem(
       await post(`${unknown}/suspend`, { reason: 'Cash audit' }),
-      500,
-      'internal_error',
+      404,
+      'resource_not_found',
     );
-    await expectProblem(await post(`${unknown}/reactivate`), 500, 'internal_error');
+    await expectProblem(await post(`${unknown}/reactivate`), 404, 'resource_not_found');
     await expectProblem(
       await post(`${unknown}/revoke`, { reason: 'Left the SACCO' }),
-      500,
-      'internal_error',
+      404,
+      'resource_not_found',
     );
+  });
+
+  test('refuses suspending or revoking your own membership by name, after the lookup (BG-35)', async ({
+    request,
+  }) => {
+    const { get, post } = await signIn(request);
+    const own = membershipPath(IDS.greenfieldMembership);
+    const self = 'lifecycle.self_membership_change';
+
+    await expectProblem(await post(`${own}/suspend`, { reason: 'Cash audit' }), 403, self);
+    await expectProblem(await post(`${own}/revoke`, { reason: 'Left the SACCO' }), 403, self);
+    // Reactivating your own stays allowed: the ACTIVE membership's state answers, a 409.
+    await expectProblem(await post(`${own}/reactivate`), 409, 'conflict');
+    expect(await read(await get(own))).toMatchObject({ membership_status: 'ACTIVE' });
   });
 
   test('checks permission before state', async ({ request }) => {
     const { get, post } = await signIn(request, 'users-read-only');
     const esther = membershipPath(USERS.estherMembership);
 
-    // Esther is not pending, which alone would be a 500: the missing permission answers first.
+    // Esther is not pending, which alone would be a 409: the missing permission answers first.
     await expectProblem(await post(`${esther}/activate`, {}), 403, 'forbidden');
-    // And each of the others, whose state check would otherwise be a 200, a 409 or a 500.
+    // And each of the others, whose state check would otherwise be a 200, a 409 or a 404.
     await expectProblem(
       await post(`${esther}/suspend`, { reason: 'Cash audit' }),
       403,
@@ -379,7 +406,7 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
     expect((await post(activate, {})).status()).toBe(202);
   });
 
-  test('revokes for good, cascading to every assignment; a second revoke is a 500', async ({
+  test('revokes for good, cascading to every assignment; a second revoke is a 409', async ({
     request,
   }) => {
     const { get, post } = await signIn(request);
@@ -426,8 +453,8 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
     expect(stillActive.some((row) => row.user_id === USERS.esther)).toBe(true);
     expect(await estherRoles()).toBe(1);
 
-    // Terminal: a second revoke, under a new key, is a 500.
-    await expectProblem(await post(revoke, { reason: 'Left the SACCO' }), 500, 'internal_error');
+    // Terminal: a second revoke, under a new key, is a 409 (BG-07).
+    await expectProblem(await post(revoke, { reason: 'Left the SACCO' }), 409, 'conflict');
   });
 
   test("writes the audit rows the record's views read", async ({ request }) => {

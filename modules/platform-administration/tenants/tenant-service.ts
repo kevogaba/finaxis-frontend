@@ -18,16 +18,21 @@ export const getTenant = cache(async (tenantId: string) => {
 });
 
 /**
- * BG-07: a duplicate `tenant_code` fails with a 500, so a failed create looks it up. `q` is a
- * case-insensitive substring match on code or name (contract §A; codes hold no `%` or `_`), so the
- * codes are compared exactly here, ignoring case. ponytail: one page of 100 matches — a code buried
- * deeper still reaches the 500.
+ * BG-07: a duplicate `tenant_code` fails with the generic 409 `conflict`, so a failed create or
+ * amend looks it up. `q` is a case-insensitive substring match on code or name (contract §A; codes
+ * hold no `%` or `_`), so the codes are compared exactly here, ignoring case. An amend passes its
+ * own id as `exceptTenantId`: an unchanged code matches the draft itself, which is no duplicate
+ * (the platform's own check excepts it too). ponytail: one page of 100 matches — a code buried
+ * deeper still reaches the generic 409.
  */
-export async function tenantCodeTaken(code: string): Promise<boolean> {
+export async function tenantCodeTaken(code: string, exceptTenantId?: string): Promise<boolean> {
   const matches = await apiGet(
     `/api/v1/platform/tenants${toQueryString({ q: code, page: 0, size: 100 })}`,
     tenantPageSchema,
   );
   const wanted = code.toLowerCase();
-  return matches.items.some((tenant) => tenant.tenantCode.toLowerCase() === wanted);
+  const except = exceptTenantId?.toLowerCase();
+  return matches.items.some(
+    (tenant) => tenant.tenantCode.toLowerCase() === wanted && tenant.id.toLowerCase() !== except,
+  );
 }

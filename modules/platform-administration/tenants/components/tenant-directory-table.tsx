@@ -16,7 +16,7 @@ import { formatInstant } from '@/lib/format';
 import type { TenantSortField, TenantSummary } from '../tenant-contract';
 import { countryLabel } from '../tenant-rules';
 
-/** `null`: not sortable. Status isn't in the backend's allow-list (an unknown sort_by is a 500). */
+/** `null`: not sortable. Status isn't in the backend's allow-list (an unknown sort_by is a 400). */
 const COLUMNS: readonly { field: TenantSortField | null; label: string }[] = [
   { field: 'displayName', label: 'Institution' },
   { field: 'tenantCode', label: 'Code' },

@@ -28,6 +28,7 @@ interface UserRow {
 
 interface ProblemBody {
   code: string;
+  detail: string;
   violations: { field: string }[] | null;
 }
 
@@ -88,7 +89,7 @@ const DRAFT = {
 };
 
 test.describe('fake API platform records (contract §E.2, layer 17)', () => {
-  test("lists an institution's branches with the /branches filters and sort; an unknown sort is a 500", async ({
+  test("lists an institution's branches with the /branches filters and sort; an unknown sort is a 400", async ({
     request,
   }) => {
     const { get } = await signIn(request);
@@ -114,8 +115,8 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     const byCode = await list('?sort_by=branchCode&sort_dir=ASC');
     expect(byCode.items[0]?.branch_code).toBe('HEAD_OFFICE');
 
-    // BG-07: an off-list sort is a 500, and `toString` doesn't resolve on the allow-list.
-    await expectProblem(await get(acme('/branches?sort_by=toString')), 500, 'internal_error');
+    // BG-26: an off-list sort is a 400, and `toString` doesn't resolve on the allow-list.
+    await expectProblem(await get(acme('/branches?sort_by=toString')), 400, 'invalid_parameter');
 
     const pwani = await read<Paged<BranchRow>>(await get(`/platform/tenants/${T.pwani}/branches`));
     expect(pwani.items.map((item) => item.id)).toEqual([R.pwaniHeadOffice]);
@@ -458,6 +459,24 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     );
   });
 
+  test('refuses suspending or deactivating your own account by name (BG-35)', async ({
+    request,
+  }) => {
+    const { get, post } = await signIn(request);
+    const own = `/platform/users/${IDS.jane}`;
+    const self = 'lifecycle.self_account_change';
+
+    await expectProblem(await post(`${own}/suspend`, { reason: 'Fraud review' }), 403, self);
+    await expectProblem(
+      await post(`${own}/deactivate`, { reason: 'Left the platform' }),
+      403,
+      self,
+    );
+    // Reactivating your own stays allowed: the ACTIVE account's state answers, a 409.
+    await expectProblem(await post(`${own}/reactivate`, {}), 409, 'conflict');
+    expect((await get(`/platform/tenants/${IDS.acme}/users/${IDS.jane}`)).status()).toBe(200);
+  });
+
   test('gates every route on its platform code, and on the platform context', async ({
     request,
   }) => {
@@ -487,8 +506,10 @@ test.describe('fake API platform records (contract §E.2, layer 17)', () => {
     const atAcme = await contextFor(request, 'platform-records', null, IDS.acme);
     const wrongContext = await request.get(api(acme('/users')), { headers: atAcme });
     expect(wrongContext.status()).toBe(403);
+    // BG-30: a stable code, with the sentence in the detail.
     expect(await read<ProblemBody>(wrongContext)).toMatchObject({
-      code: 'Reserved platform organisation context is required for this route.',
+      code: 'platform_context_required',
+      detail: 'Reserved platform organisation context is required for this route.',
     });
     const atPlatform = await signIn(request);
     expect((await atPlatform.get(acme('/users'))).status()).toBe(200);

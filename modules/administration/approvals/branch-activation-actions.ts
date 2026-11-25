@@ -5,10 +5,12 @@ import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
 import { apiPost } from '@/lib/api/tenant-api';
 import { uuidSchema } from '@/lib/api/wire';
-import { MAKER_CHECKER_BLOCKED } from '@/modules/administration/branches/branch-rules';
-import { getBranch } from '@/modules/administration/branches/branch-service';
 import {
   ACTIVATE_FORBIDDEN,
+  MAKER_CHECKER_BLOCKED,
+} from '@/modules/administration/branches/branch-rules';
+import { getBranch } from '@/modules/administration/branches/branch-service';
+import {
   APPROVAL_CHANGED_CODE,
   BRANCH_CHANGED,
   BRANCH_CONTEXT_CODE,

@@ -31,7 +31,7 @@ async function scanUsers(
  *
  * A scan cut at the ceiling answers null, as if free (L1's capped scan): an exact email as `q` can't
  * realistically match 500 users, and the backstop is the invitation itself, which is posted first
- * and refused by the platform with a 500 for an email already here, so a member the scan missed is
+ * and refused by the platform with a 409 for an email already here, so a member the scan missed is
  * never invited twice; the wizard then shows that failure with its reference.
  *
  * Every read failure REJECTS (L1): the route handler and the action decide what a failure means.

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/test-utils';
 import type { BranchUserRow } from './branch-users-table';
 import { BranchUsersTable } from './branch-users-table';
@@ -23,8 +23,13 @@ const ROWS: BranchUserRow[] = [
     name: 'Jane Wanjiru',
     email: 'jane.wanjiru@greenfield.example',
     assignmentType: 'OPERATE',
+    self: false,
   },
 ];
+
+const OWN_ASSIGNMENT = '08000000-0000-4000-8000-000000000002';
+const OWN_WARNING =
+  "This is your own access. If this branch is your selected branch, you'll be asked to choose your context again.";
 
 describe('BranchUsersTable', () => {
   it('drops the row hover: only the row actions are interactive (C7)', () => {
@@ -50,5 +55,38 @@ describe('BranchUsersTable', () => {
     expect(hidden('contextOrganisationId', dialog)).toBe(ORG);
     expect(hidden('idempotencyKey', dialog)).toMatch(UUID);
     expect(hidden('assignmentId', dialog)).toBe(ASSIGNMENT);
+    // Someone else's assignment: no own-access warning.
+    expect(dialog).not.toHaveTextContent('This is your own access.');
+  });
+
+  it('warns before you revoke your own assignment, and only on your own row (BG-35)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <BranchUsersTable
+        rows={[
+          ...ROWS,
+          {
+            assignmentId: OWN_ASSIGNMENT,
+            name: 'Amina Odhiambo',
+            email: null,
+            assignmentType: 'HOME',
+            self: true,
+          },
+        ]}
+        canRevoke
+        contextOrganisationId={ORG}
+      />,
+    );
+
+    // The button's name stays as every other row's: the row already names the user.
+    await user.click(
+      screen.getByRole('button', { name: "Revoke Amina Odhiambo's Home assignment" }),
+    );
+    const dialog = screen.getByRole('alertdialog', {
+      name: 'Revoke your own assignment at this branch?',
+    });
+    // A warning, not the failure alert: it shows before anything is sent.
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(OWN_WARNING);
+    expect(hidden('assignmentId', dialog)).toBe(OWN_ASSIGNMENT);
   });
 });

@@ -112,9 +112,15 @@ const assignmentWire = (row: FakeBranchAssignment) => ({
 
 type Guard = (access: AccessContext, branch: FakeBranch) => void;
 
+/** BG-08: the drafter is refused by name, before the state check (BranchProvisioningService). The
+ * tenant route doesn't refuse the submitter; the fake keeps no amenders yet. */
 const makerChecker: Guard = (access, branch) => {
   if (branch.draftedBy === access.claims.userId) {
-    throw problem(403, 'forbidden', 'You are not permitted to perform this action.');
+    throw problem(
+      403,
+      'lifecycle.approver_is_branch_maker',
+      "The approver cannot be the branch's creator or submitter.",
+    );
   }
 };
 
@@ -149,10 +155,12 @@ function transition(
     const body = raw === undefined && !reasonRequired ? {} : objectBody(raw, ['reason']);
     const reason = reasonField(body, reasonRequired);
     sendIdempotent(context, body, () => {
+      // The guard first: activate's maker-checker precedes the state (BG-08); close's guard and its
+      // state check are both 409 `conflict`, so their order doesn't show.
+      guard(access, branch);
       if (!from.includes(branch.status)) {
         throw problem(409, 'conflict', `The branch must be ${from.join(' or ')}.`);
       }
-      guard(access, branch);
       branch.status = to;
       branch.statusReason = reason; // overwritten by every transition (contract §C)
       branch.updatedAt = new Date().toISOString();

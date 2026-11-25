@@ -126,12 +126,13 @@ describe('TenantLifecycleActions', () => {
 
   it('explains an approve refusal inside the dialog, with its reference (BG-08)', async () => {
     const user = userEvent.setup();
+    // The maker's own code, which describeProblem explains (the action adds no copy of its own).
     approveTenant.mockResolvedValueOnce({
       ok: false,
       formError:
-        "You can't approve this institution. Your role may not allow it, or you created or submitted the request: a different platform administrator must approve it.",
+        'You requested or submitted this institution, so another platform administrator must decide it.',
       fieldErrors: {},
-      code: 'forbidden',
+      code: 'lifecycle.approver_is_tenant_maker',
       requestId: 'req-7',
     });
     renderWithProviders(record(['approve', 'reject']));
@@ -141,7 +142,7 @@ describe('TenantLifecycleActions', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      /created or submitted the request.*Reference: req-7/,
+      /requested or submitted this institution.*Reference: req-7/,
     );
     expectScoped(approveTenant.mock.calls[0]?.[1] as FormData);
   });

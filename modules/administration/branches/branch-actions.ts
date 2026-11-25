@@ -7,7 +7,7 @@ import { explain } from '@/lib/api/explain-action-result';
 import { apiDelete, apiPost } from '@/lib/api/tenant-api';
 import { UUID_PATTERN, uuidSchema } from '@/lib/api/wire';
 import { BRANCH_ASSIGNMENT_TYPES, branchDraftResultSchema } from './branch-contract';
-import { branchDraftSchema } from './branch-rules';
+import { ACTIVATE_FORBIDDEN, branchDraftSchema } from './branch-rules';
 
 const idempotencyKey = z.uuid();
 
@@ -89,11 +89,11 @@ export async function activateBranch(
   _previous: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  // BG-08: the backend answers a maker-checker violation with the same 403 as a missing permission.
+  // The drafter and the editors have their own codes, explained by describeProblem (BG-08).
   return explain(
     await transition('activate', transitionInput, formData),
     'forbidden',
-    "You can't activate this branch. Your role may not allow it, or you drafted it — a different administrator must activate it.",
+    ACTIVATE_FORBIDDEN,
   );
 }
 

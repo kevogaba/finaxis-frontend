@@ -81,7 +81,7 @@ export function isSameUser(a: string | null, b: string | null): boolean {
 // ── Where a request stands, and what it offers (Rulings 5–7) ─────────────────────────────────────
 
 /** `awaiting` takes Approve and Reject & revoke; `blocked` (a pending membership whose account is
- * suspended, locked or deactivated: approving it is a 500, contract §F) shows Approve disabled and
+ * suspended, locked or deactivated: approving it is a 409, contract §F) shows Approve disabled and
  * takes Reject & revoke; `provisioning` was already approved (BG-11) and takes no decision here. */
 export type UserApprovalState = 'awaiting' | 'blocked' | 'provisioning' | 'decided';
 

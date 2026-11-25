@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
-import { MAKER_CHECKER_BLOCKED } from '@/modules/administration/branches/branch-rules';
-import { ACTIVATE_FORBIDDEN, BRANCH_CHANGED, BRANCH_CONTEXT_REFUSAL } from './approval-copy';
+import {
+  ACTIVATE_FORBIDDEN,
+  MAKER_CHECKER_BLOCKED,
+} from '@/modules/administration/branches/branch-rules';
+import { BRANCH_CHANGED, BRANCH_CONTEXT_REFUSAL } from './approval-copy';
 
 const {
   apiPost,
@@ -219,14 +222,34 @@ describe('activatePendingBranch', () => {
     expect(apiPost).not.toHaveBeenCalled();
   });
 
-  it('explains the backend’s 403 without asserting which guard it was', async () => {
+  it('explains the backend’s `forbidden` as a missing permission only (BG-08)', async () => {
     apiPost.mockRejectedValueOnce(
       new BackendApiError(403, { code: 'forbidden', requestId: 'req-5' }),
     );
     await expect(activatePendingBranch(null, branchForm())).resolves.toMatchObject({
       ok: false,
-      formError: ACTIVATE_FORBIDDEN,
+      formError: "You can't activate this branch. Your role doesn't allow it.",
       requestId: 'req-5',
+    });
+  });
+
+  it.each([
+    [
+      'lifecycle.approver_is_branch_maker',
+      'You drafted or submitted this branch, so someone else must activate it.',
+    ],
+    [
+      'lifecycle.approver_is_branch_modifier',
+      'You edited this branch, so someone else must activate it.',
+    ],
+  ])('names the platform’s %s refusal by its code (BG-08)', async (code, copy) => {
+    // An editor can't be known before the refusal: nothing exposes who amended a branch.
+    apiPost.mockRejectedValueOnce(new BackendApiError(403, { code, requestId: 'req-6' }));
+    await expect(activatePendingBranch(null, branchForm())).resolves.toMatchObject({
+      ok: false,
+      code,
+      formError: copy,
+      requestId: 'req-6',
     });
   });
 

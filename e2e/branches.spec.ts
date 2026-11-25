@@ -205,6 +205,35 @@ test.describe('branches', () => {
     );
   });
 
+  test("warns before you revoke your own assignment from the branch's Users tab (BG-35)", async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'branches');
+    await openDirectory(page);
+    await openRecord(page, 'Branches', 'Westlands Branch');
+    await page.getByRole('tab', { name: 'Users' }).click();
+
+    // Jane is signed in, and her Operate assignment here is one of the rows.
+    await page
+      .getByRole('button', { name: "Revoke Backend Jane Manager's Operate assignment" })
+      .click();
+    const own = page.getByRole('alertdialog', {
+      name: 'Revoke your own assignment at this branch?',
+    });
+    await expect(own.getByRole('alert')).toHaveText(
+      "This is your own access. If this branch is your selected branch, you'll be asked to choose your context again.",
+    );
+    await own.getByRole('button', { name: 'Cancel' }).click();
+    await expect(own).toBeHidden();
+
+    // Someone else's row asks as before, with no warning.
+    await page.getByRole('button', { name: "Revoke Mary Wanjiku's Home assignment" }).click();
+    const theirs = page.getByRole('alertdialog', { name: "Revoke Mary Wanjiku's assignment?" });
+    await expect(theirs).toBeVisible();
+    await expect(theirs.getByRole('alert')).toHaveCount(0);
+  });
+
   test('guides a branch context to All branches for another branch', async ({
     context,
     page,

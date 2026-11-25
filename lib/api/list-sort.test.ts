@@ -12,7 +12,7 @@ describe('list sort', () => {
     expect(parse('sortBy=branchCode&sortDir=asc')).toEqual({ by: 'branchCode', dir: 'ASC' });
   });
 
-  it('falls back for a missing or non-allow-listed field (an unknown sort_by is a backend 500)', () => {
+  it('falls back for a missing or non-allow-listed field (an unknown sort_by is a backend 400)', () => {
     expect(parse('')).toEqual(DEFAULT);
     expect(parse('sortBy=branch_name&sortDir=ASC')).toEqual(DEFAULT);
     expect(parse('sortBy=passwordHash')).toEqual(DEFAULT);

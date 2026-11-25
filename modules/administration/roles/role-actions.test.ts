@@ -274,7 +274,7 @@ describe('role actions', () => {
     );
 
     apiPost.mockClear();
-    // BRANCH with no branch is a 500 at source f74e44b (BG-07): refused before the backend.
+    // BRANCH with no branch is a 400 (BG-07, once a 500): refused before the backend.
     await expect(assign({ scopeType: 'BRANCH', branchId: '' })).rejects.toThrow();
     await expect(assign({ scopeType: 'BRANCH' })).rejects.toThrow();
     await expect(assign({ scopeType: 'TENANT', userId: '' })).rejects.toThrow();
@@ -334,6 +334,20 @@ describe('role actions', () => {
         { user_id: USER, role_id: ROLE, scope_type: 'TENANT', branch_id: null },
         KEY,
       );
+    });
+
+    it('names a role the platform found inactive after the read (422, BG-27)', async () => {
+      runServerAction.mockImplementationOnce(settle);
+      apiPost.mockRejectedValueOnce(
+        new BackendApiError(422, { code: 'invalid_operation', requestId: 'req-5' }),
+      );
+      expect(await assign()).toEqual({
+        ok: false,
+        formError: "This role is no longer active, so it can't be assigned.",
+        fieldErrors: {},
+        code: 'invalid_operation',
+        requestId: 'req-5',
+      });
     });
 
     it.each(['DISABLED', 'ARCHIVED'])('does not post for a %s role', async (status) => {

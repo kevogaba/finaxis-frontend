@@ -4,7 +4,7 @@ import { instantSchema, pageSchema, uuidSchema } from '@/lib/api/wire';
 export const ROLE_STATUSES = ['ACTIVE', 'DISABLED', 'ARCHIVED'] as const;
 export type RoleStatus = (typeof ROLE_STATUSES)[number];
 
-/** `sort_by` allow-list for `GET /tenant/roles` (contract §E.3); anything else is a backend 500. */
+/** `sort_by` allow-list for `GET /tenant/roles` (contract §E.3); anything else is a 400 (BG-26). */
 export const ROLE_SORT_FIELDS = ['roleName', 'roleCode', 'status', 'createdAt'] as const;
 export type RoleSortField = (typeof ROLE_SORT_FIELDS)[number];
 
