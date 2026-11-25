@@ -4,16 +4,25 @@ import { z } from 'zod';
 import { BackendApiError } from '@/auth/backend-api';
 import { runServerAction, type ActionResult } from '@/lib/api/action-result';
 import { explain } from '@/lib/api/explain-action-result';
-import { apiPost } from '@/lib/api/tenant-api';
+import { apiPatch, apiPost } from '@/lib/api/tenant-api';
 import { uuidSchema } from '@/lib/api/wire';
 import { APPROVAL_REMARK_TOO_LONG } from '@/modules/administration/approvals/approval-copy';
-import { MEMBERSHIP_STATUSES, USER_STATUSES } from './user-contract';
+import {
+  EDITABLE_MEMBERSHIP_TYPES,
+  MEMBERSHIP_STATUSES,
+  MEMBERSHIP_TYPES,
+  USER_STATUSES,
+} from './user-contract';
 import {
   APPROVE_CONFLICT,
   APPROVE_FORBIDDEN,
   APPROVE_NOT_FOUND,
   MEMBERSHIP_CHANGED,
   MEMBERSHIP_CHANGED_CODE,
+  MEMBERSHIP_EDIT_REFUSED,
+  MEMBERSHIP_TYPE_NEEDS_BRANCH,
+  MEMBERSHIP_UNCHANGED,
+  MEMBERSHIP_UNCHANGED_CODE,
   RETRY_CONFLICT,
   REVOKE_CONFLICT,
 } from './user-rules';
@@ -171,5 +180,50 @@ export async function resendInvitation(
       {},
       input.idempotencyKey,
     ),
+  );
+}
+
+/** A primary branch as the dialog posts it: a branch id, or '' for None. */
+const primaryBranch = z.union([z.literal(''), uuidSchema]);
+
+const editInput = membershipInput.extend({
+  membershipType: z.enum(EDITABLE_MEMBERSHIP_TYPES, { error: 'Choose a membership type.' }),
+  primaryBranchId: primaryBranch,
+  // The values the dialog opened with: only a field that differs from its own is sent.
+  currentMembershipType: z.enum(MEMBERSHIP_TYPES),
+  currentPrimaryBranchId: primaryBranch,
+});
+
+/** Edit membership (BG-17, `PATCH /tenant/memberships/{id}`): an absent field stays as it is, so
+ * only what changed is sent, and None clears the primary branch with `null`. Saved unchanged, it
+ * sends nothing (an empty body is a 422). The platform answers 409 `conflict` when an ACTIVE
+ * membership moves to Staff or Admin with no active branch assignment, and 422 when the branch is
+ * no longer ACTIVE or the membership was revoked meanwhile; your own membership is editable. */
+export async function updateMembership(
+  _previous: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const result = await runServerAction(editInput, formData, async (input) => {
+    const body = {
+      ...(input.membershipType === input.currentMembershipType
+        ? {}
+        : { membership_type: input.membershipType }),
+      ...(input.primaryBranchId === input.currentPrimaryBranchId
+        ? {}
+        : { primary_branch_id: input.primaryBranchId || null }),
+    };
+    if (Object.keys(body).length === 0) {
+      throw new BackendApiError(422, { code: MEMBERSHIP_UNCHANGED_CODE });
+    }
+    await apiPatch(`/api/v1/tenant/memberships/${input.membershipId}`, body, input.idempotencyKey);
+  });
+  return explain(
+    explain(
+      explain(result, MEMBERSHIP_UNCHANGED_CODE, MEMBERSHIP_UNCHANGED),
+      'conflict',
+      MEMBERSHIP_TYPE_NEEDS_BRANCH,
+    ),
+    'invalid_operation',
+    MEMBERSHIP_EDIT_REFUSED,
   );
 }

@@ -649,9 +649,13 @@ variables, and the Redis-backed rate limiter needed once more than one instance 
     leave a row out only when you may not read it; the Branch assignments empty state names what
     could not be seen (the branches a branch-scoped view can't see); and an empty role index (a
     failed read) reads "Roles couldn't be loaded", not "no active roles".
-  - No phone, member number, last activity, MFA or profile edit. The platform now has the member
-    number, a membership edit and, in the platform context only, the phone and last sign-in
-    (BG-17).
+  - The Membership card shows the member number ("—" until the first activation), who last
+    invited them (the re-inviter after a re-invite) and when they were first invited, and Edit
+    membership changes the type and the primary branch, sending only what changed. Its branch
+    options are one page of 100 active branches by name, with the current one always offered, and
+    it says when there are more, or that the branches couldn't be loaded (BG-17). There is still no
+    phone, last activity, MFA or profile edit: the platform has the phone and last sign-in in the
+    platform context only (BG-17).
   - The toolbar search commits on Enter or blur, and backend `validation_failed` violations
     aren't mapped onto form fields (BG-09).
   - The invite wizard offers the first 100 active roles and the first 100 active branches by

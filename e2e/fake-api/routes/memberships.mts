@@ -1,6 +1,7 @@
 import {
   activeAssignmentRows,
   actorRef,
+  requireAuthority,
   requireContext,
   requirePermission,
   requireTenantContext,
@@ -8,6 +9,7 @@ import {
 import type { AccessContext } from '../access.mts';
 import { recordAuditEvent } from '../audit-log.mts';
 import {
+  UUID,
   instantKey,
   objectBody,
   pageOf,
@@ -15,9 +17,11 @@ import {
   readBody,
   reasonField,
   sendJson,
+  stringField,
   tenantListOrder,
 } from '../http.mts';
 import { sendIdempotent } from '../idempotency.mts';
+import { numberOnActivation } from '../member-number.mts';
 import { makerCheckerRequired } from './settings.mts';
 import { route } from '../router.mts';
 import type { Route, RouteContext } from '../router.mts';
@@ -59,7 +63,7 @@ const inviterWire = (access: AccessContext, membership: FakeMembership) => ({
 });
 
 /** MembershipSummaryResponse: the member's names, the primary branch's name and `created_at` come
- * embedded (BG-09). ponytail: no `member_number` yet; entry 19 seeds the numbers. */
+ * embedded (BG-09), and `member_number` last, `null` until the first activation (BG-17). */
 const summaryWire = (access: AccessContext, { membership, user }: Member) => ({
   id: membership.id,
   user_id: membership.userId,
@@ -73,6 +77,7 @@ const summaryWire = (access: AccessContext, { membership, user }: Member) => ({
     access.state.branches.find((branch) => branch.id === membership.primaryBranchId)?.name ?? null,
   created_at: membership.createdAt,
   ...inviterWire(access, membership),
+  member_number: membership.memberNumber ?? null,
 });
 
 /** `allowedMembershipSorts`; without `sort_by`, newest first. */
@@ -152,7 +157,8 @@ function requeueFailedProvisioning(dispatch: FakeDispatch | undefined): string {
 /** `finaxis.invitation.resend-cooldown`'s default. */
 const RESEND_COOLDOWN_MS = 5 * 60 * 1000;
 
-/** MembershipDetailResponse: every read and membership mutation carries `invitation` (BG-11). */
+/** MembershipDetailResponse: every read and membership mutation carries `invitation` (BG-11), and
+ * `member_number` (BG-17). */
 const detailWire = (access: AccessContext, { membership, user }: Member) => ({
   id: membership.id,
   organisation_id: membership.organisationId,
@@ -168,6 +174,7 @@ const detailWire = (access: AccessContext, { membership, user }: Member) => ({
   updated_at: membership.updatedAt,
   ...inviterWire(access, membership),
   invitation: invitationWire(membership),
+  member_number: membership.memberNumber ?? null,
 });
 
 function memberOf(context: RouteContext, access: AccessContext): Member | null {
@@ -306,6 +313,7 @@ export function approveMembership(
             );
           }
           membership.status = 'ACTIVE';
+          numberOnActivation(context.state.memberships, membership);
         }
       }
       membership.updatedAt = new Date().toISOString();
@@ -326,6 +334,26 @@ export function approveMembership(
     },
     status,
   );
+}
+
+const MEMBERSHIP_EDIT_KEYS = ['membership_type', 'primary_branch_id'];
+/** `ProfileUpdateService.ASSIGNABLE_TYPES`: SYSTEM is reserved, so refused like an unknown type. */
+const ASSIGNABLE_TYPES = ['STAFF', 'ADMIN', 'AUDITOR'];
+const malformed = () => problem(400, 'invalid_json', 'Malformed request body.');
+const invalidOperation = () =>
+  problem(422, 'invalid_operation', 'The request cannot be processed in its current state.');
+
+/** UpdateMembershipRequest's decode, while the argument resolves (before the route's gate): a type
+ * that isn't text, or a primary branch that isn't a UUID, fails it. `primary_branch_id` is an
+ * `Optional<UUID>?`: absent keeps the branch, an explicit null clears it. ponytail: Jackson's
+ * reading of `""` as an `Optional<UUID>` isn't mirrored (the fake refuses it); the app sends an id
+ * or `null`. */
+function membershipEdit(body: Record<string, unknown>) {
+  const type = stringField(body, 'membership_type', { required: false });
+  const changesBranch = 'primary_branch_id' in body;
+  const branchId = stringField(body, 'primary_branch_id', { required: false });
+  if (branchId !== null && !UUID.test(branchId)) throw malformed();
+  return { type, changesBranch, branchId: branchId?.toLowerCase() ?? null };
 }
 
 /** Suspend, reactivate and revoke: permission (and the BG-31 read-back) before any state check;
@@ -395,6 +423,69 @@ export const membershipRoutes: Route[] = [
     const member = memberOf(context, access);
     if (!member) throw membershipNotFound();
     sendJson(context.res, 200, detailWire(access, member));
+  }),
+
+  // BG-17 (ProfileUpdateService.updateMembership, platform #161): the body decodes first, then the
+  // route's `membership.update` gate (the selected context, naming nothing), then the service's
+  // `membership.update` and its view tenant-wide (403 naming the code). Inside `produce`: no field
+  // or an unknown or SYSTEM type is 422, an unknown id 404, a REVOKED or SYSTEM membership 422, an
+  // ACTIVE one moving to STAFF or ADMIN with no ACTIVE assignment to an ACTIVE branch 409, and a
+  // primary branch that isn't an ACTIVE branch here 422. No self rule. Audited `membership.update`
+  // on the MEMBERSHIP, naming the changed fields only; answers the detail.
+  route('PATCH', '/api/v1/tenant/memberships/:membership_id', async (context) => {
+    const access = tenantAccess(context);
+    const raw = await readBody(context.req);
+    if (raw === undefined) throw malformed();
+    const body = objectBody(raw, MEMBERSHIP_EDIT_KEYS);
+    const edit = membershipEdit(body);
+    requireAuthority(access, ['membership.update']);
+    requirePermission(access, 'membership.update');
+    sendIdempotent(context, body, () => {
+      const changed = [
+        ...(edit.type === null ? [] : ['membership_type']),
+        ...(edit.changesBranch ? ['primary_branch_id'] : []),
+      ];
+      if (changed.length === 0) throw invalidOperation();
+      if (edit.type !== null && !ASSIGNABLE_TYPES.includes(edit.type)) throw invalidOperation();
+      const member = memberOf(context, access);
+      if (!member) throw membershipNotFound();
+      const { membership, user } = member;
+      if (membership.status === 'REVOKED' || membership.type === 'SYSTEM') {
+        throw invalidOperation();
+      }
+      if (
+        edit.type !== null &&
+        NEED_A_BRANCH.includes(edit.type) &&
+        membership.status === 'ACTIVE' &&
+        activeAssignmentRows(access.state, user.id, access.organisation.id).length === 0
+      ) {
+        throw conflict(
+          'The membership cannot take this type until the user has an active branch assignment.',
+        );
+      }
+      if (
+        edit.branchId !== null &&
+        !access.state.branches.some(
+          (branch) =>
+            branch.id === edit.branchId &&
+            branch.organisationId === access.organisation.id &&
+            branch.status === 'ACTIVE',
+        )
+      ) {
+        throw invalidOperation();
+      }
+      if (edit.type !== null) membership.type = edit.type;
+      if (edit.changesBranch) membership.primaryBranchId = edit.branchId;
+      membership.updatedAt = new Date().toISOString();
+      recordAuditEvent(access.state, access, {
+        entityType: 'MEMBERSHIP',
+        entityId: membership.id,
+        action: 'membership.update',
+        reason: null,
+        metadata: { changedFields: changed.join(',') },
+      });
+      return detailWire(access, member);
+    });
   }),
 
   route('POST', '/api/v1/tenant/memberships/:membership_id/activate', async (context) => {
@@ -499,6 +590,8 @@ export const membershipRoutes: Route[] = [
         throw problem(409, 'conflict', 'The membership must be SUSPENDED.');
       }
       membership.status = 'ACTIVE';
+      // A suspended membership was numbered when it first became ACTIVE: it keeps that number.
+      numberOnActivation(access.state.memberships, membership);
       recordAuditEvent(access.state, access, {
         entityType: 'USER',
         entityId: user.id,

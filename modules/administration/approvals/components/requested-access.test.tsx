@@ -73,6 +73,8 @@ const PROPS: Props = {
         lastErrorCode: null,
         updatedAt: null,
       },
+      // Pending: no number until the first activation (ADR 0040).
+      memberNumber: null,
     },
   },
   roles: {

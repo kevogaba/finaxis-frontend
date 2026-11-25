@@ -900,7 +900,9 @@ the same bullets): the first is the gap as found, the second what the UI still d
 
 ### BG-17 — Missing user profile fields · P1
 
-- **Status:** Partly fixed. Platform #161, #287, #332 (ADR 0033, ADR 0040).
+- **Status:** Partly fixed. Platform #161, #287, #332 (ADR 0033, ADR 0040). The tenant part is
+  adopted (frontend #126); the platform user record's phone, last sign-in and profile edit are
+  entry 21's.
 - **Gap:** Phone is stored but no read DTO returns it and nothing edits it; the per-tenant MEMBER
   sequence (member/staff number) is created but unused; `last_login_at` is updated on every
   context-bearing request but never exposed; MFA/security state lives only in Keycloak; no profile or
@@ -924,9 +926,18 @@ the same bullets): the first is the gap as found, the second what the UI still d
 - **Verified 2026-11-24:** the membership PATCH is also 409 `conflict` when an ACTIVE membership
   becomes STAFF or ADMIN while its user has no active branch assignment; the platform user PATCH is
   also 422 for a DEACTIVATED or ARCHIVED account, and trims `display_name`.
-- **To adopt:** the member number on the user record and directory (through the membership), a
-  membership edit form (type, primary branch), and phone, last sign-in and profile edit on the
-  platform user record.
+- **To adopt:** phone, last sign-in and profile edit on the platform user record (entry 21). Done in
+  frontend #126, the tenant part:
+  - The user record's Membership card shows the member number ("—" until the first activation),
+    who last invited them ("Last invited by": `created_by`, the re-inviter after a re-invite, "—"
+    for the system) and when they were first invited (the membership's `created_at`, which a
+    re-invite keeps).
+  - Edit membership changes the type (Staff, Admin, Auditor) and the primary branch (one page of
+    100 ACTIVE branches by name, or None), sending only what changed, with `null` for None. It is
+    offered with `membership.update` and `membership.view` tenant-wide, never for a revoked or
+    system membership, and on your own membership too (the platform has no self rule here). The
+    409 is explained ("Staff and Admin members need an active branch assignment first…").
+  - The Users directory shows no number: user rows don't carry one (under **Still open**).
 
 ### BG-18 — Platform branch creation needs tenant membership · P1
 

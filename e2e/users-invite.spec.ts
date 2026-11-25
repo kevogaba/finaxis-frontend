@@ -38,6 +38,10 @@ const USERNAME_IN_USE = 'This username belongs to someone in this institution.';
 
 const RECORD = /\/admin\/users\/[0-9a-f-]{36}$/;
 
+/** The value cell of a description-list row in a card, found by its label. */
+const fact = (region: Locator, label: string) =>
+  region.locator('dt').filter({ hasText: label }).locator('xpath=following-sibling::dd[1]');
+
 interface Identity {
   name: string;
   email: string;
@@ -256,6 +260,15 @@ test.describe('users invite: entry and identity', () => {
     const approve = page.getByRole('button', { name: 'Approve', exact: true });
     await expect(approve).toBeDisabled();
     await expect(approve).toHaveAccessibleDescription(USER_MAKER_CHECKER_BLOCKED);
+    // BG-17: the re-invite keeps the membership's creation (ADR 0037), so the card names Jane as
+    // who last invited him, beside the first invitation's date; revoked before his approval, he
+    // has no member number to keep.
+    const membership = page.getByRole('region', { name: 'Membership', exact: true });
+    await expect(fact(membership, 'Last invited by')).toHaveText('You (Backend Jane Manager)');
+    await expect(fact(membership, 'First invited (Africa/Nairobi)')).toHaveText(
+      '01 Jul 2026 · 11:00',
+    );
+    await expect(fact(membership, 'Member no.')).toHaveText('—');
   });
 });
 

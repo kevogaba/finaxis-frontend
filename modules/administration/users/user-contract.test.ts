@@ -58,6 +58,7 @@ const wireDetail = {
   created_at: '2026-07-01T08:00:00Z',
   updated_at: '2026-07-24T08:00:00Z',
   invitation: { status: 'COMPLETED', attempts: 1, last_error_code: null, updated_at: null },
+  member_number: 4,
 };
 
 describe('user contract', () => {
@@ -183,7 +184,15 @@ describe('user contract', () => {
       updatedAt: '2026-07-24T08:00:00Z',
       createdBy: { id: VICTOR, displayName: 'Victor Otieno' },
       invitation: { status: 'COMPLETED', attempts: 1, lastErrorCode: null, updatedAt: null },
+      memberNumber: 4,
     });
+  });
+
+  // BG-17 (ADR 0040): null until the membership is first activated.
+  it('keeps a null member number', () => {
+    expect(
+      membershipDetailSchema.parse({ ...wireDetail, member_number: null }).memberNumber,
+    ).toBeNull();
   });
 
   // BG-11 (platform #274): where the identity provisioning stands.
@@ -250,6 +259,10 @@ describe('user contract', () => {
     ['an unknown membership status', { ...wireDetail, membership_status: 'INVITED' }],
     ['an unknown membership type', { ...wireDetail, membership_type: 'GUEST' }],
     ['a malformed organisation id', { ...wireDetail, organisation_id: 'not-a-uuid' }],
+    ['an absent member number', { ...wireDetail, member_number: undefined }],
+    ['a member number of 0', { ...wireDetail, member_number: 0 }],
+    ['a fractional member number', { ...wireDetail, member_number: 4.5 }],
+    ['a member number as text', { ...wireDetail, member_number: '4' }],
   ])('rejects %s on the detail', (_case, wire) => {
     expect(membershipDetailSchema.safeParse(wire).success).toBe(false);
   });

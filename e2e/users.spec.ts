@@ -42,6 +42,8 @@ const USER_MAKER_CHECKER_BLOCKED =
 const MEMBERSHIP_CHANGED =
   'This membership changed since the page loaded. Refresh to see its status.';
 const NO_MEMBERSHIP_DETAILS = "You can't view membership details in your current role.";
+const TYPE_NEEDS_BRANCH =
+  'Staff and Admin members need an active branch assignment first. Assign a branch, then change the type.';
 const BRANCH_HINT = 'Assign them to a branch first to give a branch-scoped role.';
 const FORBIDDEN_TITLE = "You don't have permission";
 
@@ -699,7 +701,71 @@ test.describe('users: directory and lifecycle', () => {
 
     // Seeded `2026-07-01T08:00:00Z`: 11:00 in the organisation's zone, though the browser is UTC.
     await openUser(page, USERS.felix, 'Felix Omondi');
-    await expect(fact(page, 'Created (Africa/Nairobi)')).toHaveText('01 Jul 2026 · 11:00');
+    await expect(fact(page, 'First invited (Africa/Nairobi)')).toHaveText('01 Jul 2026 · 11:00');
+    // BG-17: the seed numbers everyone ever active, Felix fourth; the system invited him.
+    await expect(fact(page, 'Member no.')).toHaveText('4');
+    await expect(fact(page, 'Last invited by')).toHaveText('—');
+
+    // Victor invited Amina, who is pending, so she has no number yet (ADR 0040).
+    await openUser(page, USERS.amina, 'Amina Odhiambo');
+    await expect(fact(page, 'Member no.')).toHaveText('—');
+    await expect(fact(page, 'Last invited by')).toHaveText('Victor Otieno');
+  });
+
+  // BG-17 (platform #161): the type and the primary branch, sending only what changed.
+  test("edits a member's type and primary branch, and the card shows the change", async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users');
+    await enterUser(page, USERS.felix, 'Felix Omondi');
+    const card = page.getByRole('region', { name: 'Membership', exact: true });
+    await expect(fact(page, 'Membership type')).toHaveText('Staff');
+    await expect(fact(page, 'Primary branch')).toHaveText('Westlands Branch (WESTLANDS)');
+
+    await press(card.getByRole('button', { name: 'Edit membership' }));
+    const dialog = page.getByRole('dialog', { name: "Edit Felix Omondi's membership" });
+    await expectGuardFields(dialog);
+    await selectMuiOption(page, 'Membership type', /^Auditor$/);
+    await selectMuiOption(page, 'Primary branch', /^Head Office/);
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(toast(page, 'Membership updated')).toBeVisible();
+    await expect(fact(page, 'Membership type')).toHaveText('Auditor');
+    await expect(fact(page, 'Primary branch')).toHaveText('Head Office (HEAD_OFFICE)');
+    await expect(fact(page, 'Member no.')).toHaveText('4');
+
+    // Back to no primary branch: None sends null.
+    await press(card.getByRole('button', { name: 'Edit membership' }));
+    await selectMuiOption(page, 'Primary branch', /^None$/);
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(fact(page, 'Primary branch')).toHaveText('None');
+    await expect(fact(page, 'Membership type')).toHaveText('Auditor');
+  });
+
+  test('explains why an active auditor with no branch cannot become Staff, keeping the choice', async ({
+    context,
+    page,
+  }, testInfo) => {
+    await authenticate(context, testInfo, 'users');
+    await enterUser(page, USERS.wanjiru, WANJIRU);
+
+    await press(
+      page
+        .getByRole('region', { name: 'Membership', exact: true })
+        .getByRole('button', { name: 'Edit membership' }),
+    );
+    const dialog = page.getByRole('dialog', { name: /^Edit Wanjiru Njeri/ });
+    await selectMuiOption(page, 'Membership type', /^Staff$/);
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(dialog.getByRole('alert')).toContainText(TYPE_NEEDS_BRANCH);
+    await expect(dialog.getByRole('combobox', { name: 'Membership type' })).toHaveText('Staff');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(fact(page, 'Membership type')).toHaveText('Auditor');
   });
 });
 
@@ -1160,6 +1226,8 @@ test.describe('users: gating and ids', () => {
     ).toBeVisible();
     await expect(hero(page).getByRole('button')).toHaveCount(0);
     await expect(mainText(page, NO_MEMBERSHIP_VIEW)).toHaveCount(0);
+    // Nor Edit membership on its card (BG-17: membership.update).
+    await expect(page.getByRole('button', { name: 'Edit membership' })).toHaveCount(0);
 
     await openTab(page, 'Roles & access');
     await expect(rowsOf(page, 'Role assignments')).toHaveCount(2);
@@ -1321,6 +1389,14 @@ test.describe('users: accessibility', () => {
       // The 100-character name and a long, nested email: hero, tabs and Overview never scroll the
       // page (index item 4).
       await scan(`/admin/users/${USERS.wanjiru}`, WANJIRU);
+      // Edit membership (BG-17), titled with that name.
+      await press(page.getByRole('button', { name: 'Edit membership' }));
+      const editMembership = page.getByRole('dialog', { name: /^Edit Wanjiru Njeri/ });
+      await expect(editMembership).toBeVisible();
+      await expect(page.locator('.MuiDialog-container')).toHaveCSS('opacity', '1');
+      await expectNoSeriousOrCriticalViolations(page);
+      await expectDrawerFits(a11yCase, editMembership);
+      await expectA11yCaseApplied(page, a11yCase);
 
       await scan(`/admin/users/${USERS.wanjiru}/access`, WANJIRU);
       await press(page.getByRole('button', { name: 'Assign role' }));

@@ -23,6 +23,11 @@ export type MembershipStatus = (typeof MEMBERSHIP_STATUSES)[number];
 export const MEMBERSHIP_TYPES = ['STAFF', 'ADMIN', 'AUDITOR', 'SYSTEM'] as const;
 export type MembershipType = (typeof MEMBERSHIP_TYPES)[number];
 
+/** The types a membership edit can set (BG-17, `ProfileUpdateService.ASSIGNABLE_TYPES`): SYSTEM is
+ * reserved for the platform's own accounts, and refused (422). */
+export const EDITABLE_MEMBERSHIP_TYPES = ['STAFF', 'ADMIN', 'AUDITOR'] as const;
+export type EditableMembershipType = (typeof EDITABLE_MEMBERSHIP_TYPES)[number];
+
 /** UserInTenantSummary (contract §C): the list item and `GET /tenant/users/{id}` share it. Spec
  * §6.1: the platform module reuses it (layer 17). `createdAt` is the account's, `createdBy` the
  * membership's inviter (the re-inviter after a re-invite, BG-08). */
@@ -114,6 +119,11 @@ const invitationSchema = z
 
 export type Invitation = z.output<typeof invitationSchema>;
 
+/** The member's number in this organisation (BG-17, ADR 0040): a positive integer taken when the
+ * membership first becomes ACTIVE and kept for life (suspension, revocation, re-invite), so `null`
+ * until then. Always sent (`@JsonInclude(ALWAYS)`), so an absent one fails the read. */
+const memberNumberSchema = z.number().int().positive().nullable();
+
 /** MembershipDetail: the identity fields repeat the user read and aren't mapped. `invitation` is
  * always present on a read and on every membership mutation's answer (BG-11); the platform
  * documents it nullable ("`null` on the result of a mutation that does not read it"), so a null
@@ -134,6 +144,7 @@ export const membershipDetailSchema = z
     updated_at: instantSchema,
     created_by: actorRefSchema,
     invitation: invitationSchema.nullable(),
+    member_number: memberNumberSchema,
   })
   .transform((membership) => ({
     id: membership.id,
@@ -145,6 +156,7 @@ export const membershipDetailSchema = z
     updatedAt: membership.updated_at,
     createdBy: membership.created_by,
     invitation: membership.invitation,
+    memberNumber: membership.member_number,
   }));
 
 export type MembershipDetail = z.output<typeof membershipDetailSchema>;

@@ -12,7 +12,14 @@ import { humanizeEnum, type StatusTone } from '@/components/data-display/status-
 import { UUID_PATTERN } from '@/lib/api/wire';
 import { formatInstant } from '@/lib/format';
 import type { MakerGate } from '@/modules/administration/approvals/maker-checker';
-import type { Invitation, InvitationStatus, MembershipStatus, UserStatus } from './user-contract';
+import { SCOPED_BRANCHES_NOTE } from '@/modules/administration/branches/branch-rules';
+import type {
+  Invitation,
+  InvitationStatus,
+  MembershipStatus,
+  MembershipType,
+  UserStatus,
+} from './user-contract';
 
 export type OnboardingKey =
   | 'AWAITING_APPROVAL'
@@ -419,6 +426,61 @@ export function blockedMembershipActions(
 export function membershipActionsNote(holder: PermissionHolder): string | null {
   if (!canAny(holder, LIFECYCLE_CODES)) return null;
   return can(holder, 'membership.view') ? null : NO_MEMBERSHIP_VIEW;
+}
+
+/** BG-17 (platform #161, ADR 0033): `PATCH /tenant/memberships/{id}` checks `membership.update` and
+ * its view tenant-wide (`requireTenantPermission`), and refuses a REVOKED or SYSTEM membership
+ * (422). The user read carries both, so the page decides before the membership read. Your own
+ * membership is editable: `ProfileUpdateService` has no self rule and no `user.assign_self` check. */
+export function canEditMembership(
+  record: { membershipStatus: MembershipStatus; membershipType: MembershipType },
+  holder: PermissionHolder,
+): boolean {
+  return (
+    record.membershipStatus !== 'REVOKED' &&
+    record.membershipType !== 'SYSTEM' &&
+    canAllTenantWide(holder, withViews(['membership.update']))
+  );
+}
+
+export const EDIT_MEMBERSHIP_DESCRIPTION =
+  "The type decides whether they need a branch assignment: Staff and Admin members do, Auditors don't.";
+/** The 409 `conflict`: an ACTIVE membership moving to STAFF or ADMIN while its user has no ACTIVE
+ * assignment to an ACTIVE branch. */
+export const MEMBERSHIP_TYPE_NEEDS_BRANCH =
+  'Staff and Admin members need an active branch assignment first. Assign a branch, then change the type.';
+/** The 422 `invalid_operation` a page-offered edit can still meet: the branch left ACTIVE since the
+ * page loaded, or the membership was revoked meanwhile. */
+export const MEMBERSHIP_EDIT_REFUSED =
+  "These changes weren't accepted. The branch may no longer be active, or this membership can't be edited.";
+/** A frontend-only code: the dialog was saved as it opened, so nothing is sent (an empty body is a
+ * 422). */
+export const MEMBERSHIP_UNCHANGED_CODE = 'membership_unchanged';
+export const MEMBERSHIP_UNCHANGED = 'Change the type or the primary branch first.';
+
+/** The Edit membership dialog's Primary branch options are one page of the institution's ACTIVE
+ * branches, by name (AGENTS.md's fifth exception, like the Assign-branch drawer's), read where the
+ * holder has `branch.view` somewhere. `read`: `listed`, `failed` (the read failed, said as the
+ * Assign-branch drawer says it), or `unread` (no `branch.view`, so none was made). The current
+ * primary branch is offered either way, so keeping it needs no read. */
+export function primaryBranchHint(input: {
+  read: 'listed' | 'failed' | 'unread';
+  truncated: boolean;
+  scoped: boolean;
+}): string {
+  if (input.read === 'failed') {
+    return "Branches couldn't be loaded. You can keep the current primary branch or choose None; refresh to try again.";
+  }
+  if (input.read === 'unread') {
+    return "Branches can't be listed here, so you can keep the current primary branch or choose None.";
+  }
+  return [
+    'Shown on their record as their main branch.',
+    input.truncated ? 'Only the first 100 active branches are listed.' : '',
+    input.scoped ? SCOPED_BRANCHES_NOTE : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 export const OWN_ACCESS = "You can't add to your own access. A tenant administrator can.";

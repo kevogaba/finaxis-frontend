@@ -2,17 +2,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
 import type * as ActionResultModule from '@/lib/api/action-result';
 
-const { apiPost, getAuthenticatedUser, getCurrentContextProfile, runServerAction } = vi.hoisted(
-  () => ({
+const { apiPatch, apiPost, getAuthenticatedUser, getCurrentContextProfile, runServerAction } =
+  vi.hoisted(() => ({
+    apiPatch: vi.fn((_path: string, _body: Record<string, unknown>, _key: string) =>
+      Promise.resolve<unknown>({}),
+    ),
     apiPost: vi.fn((_path: string, _body: Record<string, unknown>, _key: string) =>
       Promise.resolve<unknown>({}),
     ),
     getAuthenticatedUser: vi.fn(),
     getCurrentContextProfile: vi.fn(),
     runServerAction: vi.fn(),
-  }),
-);
+  }));
 vi.mock('@/lib/api/tenant-api', () => ({
+  apiPatch: (path: string, body: Record<string, unknown>, key: string) => apiPatch(path, body, key),
   apiPost: (path: string, body: Record<string, unknown>, key: string) => apiPost(path, body, key),
 }));
 vi.mock('@/lib/api/action-result', () => ({
@@ -50,6 +53,13 @@ const APPROVE_CONFLICT =
   'This request was already decided, or the person has no active role or branch yet. Refresh and check.';
 const REVOKE_CONFLICT = 'This membership was already revoked. Refresh and check.';
 const RETRY_CONFLICT = "Provisioning can't be retried now. Refresh to see where it stands.";
+const TYPE_NEEDS_BRANCH =
+  'Staff and Admin members need an active branch assignment first. Assign a branch, then change the type.';
+const EDIT_REFUSED =
+  "These changes weren't accepted. The branch may no longer be active, or this membership can't be edited.";
+const UNCHANGED = 'Change the type or the primary branch first.';
+const WESTLANDS = '44444444-4444-4444-8444-444444444444';
+const HEAD_OFFICE = '22222222-2222-4222-8222-222222222222';
 
 const ACTION_NAMES = [
   'approveMembership',
@@ -69,6 +79,11 @@ const PATHS = {
 } as const;
 
 type Run = (input: unknown) => Promise<unknown>;
+
+const fieldsOf = (data: FormData): Record<string, string> =>
+  Object.fromEntries(
+    [...data.entries()].map(([name, value]) => [name, typeof value === 'string' ? value : '']),
+  );
 
 function form(fields: Record<string, string>): FormData {
   const data = new FormData();
@@ -363,6 +378,148 @@ describe('membership actions', () => {
         runServerAction.mockResolvedValueOnce(failure(code));
         expect(await actions.resendInvitation(null, form({}))).toEqual(failure(code));
       }
+    });
+  });
+
+  // BG-17 (platform #161): PATCH /tenant/memberships/{id}, sending only what changed.
+  describe('updateMembership', () => {
+    const PATH = `/api/v1/tenant/memberships/${MEMBERSHIP}`;
+    /** The dialog as it opened on a Staff member at Westlands, then the person's choices. */
+    const edit = (choices: { membershipType?: string; primaryBranchId?: string } = {}) =>
+      form({
+        idempotencyKey: KEY,
+        membershipId: MEMBERSHIP,
+        currentMembershipType: 'STAFF',
+        currentPrimaryBranchId: WESTLANDS,
+        membershipType: 'STAFF',
+        primaryBranchId: WESTLANDS,
+        ...choices,
+      });
+
+    it('sends only a changed type, on the membership path, with the form key', async () => {
+      expect(await actions.updateMembership(null, edit({ membershipType: 'AUDITOR' }))).toEqual({
+        ok: true,
+      });
+      expect(apiPatch).toHaveBeenCalledTimes(1);
+      expect(apiPatch).toHaveBeenCalledWith(PATH, { membership_type: 'AUDITOR' }, KEY);
+      expect(apiPost).not.toHaveBeenCalled();
+    });
+
+    it('sends only a changed primary branch, and null for None', async () => {
+      await actions.updateMembership(null, edit({ primaryBranchId: HEAD_OFFICE }));
+      expect(apiPatch).toHaveBeenLastCalledWith(PATH, { primary_branch_id: HEAD_OFFICE }, KEY);
+      await actions.updateMembership(null, edit({ primaryBranchId: '' }));
+      expect(apiPatch).toHaveBeenLastCalledWith(PATH, { primary_branch_id: null }, KEY);
+    });
+
+    it('sends a branch chosen for a member who had none', async () => {
+      const fields = {
+        idempotencyKey: KEY,
+        membershipId: MEMBERSHIP,
+        currentMembershipType: 'AUDITOR',
+        currentPrimaryBranchId: '',
+        membershipType: 'AUDITOR',
+        primaryBranchId: HEAD_OFFICE,
+      };
+      await actions.updateMembership(null, form(fields));
+      expect(apiPatch).toHaveBeenCalledWith(PATH, { primary_branch_id: HEAD_OFFICE }, KEY);
+    });
+
+    it('sends both when both changed', async () => {
+      await actions.updateMembership(
+        null,
+        edit({ membershipType: 'ADMIN', primaryBranchId: HEAD_OFFICE }),
+      );
+      expect(apiPatch).toHaveBeenCalledWith(
+        PATH,
+        { membership_type: 'ADMIN', primary_branch_id: HEAD_OFFICE },
+        KEY,
+      );
+    });
+
+    // Review Focus 2: a retry after a failure replays with the key the dialog minted.
+    it('reuses the minted key on retry', async () => {
+      const submitted = edit({ membershipType: 'ADMIN' });
+      runServerAction.mockImplementationOnce(
+        async (schema: z.ZodType, formData: FormData, run: Run) => {
+          await run(schema.parse(Object.fromEntries(formData)));
+          return failure('conflict');
+        },
+      );
+      expect(await actions.updateMembership(null, submitted)).toMatchObject({
+        ok: false,
+        formError: TYPE_NEEDS_BRANCH,
+      });
+      expect(await actions.updateMembership(null, submitted)).toEqual({ ok: true });
+      expect(apiPatch.mock.calls.map(([, body, key]) => [body, key])).toEqual([
+        [{ membership_type: 'ADMIN' }, KEY],
+        [{ membership_type: 'ADMIN' }, KEY],
+      ]);
+    });
+
+    it.each([
+      // An ACTIVE membership moving to Staff or Admin with no active branch assignment.
+      ['conflict', TYPE_NEEDS_BRANCH],
+      // A branch no longer ACTIVE, or a membership revoked meanwhile.
+      ['invalid_operation', EDIT_REFUSED],
+    ])('explains %s by its code, keeping the reference', async (code, formError) => {
+      runServerAction.mockResolvedValueOnce(failure(code));
+      expect(await actions.updateMembership(null, edit())).toEqual({
+        ...failure(code),
+        formError,
+      });
+    });
+
+    it('leaves other failure codes alone', async () => {
+      for (const code of ['forbidden', 'resource_not_found', 'context_changed']) {
+        runServerAction.mockResolvedValueOnce(failure(code));
+        expect(await actions.updateMembership(null, edit())).toEqual(failure(code));
+      }
+    });
+
+    it.each([
+      ['a system type', { membershipType: 'SYSTEM' }, 'membershipType'],
+      ['an unknown type', { membershipType: 'GUEST' }, 'membershipType'],
+      ['a malformed branch', { primaryBranchId: 'not-a-uuid' }, 'primaryBranchId'],
+      ['a malformed membership id', { membershipId: '../x' }, 'membershipId'],
+    ])('refuses %s with no backend call', async (_case, fields, field) => {
+      const result = await actions.updateMembership(null, form({ ...fieldsOf(edit()), ...fields }));
+      expect(result).toMatchObject({ ok: false, code: 'validation_failed' });
+      expect(result.ok ? null : result.fieldErrors[field]).toEqual(expect.any(String));
+      expect(apiPatch).not.toHaveBeenCalled();
+    });
+
+    describe('with the real runServerAction', () => {
+      beforeEach(() => {
+        runServerAction.mockImplementation(realRunServerAction);
+        getAuthenticatedUser.mockResolvedValue({ id: 'user-1' });
+      });
+
+      // An empty body is a 422: saved as it opened, nothing is sent.
+      it('sends nothing when nothing changed, and says what to change', async () => {
+        expect(await actions.updateMembership(null, edit())).toEqual({
+          ok: false,
+          formError: UNCHANGED,
+          fieldErrors: {},
+          code: 'membership_unchanged',
+          requestId: null,
+        });
+        expect(apiPatch).not.toHaveBeenCalled();
+      });
+
+      it('refuses a submit after an organisation switch, before any backend call (I2)', async () => {
+        getCurrentContextProfile.mockResolvedValueOnce({
+          kind: 'resolved',
+          context: { organization: { id: OTHER_ORGANISATION } },
+        });
+        const submitted = edit({ membershipType: 'ADMIN' });
+        submitted.set('contextOrganisationId', ORGANISATION);
+        expect(await actions.updateMembership(null, submitted)).toMatchObject({
+          ok: false,
+          code: 'context_changed',
+        });
+        expect(apiPatch).not.toHaveBeenCalled();
+      });
     });
   });
 

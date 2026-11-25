@@ -42,8 +42,18 @@ interface AssignmentRow {
 }
 
 interface AuditRow {
+  id: string;
   actor_id: string | null;
   reason: string | null;
+}
+
+interface MembershipDetail {
+  id: string;
+  membership_status: string;
+  membership_type: string;
+  primary_branch_id: string | null;
+  member_number: number | null;
+  updated_at: string;
 }
 
 interface ProblemBody {
@@ -64,6 +74,8 @@ async function signIn(request: APIRequestContext, scenario: ScenarioName = 'user
     post: (path: string, data?: Record<string, unknown>, key: string = randomUUID()) =>
       request.post(api(path), { headers: { ...headers, 'Idempotency-Key': key }, data }),
     remove: (path: string) => request.delete(api(path), { headers }),
+    patch: (path: string, data?: unknown, key: string = randomUUID()) =>
+      request.patch(api(path), { headers: { ...headers, 'Idempotency-Key': key }, data }),
   };
 }
 
@@ -98,6 +110,7 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       'primary_branch_name',
       'created_at',
       'created_by',
+      'member_number',
     ]);
     expect(nested.items[0]).toMatchObject({
       id: USERS.joannMembership,
@@ -222,6 +235,7 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       'updated_at',
       'created_by',
       'invitation',
+      'member_number',
     ]);
     // Felix's account already had an identity: nothing was provisioned (BG-11).
     expect(detail.invitation).toEqual({
@@ -906,6 +920,211 @@ test.describe('fake API memberships and the users scenarios (contract §E.3, lay
       )
     ).items;
     expect(esther.map((row) => row.branch_id)).toEqual([IDS.headOffice]);
+  });
+
+  // BG-17 (ADR 0040, V35/V38): taken at the first activation, from the organisation's counter.
+  test('numbers members at their first activation and keeps the number for life', async ({
+    request,
+  }) => {
+    const { get, post } = await signIn(request);
+    const numberOf = async (membershipId: string) =>
+      (await read<MembershipDetail>(await get(membershipPath(membershipId)))).member_number;
+
+    // The seed numbers everyone ever active, in order; a pending one has none, nor Hassan, revoked
+    // before his approval.
+    expect(await numberOf(IDS.greenfieldMembership)).toBe(1);
+    expect(await numberOf(USERS.victorMembership)).toBe(2);
+    expect(await numberOf(USERS.felixMembership)).toBe(4);
+    expect(await numberOf(USERS.gladysMembership)).toBe(5);
+    expect(await numberOf(USERS.joannMembership)).toBe(8);
+    expect(await numberOf(USERS.brianMembership)).toBeNull();
+    expect(await numberOf(USERS.hassanMembership)).toBeNull();
+    // The list carries it too.
+    const list = await read<Paged<MembershipSummary & { member_number: number | null }>>(
+      await get(`/tenant/memberships?user_id=${USERS.felix}`),
+    );
+    expect(list.items[0]?.member_number).toBe(4);
+
+    // Brian's account has an identity, so his approval activates him (200): the next number.
+    const approved = await post(`${membershipPath(USERS.brianMembership)}/activate`, {});
+    expect(approved.status()).toBe(200);
+    expect(await read(approved)).toMatchObject({ membership_status: 'ACTIVE', member_number: 9 });
+
+    // A suspension and a reactivation keep it.
+    const felix = membershipPath(USERS.felixMembership);
+    expect(await read(await post(`${felix}/suspend`, { reason: 'Cash audit' }))).toMatchObject({
+      member_number: 4,
+    });
+    expect(await read(await post(`${felix}/reactivate`))).toMatchObject({
+      membership_status: 'ACTIVE',
+      member_number: 4,
+    });
+    // A pending approval that queues identity provisioning (202) takes no number yet.
+    const queued = await post(`${membershipPath(USERS.aminaMembership)}/activate`, {});
+    expect(queued.status()).toBe(202);
+    expect(await read(queued)).toMatchObject({ member_number: null });
+  });
+
+  // BG-17 (platform #161, ProfileUpdateService.updateMembership).
+  test('edits a membership type and primary branch, changing only what is sent, audited', async ({
+    request,
+  }) => {
+    const { get, patch } = await signIn(request);
+    const felix = membershipPath(USERS.felixMembership);
+
+    const typed = await patch(felix, { membership_type: 'AUDITOR' });
+    expect(typed.status()).toBe(200);
+    expect(await read(typed)).toMatchObject({
+      id: USERS.felixMembership,
+      membership_status: 'ACTIVE',
+      membership_type: 'AUDITOR',
+      primary_branch_id: IDS.westlands,
+      member_number: 4,
+    });
+    // An explicit null clears the branch; an id sets it; an absent type stays.
+    expect(await read(await patch(felix, { primary_branch_id: null }))).toMatchObject({
+      membership_type: 'AUDITOR',
+      primary_branch_id: null,
+    });
+    expect(await read(await patch(felix, { primary_branch_id: IDS.headOffice }))).toMatchObject({
+      membership_type: 'AUDITOR',
+      primary_branch_id: IDS.headOffice,
+    });
+    // An explicit null type is no change: with the branch, only the branch moves.
+    expect(
+      await read(await patch(felix, { membership_type: null, primary_branch_id: IDS.westlands })),
+    ).toMatchObject({ membership_type: 'AUDITOR', primary_branch_id: IDS.westlands });
+    // The primary branch needs no assignment there: Felix holds Westlands only.
+    expect(
+      await read(
+        await patch(felix, { membership_type: 'STAFF', primary_branch_id: IDS.headOffice }),
+      ),
+    ).toMatchObject({ membership_type: 'STAFF', primary_branch_id: IDS.headOffice });
+
+    // Your own membership is editable: no self rule.
+    const own = await patch(membershipPath(IDS.greenfieldMembership), { membership_type: 'STAFF' });
+    expect(own.status()).toBe(200);
+
+    // One `membership.update` row per edit, on the MEMBERSHIP, naming the fields and no values.
+    const rows = await read<Paged<AuditRow>>(
+      await get(
+        `/tenant/audit-events?entity_type=MEMBERSHIP&entity_id=${USERS.felixMembership}&action=membership.update`,
+      ),
+    );
+    expect(rows.page.total_items).toBe(5);
+    // The list leaves the metadata out; each row's detail carries it.
+    const metadata = await Promise.all(
+      rows.items.map(async (row) => {
+        const detail = await read<{ metadata_json: string }>(
+          await get(`/tenant/audit-events/${row.id}`),
+        );
+        return JSON.parse(detail.metadata_json) as unknown;
+      }),
+    );
+    expect(metadata).toEqual(
+      expect.arrayContaining([
+        { changedFields: 'membership_type' },
+        { changedFields: 'primary_branch_id' },
+        { changedFields: 'membership_type,primary_branch_id' },
+      ]),
+    );
+    expect(rows.items[0]).toMatchObject({ actor_id: IDS.jane, reason: null });
+  });
+
+  test('replays a membership edit for the same key, and a refusal stores nothing', async ({
+    request,
+  }) => {
+    const { patch } = await signIn(request);
+    const wanjiru = membershipPath(USERS.wanjiruMembership);
+    const key = randomUUID();
+
+    // Wanjiru, an ACTIVE auditor with no branch assignment: Staff needs one (409).
+    await expectProblem(await patch(wanjiru, { membership_type: 'STAFF' }, key), 409, 'conflict');
+    // The key was rolled back, so it carries a different edit.
+    const first = await patch(wanjiru, { primary_branch_id: IDS.headOffice }, key);
+    expect(first.status()).toBe(200);
+    const replay = await patch(wanjiru, { primary_branch_id: IDS.headOffice }, key);
+    expect(replay.headers()['idempotency-replayed']).toBe('true');
+    expect(await read(replay)).toEqual(await read(first));
+  });
+
+  test('refuses a membership edit in the platform order', async ({ request }) => {
+    const { patch } = await signIn(request);
+    const felix = membershipPath(USERS.felixMembership);
+
+    // The body decodes first: an unknown key, a type that isn't text, a branch that isn't a UUID.
+    await expectProblem(await patch(felix, { reason: 'x' }), 400, 'invalid_json');
+    await expectProblem(await patch(felix, { membership_type: 1 }), 400, 'invalid_json');
+    await expectProblem(await patch(felix, { primary_branch_id: 'head' }), 400, 'invalid_json');
+    // Then 422: no field, an unknown or SYSTEM type (before the lookup, so even for an unknown id).
+    await expectProblem(await patch(felix, {}), 422, 'invalid_operation');
+    await expectProblem(await patch(felix, { membership_type: null }), 422, 'invalid_operation');
+    await expectProblem(
+      await patch(membershipPath(randomUUID()), { membership_type: 'SYSTEM' }),
+      422,
+      'invalid_operation',
+    );
+    await expectProblem(await patch(felix, { membership_type: 'GUEST' }), 422, 'invalid_operation');
+    // An unknown id, then a REVOKED membership, then a branch that isn't ACTIVE here.
+    await expectProblem(
+      await patch(membershipPath(randomUUID()), { membership_type: 'STAFF' }),
+      404,
+      'resource_not_found',
+    );
+    await expectProblem(
+      await patch(membershipPath(USERS.hassanMembership), { membership_type: 'AUDITOR' }),
+      422,
+      'invalid_operation',
+    );
+    await expectProblem(
+      await patch(felix, { primary_branch_id: randomUUID() }),
+      422,
+      'invalid_operation',
+    );
+    // The 409 comes before the branch: Wanjiru to Staff, at a branch that doesn't exist.
+    await expectProblem(
+      await patch(membershipPath(USERS.wanjiruMembership), {
+        membership_type: 'ADMIN',
+        primary_branch_id: randomUUID(),
+      }),
+      409,
+      'conflict',
+    );
+  });
+
+  test('asks only an ACTIVE membership for a branch assignment before Staff or Admin', async ({
+    request,
+  }) => {
+    const { patch, post } = await signIn(request);
+    const wanjiru = membershipPath(USERS.wanjiruMembership);
+
+    await expectProblem(await patch(wanjiru, { membership_type: 'STAFF' }), 409, 'conflict');
+    // Suspended, the same auditor with no assignment may become Staff.
+    expect((await post(`${wanjiru}/suspend`, { reason: 'Cash audit' })).status()).toBe(200);
+    expect(await read(await patch(wanjiru, { membership_type: 'STAFF' }))).toMatchObject({
+      membership_status: 'SUSPENDED',
+      membership_type: 'STAFF',
+    });
+  });
+
+  test('gates a membership edit on membership.update and its view, tenant-wide', async ({
+    request,
+  }) => {
+    const readOnly = await signIn(request, 'users-read-only');
+    await expectProblem(
+      await readOnly.patch(membershipPath(USERS.felixMembership), { membership_type: 'AUDITOR' }),
+      403,
+      'forbidden',
+    );
+    const limited = await signIn(request, 'users-limited');
+    const refused = await limited.patch(membershipPath(USERS.felixMembership), {
+      membership_type: 'AUDITOR',
+    });
+    expect(refused.status()).toBe(403);
+    expect(await read(refused)).toMatchObject({
+      code: 'forbidden',
+      detail: 'Missing permission: membership.view.',
+    });
   });
 
   test('seeds fresh objects for every call, so one run never leaks into another', () => {
